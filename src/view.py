@@ -9,19 +9,19 @@ from pyopenms import MSExperiment, MzMLFile
 
 
 @st.cache_data
-def get_df(file):
+def getAnnotatedData(file):
     exp = MSExperiment()
-    MzMLFile().load(str(Path(st.session_state["mzML-files"], file)), exp)
+    MzMLFile().load(str(Path(st.session_state["anno-mzMLs"], file)), exp)
     df = exp.get_df()
     df.insert(0, "mslevel", [spec.getMSLevel() for spec in exp])
-    df.insert(
-        0,
-        "precursormz",
-        [
-            spec.getPrecursors()[0].getMZ() if spec.getPrecursors() else 0
-            for spec in exp
-        ],
-    )
+    # df.insert(
+    #     0,
+    #     "precursormz",
+    #     [
+    #         spec.getPrecursors()[0].getMZ() if spec.getPrecursors() else 0
+    #         for spec in exp
+    #     ],
+    # )
     if not df.empty:
         return df
     else:
@@ -29,7 +29,7 @@ def get_df(file):
 
 
 @st.cache_data
-def get_spectraData(file): # TODO: change here for msData
+def getDeconvMSData(file):
     exp = MSExperiment()
     MzMLFile().load(str(Path(st.session_state["deconv-mzML-files"], file)), exp)
     df = exp.get_df()
@@ -193,4 +193,8 @@ def plot_ms_spectrum(spec, title, color):
     fig.layout.template = "plotly_white"
     fig.update_yaxes(fixedrange=True)
     st.plotly_chart(fig, use_container_width=True)
+    return
+
+@st.cache_resource
+def plot_3D_signal_view(spec, title):
     return

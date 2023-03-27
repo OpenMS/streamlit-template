@@ -27,13 +27,12 @@ def page_setup():
             st.session_state["workspace"] = Path(str(uuid.uuid1()))
     # Make sure important directories exist
     st.session_state["workspace"].mkdir(parents=True, exist_ok=True)
-    # for mzML (deconvolved)
-    st.session_state["deconv-mzML-files"] = Path(st.session_state["workspace"], "deconv-mzML-files")
-    st.session_state["deconv-mzML-files"].mkdir(parents=True, exist_ok=True)
-    # for FASTA
-    st.session_state["fasta-files"] = Path(st.session_state["workspace"], "fasta-files")
-    st.session_state["fasta-files"].mkdir(parents=True, exist_ok=True)
 
+    # needed directories
+    important_dirs = ["deconv-mzMLs", "anno-mzMLs", "fasta-files"]
+    for dirnames in important_dirs:
+        st.session_state[dirnames] = Path(st.session_state["workspace"], dirnames)
+        st.session_state[dirnames].mkdir(parents=True, exist_ok=True)
 
 def v_space(n, col=None):
     for _ in range(n):

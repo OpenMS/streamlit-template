@@ -9,24 +9,36 @@ def content():
     sidebar()
     st.title("NativeMS Viewer")
 
-    # st.session_state.view_spectra_dict = get_spectra_dict(
-    #     st.session_state["mzML-files"]
-    # )
+    # if no input file is given, show blank page
+    if "experiment-df" not in st.session_state:
+        st.error('Upload input files first!')
+        return
+
+    # selecting experiment
+    experiment_df = st.session_state["experiment-df"]
+
     st.selectbox(
-        "choose file",
-        [f.name for f in st.session_state["deconv-mzML-files"].iterdir()],
-        key="selected_file",
+        "choose experiment", experiment_df['Experiment Name'],
+        key="selected_experiment",
     )
 
-    # deconv_mzml =
+    # two main containers
     spectra_container, mass_container = st.columns(2)
 
-    #
-    # df = get_df(st.session_state.view_file)
-    # df_MS1, df_MS2 = (
-    #     df[df["mslevel"] == 1],
-    #     df[df["mslevel"] == 2],
-    # )
+    # getting data
+    selected = experiment_df[experiment_df['Experiment Name'] == st.session_state.selected_experiment]
+    selected_anno_file = selected['Annotated Files'][0]
+    selected_deconv_file = selected['Deconvolved Files'][0]
+
+    ## for now, test data
+    anno_df = getAnnotatedData(selected_anno_file)
+
+    # drawing 3D spectra viewer (1st column, top)
+    spectra_container.header('Signal View')
+
+    # drawing spectra table (1st column, bottom)
+    spectra_container.header('Spectrum Table')
+    spectra_container.write(anno_df.columns)
 
     # if not df_MS1.empty:
     #     st.markdown("### Peak Map and MS2 spectra")
@@ -89,7 +101,6 @@ def content():
     #         f"MS1 spectrum @RT {spec['RT']}",
     #         "#EF553B",
     #     )
-
 
 if __name__ == "__main__":
     # try:
