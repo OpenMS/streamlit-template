@@ -5,29 +5,33 @@ import os
 import shutil
 
 
-def showingUploadedFiles(param, param1):
+def showingUploadedFiles():
     deconv_files = sorted(Path(st.session_state["deconv-mzMLs"]).iterdir())
     anno_files = sorted(Path(st.session_state["anno-mzMLs"]).iterdir())
 
-    # Error message!
-    if len(deconv_files) != len(anno_files):
+    # error message if files not exist
+    if len(deconv_files) == 0 and len(anno_files) == 0:
+        st.info('No mzML added yet!', icon="ℹ️")
+    elif len(deconv_files) == 0:
+        st.error("FLASHDeconv deconvolved mzML file is not added yet!")
+    elif len(anno_files) == 0:
+        st.error("FLASHDeconv annotated mzML file is not added yet!")
+    elif len(deconv_files) != len(anno_files):
         st.error("The same number of deconvolved and annotated mzML file should be uploaded!")
-        return
+    else:
+        # leave only names
+        deconv_files = [f.name for f in deconv_files]
+        anno_files = [f.name for f in anno_files]
 
-    # leave only names
-    deconv_files = [f.name for f in deconv_files]
-    anno_files = [f.name for f in anno_files]
+        # getting experiment name from deconv file
+        experiment_names = [f[0: f.rfind('_')] for f in deconv_files]
 
-    # getting experiment name from deconv file
-    experiment_names = [f[0: f.rfind('_')] for f in deconv_files]
-
-    df = pd.DataFrame({'Experiment Name': experiment_names,
-                       'Deconvolved Files': deconv_files,
-                       'Annotated Files': anno_files})
-    st.session_state["experiment-df"] = df
-    st.markdown('**Uploaded experiments**')
-    st.dataframe(df)
-    return
+        df = pd.DataFrame({'Experiment Name': experiment_names,
+                           'Deconvolved Files': deconv_files,
+                           'Annotated Files': anno_files})
+        st.session_state["experiment-df"] = df
+        st.markdown('**Uploaded experiments**')
+        st.dataframe(df)
 
 def content():
     page_setup()
@@ -106,14 +110,7 @@ def content():
                     st.warning("Upload some files before adding them.")
 
     # for error message or list of uploaded files
-    if "deconv-mzMLs" in st.session_state and "anno-mzMLs" in st.session_state:
-        showingUploadedFiles(st.session_state["deconv-mzMLs"], st.session_state["anno-mzMLs"])
-    elif ("deconv-mzMLs" not in st.session_state) and ("anno-mzMLs" not in st.session_state):
-        st.info('No mzML added yet!', icon="ℹ️")
-    elif "deconv-mzMLs" not in st.session_state:
-        st.error("FLASHDeconv deconvolved mzML file is not added yet!")
-    elif "anno-mzMLs" not in st.session_state:
-        st.error("FLASHDeconv annotated mzML file is not added yet!")
+    showingUploadedFiles()
 
     # Upload files via upload widget
     st.subheader("Upload fasta files")
