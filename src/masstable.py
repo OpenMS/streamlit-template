@@ -8,14 +8,14 @@ from pyopenms import *
 
 from pyopenms import MSExperiment, MzMLFile
        
-@st.cache_data
+#@st.cache_data
 def get_mass_table(annotated, deconvolved):
     annotated_exp = MSExperiment()
     deconvolved_exp = MSExperiment()
-    MzMLFile().load(str(Path(st.session_state["mzML-files"], annotated)), annotated_exp)
-    MzMLFile().load(str(Path(st.session_state["mzML-files"], deconvolved)), deconvolved_exp)
-    #MzMLFile().load(annotated, annotated_exp)
-    #MzMLFile().load(deconvolved, deconvolved_exp)
+    #MzMLFile().load(str(Path(st.session_state["mzML-files"], annotated)), annotated_exp)
+    #MzMLFile().load(str(Path(st.session_state["mzML-files"], deconvolved)), deconvolved_exp)
+    MzMLFile().load(annotated, annotated_exp)
+    MzMLFile().load(deconvolved, deconvolved_exp)
 
     tolerance = .0
     massoffset = .0
@@ -88,7 +88,7 @@ def get_mass_table(annotated, deconvolved):
         # Split the string into peak items
         peak_items = mstr.split(';')
         sourcefiles = annotated_exp.getSourceFiles();
-        scan_number = SpectrumLookup.extractScanNumber(spec.getNativeID(), sourcefiles[0].getNativeIDTypeAccession()) if sourcefiles else -1
+        scan_number = SpectrumLookup().extractScanNumber(spec.getNativeID(), sourcefiles[0].getNativeIDTypeAccession()) if sourcefiles else -1
         scans.append(scan_number)
         # Create a list to store the parsed peaks
         parsed_peaks = []
