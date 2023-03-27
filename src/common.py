@@ -10,7 +10,7 @@ import uuid
 def page_setup():
     # streamlit configs
     st.set_page_config(
-        page_title="OpenMS App Template",
+        page_title="OpenMS FLASHDeconvViewer App",
         page_icon="assets/OpenMS.png",
         layout="wide",
         initial_sidebar_state="auto",
@@ -27,8 +27,12 @@ def page_setup():
             st.session_state["workspace"] = Path(str(uuid.uuid1()))
     # Make sure important directories exist
     st.session_state["workspace"].mkdir(parents=True, exist_ok=True)
-    st.session_state["mzML-files"] = Path(st.session_state["workspace"], "mzML-files")
-    st.session_state["mzML-files"].mkdir(parents=True, exist_ok=True)
+    # for mzML (deconvolved)
+    st.session_state["deconv-mzML-files"] = Path(st.session_state["workspace"], "deconv-mzML-files")
+    st.session_state["deconv-mzML-files"].mkdir(parents=True, exist_ok=True)
+    # for FASTA
+    st.session_state["fasta-files"] = Path(st.session_state["workspace"], "fasta-files")
+    st.session_state["fasta-files"].mkdir(parents=True, exist_ok=True)
 
 
 def v_space(n, col=None):
@@ -160,32 +164,40 @@ You can share this unique workspace ID with other people.
                     st.session_state["workspace"] = Path("default-workspace")
             st.markdown("***")
 
+        # TODO: revive this later
         elif page == "files":
             # Show currently available mzML files
             st.markdown("### Uploaded Files")
-            for f in sorted(Path(st.session_state["mzML-files"]).iterdir()):
+            for f in sorted(Path(st.session_state["deconv-mzML-files"]).iterdir()):
                 if f.name in st.session_state:
                     checked = st.session_state[f.name]
                 else:
                     checked = True
-                st.checkbox(f.name[:-5], checked, key=f.name)
+                st.checkbox(f.name, checked, key=f.name)
 
-            # Option to remove files
-            v_space(1)
-            st.markdown("⚠️ **Remove files**")
-            c1, c2 = st.columns(2)
-            if c1.button("**All**"):
-                reset_directory(st.session_state["mzML-files"])
+            for f in sorted(Path(st.session_state["fasta-files"]).iterdir()):
+                if f.name in st.session_state:
+                    checked = st.session_state[f.name]
+                else:
+                    checked = True
+                st.checkbox(f.name, checked, key=f.name)
 
-            if c2.button("**Un**selected"):
-                for file in [
-                    Path(st.session_state["mzML-files"], key)
-                    for key, value in st.session_state.items()
-                    if key.endswith("mzML") and not value  # e.g. unchecked
-                ]:
-                    file.unlink()
-                st.experimental_rerun()
-
+        #     # Option to remove files
+        #     v_space(1)
+        #     st.markdown("⚠️ **Remove files**")
+        #     c1, c2 = st.columns(2)
+        #     if c1.button("**All**"):
+        #         reset_directory(st.session_state["mzML-files"])
+        #
+        #     if c2.button("**Un**selected"):
+        #         for file in [
+        #             Path(st.session_state["mzML-files"], key)
+        #             for key, value in st.session_state.items()
+        #             if key.endswith("mzML") and not value  # e.g. unchecked
+        #         ]:
+        #             file.unlink()
+        #         st.experimental_rerun()
+        #
             st.markdown("***")
         st.image("assets/OpenMS.png", "powered by")
 

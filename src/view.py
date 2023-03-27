@@ -28,6 +28,26 @@ def get_df(file):
         return pd.DataFrame()
 
 
+@st.cache_data
+def get_spectraData(file): # TODO: change here for msData
+    exp = MSExperiment()
+    MzMLFile().load(str(Path(st.session_state["deconv-mzML-files"], file)), exp)
+    df = exp.get_df()
+
+    df.insert(0, "mslevel", [spec.getMSLevel() for spec in exp])
+    df.insert(
+        0,
+        "precursormz",
+        [
+            spec.getPrecursors()[0].getMZ() if spec.getPrecursors() else 0
+            for spec in exp
+        ],
+    )
+    if not df.empty:
+        return df
+    else:
+        return pd.DataFrame()
+
 @st.cache_resource
 def plot_2D_map(df_ms1, df_ms2, cutoff):
     fig = go.Figure()
