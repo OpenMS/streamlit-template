@@ -12,10 +12,8 @@ from pyopenms import MSExperiment, MzMLFile
 def get_mass_table(annotated, deconvolved):
     annotated_exp = MSExperiment()
     deconvolved_exp = MSExperiment()
-    #MzMLFile().load(str(Path(st.session_state["mzML-files"], annotated)), annotated_exp)
-    #MzMLFile().load(str(Path(st.session_state["mzML-files"], deconvolved)), deconvolved_exp)
-    MzMLFile().load(annotated, annotated_exp)
-    MzMLFile().load(deconvolved, deconvolved_exp)
+    MzMLFile().load(str(Path(st.session_state["anno-mzMLs"], annotated)), annotated_exp)
+    MzMLFile().load(str(Path(st.session_state["deconv-mzMLs"], deconvolved)), deconvolved_exp)
 
     tolerance = .0
     massoffset = .0
@@ -115,14 +113,14 @@ def get_mass_table(annotated, deconvolved):
     df['Scan'] = scans
     return df, tolerance,  massoffset, chargemass
     
-def main():
-    annotated = '/Users/kyowonjeong/FLASHDeconvOut/OT_Myoglobin_MS2_HCD_annotated.mzML'
-    deconvolved = '/Users/kyowonjeong/FLASHDeconvOut/OT_Myoglobin_MS2_HCD_deconv.mzML'
-    tmp = get_mass_table(annotated, deconvolved)
-    print(tmp)
 
-if __name__ == "__main__":
-    main()
+# def main():
+#     annotated = '/Users/kyowonjeong/FLASHDeconvOut/OT_Myoglobin_MS2_HCD_annotated.mzML'
+#     deconvolved = '/Users/kyowonjeong/FLASHDeconvOut/OT_Myoglobin_MS2_HCD_deconv.mzML'
+#     tmp = get_mass_table(annotated, deconvolved)
+#     print(tmp[0]['MSLevel'])
+# if __name__ == "__main__":
+#     main()
 
     
 

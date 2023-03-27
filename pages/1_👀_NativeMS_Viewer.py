@@ -1,8 +1,9 @@
+import numpy as np
 import streamlit as st
 from src.view import *
 from src.common import *
+from src.masstable import *
 from streamlit_plotly_events import plotly_events
-
 
 def content():
     page_setup()
@@ -13,8 +14,6 @@ def content():
     if "experiment-df" not in st.session_state:
         st.error('Upload input files first!')
         return
-    else:
-        st.write(st.session_state["experiment-df"])
 
     # selecting experiment
     experiment_df = st.session_state["experiment-df"]
@@ -31,17 +30,27 @@ def content():
     selected = experiment_df[experiment_df['Experiment Name'] == st.session_state.selected_experiment]
     selected_anno_file = selected['Annotated Files'][0]
     selected_deconv_file = selected['Deconvolved Files'][0]
-    spectra_container.write(selected_deconv_file)
 
     ## for now, test data
-    anno_df = getAnnotatedData(selected_anno_file)
+    spec_df, tolerance, massoffset, chargemass = get_mass_table(selected_anno_file, selected_deconv_file)
 
-    # drawing 3D spectra viewer (1st column, top)
-    spectra_container.header('Signal View')
+    with spectra_container:
+        # drawing 3D spectra viewer (1st column, top)
+        st.subheader('Signal View')
+        signal_plot_container = st.empty() # initialzie space for drawing 3d plot
 
-    # drawing spectra table (1st column, bottom)
-    spectra_container.header('Spectrum Table')
-    spectra_container.write(anno_df.columns)
+        # drawing spectra table (1st column, bottom)
+        st.subheader('Spectrum Table')
+        df_for_table = spec_df[['MSLevel', 'RT']]
+        df_for_table['#Masses'] = [len(ele) for ele in spec_df['MinCharges']]
+        df_for_table.reset_index(inplace=True)
+        # spectra_container.dataframe(df_for_table, use_container_width=True)
+        st.session_state["index_for_signal_view"] = drawSpectraTable(df_for_table)
+
+        with signal_plot_container.container():
+            response = st.session_state["index_for_signal_view"]
+            if response["selected_rows"]:
+                st.dataframe(response["selected_rows"])
 
     # if not df_MS1.empty:
     #     st.markdown("### Peak Map and MS2 spectra")

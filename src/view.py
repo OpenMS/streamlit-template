@@ -4,6 +4,8 @@ import numpy as np
 from pathlib import Path
 import plotly.graph_objects as go
 import plotly.express as px
+from st_aggrid import AgGrid, GridOptionsBuilder, ColumnsAutoSizeMode
+from st_aggrid.shared import GridUpdateMode
 
 from pyopenms import MSExperiment, MzMLFile
 
@@ -198,3 +200,22 @@ def plot_ms_spectrum(spec, title, color):
 @st.cache_resource
 def plot_3D_signal_view(spec, title):
     return
+
+# @st.cache_data
+def drawSpectraTable(in_df: pd.DataFrame):
+    options = GridOptionsBuilder.from_dataframe(
+        in_df, enableRowGroup=True, enableValue=True, enablePivot=True
+    )
+
+    options.configure_selection("single")
+    options.configure_side_bar() # sidebar of table
+    selection = AgGrid(
+        in_df,
+        height=400,
+        enable_enterprise_modules=True,
+        gridOptions=options.build(),
+        update_mode=GridUpdateMode.MODEL_CHANGED,
+        # allow_unsafe_jscode=True,
+        columns_auto_size_mode=ColumnsAutoSizeMode.FIT_CONTENTS
+    )
+    return selection
