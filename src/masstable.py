@@ -28,6 +28,8 @@ def get_mass_table(annotated, deconvolved):
     maxCharges=[]
     minIsotopes=[]
     maxIsotopes=[]
+    msLevels=[]
+    precursorMasses=[]
 
     for spec in deconvolved_exp:
         mstr = spec.getMetaValue('DeconvMassInfo')
@@ -102,10 +104,11 @@ def get_mass_table(annotated, deconvolved):
         indices = []
         for peakInfo in parsed_peaks:
             indices.append(peakInfo[1])
-
+        msLevels.append(spec.getMSLevel())
         peakIndices.append(indices)
     
     df['PeakIndex'] = peakIndices
+    df['MSLevel'] = msLevels
 
     return df, tolerance,  massoffset, chargemass
     
@@ -113,7 +116,7 @@ def main():
     annotated = '/Users/kyowonjeong/FLASHDeconvOut/OT_Myoglobin_MS2_HCD_annotated.mzML'
     deconvolved = '/Users/kyowonjeong/FLASHDeconvOut/OT_Myoglobin_MS2_HCD_deconv.mzML'
     tmp = get_mass_table(annotated, deconvolved)
-    print(tmp[0]['PeakIndex'])
+    print(tmp[0]['MSLevel'])
 if __name__ == "__main__":
     main()
 
