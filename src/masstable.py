@@ -30,6 +30,7 @@ def get_mass_table(annotated, deconvolved):
     maxIsotopes=[]
     msLevels=[]
     precursorMasses=[]
+    scans=[]
 
     for spec in deconvolved_exp:
         mstr = spec.getMetaValue('DeconvMassInfo')
@@ -86,7 +87,9 @@ def get_mass_table(annotated, deconvolved):
         mstr = spec.getMetaValue('DeconvMassPeakIndices')
         # Split the string into peak items
         peak_items = mstr.split(';')
-
+        sourcefiles = annotated_exp.getSourceFiles();
+        scan_number = SpectrumLookup.extractScanNumber(spec.getNativeID(), sourcefiles[0].getNativeIDTypeAccession()) if sourcefiles else -1
+        scans.append(scan_number)
         # Create a list to store the parsed peaks
         parsed_peaks = []
 
@@ -109,14 +112,15 @@ def get_mass_table(annotated, deconvolved):
     
     df['PeakIndex'] = peakIndices
     df['MSLevel'] = msLevels
-
+    df['Scan'] = scans
     return df, tolerance,  massoffset, chargemass
     
 def main():
     annotated = '/Users/kyowonjeong/FLASHDeconvOut/OT_Myoglobin_MS2_HCD_annotated.mzML'
     deconvolved = '/Users/kyowonjeong/FLASHDeconvOut/OT_Myoglobin_MS2_HCD_deconv.mzML'
     tmp = get_mass_table(annotated, deconvolved)
-    print(tmp[0]['MSLevel'])
+    print(tmp)
+
 if __name__ == "__main__":
     main()
 
