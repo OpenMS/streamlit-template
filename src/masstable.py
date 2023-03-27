@@ -8,14 +8,14 @@ from pyopenms import *
 
 from pyopenms import MSExperiment, MzMLFile
        
-#@st.cache_data
+@st.cache_data
 def get_mass_table(annotated, deconvolved):
     annotated_exp = MSExperiment()
     deconvolved_exp = MSExperiment()
-    #MzMLFile().load(str(Path(st.session_state["mzML-files"], annotated)), annotated_exp)
-    #MzMLFile().load(str(Path(st.session_state["mzML-files"], deconvolved)), deconvolved_exp)
-    MzMLFile().load(annotated, annotated_exp)
-    MzMLFile().load(deconvolved, deconvolved_exp)
+    MzMLFile().load(str(Path(st.session_state["mzML-files"], annotated)), annotated_exp)
+    MzMLFile().load(str(Path(st.session_state["mzML-files"], deconvolved)), deconvolved_exp)
+    #MzMLFile().load(annotated, annotated_exp)
+    #MzMLFile().load(deconvolved, deconvolved_exp)
 
     tolerance = .0
     massoffset = .0
