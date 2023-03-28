@@ -163,43 +163,13 @@ You can share this unique workspace ID with other people.
                     st.session_state["workspace"] = Path("default-workspace")
             st.markdown("***")
 
-        # TODO: revive this later
-        elif page == "files":
-            # Show currently available mzML files
-            st.markdown("### Uploaded Files")
-            for f in sorted(Path(st.session_state["deconv-mzML-files"]).iterdir()):
-                if f.name in st.session_state:
-                    checked = st.session_state[f.name]
-                else:
-                    checked = True
-                st.checkbox(f.name, checked, key=f.name)
-
-            for f in sorted(Path(st.session_state["fasta-files"]).iterdir()):
-                if f.name in st.session_state:
-                    checked = st.session_state[f.name]
-                else:
-                    checked = True
-                st.checkbox(f.name, checked, key=f.name)
-
-        #     # Option to remove files
-        #     v_space(1)
-        #     st.markdown("⚠️ **Remove files**")
-        #     c1, c2 = st.columns(2)
-        #     if c1.button("**All**"):
-        #         reset_directory(st.session_state["mzML-files"])
-        #
-        #     if c2.button("**Un**selected"):
-        #         for file in [
-        #             Path(st.session_state["mzML-files"], key)
-        #             for key, value in st.session_state.items()
-        #             if key.endswith("mzML") and not value  # e.g. unchecked
-        #         ]:
-        #             file.unlink()
-        #         st.experimental_rerun()
-        #
-            st.markdown("***")
         st.image("assets/OpenMS.png", "powered by")
 
+def defaultPageSetup(title=""):
+    page_setup()
+    sidebar()
+    if title:
+        st.title(title)
 
 WARNINGS = {
     "no-workspace": "No online workspace ID found, please visit the start page first.",

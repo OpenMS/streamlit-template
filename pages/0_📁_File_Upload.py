@@ -34,7 +34,7 @@ def showingUploadedFiles():
         st.dataframe(df)
 
 def content():
-    page_setup()
+    defaultPageSetup()
 
     # make directory to store deconv and anno mzML files
     input_types = ["deconv-mzMLs", "anno-mzMLs", "fasta-files"] # TODO: add raw mzML section

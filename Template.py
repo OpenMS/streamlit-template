@@ -1,12 +1,9 @@
 import streamlit as st
 from src.common import *
 
+# initializing the page
 page_setup()
-
 sidebar(page="main")
 
-st.markdown(
-    """# Template App
-
-A template for an OpenMS streamlit app."""
-)
+# main content
+st.title("FLASHDeconv Suite")

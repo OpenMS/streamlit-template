@@ -6,9 +6,7 @@ from src.masstable import *
 from streamlit_plotly_events import plotly_events
 
 def content():
-    page_setup()
-    sidebar()
-    st.title("NativeMS Viewer")
+    defaultPageSetup("NativeMS Viewer")
 
     # if no input file is given, show blank page
     if "experiment-df" not in st.session_state:
