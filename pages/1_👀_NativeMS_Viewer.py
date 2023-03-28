@@ -29,27 +29,33 @@ def content():
     selected_anno_file = selected['Annotated Files'][0]
     selected_deconv_file = selected['Deconvolved Files'][0]
 
-    ## for now, test data
+    ## getting data from mzML files
     spec_df, anno_df, tolerance, massoffset, chargemass = getMassTable(selected_anno_file, selected_deconv_file)
-    st.dataframe(spec_df)
 
     with spectra_container:
         # drawing 3D spectra viewer (1st column, top)
-        st.subheader('Signal View')
-        signal_plot_container = st.empty() # initialzie space for drawing 3d plot
+        st.subheader('Spectrum View')
+        signal_plot_container = st.empty() # initialize space for drawing 3d plot
 
         # drawing spectra table (1st column, bottom)
-        st.subheader('Spectrum Table')
-        df_for_table = spec_df[['Scan', 'MSLevel', 'RT']]
-        df_for_table['#Masses'] = [len(ele) for ele in spec_df['MinCharges']]
-        df_for_table.reset_index(inplace=True)
-        st.session_state["index_for_signal_view"] = drawSpectraTable(df_for_table)
+        # st.subheader('Spectrum Table')
+        df_for_spectra_table = spec_df[['Scan', 'MSLevel', 'RT']]
+        df_for_spectra_table['#Masses'] = [len(ele) for ele in spec_df['MinCharges']]
+        df_for_spectra_table.reset_index(inplace=True)
+        st.session_state["index_for_selected_spectrum"] = drawSpectraTable(df_for_spectra_table)
 
         with signal_plot_container.container():
-            response = st.session_state["index_for_signal_view"]
+            response = st.session_state["index_for_selected_spectrum"]
             if response["selected_rows"]:
                 selected_index = response["selected_rows"][0]["index"]
                 plot3DSignalView(spec_df.loc[selected_index])
+
+    with mass_container:
+        st.subheader('Deconvoluted Masses')
+        st.dataframe(anno_df) # for debugging
+
+        df_for_mass_table = pd.DataFrame()
+        st.session_state["index_for_selected_mass"] = drawSpectraTable(df_for_mass_table)
 
 if __name__ == "__main__":
     # try:

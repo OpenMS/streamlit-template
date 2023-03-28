@@ -131,7 +131,7 @@ def plot_bpc(df):
 
 
 @st.cache_resource
-def plot_ms_spectrum(spec, title, color):
+def plotMassSpectrum(spec, title, color):
     """
     Takes a pandas Series (spec) and generates a needle plot with m/z and intensity dimension.
     """
