@@ -35,7 +35,7 @@ def content():
     with spectra_container:
         # drawing 3D spectra viewer (1st column, top)
         st.subheader('Spectrum View')
-        signal_plot_container = st.empty() # initialize space for drawing 3d plot
+        signal_plot_container = st.empty() # initialize space for drawing spectrum plot
 
         # drawing spectra table (1st column, bottom)
         # st.subheader('Spectrum Table')
@@ -44,30 +44,31 @@ def content():
         df_for_spectra_table.reset_index(inplace=True)
         st.session_state["index_for_selected_spectrum"] = drawSpectraTable(df_for_spectra_table)
 
+        # listening selecting row from the spectra table
         with signal_plot_container.container():
             response = st.session_state["index_for_selected_spectrum"]
             if response["selected_rows"]:
                 selected_index = response["selected_rows"][0]["index"]
-                plotDeconvolutedMS(anno_df.loc[selected_index])
+                plotAnnotatedMS(anno_df.loc[selected_index])
+                plotDeconvolvedMS(spec_df.loc[selected_index])
 
     with mass_container:
         st.subheader('Deconvoluted Masses')
-        st.dataframe(anno_df) # for debugging
-   
+
         response = st.session_state["index_for_selected_spectrum"]
         if response["selected_rows"]:
             selected_index = response["selected_rows"][0]["index"]
-            tabledf = spec_df.loc[selected_index]
-            dft = pd.DataFrame()
-            
-            dft['Mono mass'] = tabledf['mzarray']
-            dft['Sum intensity'] = tabledf['intarray']
-            dft['Min z'] = tabledf['MinCharges']
-            dft['Max z'] = tabledf['MaxCharges']
-            dft['Min isotope'] = tabledf['MinIsotopes']
-            dft['Max isotope'] = tabledf['MaxIsotopes']
-            
-            st.session_state["index_for_selected_mass"] = drawSpectraTable(dft)
+            selected_spectrum = spec_df.loc[selected_index]
+            # dft = pd.DataFrame()
+            mass_df = pd.DataFrame({'Mono mass': selected_spectrum['mzarray'],
+                                    'Sum intensity': selected_spectrum['intarray'],
+                                    'Min charge': selected_spectrum['MinCharges'],
+                                    'Max charge': selected_spectrum['MaxCharges'],
+                                    'Min isotope': selected_spectrum['MinIsotopes'],
+                                    'Max isotope': selected_spectrum['MaxIsotopes'],
+                                    })
+            st.write("Spectrum index: %d"%selected_index)
+            st.session_state["index_for_selected_mass"] = drawSpectraTable(mass_df)
 
 if __name__ == "__main__":
     # try:

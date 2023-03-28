@@ -131,9 +131,42 @@ def plot_bpc(df):
 
 
 @st.cache_resource
-def plotDeconvolutedMS(spec):
+def plotDeconvolvedMS(spec):
     """
-    Takes a pandas Series (spec) and generates a needle plot with m/z and intensity dimension.
+    Takes a pandas Series (spec) and generates a needle plot with mass and intensity dimension.
+    """
+
+    def create_spectra(x, y):
+        x = np.repeat(x, 3)
+        y = np.repeat(y, 3)
+        # to draw vertical lines
+        y[::3] = 0
+        y[2::3] = np.nan
+        return pd.DataFrame({"Mass": x, "Intensity": y})
+
+    df = create_spectra(spec["mzarray"], spec["intarray"])
+    fig = px.line(df, x="Mass", y="Intensity",
+                  height=300)
+    # fig.update_traces(line_color=color)
+    fig.update_layout(
+        showlegend=False,
+        xaxis_title="Monoisotopic Mass",
+        yaxis_title="Intensity",
+        title={
+            'text': "Deconvolved Spectrum",
+            'x' : 0.5,
+            'xanchor': 'center',
+            'yanchor': 'top'}
+    )
+    fig.update_yaxes(fixedrange=True)
+    fig.update_traces(connectgaps=False)
+    st.plotly_chart(fig, use_container_width=True)
+    return
+
+@st.cache_resource
+def plotAnnotatedMS(spec):
+    """
+    Takes a pandas Series (spec) and generates a needle plot with mass and intensity dimension.
     """
 
     def create_spectra(x, y, zero=0):
@@ -143,14 +176,18 @@ def plotDeconvolutedMS(spec):
         return pd.DataFrame({"Mass": x, "Intensity": y})
 
     df = create_spectra(spec["mzarray"], spec["intarray"])
-    fig = px.line(df, x="Mass", y="Intensity")
+    fig = px.line(df, x="Mass", y="Intensity",
+                  height=300)
     # fig.update_traces(line_color=color)
     fig.update_layout(
         showlegend=False,
-        title_text='Retention time: %f'%spec["RT"],
         xaxis_title="Monoisotopic Mass",
         yaxis_title="Intensity",
-        # plot_bgcolor="rgb(255,255,255)",
+        title={
+            'text': "Annotated spectrum",
+            'x': 0.5,
+            'xanchor': 'center',
+            'yanchor': 'top'}
     )
     fig.update_yaxes(fixedrange=True)
     st.plotly_chart(fig, use_container_width=True)
