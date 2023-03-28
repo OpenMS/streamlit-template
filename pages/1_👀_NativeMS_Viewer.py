@@ -48,7 +48,7 @@ def content():
             response = st.session_state["index_for_selected_spectrum"]
             if response["selected_rows"]:
                 selected_index = response["selected_rows"][0]["index"]
-                plot3DSignalView(spec_df.loc[selected_index])
+                plotDeconvolutedMS(anno_df.loc[selected_index])
 
     with mass_container:
         st.subheader('Deconvoluted Masses')

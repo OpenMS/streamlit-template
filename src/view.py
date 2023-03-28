@@ -131,7 +131,7 @@ def plot_bpc(df):
 
 
 @st.cache_resource
-def plotMassSpectrum(spec, title, color):
+def plotDeconvolutedMS(spec):
     """
     Takes a pandas Series (spec) and generates a needle plot with m/z and intensity dimension.
     """
@@ -140,19 +140,18 @@ def plotMassSpectrum(spec, title, color):
         x = np.repeat(x, 3)
         y = np.repeat(y, 3)
         y[::3] = y[2::3] = zero
-        return pd.DataFrame({"mz": x, "intensity": y})
+        return pd.DataFrame({"Mass": x, "Intensity": y})
 
     df = create_spectra(spec["mzarray"], spec["intarray"])
-    fig = px.line(df, x="mz", y="intensity")
-    fig.update_traces(line_color=color)
+    fig = px.line(df, x="Mass", y="Intensity")
+    # fig.update_traces(line_color=color)
     fig.update_layout(
         showlegend=False,
-        title_text=title,
-        xaxis_title="m/z",
-        yaxis_title="intensity",
-        plot_bgcolor="rgb(255,255,255)",
+        title_text='Retention time: %f'%spec["RT"],
+        xaxis_title="Monoisotopic Mass",
+        yaxis_title="Intensity",
+        # plot_bgcolor="rgb(255,255,255)",
     )
-    fig.layout.template = "plotly_white"
     fig.update_yaxes(fixedrange=True)
     st.plotly_chart(fig, use_container_width=True)
     return
