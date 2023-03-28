@@ -158,10 +158,6 @@ def plot_ms_spectrum(spec, title, color):
     return
 
 @st.cache_resource
-<<<<<<< HEAD
-def plot_3D_signal_view(table, tol, massoffset, chargemass): #return df, tolerance,  massoffset, chargemass
-    
-=======
 def plot3DSignalView(spec):
     """
     Takes a pandas series (spec) and generates a needle 3D plot
@@ -201,7 +197,6 @@ def plot3DSignalView(spec):
     )
     # fig.update_yaxes(fixedrange=True)
     st.plotly_chart(fig, use_container_width=True)
->>>>>>> refs/remotes/origin/main
 
     return
 
