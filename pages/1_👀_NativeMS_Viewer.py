@@ -54,6 +54,7 @@ def content():
 
     with mass_container:
         st.subheader('Deconvoluted Masses')
+       
 
         response = st.session_state["index_for_selected_spectrum"]
         if response["selected_rows"]:
@@ -67,9 +68,53 @@ def content():
                                     'Min isotope': selected_spectrum['MinIsotopes'],
                                     'Max isotope': selected_spectrum['MaxIsotopes'],
                                     })
+
+            mass_df.reset_index(inplace=True)
+        
+            mass_signal_df = pd.DataFrame({'Mono mass': selected_spectrum['mzarray'],
+                                    'Signal peaks': selected_spectrum['SignalPeaks'],
+                                    'Noisy peaks': selected_spectrum['NoisyPeaks'],
+                                    })
             st.write("Spectrum index: %d"%selected_index)
             st.session_state["index_for_selected_mass"] = drawSpectraTable(mass_df)
+            
+            signal_3dplot_container = st.empty() # initialize space for drawing spectrum plot
+            with signal_3dplot_container.container():
+                response = st.session_state["index_for_selected_mass"]
+                if response["selected_rows"]:
+                    selected_mass_index = response["selected_rows"][0]["index"]
+                    selected_mass = mass_signal_df.loc[selected_mass_index]
+                    xs = []
+                    ys = []
+                    zs = []
+                    for sm in selected_mass['Signal peaks']:
+                        xs.append(sm[1] * sm[-1])        
+                        ys.append(sm[-1])
+                        zs.append(sm[2])
 
+
+                    signal_3d_df = pd.DataFrame({'mass': xs,
+                                    'charge':ys,
+                                    'intensity':zs
+                                    })
+                    
+                    xs = []
+                    ys = []
+                    zs = []
+
+                    for sm in selected_mass['Noisy peaks']:
+                        xs.append(sm[1] * sm[-1])        
+                        ys.append(sm[-1])
+                        zs.append(sm[2])
+
+
+                    noisy_3d_df = pd.DataFrame({'mass': xs,
+                                    'charge':ys,
+                                    'intensity':zs
+                                    })
+                    plot3DSignalView(signal_3d_df, noisy_3d_df)
+                    #st.write(signal_3d_df)
+                    #st.write(noisy_3d_df)
 if __name__ == "__main__":
     # try:
     content()

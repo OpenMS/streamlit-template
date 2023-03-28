@@ -194,40 +194,52 @@ def plotAnnotatedMS(spec):
     return
 
 @st.cache_resource
-def plot3DSignalView(spec):
+def plot3DSignalView(signal_3d_df, noisy_3d_df):
     """
     Takes a pandas series (spec) and generates a needle 3D plot
-    with m/z, retention time, intensity dimension
+    with mass, charge, intensity dimension
     """
 
     def create_spectra(x, y, z, zero=0):
-        x = np.repeat(x, 3) # mz
-        y = np.repeat(y, 3) # rt
+        x = np.repeat(x, 3) # mass
+        y = np.repeat(y, 3) # charge
         z = np.repeat(z, 3) # intensity
         # to draw vertical lines
         z[::3] = 0
         z[2::3] = np.nan
-        return pd.DataFrame({"mz": x, "rt":y, "intensity": z})
+        return pd.DataFrame({"mass": x, "charge":y, "intensity": z})
+    #drawing dropline from scatter plot marker (vertical lines)
 
-    # for testing, generate rts
-    rts = np.repeat(spec["RT"], len(spec["mzarray"]))
-
-    # drawing dropline from scatter plot marker (vertical lines)
-    df = create_spectra(spec["mzarray"], rts, spec["intarray"])
-    fig = px.line_3d(df, x="mz", y="rt", z="intensity")
+    dfs = create_spectra(signal_3d_df["mass"], signal_3d_df["charge"], signal_3d_df["intensity"])
+    dfs['color'] = 's'
+    dfn = create_spectra(noisy_3d_df["mass"], noisy_3d_df["charge"], noisy_3d_df["intensity"])
+    dfn['color'] = 'n'
+    frames = [dfs, dfn]
+    df = pd.concat(frames)
+    fig = px.line_3d(df, x="mass", y="charge", z="intensity", color='color', color_discrete_sequence=px.colors.qualitative.G10)
+    #fig.update_traces(connectgaps=False)
     fig.update_traces(connectgaps=False)
 
+  
+    px.colors.qualitative.G10[0]
     # drawing scatte plot for markers on the tip of vertical lines
-    fig.add_trace(go.Scatter3d(x=spec["mzarray"],
-                               y=rts,
-                               z=spec["intarray"],
+    fig.add_trace(go.Scatter3d(x=signal_3d_df["mass"],
+                               y=signal_3d_df["charge"],
+                               z=signal_3d_df["intensity"],
+                               marker=dict(size=2, color = px.colors.qualitative.G10[0], opacity=0.5),
                                mode="markers"))
 
+    fig.add_trace(go.Scatter3d(x=noisy_3d_df["mass"],
+                               y=noisy_3d_df["charge"],
+                               z=noisy_3d_df["intensity"],
+                               marker=dict(size=2, color = px.colors.qualitative.G10[1], opacity=0.5, symbol = 'x'),
+                               mode="markers"))
+    fig.update_traces(opacity=0.5)
     fig.update_layout(
         showlegend=False,
         scene=dict(
             xaxis_title='Mass',
-            yaxis_title='Retention time',
+            yaxis_title='Charge',
             zaxis_title='Intensity'),
         plot_bgcolor="rgb(255,255,255)",
     )

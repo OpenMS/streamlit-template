@@ -16,7 +16,6 @@ def getMassTable(annotated, deconvolved):
     MzMLFile().load(str(Path(st.session_state["deconv-mzMLs"], deconvolved)), deconvolved_exp)
     #MzMLFile().load(annotated, annotated_exp)
     #MzMLFile().load(deconvolved, deconvolved_exp)
-
     tolerance = .0
     massoffset = .0
     chargemass = .0
@@ -36,7 +35,9 @@ def getMassTable(annotated, deconvolved):
 
     for sindex, spec in enumerate(deconvolved_exp):
         aspec = annotated_exp[sindex]
-
+        spec.sortByPosition()
+        aspec.sortByPosition()
+        
         mstr = spec.getMetaValue('DeconvMassInfo')
         #tol=10;massoffset=0.000000;chargemass=1.007276;peaks=1:1,0:1;1:1,0:1;1:1,0:1;1:1,0:1;2:2,0:3;2:2,1:5;
         # Split the string into key-value pairs
@@ -83,8 +84,8 @@ def getMassTable(annotated, deconvolved):
 
             masspeaks = []
             for z in range(minCharge[-1], maxCharge[-1] + 1):
-                minmz = (mass - 5.0)/z + minIso[-1] * Constants.C13C12_MASSDIFF_U
-                maxmz = (mass + 5.0)/z  + maxIso[-1] * Constants.C13C12_MASSDIFF_U
+                minmz = (mass - 10.0)/z
+                maxmz = (mass + 10.0 + maxIso[-1] * Constants.C13C12_MASSDIFF_U)/z
                 minIndex = aspec.findNearest(minmz)
                 for i in range(minIndex, aspec.size()):
                     if aspec[i].getMZ() > maxmz:
@@ -128,17 +129,26 @@ def getMassTable(annotated, deconvolved):
         for index, parsed_peak in enumerate(parsed_peaks): # for each mass
             massPeaks = specPeaks[index]
             sigindices = parsed_peak[1] # intersect this with massPeaks[0]s
-            s1 = 0
+            sigindicesset = set(sigindices)
             npeaks=[]
             speaks=[]
             for massPeak in massPeaks:
                 pindex = massPeak[0]
-                if s1 >= len(sigindices) or pindex != sigindices[s1]:
+                if pindex in sigindicesset:
+                    massPeak.append(round(parsed_peak[0]/massPeak[1]))    
+                    speaks.append(massPeak)                    
+                else:
+                    massPeak.append(round(parsed_peak[0]/massPeak[1]))
                     npeaks.append(massPeak)
-                else:    
-                    speaks.append(massPeak)
-                    s1 = s1 + 1
-
+                    
+            
+            if len(sigindices) != len(speaks):
+                print("*")
+                print(sigindices)
+                for si in sigindices:
+                    print(si, spec[si].getMZ())
+                print(speaks)
+                print(npeaks)
             specspeaks.append(speaks)
             specnpeaks.append(npeaks)
         signalPeaks.append(specspeaks)
