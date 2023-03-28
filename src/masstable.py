@@ -5,9 +5,9 @@ from pathlib import Path
 import plotly.graph_objects as go
 import plotly.express as px
 from pyopenms import *
-
 from pyopenms import MSExperiment, MzMLFile
-       
+from pyopenms import Constants
+   
 #@st.cache_data
 def get_mass_table(annotated, deconvolved):
     annotated_exp = MSExperiment()
@@ -22,8 +22,10 @@ def get_mass_table(annotated, deconvolved):
     chargemass = .0
 
     df = deconvolved_exp.get_df()
-    
-    peakIndices = []
+    annotateddf = annotated_exp.get_df()
+    allPeaks = []
+    signalPeaks = []
+    noisyPeaks = []
     minCharges=[]
     maxCharges=[]
     minIsotopes=[]
@@ -32,7 +34,9 @@ def get_mass_table(annotated, deconvolved):
     precursorMasses=[]
     scans=[]
 
-    for spec in deconvolved_exp:
+    for sindex, spec in enumerate(deconvolved_exp):
+        aspec = annotated_exp[sindex]
+
         mstr = spec.getMetaValue('DeconvMassInfo')
         #tol=10;massoffset=0.000000;chargemass=1.007276;peaks=1:1,0:1;1:1,0:1;1:1,0:1;1:1,0:1;2:2,0:3;2:2,1:5;
         # Split the string into key-value pairs
@@ -43,6 +47,8 @@ def get_mass_table(annotated, deconvolved):
 
         # Parse the key-value pairs and store them in the dictionary
         for pair in input_pairs:
+            if len(pair) == 0:
+                continue
             if '=' in pair:
                 key, value = pair.split('=')
                 if key == 'peaks':
@@ -54,7 +60,7 @@ def get_mass_table(annotated, deconvolved):
                     parsed_dict[key] = float(value)
             else:
                 peaks_values = []                    
-                peak_values = value.split(',')
+                peak_values = pair.split(',')
                 parsed_dict['peaks'].append([tuple(map(int, p.split(':'))) for p in peak_values])
             
         tolerance = parsed_dict['tol']
@@ -67,12 +73,26 @@ def get_mass_table(annotated, deconvolved):
         minIso=[]
         maxIso=[]
 
-        for peakinfo in peaks:
+        allSpecPeaks = []
+        for index, peakinfo in enumerate(peaks):
             minCharge.append(peakinfo[0][0])
             maxCharge.append(peakinfo[0][1])
             minIso.append(peakinfo[1][0])
             maxIso.append(peakinfo[1][1])
+            mass = spec[index].getMZ()
 
+            masspeaks = []
+            for z in range(minCharge[-1], maxCharge[-1] + 1):
+                minmz = (mass - 5.0)/z + minIso[-1] * Constants.C13C12_MASSDIFF_U
+                maxmz = (mass + 5.0)/z  + maxIso[-1] * Constants.C13C12_MASSDIFF_U
+                minIndex = aspec.findNearest(minmz)
+                for i in range(minIndex, aspec.size()):
+                    if aspec[i].getMZ() > maxmz:
+                        break
+                    masspeaks.append([i, aspec[i].getMZ(), aspec[i].getIntensity()])
+            allSpecPeaks.append(masspeaks)
+        
+        allPeaks.append(allSpecPeaks)
         minCharges.append(minCharge)
         maxCharges.append(maxCharge)
         minIsotopes.append(minIso)
@@ -83,7 +103,7 @@ def get_mass_table(annotated, deconvolved):
     df['MinIsotopes'] = minIsotopes
     df['MaxIsotopes'] = maxIsotopes
 
-    for spec in annotated_exp:
+    for sindex, spec in enumerate(annotated_exp):
         mstr = spec.getMetaValue('DeconvMassPeakIndices')
         # Split the string into peak items
         peak_items = mstr.split(';')
@@ -92,35 +112,51 @@ def get_mass_table(annotated, deconvolved):
         scans.append(scan_number)
         # Create a list to store the parsed peaks
         parsed_peaks = []
-
+        
         # Parse the peak items and store them in the list
         for item in peak_items:
             if len(item) == 0:
                 continue
             peak_values = item.split(':')
             peak_mass = float(peak_values[0])
-            peak_ions = list(map(int, peak_values[1].split(',')))
-            parsed_peaks.append((peak_mass, peak_ions))
+            peak_infos = list(map(int, peak_values[1].split(',')))
+            parsed_peaks.append([peak_mass, peak_infos])
             
-        #[(1679.850836, [682, 696, 697]), ...
+        specPeaks = allPeaks[sindex]        
+        specnpeaks=[]
+        specspeaks=[]
+        for index, parsed_peak in enumerate(parsed_peaks): # for each mass
+            massPeaks = specPeaks[index]
+            sigindices = parsed_peak[1] # intersect this with massPeaks[0]s
+            s1 = 0
+            npeaks=[]
+            speaks=[]
+            for massPeak in massPeaks:
+                pindex = massPeak[0]
+                if s1 >= len(sigindices) or pindex != sigindices[s1]:
+                    npeaks.append(massPeak)
+                else:    
+                    speaks.append(massPeak)
+                    s1 = s1 + 1
 
-        indices = []
-        for peakInfo in parsed_peaks:
-            indices.append(peakInfo[1])
+            specspeaks.append(speaks)
+            specnpeaks.append(npeaks)
+        signalPeaks.append(specspeaks)
+        noisyPeaks.append(specnpeaks)
         msLevels.append(spec.getMSLevel())
-        peakIndices.append(indices)
-    
-    df['PeakIndex'] = peakIndices
+
+    df['SignalPeaks'] = signalPeaks
+    df['NoisyPeaks'] = noisyPeaks
     df['MSLevel'] = msLevels
     df['Scan'] = scans
-    return df, tolerance,  massoffset, chargemass
+    return df, annotateddf, tolerance,  massoffset, chargemass
     
 def main():
     annotated = '/Users/kyowonjeong/FLASHDeconvOut/OT_Myoglobin_MS2_HCD_annotated.mzML'
     deconvolved = '/Users/kyowonjeong/FLASHDeconvOut/OT_Myoglobin_MS2_HCD_deconv.mzML'
     tmp = get_mass_table(annotated, deconvolved)
-    print(tmp)
-
+    print(tmp[0]['SignalPeaks'])
+    print(tmp[0]['NoisyPeaks'])
 if __name__ == "__main__":
     main()
 

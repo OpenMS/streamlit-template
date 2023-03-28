@@ -196,5 +196,7 @@ def plot_ms_spectrum(spec, title, color):
     return
 
 @st.cache_resource
-def plot_3D_signal_view(spec, title):
+def plot_3D_signal_view(table, tol, massoffset, chargemass): #return df, tolerance,  massoffset, chargemass
+    
+
     return
