@@ -53,9 +53,21 @@ def content():
     with mass_container:
         st.subheader('Deconvoluted Masses')
         st.dataframe(anno_df) # for debugging
-
-        df_for_mass_table = pd.DataFrame()
-        st.session_state["index_for_selected_mass"] = drawSpectraTable(df_for_mass_table)
+   
+        response = st.session_state["index_for_selected_spectrum"]
+        if response["selected_rows"]:
+            selected_index = response["selected_rows"][0]["index"]
+            tabledf = spec_df.loc[selected_index]
+            dft = pd.DataFrame()
+            
+            dft['Mono mass'] = tabledf['mzarray']
+            dft['Sum intensity'] = tabledf['intarray']
+            dft['Min z'] = tabledf['MinCharges']
+            dft['Max z'] = tabledf['MaxCharges']
+            dft['Min isotope'] = tabledf['MinIsotopes']
+            dft['Max isotope'] = tabledf['MaxIsotopes']
+            
+            st.session_state["index_for_selected_mass"] = drawSpectraTable(dft)
 
 if __name__ == "__main__":
     # try:

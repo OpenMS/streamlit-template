@@ -152,10 +152,11 @@ def getMassTable(annotated, deconvolved):
     return df, annotateddf, tolerance,  massoffset, chargemass
     
 # def main():
-#     annotated = '/Users/kyowonjeong/FLASHDeconvOut/OT_Myoglobin_MS2_HCD_annotated.mzML'
-#     deconvolved = '/Users/kyowonjeong/FLASHDeconvOut/OT_Myoglobin_MS2_HCD_deconv.mzML'
-#     tmp = get_mass_table(annotated, deconvolved)
-#     print(tmp)
+#     annotated = '/Users/kyowonjeong/FLASHDeconvOut/new/OT_Myoglobin_MS2_HCD_annotated.mzML'
+#     deconvolved = '/Users/kyowonjeong/FLASHDeconvOut/new/OT_Myoglobin_MS2_HCD_deconv.mzML'
+#     tmp = getMassTable(annotated, deconvolved)
+#     for col in tmp[0].columns:
+#         print(col)
 
 # if __name__ == "__main__":
 #     main()
