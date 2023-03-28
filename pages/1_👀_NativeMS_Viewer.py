@@ -53,7 +53,7 @@ def content():
                 # st.dataframe(response["selected_rows"])
                 selected_index = response["selected_rows"][0]["index"]
                 # st.write(selected_index["index"])
-                plot_3D_signal_view(spec_df.loc[selected_index])
+                plot3DSignalView(spec_df.loc[selected_index])
 
     # if not df_MS1.empty:
     #     st.markdown("### Peak Map and MS2 spectra")

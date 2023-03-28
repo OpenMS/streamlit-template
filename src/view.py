@@ -10,46 +10,6 @@ from st_aggrid.shared import GridUpdateMode
 from pyopenms import MSExperiment, MzMLFile
 
 
-@st.cache_data
-def getAnnotatedData(file):
-    exp = MSExperiment()
-    MzMLFile().load(str(Path(st.session_state["anno-mzMLs"], file)), exp)
-    df = exp.get_df()
-    df.insert(0, "mslevel", [spec.getMSLevel() for spec in exp])
-    # df.insert(
-    #     0,
-    #     "precursormz",
-    #     [
-    #         spec.getPrecursors()[0].getMZ() if spec.getPrecursors() else 0
-    #         for spec in exp
-    #     ],
-    # )
-    if not df.empty:
-        return df
-    else:
-        return pd.DataFrame()
-
-
-@st.cache_data
-def getDeconvMSData(file):
-    exp = MSExperiment()
-    MzMLFile().load(str(Path(st.session_state["deconv-mzML-files"], file)), exp)
-    df = exp.get_df()
-
-    df.insert(0, "mslevel", [spec.getMSLevel() for spec in exp])
-    df.insert(
-        0,
-        "precursormz",
-        [
-            spec.getPrecursors()[0].getMZ() if spec.getPrecursors() else 0
-            for spec in exp
-        ],
-    )
-    if not df.empty:
-        return df
-    else:
-        return pd.DataFrame()
-
 @st.cache_resource
 def plot_2D_map(df_ms1, df_ms2, cutoff):
     fig = go.Figure()
@@ -198,11 +158,53 @@ def plot_ms_spectrum(spec, title, color):
     return
 
 @st.cache_resource
-def plot_3D_signal_view(spec):
-    st.dataframe(spec)
+def plot3DSignalView(spec):
+    """
+    Takes a pandas series (spec) and generates a needle 3D plot
+    with m/z, retention time, intensity dimension
+    """
+
+    def create_spectra(x, y, z, zero=0):
+        x = np.repeat(x, 3) # mz
+        y = np.repeat(y, 3) # rt
+        z = np.repeat(z, 3) # intensity
+        # to draw vertical lines
+        z[::3] = 0
+        z[2::3] = np.nan
+        return pd.DataFrame({"mz": x, "rt":y, "intensity": z})
+
+    # for testing, generate rts
+    rts = np.repeat(spec["RT"], len(spec["mzarray"]))
+
+    # drawing dropline from scatter plot marker (vertical lines)
+    df = create_spectra(spec["mzarray"], rts, spec["intarray"])
+    fig = px.line_3d(df, x="mz", y="rt", z="intensity")
+    fig.update_traces(connectgaps=False)
+
+    # drawing scatte plot for markers on the tip of vertical lines
+    fig.add_trace(go.Scatter3d(x=spec["mzarray"],
+                               y=rts,
+                               z=spec["intarray"],
+                               mode="markers"))
+
+    fig.update_layout(
+        showlegend=False,
+        scene=dict(
+            xaxis_title='m/z',
+            yaxis_title='Retention time',
+            zaxis_title='Intensity'),
+        plot_bgcolor="rgb(255,255,255)",
+    )
+    # fig.update_yaxes(fixedrange=True)
+    st.plotly_chart(fig, use_container_width=True)
+
     return
 
 def drawSpectraTable(in_df: pd.DataFrame):
+    """
+    Takes a pandas dataframe and generates interactive table (listening to row selection)
+    """
+
     options = GridOptionsBuilder.from_dataframe(
         in_df, enableRowGroup=True, enableValue=True, enablePivot=True
     )
