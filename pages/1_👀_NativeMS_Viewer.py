@@ -41,7 +41,7 @@ def content():
 
         # drawing spectra table (1st column, bottom)
         st.subheader('Spectrum Table')
-        df_for_table = spec_df[['MSLevel', 'RT']]
+        df_for_table = spec_df[['Scan', 'MSLevel', 'RT']]
         df_for_table['#Masses'] = [len(ele) for ele in spec_df['MinCharges']]
         df_for_table.reset_index(inplace=True)
         # spectra_container.dataframe(df_for_table, use_container_width=True)
@@ -50,7 +50,10 @@ def content():
         with signal_plot_container.container():
             response = st.session_state["index_for_signal_view"]
             if response["selected_rows"]:
-                st.dataframe(response["selected_rows"])
+                # st.dataframe(response["selected_rows"])
+                selected_index = response["selected_rows"][0]["index"]
+                # st.write(selected_index["index"])
+                plot_3D_signal_view(spec_df.loc[selected_index])
 
     # if not df_MS1.empty:
     #     st.markdown("### Peak Map and MS2 spectra")

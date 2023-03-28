@@ -198,10 +198,10 @@ def plot_ms_spectrum(spec, title, color):
     return
 
 @st.cache_resource
-def plot_3D_signal_view(spec, title):
+def plot_3D_signal_view(spec):
+    st.dataframe(spec)
     return
 
-# @st.cache_data
 def drawSpectraTable(in_df: pd.DataFrame):
     options = GridOptionsBuilder.from_dataframe(
         in_df, enableRowGroup=True, enableValue=True, enablePivot=True
@@ -216,6 +216,6 @@ def drawSpectraTable(in_df: pd.DataFrame):
         gridOptions=options.build(),
         update_mode=GridUpdateMode.MODEL_CHANGED,
         # allow_unsafe_jscode=True,
-        columns_auto_size_mode=ColumnsAutoSizeMode.FIT_CONTENTS
+        columns_auto_size_mode=ColumnsAutoSizeMode.FIT_ALL_COLUMNS_TO_VIEW
     )
     return selection
