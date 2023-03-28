@@ -190,7 +190,7 @@ def plot3DSignalView(spec):
     fig.update_layout(
         showlegend=False,
         scene=dict(
-            xaxis_title='m/z',
+            xaxis_title='Mass',
             yaxis_title='Retention time',
             zaxis_title='Intensity'),
         plot_bgcolor="rgb(255,255,255)",
