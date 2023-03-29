@@ -185,6 +185,7 @@ def plot3DSignalView(signal_3d_df, noisy_3d_df):
                                mode="markers"))
     fig.update_traces(opacity=0.5)
     fig.update_layout(
+        height=800,
         showlegend=False,
         scene=dict(
             xaxis_title='Mass',
@@ -193,9 +194,7 @@ def plot3DSignalView(signal_3d_df, noisy_3d_df):
         plot_bgcolor="rgb(255,255,255)",
     )
     # fig.update_yaxes(fixedrange=True)
-    st.plotly_chart(fig, use_container_width=True)
-
-    return
+    return fig
 
 def drawSpectraTable(in_df: pd.DataFrame, table_height=400):
     """
@@ -220,5 +219,28 @@ def drawSpectraTable(in_df: pd.DataFrame, table_height=400):
     return selection
 
 @st.cache_resource
-def plotHeatMap():
-    st.write('Place for heatmap')
+def plotMS1HeatMap(df, plot_title, legends_colname=[]):
+    fig = go.Figure()
+
+    fig.add_trace(
+        go.Scattergl(
+            name="raw peaks",
+            x=df['rt'],
+            y=df['mass'],
+            mode='markers',
+            marker_color=df['intensity']
+        )
+    )
+    fig.update_traces(marker_colorscale="viridis",
+                      hovertext=df['intensity'].round(),
+                      selector=dict(type="scattergl"))
+
+    show_legend = True if legends_colname else False
+    fig.update_layout(
+        title=plot_title,
+        showlegend=show_legend,
+        xaxis_title='Retention Time',
+        yaxis_title='Monoisotopic Mass',
+        coloraxis_colorbar_title_text='Intensity'
+    )
+    return fig

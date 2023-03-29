@@ -13,7 +13,7 @@ def parseFLASHDeconvOutput(annotated, deconvolved):
     annotated_exp = MSExperiment()
     deconvolved_exp = MSExperiment()
     MzMLFile().load(str(Path(st.session_state["anno-mzMLs"], annotated)), annotated_exp)
-    MzMLFile().load(str(Path(st.session_state["deconv-mzMLs"], deconvolved)), deconvolved_exp)
+    MzMLFile().load(str(deconvolved), deconvolved_exp)
     #MzMLFile().load(annotated, annotated_exp)
     #MzMLFile().load(deconvolved, deconvolved_exp)
     tolerance = .0
@@ -188,6 +188,19 @@ def getMassSignalDF(spec: pd.Series):
                                    })
     return mass_signal_df
 
-    
+@st.cache_data
+def getMSSignalDF(anno_df: pd.DataFrame):
+    ints = np.concatenate([anno_df.loc[index, "intarray"] for index in anno_df.index])
+    mzs = np.concatenate([anno_df.loc[index, "mzarray"] for index in anno_df.index])
+    rts = np.concatenate(
+        [
+            np.full(len(anno_df.loc[index, "mzarray"]), anno_df.loc[index, "RT"])
+            for index in anno_df.index
+        ]
+    )
 
-
+    ms_df = pd.DataFrame({'mass': mzs, 'rt': rts, 'intensity': ints})
+    ms_df.dropna(subset=['intensity'], inplace=True) # remove Nan
+    ms_df = ms_df[ms_df['intensity']>0]
+    ms_df.sort_values(by='intensity', inplace=True)
+    return ms_df

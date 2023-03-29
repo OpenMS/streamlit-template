@@ -16,7 +16,7 @@ def getUploadedFileDF(tsv_files, anno_files):
     # group tsv files per experiment name
     tsv_file_groups = []
     for exp_name in experiment_names:
-        tsv_f = [f for f in tsv_files if exp_name in f]
+        tsv_f = sorted([f for f in tsv_files if exp_name in f])
         tsv_file_groups.append(tsv_f)
 
     df = pd.DataFrame({'Experiment Name': experiment_names,
@@ -91,9 +91,11 @@ def content():
     # Upload files via upload widget
     st.subheader("**Upload deconvolved files**")
 
-    for form_name, title_on_button, session_name in zip(["tsv-form", "anno-form"],
-                                                        ["MSn tsv", "annotated mzML"],
-                                                        ["tsv-files", "anno-mzMLs"]):
+    for form_name, title_on_button, \
+        session_name, file_extension in zip(["tsv-form", "anno-form"],
+                                            ["MSn tsv", "annotated mzML"],
+                                            ["tsv-files", "anno-mzMLs"],
+                                            ['.tsv', '.mzML']):
         with st.form(form_name, clear_on_submit=True):
             uploaded_file = st.file_uploader(
                 "%s files"%title_on_button, accept_multiple_files=accept_multiple
@@ -110,7 +112,8 @@ def content():
                 if uploaded_file:
                     # opening file dialog and closing without choosing a file results in None upload
                     for file in uploaded_file:
-                        if file.name not in st.session_state[session_name].iterdir():
+                        if file.name not in st.session_state[session_name].iterdir() \
+                                and file.name.endswith(file_extension):
                             with open(
                                 Path(st.session_state[session_name], file.name), "wb"
                             ) as f:
