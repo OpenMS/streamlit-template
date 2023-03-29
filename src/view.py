@@ -80,56 +80,6 @@ def plot_2D_map(df_ms1, df_ms2, cutoff):
     )
     return fig
 
-
-@st.cache_resource
-def plot_bpc(df):
-    intensity = np.array([max(intensity_array) for intensity_array in df["intarray"]])
-    fig = px.line(df, x="RT", y=intensity)
-    fig.update_traces(line_color="#555FF5", line_width=3)
-    # fig.add_trace(
-    #     go.Scatter(
-    #         x=[ms1_rt],
-    #         y=[intensity[np.abs(df["RT"] - ms1_rt).argmin()]],
-    #         name="MS1 spectrum",
-    #         text="MS1",
-    #         textposition="top center",
-    #         textfont=dict(color="#EF553B", size=20),
-    #     )
-    # )
-    # fig.data[1].update(
-    #     mode="markers+text",
-    #     marker_symbol="x",
-    #     marker=dict(color="#EF553B", size=12),
-    # )
-    # if ms2_rt > 0:
-    #     fig.add_trace(
-    #         go.Scatter(
-    #             x=[ms2_rt],
-    #             y=[intensity[np.abs(df["RT"] - ms2_rt).argmin()]],
-    #             name="MS2 spectrum",
-    #             text="MS2",
-    #             textposition="top center",
-    #             textfont=dict(color="#00CC96", size=20),
-    #         )
-    #     )
-    #     fig.data[2].update(
-    #         mode="markers+text",
-    #         marker_symbol="x",
-    #         marker=dict(color="#00CC96", size=12),
-    #     )
-    fig.update_traces(showlegend=False)
-    fig.update_layout(
-        showlegend=False,
-        # title_text="base peak chromatogram (BPC)",
-        xaxis_title="retention time (s)",
-        yaxis_title="intensity (cps)",
-        plot_bgcolor="rgb(255,255,255)",
-        width=1000,
-    )
-    fig.layout.template = "plotly_white"
-    return fig
-
-
 @st.cache_resource
 def plotDeconvolvedMS(spec):
     """
@@ -214,15 +164,14 @@ def plot3DSignalView(signal_3d_df, noisy_3d_df):
     dfs['color'] = 's'
     dfn = create_spectra(noisy_3d_df["mass"], noisy_3d_df["charge"], noisy_3d_df["intensity"])
     dfn['color'] = 'n'
-    frames = [dfs, dfn]
-    df = pd.concat(frames)
-    fig = px.line_3d(df, x="mass", y="charge", z="intensity", color='color', color_discrete_sequence=px.colors.qualitative.G10)
-    #fig.update_traces(connectgaps=False)
+    df = pd.concat([dfs, dfn])
+
+    # drawing lines
+    fig = px.line_3d(df, x="mass", y="charge", z="intensity", color='color',
+                     color_discrete_sequence=px.colors.qualitative.G10,)
     fig.update_traces(connectgaps=False)
 
-  
-    px.colors.qualitative.G10[0]
-    # drawing scatte plot for markers on the tip of vertical lines
+    # drawing scatter plot for markers on the tip of vertical lines
     fig.add_trace(go.Scatter3d(x=signal_3d_df["mass"],
                                y=signal_3d_df["charge"],
                                z=signal_3d_df["intensity"],
@@ -248,7 +197,7 @@ def plot3DSignalView(signal_3d_df, noisy_3d_df):
 
     return
 
-def drawSpectraTable(in_df: pd.DataFrame):
+def drawSpectraTable(in_df: pd.DataFrame, table_height=400):
     """
     Takes a pandas dataframe and generates interactive table (listening to row selection)
     """
@@ -261,7 +210,7 @@ def drawSpectraTable(in_df: pd.DataFrame):
     options.configure_side_bar() # sidebar of table
     selection = AgGrid(
         in_df,
-        height=400,
+        height=table_height,
         enable_enterprise_modules=True,
         gridOptions=options.build(),
         update_mode=GridUpdateMode.MODEL_CHANGED,
@@ -269,3 +218,7 @@ def drawSpectraTable(in_df: pd.DataFrame):
         columns_auto_size_mode=ColumnsAutoSizeMode.FIT_ALL_COLUMNS_TO_VIEW
     )
     return selection
+
+@st.cache_resource
+def plotHeatMap():
+    st.write('Place for heatmap')

@@ -5,6 +5,23 @@ from src.common import *
 from src.masstable import *
 from streamlit_plotly_events import plotly_events
 
+@st.cache_resource
+def draw3DSignalView(df):
+    signal_df, noise_df = None, None # initialization
+    for index, peaks in enumerate([df['Signal peaks'], df['Noisy peaks']]):
+        xs, ys, zs = [], [], []
+        for sm in peaks:
+            xs.append(sm[1] * sm[-1])
+            ys.append(sm[-1])
+            zs.append(sm[2])
+
+        out_df = pd.DataFrame({'mass': xs, 'charge': ys, 'intensity': zs})
+        if index == 0:
+            signal_df = out_df
+        else:
+            noise_df = out_df
+    plot3DSignalView(signal_df, noise_df)
+
 def content():
     defaultPageSetup("NativeMS Viewer")
 
@@ -21,100 +38,54 @@ def content():
         key="selected_experiment",
     )
 
-    # two main containers
-    spectra_container, mass_container = st.columns(2)
-
     # getting data
     selected = experiment_df[experiment_df['Experiment Name'] == st.session_state.selected_experiment]
     selected_anno_file = selected['Annotated Files'][0]
     selected_deconv_file = selected['Deconvolved Files'][0]
 
-    ## getting data from mzML files
-    spec_df, anno_df, tolerance, massoffset, chargemass = getMassTable(selected_anno_file, selected_deconv_file)
+    # getting data from mzML files
+    spec_df, anno_df, tolerance, massoffset, chargemass = parseFLASHDeconvOutput(selected_anno_file, selected_deconv_file)
+    df_for_spectra_table = getSpectraTableDF(spec_df)
 
-    with spectra_container:
-        # drawing 3D spectra viewer (1st column, top)
-        st.subheader('Spectrum View')
-        signal_plot_container = st.empty() # initialize space for drawing spectrum plot
+    #### Showing spectra information ####
+    st.subheader('Select a spectrum to view')
+    spectra_view_col1, spectra_view_col2 = st.columns(2)
+    with spectra_view_col1: # drawing heatmap
+        plotHeatMap()
+    with spectra_view_col2: # drawing spectra table (1st column, bottom)
+        st.session_state["index_for_selected_spectrum"] = drawSpectraTable(df_for_spectra_table, 200)
 
-        # drawing spectra table (1st column, bottom)
-        # st.subheader('Spectrum Table')
-        df_for_spectra_table = spec_df[['Scan', 'MSLevel', 'RT']]
-        df_for_spectra_table['#Masses'] = [len(ele) for ele in spec_df['MinCharges']]
-        df_for_spectra_table.reset_index(inplace=True)
-        st.session_state["index_for_selected_spectrum"] = drawSpectraTable(df_for_spectra_table)
+    #### two main containers for plotting ####
+    spectrumView, massView = st.columns(2)
 
+    with spectrumView:
         # listening selecting row from the spectra table
-        with signal_plot_container.container():
-            response = st.session_state["index_for_selected_spectrum"]
-            if response["selected_rows"]:
-                selected_index = response["selected_rows"][0]["index"]
-                plotAnnotatedMS(anno_df.loc[selected_index])
-                plotDeconvolvedMS(spec_df.loc[selected_index])
+        response = st.session_state["index_for_selected_spectrum"]
+        if response["selected_rows"]:
+            selected_index = response["selected_rows"][0]["index"]
+            plotAnnotatedMS(anno_df.loc[selected_index])
+            plotDeconvolvedMS(spec_df.loc[selected_index])
 
-    with mass_container:
-        st.subheader('Deconvoluted Masses')
-       
-
+    with massView:
+        # listening selecting row from the spectra table
         response = st.session_state["index_for_selected_spectrum"]
         if response["selected_rows"]:
             selected_index = response["selected_rows"][0]["index"]
             selected_spectrum = spec_df.loc[selected_index]
-            # dft = pd.DataFrame()
-            mass_df = pd.DataFrame({'Mono mass': selected_spectrum['mzarray'],
-                                    'Sum intensity': selected_spectrum['intarray'],
-                                    'Min charge': selected_spectrum['MinCharges'],
-                                    'Max charge': selected_spectrum['MaxCharges'],
-                                    'Min isotope': selected_spectrum['MinIsotopes'],
-                                    'Max isotope': selected_spectrum['MaxIsotopes'],
-                                    })
+            # preparing data for plotting (cached)
+            mass_df = getMassTableDF(selected_spectrum)
+            mass_signal_df = getMassSignalDF(selected_spectrum)
 
-            mass_df.reset_index(inplace=True)
-        
-            mass_signal_df = pd.DataFrame({'Mono mass': selected_spectrum['mzarray'],
-                                    'Signal peaks': selected_spectrum['SignalPeaks'],
-                                    'Noisy peaks': selected_spectrum['NoisyPeaks'],
-                                    })
-            st.write("Spectrum index: %d"%selected_index)
+            st.write("Selected spectrum index: %d"%selected_index)
+            # drawing interactive mass table
             st.session_state["index_for_selected_mass"] = drawSpectraTable(mass_df)
-            
-            signal_3dplot_container = st.empty() # initialize space for drawing spectrum plot
-            with signal_3dplot_container.container():
-                response = st.session_state["index_for_selected_mass"]
-                if response["selected_rows"]:
-                    selected_mass_index = response["selected_rows"][0]["index"]
-                    selected_mass = mass_signal_df.loc[selected_mass_index]
-                    xs = []
-                    ys = []
-                    zs = []
-                    for sm in selected_mass['Signal peaks']:
-                        xs.append(sm[1] * sm[-1])        
-                        ys.append(sm[-1])
-                        zs.append(sm[2])
 
+            # drawing 3D signal plot of selected mass
+            response_for_mass_table = st.session_state["index_for_selected_mass"]
+            if response_for_mass_table["selected_rows"]:
+                selected_mass_index = response_for_mass_table["selected_rows"][0]["index"]
+                draw3DSignalView(mass_signal_df.loc[selected_mass_index])
 
-                    signal_3d_df = pd.DataFrame({'mass': xs,
-                                    'charge':ys,
-                                    'intensity':zs
-                                    })
-                    
-                    xs = []
-                    ys = []
-                    zs = []
-
-                    for sm in selected_mass['Noisy peaks']:
-                        xs.append(sm[1] * sm[-1])        
-                        ys.append(sm[-1])
-                        zs.append(sm[2])
-
-
-                    noisy_3d_df = pd.DataFrame({'mass': xs,
-                                    'charge':ys,
-                                    'intensity':zs
-                                    })
-                    plot3DSignalView(signal_3d_df, noisy_3d_df)
-                    #st.write(signal_3d_df)
-                    #st.write(noisy_3d_df)
 if __name__ == "__main__":
     # try:
     content()

@@ -9,7 +9,7 @@ from pyopenms import MSExperiment, MzMLFile
 from pyopenms import Constants
    
 @st.cache_data
-def getMassTable(annotated, deconvolved):
+def parseFLASHDeconvOutput(annotated, deconvolved):
     annotated_exp = MSExperiment()
     deconvolved_exp = MSExperiment()
     MzMLFile().load(str(Path(st.session_state["anno-mzMLs"], annotated)), annotated_exp)
@@ -160,16 +160,33 @@ def getMassTable(annotated, deconvolved):
     df['MSLevel'] = msLevels
     df['Scan'] = scans
     return df, annotateddf, tolerance,  massoffset, chargemass
-    
-# def main():
-#     annotated = '/Users/kyowonjeong/FLASHDeconvOut/new/OT_Myoglobin_MS2_HCD_annotated.mzML'
-#     deconvolved = '/Users/kyowonjeong/FLASHDeconvOut/new/OT_Myoglobin_MS2_HCD_deconv.mzML'
-#     tmp = getMassTable(annotated, deconvolved)
-#     for col in tmp[0].columns:
-#         print(col)
 
-# if __name__ == "__main__":
-#     main()
+@st.cache_data
+def getSpectraTableDF(deconv_df: pd.DataFrame):
+    out_df = deconv_df[['Scan', 'MSLevel', 'RT']]
+    out_df['#Masses'] = [len(ele) for ele in deconv_df['MinCharges']]
+    out_df.reset_index(inplace=True)
+    return out_df
+
+@st.cache_data
+def getMassTableDF(spec: pd.Series):
+    mass_df = pd.DataFrame({'Mono mass': spec['mzarray'],
+                            'Sum intensity': spec['intarray'],
+                            'Min charge': spec['MinCharges'],
+                            'Max charge': spec['MaxCharges'],
+                            'Min isotope': spec['MinIsotopes'],
+                            'Max isotope': spec['MaxIsotopes'],
+                            })
+    mass_df.reset_index(inplace=True)
+    return mass_df
+
+@st.cache_data
+def getMassSignalDF(spec: pd.Series):
+    mass_signal_df = pd.DataFrame({'Mono mass': spec['mzarray'],
+                                   'Signal peaks': spec['SignalPeaks'],
+                                   'Noisy peaks': spec['NoisyPeaks'],
+                                   })
+    return mass_signal_df
 
     
 
