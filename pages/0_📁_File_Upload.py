@@ -4,40 +4,48 @@ from pathlib import Path
 import os
 import shutil
 
+@st.cache_data
+def getUploadedFileDF(tsv_files, anno_files):
+    # leave only names
+    tsv_files = [f.name for f in tsv_files]
+    anno_files = [f.name for f in anno_files]
+
+    # getting experiment name from annotated file (tsv files can be multiple per experiment)
+    experiment_names = [f[0: f.rfind('_')] for f in anno_files]
+
+    # group tsv files per experiment name
+    tsv_file_groups = []
+    for exp_name in experiment_names:
+        tsv_f = [f for f in tsv_files if exp_name in f]
+        tsv_file_groups.append(tsv_f)
+
+    df = pd.DataFrame({'Experiment Name': experiment_names,
+                       'MSn tsv Files': tsv_file_groups,
+                       'Annotated Files': anno_files})
+    return df
 
 def showingUploadedFiles():
-    deconv_files = sorted(Path(st.session_state["deconv-mzMLs"]).iterdir())
+    tsv_files = sorted(Path(st.session_state["tsv-files"]).iterdir())
     anno_files = sorted(Path(st.session_state["anno-mzMLs"]).iterdir())
 
     # error message if files not exist
-    if len(deconv_files) == 0 and len(anno_files) == 0:
-        st.info('No mzML added yet!', icon="ℹ️")
-    elif len(deconv_files) == 0:
-        st.error("FLASHDeconv deconvolved mzML file is not added yet!")
+    if len(tsv_files) == 0 and len(anno_files) == 0:
+        st.info('No files added yet!', icon="ℹ️")
+    elif len(tsv_files) == 0:
+        st.error("FLASHDeconv deconvolved tsv file is not added yet!")
     elif len(anno_files) == 0:
         st.error("FLASHDeconv annotated mzML file is not added yet!")
-    elif len(deconv_files) != len(anno_files):
-        st.error("The same number of deconvolved and annotated mzML file should be uploaded!")
     else:
-        # leave only names
-        deconv_files = [f.name for f in deconv_files]
-        anno_files = [f.name for f in anno_files]
-
-        # getting experiment name from deconv file
-        experiment_names = [f[0: f.rfind('_')] for f in deconv_files]
-
-        df = pd.DataFrame({'Experiment Name': experiment_names,
-                           'Deconvolved Files': deconv_files,
-                           'Annotated Files': anno_files})
-        st.session_state["experiment-df"] = df
+        exp_df = getUploadedFileDF(tsv_files, anno_files)
+        st.session_state["experiment-df"] = exp_df
         st.markdown('**Uploaded experiments**')
-        st.dataframe(df)
+        st.dataframe(exp_df)
 
 def content():
     defaultPageSetup()
 
     # make directory to store deconv and anno mzML files
-    input_types = ["deconv-mzMLs", "anno-mzMLs", "fasta-files"] # TODO: add raw mzML section
+    input_types = ["tsv-files", "anno-mzMLs", "fasta-files"] # TODO: add raw mzML section
     for dirnames in input_types:
         if not os.path.isdir(st.session_state[dirnames]):
             os.mkdir(st.session_state[dirnames])
@@ -48,9 +56,11 @@ def content():
 
     # Load Example Data
     v_space(1, c2)
-    if c2.button("Load Example Data"): # TODO: change here!
-        for file in Path("example-data", "mzML").glob("*.mzML"):
-            shutil.copy(file, Path(st.session_state["mzML-files"]))
+    if c2.button("Load Example Data"):
+        for file in Path("example-data", "NativeMS").glob("*annotated.mzML"):
+            shutil.copy(file, Path(st.session_state["anno-mzMLs"]))
+        for file in Path("example-data", "NativeMS").glob("*_ms*.tsv"):
+            shutil.copy(file, Path(st.session_state["tsv-files"]))
 
     # Delete all uploaded files
     v_space(1, c3)
@@ -65,11 +75,11 @@ def content():
     **💡 How to upload files**
 
     1. Browse files on your computer or drag and drops files
-    2. Click the **Add the uploaded mzML files** button to use them in the workflows
+    2. Click the **Add the uploaded tsv/mzML files** button to use them in the workflows
 
     Select data for analysis from the uploaded files shown in the sidebar.
     
-    **💡 Make sure that the same number of deconvolved and annotated mzML files are uploaded!**
+    **💡 Make sure that both deconvolved tsv and annotated mzML files are uploaded!**
     """
     )
 
@@ -79,11 +89,11 @@ def content():
         accept_multiple = False
 
     # Upload files via upload widget
-    st.subheader("**Upload mzML files**")
+    st.subheader("**Upload deconvolved files**")
 
-    for form_name, title_on_button, session_name in zip(["deconv-form", "anno-form"],
-                                                        ["deconvolved mzML", "annotated mzML"],
-                                                        ["deconv-mzMLs", "anno-mzMLs"]):
+    for form_name, title_on_button, session_name in zip(["tsv-form", "anno-form"],
+                                                        ["MSn tsv", "annotated mzML"],
+                                                        ["tsv-files", "anno-mzMLs"]):
         with st.form(form_name, clear_on_submit=True):
             uploaded_file = st.file_uploader(
                 "%s files"%title_on_button, accept_multiple_files=accept_multiple
@@ -100,7 +110,7 @@ def content():
                 if uploaded_file:
                     # opening file dialog and closing without choosing a file results in None upload
                     for file in uploaded_file:
-                        if file.name not in st.session_state[session_name].iterdir() and file.name.endswith("mzML"):
+                        if file.name not in st.session_state[session_name].iterdir():
                             with open(
                                 Path(st.session_state[session_name], file.name), "wb"
                             ) as f:
