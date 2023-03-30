@@ -29,8 +29,10 @@ def parseFLASHDeconvOutput(annotated, deconvolved):
     maxCharges=[]
     minIsotopes=[]
     maxIsotopes=[]
+    scoreMaps={}
     msLevels=[]
     precursorMasses=[]
+    precursorScans=[]
     scans=[]
 
     for sindex, spec in enumerate(deconvolved_exp):
@@ -39,13 +41,13 @@ def parseFLASHDeconvOutput(annotated, deconvolved):
         aspec.sortByPosition()
         
         mstr = spec.getMetaValue('DeconvMassInfo')
-        #tol=10;massoffset=0.000000;chargemass=1.007276;peaks=1:1,0:1;1:1,0:1;1:1,0:1;1:1,0:1;2:2,0:3;2:2,1:5;
+        #tol=0;massoffset=0.000000;chargemass=1.007276;scorenames=cos,snr,qscore,qvalue;peaks=2:2,0:4,0.998392:3.97592:0.828587:1;
         # Split the string into key-value pairs
         input_pairs = mstr.split(';')
       
         # Create a dictionary to store the parsed values
         parsed_dict = {}
-
+        scoremap = {}
         # Parse the key-value pairs and store them in the dictionary
         for pair in input_pairs:
             if len(pair) == 0:
@@ -57,23 +59,24 @@ def parseFLASHDeconvOutput(annotated, deconvolved):
                     peak_values = value.split(',')
                     peaks_values.append([tuple(map(int, p.split(':'))) for p in peak_values])
                     parsed_dict[key] = peaks_values
+                elif ',' in value: # scores
+                    scoremap[key] = [float(x) for x in value[0:len(value)-1].split(',')]
                 else:
                     parsed_dict[key] = float(value)
             else:
                 peaks_values = []                    
                 peak_values = pair.split(',')
                 parsed_dict['peaks'].append([tuple(map(int, p.split(':'))) for p in peak_values])
-            
+
         tolerance = parsed_dict['tol']
         massoffset= parsed_dict['massoffset']
         chargemass= parsed_dict['chargemass']
         peaks = parsed_dict['peaks']
-
+        
         minCharge=[]
         maxCharge=[]
         minIso=[]
         maxIso=[]
-
         allSpecPeaks = []
         for index, peakinfo in enumerate(peaks):
             minCharge.append(peakinfo[0][0])
@@ -84,25 +87,39 @@ def parseFLASHDeconvOutput(annotated, deconvolved):
 
             masspeaks = []
             for z in range(minCharge[-1], maxCharge[-1] + 1):
-                minmz = (mass - 10.0)/z
-                maxmz = (mass + 10.0 + maxIso[-1] * Constants.C13C12_MASSDIFF_U)/z
+                minmz = (mass - 3.0)/z + Constants.PROTON_MASS_U
+                maxmz = (mass + 3.0 + maxIso[-1] * Constants.C13C12_MASSDIFF_U)/z + Constants.PROTON_MASS_U
                 minIndex = aspec.findNearest(minmz)
                 for i in range(minIndex, aspec.size()):
                     if aspec[i].getMZ() > maxmz:
                         break
-                    masspeaks.append([i, aspec[i].getMZ(), aspec[i].getIntensity()])
+                    if z == round(mass/aspec[i].getMZ()):
+                        masspeaks.append([i, aspec[i].getMZ(), aspec[i].getIntensity()])
             allSpecPeaks.append(masspeaks)
-        
+
+        for k in scoremap:
+            if k in scoreMaps:
+                scoreMaps[k].append(scoremap[k])
+            else:
+                scoreMaps[k] = [scoremap[k]]
+
         allPeaks.append(allSpecPeaks)
         minCharges.append(minCharge)
         maxCharges.append(maxCharge)
         minIsotopes.append(minIso)
         maxIsotopes.append(maxIso)
+        precursorScans.append(parsed_dict['precursorscan'])
+        precursorMasses.append(parsed_dict['precursormass'])
 
     df['MinCharges'] = minCharges
     df['MaxCharges'] = maxCharges
     df['MinIsotopes'] = minIsotopes
     df['MaxIsotopes'] = maxIsotopes
+    df['PrecursorScan'] = precursorScans
+    df['PrecursorMass'] = precursorMasses
+
+    for k in scoreMaps:
+        df[k] = scoreMaps[k]
 
     for sindex, spec in enumerate(annotated_exp):
         mstr = spec.getMetaValue('DeconvMassPeakIndices')
@@ -139,16 +156,15 @@ def parseFLASHDeconvOutput(annotated, deconvolved):
                     speaks.append(massPeak)                    
                 else:
                     massPeak.append(round(parsed_peak[0]/massPeak[1]))
-                    npeaks.append(massPeak)
-                    
+                    npeaks.append(massPeak)                    
             
-            if len(sigindices) != len(speaks):
+            if len(sigindicesset) != len(speaks):
                 print("*")
-                print(sigindices)
-                for si in sigindices:
-                    print(si, spec[si].getMZ())
-                print(speaks)
-                print(npeaks)
+                print(len(sigindicesset), len(speaks), len(massPeaks))
+                #for si in sigindices:
+                #    print(si, spec[si].getMZ())
+                #print(speaks)
+                #print(npeaks)
             specspeaks.append(speaks)
             specnpeaks.append(npeaks)
         signalPeaks.append(specspeaks)
@@ -207,3 +223,14 @@ def getMSSignalDF(anno_df: pd.DataFrame, point_num_cutoff=1000000):
         ms_df = ms_df.iloc[:point_num_cutoff]
     ms_df.sort_values(by='intensity', inplace=True)
     return ms_df
+
+# def main():
+#     annotated = '/Users/kyowonjeong/FLASHDeconvOut/res=35k,noise=1000_centroid_annotated.mzML'
+#     deconvolved = '/Users/kyowonjeong/FLASHDeconvOut/res=35k,noise=1000_centroid_deconv.mzML'
+#     tmp = parseFLASHDeconvOutput(annotated, deconvolved)
+#     for col in tmp[0].columns:
+#         print(col)
+#     print(tmp[0])
+# if __name__ == "__main__":
+#     main()
+
