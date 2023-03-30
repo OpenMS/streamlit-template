@@ -7,7 +7,7 @@ import plotly.express as px
 from pyopenms import *
 from pyopenms import MSExperiment, MzMLFile
 from pyopenms import Constants
-   
+import time
 @st.cache_data
 def parseFLASHDeconvOutput(annotated, deconvolved):
     annotated_exp = MSExperiment()
@@ -189,7 +189,7 @@ def getMassSignalDF(spec: pd.Series):
     return mass_signal_df
 
 @st.cache_data
-def getMSSignalDF(anno_df: pd.DataFrame):
+def getMSSignalDF(anno_df: pd.DataFrame, point_num_cutoff=1000000):
     ints = np.concatenate([anno_df.loc[index, "intarray"] for index in anno_df.index])
     mzs = np.concatenate([anno_df.loc[index, "mzarray"] for index in anno_df.index])
     rts = np.concatenate(
@@ -202,5 +202,8 @@ def getMSSignalDF(anno_df: pd.DataFrame):
     ms_df = pd.DataFrame({'mass': mzs, 'rt': rts, 'intensity': ints})
     ms_df.dropna(subset=['intensity'], inplace=True) # remove Nan
     ms_df = ms_df[ms_df['intensity']>0]
+    if len(ms_df) > point_num_cutoff:
+        ms_df.sort_values(by='intensity', inplace=True, ascending=False)
+        ms_df = ms_df.iloc[:point_num_cutoff]
     ms_df.sort_values(by='intensity', inplace=True)
     return ms_df

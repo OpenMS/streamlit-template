@@ -1,3 +1,5 @@
+import time
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -200,11 +202,7 @@ def drawSpectraTable(in_df: pd.DataFrame, table_height=400):
     """
     Takes a pandas dataframe and generates interactive table (listening to row selection)
     """
-
-    options = GridOptionsBuilder.from_dataframe(
-        in_df, enableRowGroup=True, enableValue=True, enablePivot=True
-    )
-
+    options = GridOptionsBuilder.from_dataframe(in_df)
     options.configure_selection("single")
     options.configure_side_bar() # sidebar of table
     selection = AgGrid(
@@ -220,19 +218,19 @@ def drawSpectraTable(in_df: pd.DataFrame, table_height=400):
 
 @st.cache_resource
 def plotMS1HeatMap(df, plot_title, legends_colname=[]):
+    masses, rts, intys = df['mass'], df['rt'], df['intensity']
     fig = go.Figure()
-
     fig.add_trace(
         go.Scattergl(
             name="raw peaks",
-            x=df['rt'],
-            y=df['mass'],
+            x=rts,
+            y=masses,
             mode='markers',
-            marker_color=df['intensity']
+            marker_color=intys
         )
     )
     fig.update_traces(marker_colorscale="viridis",
-                      hovertext=df['intensity'].round(),
+                      hovertext=intys.round(),
                       selector=dict(type="scattergl"))
 
     show_legend = True if legends_colname else False
@@ -243,4 +241,5 @@ def plotMS1HeatMap(df, plot_title, legends_colname=[]):
         yaxis_title='Monoisotopic Mass',
         coloraxis_colorbar_title_text='Intensity'
     )
-    return fig
+
+    st.plotly_chart(fig, use_container_width=True)
