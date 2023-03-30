@@ -29,7 +29,7 @@ def page_setup():
     st.session_state["workspace"].mkdir(parents=True, exist_ok=True)
 
     # needed directories
-    important_dirs = ["tsv-files", "anno-mzMLs", "fasta-files"]
+    important_dirs = ["deconv-mzMLs", "anno-mzMLs", "fasta-files"]
     for dirnames in important_dirs:
         st.session_state[dirnames] = Path(st.session_state["workspace"], dirnames)
         st.session_state[dirnames].mkdir(parents=True, exist_ok=True)

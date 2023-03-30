@@ -33,7 +33,6 @@ def content():
 
     # selecting experiment
     experiment_df = st.session_state["experiment-df"]
-
     st.selectbox(
         "choose experiment", experiment_df['Experiment Name'],
         key="selected_experiment",
@@ -42,20 +41,14 @@ def content():
     # getting data
     selected = experiment_df[experiment_df['Experiment Name'] == st.session_state.selected_experiment]
     selected_anno_file = selected['Annotated Files'][0]
-    selected_deconv_file = selected['MSn tsv Files'][0]
-
-    # setting MS1 and MS2 input file
-    st.session_state['MS1_file'] = selected_deconv_file[0]
-    st.session_state['MS2_file'] = selected_deconv_file[1]
-
-    # this is for testing (TODO:remove)
-    selected_deconv_file = Path('default-workspace/deconv-mzMLs', st.session_state.selected_experiment+'_deconv.mzML')
+    selected_deconv_file = selected['Deconvolved Files'][0]
 
     # getting data from mzML files
     spec_df, anno_df, tolerance, massoffset, chargemass = parseFLASHDeconvOutput(selected_anno_file, selected_deconv_file)
 
     #### Showing MS1 heatmaps ####
-    if st.session_state['MS1_file']:
+    # if st.session_state['MS1_file']:
+    if True: # TODO: needs to find a way to get if we have MS1 or not
         df_for_ms1_raw = getMSSignalDF(anno_df, 100) # to show faster (debugging)
         df_for_ms1_deconv = getMSSignalDF(spec_df, 100) # to show faster (debugging)
 

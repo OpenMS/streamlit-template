@@ -13,7 +13,7 @@ def parseFLASHDeconvOutput(annotated, deconvolved):
     annotated_exp = MSExperiment()
     deconvolved_exp = MSExperiment()
     MzMLFile().load(str(Path(st.session_state["anno-mzMLs"], annotated)), annotated_exp)
-    MzMLFile().load(str(deconvolved), deconvolved_exp)
+    MzMLFile().load(str(Path(st.session_state["deconv-mzMLs"], deconvolved)), deconvolved_exp)
     #MzMLFile().load(annotated, annotated_exp)
     #MzMLFile().load(deconvolved, deconvolved_exp)
     tolerance = .0
