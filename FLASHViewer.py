@@ -6,4 +6,4 @@ page_setup()
 sidebar(page="main")
 
 # main content
-st.title("FLASHDeconv Suite")
+st.title("FLASHViewer")
