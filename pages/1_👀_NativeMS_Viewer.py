@@ -3,7 +3,6 @@ import streamlit as st
 from src.view import *
 from src.common import *
 from src.masstable import *
-from streamlit_plotly_events import plotly_events
 
 @st.cache_data
 def draw3DSignalView(df):
@@ -40,8 +39,9 @@ def content():
 
     # getting data
     selected = experiment_df[experiment_df['Experiment Name'] == st.session_state.selected_experiment]
-    selected_anno_file = selected['Annotated Files'][0]
-    selected_deconv_file = selected['Deconvolved Files'][0]
+
+    selected_anno_file = selected.iloc[0]['Annotated Files']
+    selected_deconv_file = selected.iloc[0]['Deconvolved Files']
 
     # getting data from mzML files
     spec_df, anno_df, tolerance, massoffset, chargemass = parseFLASHDeconvOutput(selected_anno_file, selected_deconv_file)
@@ -49,8 +49,8 @@ def content():
     #### Showing MS1 heatmaps ####
     # if st.session_state['MS1_file']:
     if True: # TODO: needs to find a way to get if we have MS1 or not
-        df_for_ms1_raw = getMSSignalDF(anno_df, 100) # to show faster (debugging)
-        df_for_ms1_deconv = getMSSignalDF(spec_df, 100) # to show faster (debugging)
+        df_for_ms1_raw = getMSSignalDF(anno_df) # to show faster (debugging)
+        df_for_ms1_deconv = getMSSignalDF(spec_df) # to show faster (debugging)
 
         raw_ms1_view, deconv_ms1_view = st.columns(2)
         with raw_ms1_view:
@@ -86,8 +86,9 @@ def content():
 
     #### 3D signal plot ####
     # listening selecting row from the spectra table
-    if "selected_mass" in st.session_state and \
-            st.session_state.selected_mass["selected_rows"]:
+    if st.session_state.selected_scan["selected_rows"] and \
+            ("selected_mass" in st.session_state) and \
+            (st.session_state.selected_mass["selected_rows"]):
         selected_spec = spec_df.loc[st.session_state.selected_scan["selected_rows"][0]["index"]]
         mass_signal_df = getMassSignalDF(selected_spec)
 

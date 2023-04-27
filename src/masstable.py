@@ -12,6 +12,8 @@ import time
 def parseFLASHDeconvOutput(annotated, deconvolved):
     annotated_exp = MSExperiment()
     deconvolved_exp = MSExperiment()
+    start = time.time()
+    print('........................loading files')
     MzMLFile().load(str(Path(st.session_state["anno-mzMLs"], annotated)), annotated_exp)
     MzMLFile().load(str(Path(st.session_state["deconv-mzMLs"], deconvolved)), deconvolved_exp)
     #MzMLFile().load(annotated, annotated_exp)
@@ -19,7 +21,11 @@ def parseFLASHDeconvOutput(annotated, deconvolved):
     tolerance = .0
     massoffset = .0
     chargemass = .0
+    end = time.time()
+    print('................elapsed time=', end - start)
 
+    start = time.time()
+    print('........................getting df')
     df = deconvolved_exp.get_df()
     annotateddf = annotated_exp.get_df()
     allPeaks = []
@@ -34,17 +40,20 @@ def parseFLASHDeconvOutput(annotated, deconvolved):
     precursorMasses=[]
     precursorScans=[]
     scans=[]
+    end = time.time()
+    print('................elapsed time=', end - start)
 
-    for sindex, spec in enumerate(deconvolved_exp):
-        aspec = annotated_exp[sindex]
+    start = time.time()
+    print('........................reading deconv')
+    for spec, aspec in zip(deconvolved_exp, annotated_exp):
         spec.sortByPosition()
         aspec.sortByPosition()
-        
+
         mstr = spec.getMetaValue('DeconvMassInfo')
         #tol=0;massoffset=0.000000;chargemass=1.007276;scorenames=cos,snr,qscore,qvalue;peaks=2:2,0:4,0.998392:3.97592:0.828587:1;
         # Split the string into key-value pairs
         input_pairs = mstr.split(';')
-      
+
         # Create a dictionary to store the parsed values
         parsed_dict = {}
         scoremap = {}
@@ -55,7 +64,7 @@ def parseFLASHDeconvOutput(annotated, deconvolved):
             if '=' in pair:
                 key, value = pair.split('=')
                 if key == 'peaks':
-                    peaks_values = []                    
+                    peaks_values = []
                     peak_values = value.split(',')
                     peaks_values.append([tuple(map(int, p.split(':'))) for p in peak_values])
                     parsed_dict[key] = peaks_values
@@ -64,7 +73,6 @@ def parseFLASHDeconvOutput(annotated, deconvolved):
                 else:
                     parsed_dict[key] = float(value)
             else:
-                peaks_values = []                    
                 peak_values = pair.split(',')
                 parsed_dict['peaks'].append([tuple(map(int, p.split(':'))) for p in peak_values])
 
@@ -72,7 +80,7 @@ def parseFLASHDeconvOutput(annotated, deconvolved):
         massoffset= parsed_dict['massoffset']
         chargemass= parsed_dict['chargemass']
         peaks = parsed_dict['peaks']
-        
+
         minCharge=[]
         maxCharge=[]
         minIso=[]
@@ -120,8 +128,12 @@ def parseFLASHDeconvOutput(annotated, deconvolved):
 
     for k in scoreMaps:
         df[k] = scoreMaps[k]
+    end = time.time()
+    print('................elapsed time=', end - start)
 
-    for sindex, spec in enumerate(annotated_exp):
+    start = time.time()
+    print('........................unpacking annotated_exp')
+    for spec, specPeaks in zip(annotated_exp, allPeaks):
         mstr = spec.getMetaValue('DeconvMassPeakIndices')
         # Split the string into peak items
         peak_items = mstr.split(';')
@@ -130,7 +142,7 @@ def parseFLASHDeconvOutput(annotated, deconvolved):
         scans.append(scan_number)
         # Create a list to store the parsed peaks
         parsed_peaks = []
-        
+
         # Parse the peak items and store them in the list
         for item in peak_items:
             if len(item) == 0:
@@ -139,10 +151,10 @@ def parseFLASHDeconvOutput(annotated, deconvolved):
             peak_mass = float(peak_values[0])
             peak_infos = list(map(int, peak_values[1].split(',')))
             parsed_peaks.append([peak_mass, peak_infos])
-            
-        specPeaks = allPeaks[sindex]        
+
         specnpeaks=[]
         specspeaks=[]
+
         for index, parsed_peak in enumerate(parsed_peaks): # for each mass
             massPeaks = specPeaks[index]
             sigindices = parsed_peak[1] # intersect this with massPeaks[0]s
@@ -152,15 +164,15 @@ def parseFLASHDeconvOutput(annotated, deconvolved):
             for massPeak in massPeaks:
                 pindex = massPeak[0]
                 if pindex in sigindicesset:
-                    massPeak.append(round(parsed_peak[0]/massPeak[1]))    
-                    speaks.append(massPeak)                    
+                    massPeak.append(round(parsed_peak[0]/massPeak[1]))
+                    speaks.append(massPeak)
                 else:
                     massPeak.append(round(parsed_peak[0]/massPeak[1]))
-                    npeaks.append(massPeak)                    
-            
-            if len(sigindicesset) != len(speaks):
-                print("*")
-                print(len(sigindicesset), len(speaks), len(massPeaks))
+                    npeaks.append(massPeak)
+
+            # if len(sigindicesset) != len(speaks):
+                # print("*")
+                # print(len(sigindicesset), len(speaks), len(massPeaks))
                 #for si in sigindices:
                 #    print(si, spec[si].getMZ())
                 #print(speaks)
@@ -171,6 +183,9 @@ def parseFLASHDeconvOutput(annotated, deconvolved):
         noisyPeaks.append(specnpeaks)
         msLevels.append(spec.getMSLevel())
 
+    end = time.time()
+    print('................elapsed time=', end - start)
+
     df['SignalPeaks'] = signalPeaks
     df['NoisyPeaks'] = noisyPeaks
     df['MSLevel'] = msLevels
@@ -180,7 +195,7 @@ def parseFLASHDeconvOutput(annotated, deconvolved):
 @st.cache_data
 def getSpectraTableDF(deconv_df: pd.DataFrame):
     out_df = deconv_df[['Scan', 'MSLevel', 'RT']]
-    out_df['#Masses'] = [len(ele) for ele in deconv_df['MinCharges']]
+    out_df['#Masses'] = [len(ele) for ele in deconv_df['MinCharges'].copy()]
     out_df.reset_index(inplace=True)
     return out_df
 

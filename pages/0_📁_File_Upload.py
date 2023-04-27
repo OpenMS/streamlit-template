@@ -40,7 +40,7 @@ def content():
     defaultPageSetup()
 
     # make directory to store deconv and anno mzML files
-    input_types = ["deconv-mzMLs", "anno-mzMLs", "fasta-files"] # TODO: add raw mzML section
+    input_types = ["deconv-mzMLs", "anno-mzMLs"] # TODO: add raw mzML section
     for dirnames in input_types:
         if not os.path.isdir(st.session_state[dirnames]):
             os.mkdir(st.session_state[dirnames])
@@ -84,7 +84,7 @@ def content():
         accept_multiple = False
 
     # Upload files via upload widget
-    st.subheader("**Upload deconvolved files**")
+    st.subheader("**Upload FLASHDeconv output files**")
 
     for form_name, title_on_button, session_name in zip(["deconv-form", "anno-form"],
                                                         ["deconvolved mzML", "annotated mzML"],
@@ -104,6 +104,7 @@ def content():
                 # Copy uploaded mzML files to deconv-mzML-files directory
                 if uploaded_file:
                     # opening file dialog and closing without choosing a file results in None upload
+                    # TODO: need to read file here, instead of saving
                     for file in uploaded_file:
                         if file.name not in st.session_state[session_name].iterdir() \
                                 and file.name.endswith("mzML"):
@@ -117,35 +118,6 @@ def content():
 
     # for error message or list of uploaded files
     showingUploadedFiles()
-
-    # Upload files via upload widget
-    st.subheader("Upload fasta files")
-    with st.form("fasta-form", clear_on_submit=True):
-        uploaded_fasta = st.file_uploader(
-            "fasta files", accept_multiple_files=accept_multiple
-        )
-        _, c2, _ = st.columns(3)
-        # User needs to click button to upload selected files
-        submitted = c2.form_submit_button("Add the uploaded fasta files")
-        if submitted:
-            # Need to have a list of uploaded files to copy to the mzML dir,
-            # in case of online only a single item is return, so we put it in the list
-            if st.session_state.location == "online":
-                uploaded_fasta = [uploaded_fasta]
-            # Copy uploaded mzML files to mzML-files directory
-            if uploaded_fasta:
-                # opening file dialog and closing without choosing a file results in None upload
-                for file in uploaded_fasta:
-                    if file.name not in st.session_state[
-                        "fasta-files"
-                    ].iterdir() and file.name.endswith("fasta"):
-                        with open(
-                                Path(st.session_state["fasta-files"], file.name), "wb"
-                        ) as f:
-                            f.write(file.getbuffer())
-                st.success("Successfully added uploaded files!")
-            else:
-                st.warning("Upload some files before adding them.")
 
     # TODO: figure out what to do with here
     # # Local file upload option: via directory path

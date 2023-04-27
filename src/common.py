@@ -10,7 +10,7 @@ import uuid
 def page_setup():
     # streamlit configs
     st.set_page_config(
-        page_title="OpenMS FLASHDeconvViewer App",
+        page_title="OpenMS FLASHViewer",
         page_icon="assets/OpenMS.png",
         layout="wide",
         initial_sidebar_state="auto",
@@ -29,7 +29,7 @@ def page_setup():
     st.session_state["workspace"].mkdir(parents=True, exist_ok=True)
 
     # needed directories
-    important_dirs = ["deconv-mzMLs", "anno-mzMLs", "fasta-files"]
+    important_dirs = ["deconv-mzMLs", "anno-mzMLs"]
     for dirnames in important_dirs:
         st.session_state[dirnames] = Path(st.session_state["workspace"], dirnames)
         st.session_state[dirnames].mkdir(parents=True, exist_ok=True)
