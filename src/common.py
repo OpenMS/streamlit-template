@@ -28,11 +28,6 @@ def page_setup():
     # Make sure important directories exist
     st.session_state["workspace"].mkdir(parents=True, exist_ok=True)
 
-    # needed directories
-    important_dirs = ["deconv-mzMLs", "anno-mzMLs"]
-    for dirnames in important_dirs:
-        st.session_state[dirnames] = Path(st.session_state["workspace"], dirnames)
-        st.session_state[dirnames].mkdir(parents=True, exist_ok=True)
 
 def v_space(n, col=None):
     for _ in range(n):

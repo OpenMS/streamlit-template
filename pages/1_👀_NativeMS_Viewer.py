@@ -44,7 +44,8 @@ def content():
     selected_deconv_file = selected.iloc[0]['Deconvolved Files']
 
     # getting data from mzML files
-    spec_df, anno_df, tolerance, massoffset, chargemass = parseFLASHDeconvOutput(selected_anno_file, selected_deconv_file)
+    spec_df = st.session_state['deconv_dfs'][selected_deconv_file]
+    anno_df = st.session_state['anno_dfs'][selected_anno_file]
 
     #### Showing MS1 heatmaps ####
     # if st.session_state['MS1_file']:
