@@ -1,0 +1,3 @@
+[submodule "openms-streamlit-vue-component"]
+	path = openms-streamlit-vue-component
+	url = https://github.com/drewbudd/openms-streamlit-vue-component
