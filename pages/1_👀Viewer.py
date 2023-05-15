@@ -23,7 +23,7 @@ def draw3DSignalView(df):
     st.plotly_chart(plot3d, use_container_width=True)
 
 def content():
-    defaultPageSetup("NativeMS Viewer")
+    defaultPageSetup("FLASHViewer")
 
     # if no input file is given, show blank page
     if "experiment-df" not in st.session_state:
@@ -94,7 +94,9 @@ def content():
        
         mass_signal_df = getMassSignalDF(selected_spec)
         selected_mass_index = st.session_state.selected_mass["selected_rows"][0]["index"]
-        draw3DSignalView(mass_signal_df.loc[selected_mass_index])
+        plot3d_view, _ = st.columns([9, 1])# for little space on the right
+        with plot3d_view:
+            draw3DSignalView(mass_signal_df.loc[selected_mass_index])
 
 if __name__ == "__main__":
     # try:
