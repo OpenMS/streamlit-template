@@ -49,15 +49,17 @@ def content():
 
     #### Showing MS1 heatmaps ####
     # if st.session_state['MS1_file']:
-    if True: # TODO: needs to find a way to get if we have MS1 or not
-        df_for_ms1_raw = getMSSignalDF(anno_df) # to show faster (debugging)
-        df_for_ms1_deconv = getMSSignalDF(spec_df) # to show faster (debugging)
-
-        raw_ms1_view, deconv_ms1_view = st.columns(2)
-        with raw_ms1_view:
-            plotMS1HeatMap(df_for_ms1_raw, "Raw MS1 Heatmap")
-        with deconv_ms1_view:
-            plotMS1HeatMap(df_for_ms1_deconv, "Deconvolved MS1 Heatmap")
+    # if True: # TODO: needs to find a way to get if we have MS1 or not
+        # df_for_ms1_raw = getMSSignalDF(anno_df) # to show faster (debugging)
+        # df_for_ms1_deconv = getMSSignalDF(spec_df) # to show faster (debugging)
+        #
+        # raw_ms1_view, deconv_ms1_view = st.columns(2)
+        # with raw_ms1_view:
+        #     plotMS1HeatMap(df_for_ms1_raw, "Raw MS1 Heatmap")
+        # with deconv_ms1_view:
+        #     plotMS1HeatMap(df_for_ms1_deconv, "Deconvolved MS1 Heatmap")
+    df_for_ms1_deconv = getMSSignalDF(spec_df) # to show faster (debugging)
+    plotMS1HeatMap(df_for_ms1_deconv, "Deconvolved MS1 Heatmap")
 
     #### SpectrumView and Tables ####
     spectrumView, tableView = st.columns(2)
