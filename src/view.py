@@ -160,12 +160,12 @@ def plot3DSignalView(signal_3d_df, noisy_3d_df):
         z[::3] = 0
         z[2::3] = np.nan
         return pd.DataFrame({"mass": x, "charge":y, "intensity": z})
-    #drawing dropline from scatter plot marker (vertical lines)
 
+    #drawing dropline from scatter plot marker (vertical lines)
     dfs = create_spectra(signal_3d_df["mass"], signal_3d_df["charge"], signal_3d_df["intensity"])
-    dfs['color'] = 's'
+    dfs['color'] = 'Signal'
     dfn = create_spectra(noisy_3d_df["mass"], noisy_3d_df["charge"], noisy_3d_df["intensity"])
-    dfn['color'] = 'n'
+    dfn['color'] = 'Noise'
     df = pd.concat([dfs, dfn])
 
     # drawing lines
@@ -177,18 +177,21 @@ def plot3DSignalView(signal_3d_df, noisy_3d_df):
     fig.add_trace(go.Scatter3d(x=signal_3d_df["mass"],
                                y=signal_3d_df["charge"],
                                z=signal_3d_df["intensity"],
-                               marker=dict(size=2, color = px.colors.qualitative.G10[0], opacity=0.5),
+                               marker=dict(size=6, color = px.colors.qualitative.G10[0], opacity=0.5, symbol='circle'),
+                               showlegend=False,
                                mode="markers"))
 
     fig.add_trace(go.Scatter3d(x=noisy_3d_df["mass"],
                                y=noisy_3d_df["charge"],
                                z=noisy_3d_df["intensity"],
                                marker=dict(size=2, color = px.colors.qualitative.G10[1], opacity=0.5, symbol = 'x'),
+                               showlegend=False,
                                mode="markers"))
-    fig.update_traces(opacity=0.5)
+    # fig.update_traces(opacity=0.5)
     fig.update_layout(
         height=800,
-        showlegend=False,
+        showlegend=True,
+        legend_title='',
         scene=dict(
             xaxis_title='Mass',
             yaxis_title='Charge',
@@ -226,10 +229,18 @@ def plotMS1HeatMap(df, plot_title, legends_colname=[]):
             x=rts,
             y=masses,
             mode='markers',
-            marker_color=intys
+            marker=dict(
+                color=intys,
+                size=3,
+                showscale = True,
+            ),
         )
     )
     fig.update_traces(marker_colorscale="viridis",
+                      marker_colorbar=dict(
+                          title="Intensity",
+                          thickness=5,
+                      ),
                       hovertext=intys.round(),
                       selector=dict(type="scattergl"))
 
@@ -239,7 +250,6 @@ def plotMS1HeatMap(df, plot_title, legends_colname=[]):
         showlegend=show_legend,
         xaxis_title='Retention Time',
         yaxis_title='Monoisotopic Mass',
-        coloraxis_colorbar_title_text='Intensity'
     )
 
     st.plotly_chart(fig, use_container_width=True)
