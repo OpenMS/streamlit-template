@@ -8,6 +8,7 @@ from pyopenms import *
 from pyopenms import MSExperiment, MzMLFile
 from pyopenms import Constants
 import time
+
 @st.cache_data
 def parseFLASHDeconvOutput(annotated, deconvolved):
     annotated_exp = MSExperiment()
@@ -194,10 +195,11 @@ def parseFLASHDeconvOutput(annotated, deconvolved):
 
 @st.cache_data
 def getSpectraTableDF(deconv_df: pd.DataFrame):
-    out_df = deconv_df[['Scan', 'MSLevel', 'RT']]
+    out_df = deconv_df[['Scan', 'MSLevel', 'RT', 'PrecursorMass']]
     out_df['#Masses'] = [len(ele) for ele in deconv_df['MinCharges'].copy()]
     out_df.reset_index(inplace=True)
     return out_df
+
 
 @st.cache_data
 def getMassTableDF(spec: pd.Series):
@@ -207,9 +209,13 @@ def getMassTableDF(spec: pd.Series):
                             'Max charge': spec['MaxCharges'],
                             'Min isotope': spec['MinIsotopes'],
                             'Max isotope': spec['MaxIsotopes'],
+                            'Cosine Score': spec['cos'],
+                            'SNR': spec['snr'],
+                            'QScore': spec['qscore'],                        
                             })
     mass_df.reset_index(inplace=True)
     return mass_df
+
 
 @st.cache_data
 def getMassSignalDF(spec: pd.Series):
@@ -218,6 +224,33 @@ def getMassSignalDF(spec: pd.Series):
                                    'Noisy peaks': spec['NoisyPeaks'],
                                    })
     return mass_signal_df
+
+@st.cache_data
+def getPrecursorMassSignalDF(spec: pd.Series, deconv_df: pd.DataFrame):
+    ret =  pd.DataFrame()
+    if spec['PrecursorScan'] == 0:
+        return ret
+
+    indices = deconv_df[deconv_df['Scan'] == spec['PrecursorScan']].index.values
+    if indices.size == 0:
+        return ret
+ 
+    target = deconv_df.loc[indices[0]]
+
+    mass_signal_df = getMassSignalDF(target)
+    #print(mass_signal_df)
+
+    masses = mass_signal_df['Mono mass']
+    pmass = spec['PrecursorMass']  
+    print(pmass)
+    for i in range(masses.size):
+        mass = (masses[i])
+        if abs(mass - pmass) < 1e-2 :    
+            ret = mass_signal_df.loc[i]
+            break
+    
+    return ret
+
 
 @st.cache_data
 def getMSSignalDF(anno_df: pd.DataFrame, point_num_cutoff=1000000):
@@ -240,12 +273,11 @@ def getMSSignalDF(anno_df: pd.DataFrame, point_num_cutoff=1000000):
     return ms_df
 
 # def main():
-#     annotated = '/Users/kyowonjeong/FLASHDeconvOut/res=35k,noise=1000_centroid_annotated.mzML'
-#     deconvolved = '/Users/kyowonjeong/FLASHDeconvOut/res=35k,noise=1000_centroid_deconv.mzML'
+#     annotated = '/Users/kyowonjeong/FLASHDeconvOut/20211216_Ecoli_SPE_method_06_R1_annotated.mzML'
+#     deconvolved = '/Users/kyowonjeong/FLASHDeconvOut/20211216_Ecoli_SPE_method_06_R1_deconv.mzML'
 #     tmp = parseFLASHDeconvOutput(annotated, deconvolved)
 #     for col in tmp[0].columns:
 #         print(col)
-#     print(tmp[0])
 # if __name__ == "__main__":
 #     main()
 

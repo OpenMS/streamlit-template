@@ -81,12 +81,18 @@ def content():
 
     #### 3D signal plot ####
     # listening selecting row from the spectra table
+    if st.session_state.selected_scan["selected_rows"]:
+        selected_spec = spec_df.loc[st.session_state.selected_scan["selected_rows"][0]["index"]]       
+        psignal = getPrecursorMassSignalDF(selected_spec, spec_df)
+        if psignal.size > 0:
+            draw3DSignalView(getPrecursorMassSignalDF(selected_spec, spec_df))
+
     if st.session_state.selected_scan["selected_rows"] and \
             ("selected_mass" in st.session_state) and \
             (st.session_state.selected_mass["selected_rows"]):
         selected_spec = spec_df.loc[st.session_state.selected_scan["selected_rows"][0]["index"]]
+       
         mass_signal_df = getMassSignalDF(selected_spec)
-
         selected_mass_index = st.session_state.selected_mass["selected_rows"][0]["index"]
         draw3DSignalView(mass_signal_df.loc[selected_mass_index])
 
