@@ -23,7 +23,7 @@ def draw3DSignalView(df):
     st.plotly_chart(plot3d, use_container_width=True)
 
 def content():
-    defaultPageSetup("NativeMS Viewer")
+    defaultPageSetup("FLASHViewer")
 
     # if no input file is given, show blank page
     if "experiment-df" not in st.session_state:
