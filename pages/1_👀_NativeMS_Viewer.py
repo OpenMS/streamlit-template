@@ -47,45 +47,37 @@ def content():
     spec_df = st.session_state['deconv_dfs'][selected_deconv_file]
     anno_df = st.session_state['anno_dfs'][selected_anno_file]
 
-    #### Showing MS1 heatmaps ####
-    # if st.session_state['MS1_file']:
-    # if True: # TODO: needs to find a way to get if we have MS1 or not
-        # df_for_ms1_raw = getMSSignalDF(anno_df) # to show faster (debugging)
-        # df_for_ms1_deconv = getMSSignalDF(spec_df) # to show faster (debugging)
-        #
-        # raw_ms1_view, deconv_ms1_view = st.columns(2)
-        # with raw_ms1_view:
-        #     plotMS1HeatMap(df_for_ms1_raw, "Raw MS1 Heatmap")
-        # with deconv_ms1_view:
-        #     plotMS1HeatMap(df_for_ms1_deconv, "Deconvolved MS1 Heatmap")
-    df_for_ms1_deconv = getMSSignalDF(spec_df) # to show faster (debugging)
-    plotMS1HeatMap(df_for_ms1_deconv, "Deconvolved MS1 Heatmap")
-
-    #### SpectrumView and Tables ####
-    spectrumView, tableView = st.columns(2)
-
-    with tableView:
-        # scan table
+    #### Showing MS1 heatmap & Scan table ####
+    df_for_ms1_deconv = getMSSignalDF(spec_df)
+    df_for_spectra_table = getSpectraTableDF(spec_df)
+    ms1_heatmap_view, scan_table_view = st.columns(2)
+    with ms1_heatmap_view:
+        plotMS1HeatMap(df_for_ms1_deconv, "Deconvolved MS1 Heatmap")
+    with scan_table_view:
+        st.title("") # to add empty space on top
         st.write('**Scan Table**')
-        df_for_spectra_table = getSpectraTableDF(spec_df)
-        st.session_state["selected_scan"] = drawSpectraTable(df_for_spectra_table, 250)
-        # mass table
-        # listening selecting row from the spectra table
-        if st.session_state.selected_scan["selected_rows"]:
-            selected_index = st.session_state.selected_scan["selected_rows"][0]["index"]
-            selected_spectrum = spec_df.loc[selected_index]
-            # preparing data for plotting (cached)
-            mass_df = getMassTableDF(selected_spectrum)
-            st.write('**Mass Table** of selected spectrum index: %d'%selected_index)
-            # drawing interactive mass table
-            st.session_state["selected_mass"] = drawSpectraTable(mass_df, 250)
+        st.session_state["selected_scan"] = drawSpectraTable(df_for_spectra_table, 300)
 
-    with spectrumView:
-        # listening selecting row from the spectra table
-        if st.session_state.selected_scan["selected_rows"]:
-            selected_index = st.session_state.selected_scan["selected_rows"][0]["index"]
+    #### Spectrum plots ####
+    # listening selecting row from the spectra table
+    if st.session_state.selected_scan["selected_rows"]:
+        selected_index = st.session_state.selected_scan["selected_rows"][0]["index"]
+        anno_spec_view, deconv_spec_view = st.columns(2)
+        with anno_spec_view:
             plotAnnotatedMS(anno_df.loc[selected_index])
+        with deconv_spec_view:
             plotDeconvolvedMS(spec_df.loc[selected_index])
+
+    #### Mass table ####
+    # listening selecting row from the spectra table
+    if st.session_state.selected_scan["selected_rows"]:
+        selected_index = st.session_state.selected_scan["selected_rows"][0]["index"]
+        selected_spectrum = spec_df.loc[selected_index]
+        # preparing data for plotting (cached)
+        mass_df = getMassTableDF(selected_spectrum)
+        st.write('**Mass Table** of selected spectrum index: %d'%selected_index)
+        # drawing interactive mass table
+        st.session_state["selected_mass"] = drawSpectraTable(mass_df, 250)
 
     #### 3D signal plot ####
     # listening selecting row from the spectra table
