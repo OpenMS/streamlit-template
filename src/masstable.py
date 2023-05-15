@@ -242,7 +242,7 @@ def getPrecursorMassSignalDF(spec: pd.Series, deconv_df: pd.DataFrame):
 
     masses = mass_signal_df['Mono mass']
     pmass = spec['PrecursorMass']  
-    print(pmass)
+    
     for i in range(masses.size):
         mass = (masses[i])
         if abs(mass - pmass) < 1e-2 :    
