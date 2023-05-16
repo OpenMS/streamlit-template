@@ -112,8 +112,7 @@ def plotDeconvolvedMS(spec):
     )
     fig.update_yaxes(fixedrange=True)
     fig.update_traces(connectgaps=False)
-    st.plotly_chart(fig, use_container_width=True)
-    return
+    return fig
 
 @st.cache_resource
 def plotAnnotatedMS(spec):
@@ -137,16 +136,15 @@ def plotAnnotatedMS(spec):
         yaxis_title="Intensity",
         title={
             'text': "Annotated spectrum",
-            'x': 0.5,
+            'x': 0.3,
             'xanchor': 'center',
             'yanchor': 'top'}
     )
     fig.update_yaxes(fixedrange=True)
-    st.plotly_chart(fig, use_container_width=True)
-    return
+    return fig
 
 @st.cache_resource
-def plot3DSignalView(signal_3d_df, noisy_3d_df):
+def plot3DSignalView(signal_3d_df, noisy_3d_df, title):
     """
     Takes a pandas series (spec) and generates a needle 3D plot
     with mass, charge, intensity dimension
@@ -190,6 +188,11 @@ def plot3DSignalView(signal_3d_df, noisy_3d_df):
     # fig.update_traces(opacity=0.5)
     fig.update_layout(
         height=800,
+        title=dict(
+            text=title,
+            font_size=20,
+            x=0.4
+        ),
         showlegend=True,
         legend_title='',
         scene=dict(
@@ -246,10 +249,12 @@ def plotMS1HeatMap(df, plot_title, legends_colname=[]):
 
     show_legend = True if legends_colname else False
     fig.update_layout(
-        title=plot_title,
+        title=dict(
+            text=plot_title,
+            x=.4
+        ),
         showlegend=show_legend,
         xaxis_title='Retention Time',
         yaxis_title='Monoisotopic Mass',
     )
-
-    st.plotly_chart(fig, use_container_width=True)
+    return fig
