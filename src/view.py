@@ -9,79 +9,6 @@ import plotly.express as px
 from st_aggrid import AgGrid, GridOptionsBuilder, ColumnsAutoSizeMode
 from st_aggrid.shared import GridUpdateMode
 
-from pyopenms import MSExperiment, MzMLFile
-
-
-@st.cache_resource
-def plot_2D_map(df_ms1, df_ms2, cutoff):
-    fig = go.Figure()
-    ints = np.concatenate([df_ms1.loc[index, "intarray"] for index in df_ms1.index])
-    int_filter = ints > cutoff  # show only ints over cutoff threshold
-    ints = ints[int_filter]
-    mzs = np.concatenate([df_ms1.loc[index, "mzarray"] for index in df_ms1.index])[
-        int_filter
-    ]
-    rts = np.concatenate(
-        [
-            np.full(len(df_ms1.loc[index, "mzarray"]), df_ms1.loc[index, "RT"])
-            for index in df_ms1.index
-        ]
-    )[int_filter]
-
-    sort = np.argsort(ints)
-    ints = ints[sort]
-    mzs = mzs[sort]
-    rts = rts[sort]
-
-    fig.add_trace(
-        go.Scattergl(
-            name="peaks",
-            x=rts,
-            y=mzs,
-            mode="markers",
-            marker_color=ints,
-            marker_symbol="square",
-        )
-    )
-
-    # Add MS2 precursors
-    fig.add_trace(
-        go.Scattergl(
-            name="peaks",
-            x=df_ms2["RT"],
-            y=df_ms2["precursormz"],
-            mode="markers",
-            marker_color="#00FF00",
-            marker_symbol="x",
-        )
-    )
-    fig.update_layout(
-        # title="peak map 2D",
-        xaxis_title="retention time",
-        yaxis_title="m/z",
-        plot_bgcolor="rgb(255,255,255)",
-        showlegend=False,
-        # width=1000,
-        # height=800,
-    )
-    fig.layout.template = "plotly_white"
-
-    color_scale = [
-        (0.00, "rgba(233, 233, 233, 1.0)"),
-        (0.01, "rgba(243, 236, 166, 1.0)"),
-        (0.1, "rgba(255, 168, 0, 1.0)"),
-        (0.2, "rgba(191, 0, 191, 1.0)"),
-        (0.4, "rgba(68, 0, 206, 1.0)"),
-        (1.0, "rgba(33, 0, 101, 1.0)"),
-    ]
-
-    fig.update_traces(
-        marker_colorscale=color_scale,
-        hovertext=ints.round(),
-        selector=dict(type="scattergl"),
-    )
-    return fig
-
 @st.cache_resource
 def plotDeconvolvedMS(spec):
     """
@@ -136,7 +63,7 @@ def plotAnnotatedMS(spec):
         yaxis_title="Intensity",
         title={
             'text': "Annotated spectrum",
-            'x': 0.3,
+            'x': 0.5,
             'xanchor': 'center',
             'yanchor': 'top'}
     )

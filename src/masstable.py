@@ -13,8 +13,6 @@ import time
 def parseFLASHDeconvOutput(annotated, deconvolved):
     annotated_exp = MSExperiment()
     deconvolved_exp = MSExperiment()
-    start = time.time()
-    print('........................loading files')
     MzMLFile().load(str(Path(annotated)), annotated_exp)
     MzMLFile().load(str(Path(deconvolved)), deconvolved_exp)
     #MzMLFile().load(annotated, annotated_exp)
@@ -22,11 +20,7 @@ def parseFLASHDeconvOutput(annotated, deconvolved):
     tolerance = .0
     massoffset = .0
     chargemass = .0
-    end = time.time()
-    print('................elapsed time=', end - start)
 
-    start = time.time()
-    print('........................getting df')
     df = deconvolved_exp.get_df()
     annotateddf = annotated_exp.get_df()
     allPeaks = []
@@ -41,11 +35,7 @@ def parseFLASHDeconvOutput(annotated, deconvolved):
     precursorMasses=[]
     precursorScans=[]
     scans=[]
-    end = time.time()
-    print('................elapsed time=', end - start)
 
-    start = time.time()
-    print('........................reading deconv')
     for spec, aspec in zip(deconvolved_exp, annotated_exp):
         spec.sortByPosition()
         aspec.sortByPosition()
@@ -129,11 +119,7 @@ def parseFLASHDeconvOutput(annotated, deconvolved):
 
     for k in scoreMaps:
         df[k] = scoreMaps[k]
-    end = time.time()
-    print('................elapsed time=', end - start)
 
-    start = time.time()
-    print('........................unpacking annotated_exp')
     for spec, specPeaks in zip(annotated_exp, allPeaks):
         mstr = spec.getMetaValue('DeconvMassPeakIndices')
         # Split the string into peak items
@@ -184,9 +170,6 @@ def parseFLASHDeconvOutput(annotated, deconvolved):
         noisyPeaks.append(specnpeaks)
         msLevels.append(spec.getMSLevel())
 
-    end = time.time()
-    print('................elapsed time=', end - start)
-
     df['SignalPeaks'] = signalPeaks
     df['NoisyPeaks'] = noisyPeaks
     df['MSLevel'] = msLevels
@@ -195,8 +178,8 @@ def parseFLASHDeconvOutput(annotated, deconvolved):
 
 @st.cache_data
 def getSpectraTableDF(deconv_df: pd.DataFrame):
-    out_df = deconv_df[['Scan', 'MSLevel', 'RT', 'PrecursorMass']]
-    out_df['#Masses'] = [len(ele) for ele in deconv_df['MinCharges'].copy()]
+    out_df = deconv_df[['Scan', 'MSLevel', 'RT', 'PrecursorMass']].copy()
+    out_df['#Masses'] = [len(ele) for ele in deconv_df['MinCharges']]
     out_df.reset_index(inplace=True)
     return out_df
 
