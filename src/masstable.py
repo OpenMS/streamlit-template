@@ -2,12 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from pathlib import Path
-import plotly.graph_objects as go
-import plotly.express as px
-from pyopenms import *
-from pyopenms import MSExperiment, MzMLFile
-from pyopenms import Constants
-import time
+from pyopenms import MSExperiment, MzMLFile, SpectrumLookup, Constants
 
 @st.cache_data
 def parseFLASHDeconvOutput(annotated, deconvolved):
@@ -124,7 +119,7 @@ def parseFLASHDeconvOutput(annotated, deconvolved):
         mstr = spec.getMetaValue('DeconvMassPeakIndices')
         # Split the string into peak items
         peak_items = mstr.split(';')
-        sourcefiles = annotated_exp.getSourceFiles();
+        sourcefiles = annotated_exp.getSourceFiles()
         scan_number = SpectrumLookup().extractScanNumber(spec.getNativeID(), sourcefiles[0].getNativeIDTypeAccession()) if sourcefiles else -1
         scans.append(scan_number)
         # Create a list to store the parsed peaks

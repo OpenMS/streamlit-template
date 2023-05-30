@@ -75,44 +75,50 @@ def plot3DSignalView(signal_3d_df, noisy_3d_df, title):
     """
     Takes a pandas series (spec) and generates a needle 3D plot
     with mass, charge, intensity dimension
+    mass is in y-axis dimension to show masses in ascending order
     """
 
     def create_spectra(x, y, z, zero=0):
-        x = np.repeat(x, 3) # mass
-        y = np.repeat(y, 3) # charge
+        x = np.repeat(x, 3) # charge
+        y = np.repeat(y, 3) # mass
         z = np.repeat(z, 3) # intensity
         # to draw vertical lines
         z[::3] = 0
         z[2::3] = np.nan
-        return pd.DataFrame({"mass": x, "charge":y, "intensity": z})
+        return pd.DataFrame({"charge": x, "mass":y, "intensity": z})
 
     #drawing dropline from scatter plot marker (vertical lines)
-    dfs = create_spectra(signal_3d_df["mass"], signal_3d_df["charge"], signal_3d_df["intensity"])
+    dfs = create_spectra(signal_3d_df["charge"], signal_3d_df["mass"], signal_3d_df["intensity"])
     dfs['color'] = 'Signal'
-    dfn = create_spectra(noisy_3d_df["mass"], noisy_3d_df["charge"], noisy_3d_df["intensity"])
+    dfn = create_spectra(noisy_3d_df["charge"], noisy_3d_df["mass"], noisy_3d_df["intensity"])
     dfn['color'] = 'Noise'
     df = pd.concat([dfs, dfn])
 
     # drawing lines
-    fig = px.line_3d(df, x="mass", y="charge", z="intensity", color='color',
+    fig = px.line_3d(df, x="charge", y="mass", z="intensity", color='color',
                      color_discrete_sequence=px.colors.qualitative.G10,)
     fig.update_traces(connectgaps=False)
 
     # drawing scatter plot for markers on the tip of vertical lines
-    fig.add_trace(go.Scatter3d(x=signal_3d_df["mass"],
-                               y=signal_3d_df["charge"],
+    fig.add_trace(go.Scatter3d(x=signal_3d_df["charge"],
+                               y=signal_3d_df["mass"],
                                z=signal_3d_df["intensity"],
-                               marker=dict(size=6, color = px.colors.qualitative.G10[0], opacity=0.5, symbol='circle'),
+                               marker=dict(size=5, color = px.colors.qualitative.G10[0], opacity=0.5, symbol='circle'),
                                showlegend=False,
                                mode="markers"))
 
-    fig.add_trace(go.Scatter3d(x=noisy_3d_df["mass"],
-                               y=noisy_3d_df["charge"],
+    fig.add_trace(go.Scatter3d(x=noisy_3d_df["charge"],
+                               y=noisy_3d_df["mass"],
                                z=noisy_3d_df["intensity"],
                                marker=dict(size=2, color = px.colors.qualitative.G10[1], opacity=0.5, symbol = 'x'),
                                showlegend=False,
                                mode="markers"))
-    # fig.update_traces(opacity=0.5)
+
+    # initial view of the plot: mass-intensity plane
+    camera = dict(
+        eye=dict(x=2.5, y=0, z=0.2) #
+    )
+
     fig.update_layout(
         height=800,
         title=dict(
@@ -123,12 +129,12 @@ def plot3DSignalView(signal_3d_df, noisy_3d_df, title):
         showlegend=True,
         legend_title='',
         scene=dict(
-            xaxis_title='Mass',
-            yaxis_title='Charge',
+            xaxis_title='Charge',
+            yaxis_title='Mass',
             zaxis_title='Intensity'),
-        plot_bgcolor="rgb(255,255,255)",
+        # plot_bgcolor="rgb(255,255,255)",
+        scene_camera=camera,
     )
-    # fig.update_yaxes(fixedrange=True)
     return fig
 
 def drawSpectraTable(in_df: pd.DataFrame, table_height=400):
