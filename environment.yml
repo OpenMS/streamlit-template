@@ -7,7 +7,10 @@ channels:
 dependencies:
   - python=3.9
   - pyopenms
+  - openms # openms executables
+  - openms-thirdparty # e.g. third-party tools, search engines, percolator, ...
   # TODO: if someone wants to use the nightly it might be installed in the Dockerfile with pip3 install pyopenms-nightly --extra-index-url = https://pypi.cs.uni-tuebingen.de/simple/
+  - mono # for ThermoRawFileConversion
   - plotly
   - pandas
   - numpy
