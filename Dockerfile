@@ -1,5 +1,5 @@
 # base image
-FROM python:3.9
+FROM python:3.10
 
 # create workdir
 WORKDIR /app
@@ -13,7 +13,7 @@ COPY . .
 
 # install mamba (faster than conda)
 ENV PATH="/root/mambaforge/bin:${PATH}"
-RUN wget \
+RUN wget -q \
     https://github.com/conda-forge/miniforge/releases/latest/download/Mambaforge-Linux-x86_64.sh \
     && bash Mambaforge-Linux-x86_64.sh -b \
     && rm -f Mambaforge-Linux-x86_64.sh
@@ -24,6 +24,7 @@ COPY environment.yml ./environment.yml
 
 # creates the streamlit-env conda environment
 RUN mamba env create -f environment.yml
+
 # make sure that conda environment is used
 SHELL ["conda", "run", "-n", "streamlit-env", "/bin/bash", "-c"]
 
