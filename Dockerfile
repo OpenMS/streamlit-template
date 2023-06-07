@@ -37,3 +37,4 @@ ENTRYPOINT ["conda", "run", "--no-capture-output", "-n", "streamlit-env", "strea
 # check if image was build: docker image ls
 # run container: docker run -p 8501:8501 streamlitapp:latest
 # debug container after build (comment out ENTRYPOINT) and run container with interactive /bin/bash shell
+# prune build cache frees disc space (e.g. might be needed on gitpod): docker system prune --all --force
