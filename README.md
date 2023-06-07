@@ -10,7 +10,7 @@ Running the app locally will put the workspaces outside of the repository direct
 
 run locally:
 
-`streamlit run Template.py local`
+`streamlit run app.py local`
 
 - **Parameters:** Streamlit offers statefulness via the st.session_state object. However, we want to define default parameters (in `assets/default-params.json`) and store changing parameters for each workspace. Parameters are loaded via the mandatory page_setup function at the start of each page. To track a widget variable via parameters simply give them a key and add a matching entry in the default parameters file. Initialize a widget value from the params dictionary. You can access the value in two was as shown in the workflow example. Re-run the app when changing default parameters.
 

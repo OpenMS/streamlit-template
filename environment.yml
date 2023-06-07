@@ -1,0 +1,18 @@
+###### TODO: how use exact version specifiers for all packages ######
+name: streamlit-env
+channels:
+  - conda-forge
+  - bioconda
+  - openms
+dependencies:
+  - python=3.9
+  - pyopenms
+  # TODO: if someone wants to use the nightly it might be installed in the Dockerfile with pip3 install pyopenms-nightly --extra-index-url = https://pypi.cs.uni-tuebingen.de/simple/
+  - plotly
+  - pandas
+  - numpy
+  - pip
+  - pip: # dependencies only available through pip
+    - streamlit
+    - streamlit-plotly-events
+    - streamlit-aggrid

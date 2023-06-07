@@ -1,3 +1,4 @@
+###### TODO: use exact version specifiers and only stable versions of pyopenms ######
 streamlit
 streamlit-plotly-events
 streamlit-aggrid
