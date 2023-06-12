@@ -1,0 +1,12 @@
+# the requirements.txt file is intended for deployment on streamlit cloud
+# note that it is much more restricted in terms of installing third-parties / etc.
+streamlit
+streamlit-plotly-events
+streamlit-aggrid
+pandas
+numpy
+plotly
+pyopenms
+## for pyopenms nightly
+# --index-url https://pypi.cs.uni-tuebingen.de/simple/
+# pyopenms-nightly

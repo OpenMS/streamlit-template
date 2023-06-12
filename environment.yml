@@ -8,10 +8,10 @@ dependencies:
   - python=3.10
   - pyopenms=2.9.1
   - openms=2.9.1                     # openms executables
-  - openms-thirdparty=2.9.1         # third-party tools, search engines, percolator, ...
+  # - openms-thirdparty=2.9.1         # currently broken on conda... contains third-party tools, search engines, percolator, ...
+  #### note:
   # if someone wants to use the nightly conda packages one needs to add e.g., dev suffix 
   # to the version specifier (which then will be resolved by conda through openms channel)
-  
   - plotly
   - pip
   - pip: # dependencies only available through pip
