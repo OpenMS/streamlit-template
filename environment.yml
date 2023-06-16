@@ -2,13 +2,12 @@
 name: streamlit-env
 channels:
   - conda-forge
-  - bioconda
-  - openms
 dependencies:
   - python=3.10
   - plotly
   - pip
   - pip: # dependencies only available through pip
+      # streamlit dependencies
     - streamlit
     - streamlit-plotly-events
     - streamlit-aggrid
