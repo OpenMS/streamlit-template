@@ -1,13 +1,13 @@
 # the requirements.txt file is intended for deployment on streamlit cloud
 # note that it is much more restricted in terms of installing third-parties / etc.
 # preferably use the docker file for local hosting
-streamlit
-streamlit-plotly-events
-streamlit-aggrid
-pandas
-numpy
-plotly
-pyopenms
+#streamlit
+#streamlit-plotly-events
+#streamlit-aggrid
+#pandas
+#numpy
+#plotly
+#pyopenms
 ## for pyopenms nightly
 # --index-url https://pypi.cs.uni-tuebingen.de/simple/
 # pyopenms-nightly

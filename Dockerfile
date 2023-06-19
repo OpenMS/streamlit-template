@@ -18,7 +18,6 @@ RUN apt-get install -y --no-install-recommends --no-install-suggests g++ autocon
 RUN update-ca-certificates
 
 # Install python and streamlit
-COPY . .
 
 # install mamba (faster than conda)
 ENV PATH="/root/mambaforge/bin:${PATH}"
@@ -27,9 +26,6 @@ RUN wget -q \
     && bash Mambaforge-Linux-x86_64.sh -b \
     && rm -f Mambaforge-Linux-x86_64.sh
 RUN mamba --version
-
-# install packages
-COPY environment.yml ./environment.yml
 
 # Step 2: get an up-to date cmake (HEREDOC needs DOCKER_BUILDKIT=1 enabled or build with "docker buildx")
 RUN <<-EOF
@@ -93,16 +89,17 @@ ENV PATH="/openms-build/bin/:${PATH}"
 
 WORKDIR /openms-build
 
-#RUN echo "deb http://archive.ubuntu.com/ubuntu/ bionic main universe" >> /etc/apt/sources.list
-#RUN apt-get -y update
+RUN echo "deb http://archive.ubuntu.com/ubuntu/ bionic main universe" >> /etc/apt/sources.list
+RUN apt-get install -y software-properties-common dirmngr
+RUN add-apt-repository "deb http://archive.ubuntu.com/ubuntu/ bionic main universe"
+RUN apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys 3B4FE6ACC0B21F32
+RUN apt-get -y update
 RUN apt-get install -y --no-install-recommends --no-install-suggests python3-pip python3-dev python3-numpy
-RUN pip install pytest
-RUN pip install -U setuptools
-RUN pip install Cython
-RUN pip install autowrap
-RUN pip install pandas
+RUN python3 -m pip install --upgrade pip
+RUN python3 -m pip install -U setuptools
+RUN python3 -m pip install -U nose Cython autowrap pandas numpy pytest
 
-RUN cmake -DCMAKE_PREFIX_PATH="/OpenMS/contrib-build/;/usr/;/usr/local" -DBOOST_USE_STATIC=OFF -DHAS_XSERVER=Off -DPYOPENMS=On ../OpenMS
+RUN /bin/bash -c "cmake -DCMAKE_PREFIX_PATH='/usr/;/usr/local' -DOPENMS_CONTRIB_LIBS='/contrib-build/' -DHAS_XSERVER=Off -DBOOST_USE_STATIC=OFF -DPYOPENMS=On ../OpenMS -DPY_MEMLEAK_DISABLE=On"
 
 # make OpenMS library
 RUN make -j4 pyopenms
@@ -117,6 +114,8 @@ RUN rm -rf /OpenMS
 
 #################################### install streamlit
 # creates the streamlit-env conda environment
+# install packages
+COPY environment.yml ./environment.yml
 RUN mamba env create -f environment.yml
 RUN echo "conda activate streamlit-env" >> ~/.bashrc
 SHELL ["/bin/bash", "--rcfile", "~/.bashrc"]
