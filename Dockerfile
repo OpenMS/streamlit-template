@@ -8,10 +8,9 @@
 # prune unused images/etc. to free disc space (e.g. might be needed on gitpod). Use with care.: docker system prune --all --force
 
 FROM ubuntu:22.04
+ARG OPENMS_REPO=https://github.com/OpenMS/OpenMS.git
 ARG OPENMS_BRANCH=develop
-# exposed port
-EXPOSE 8501
-
+ARG PORT=8501
 
 # Step 1: set up a sane build system
 USER root
@@ -20,9 +19,7 @@ RUN apt-get -y update
 RUN apt-get install -y --no-install-recommends --no-install-suggests g++ autoconf automake patch libtool make git gpg wget ca-certificates curl
 RUN update-ca-certificates
 
-# Install python and streamlit
-
-# install mamba (faster than conda)
+# Install mamba (faster than conda)
 ENV PATH="/root/mambaforge/bin:${PATH}"
 RUN wget -q \
     https://github.com/conda-forge/miniforge/releases/latest/download/Mambaforge-Linux-x86_64.sh \
@@ -52,7 +49,7 @@ RUN apt-get install -y --no-install-recommends --no-install-suggests libboost-da
 RUN apt-get install -y --no-install-recommends --no-install-suggests qtbase5-dev libqt5svg5-dev libqt5opengl5-dev
 
 ################################### clone OpenMS branch and the associcated contrib+thirdparties+pyOpenMS-doc submodules
-RUN git clone --recursive --depth=1 -b ${OPENMS_BRANCH} --single-branch https://github.com/OpenMS/OpenMS.git && cd /OpenMS
+RUN git clone --recursive --depth=1 -b ${OPENMS_BRANCH} --single-branch ${OPENMS_REPO} && cd /OpenMS
 WORKDIR /OpenMS
 
 ###################################
@@ -88,11 +85,11 @@ RUN make -j4 && rm -rf src doc CMakeFiles
 
 ENV PATH="/openms-build/bin/:${PATH}"
 
-#################################### make pyOpenMS
+#################################### build pyOpenMS
 SHELL ["/bin/bash", "-c"]
 WORKDIR /openms-build
 
-# Activate and configure the Conda environment to build pyOpenMS
+# Activate and configure the Conda environment to build pyOpenMS (needs extra libs)
 RUN conda update -n base -c conda-forge conda
 RUN conda info
 RUN conda create -n py310 python=3.10
@@ -105,16 +102,11 @@ RUN python -m pip install -U nose Cython autowrap pandas numpy pytest
 
 RUN cmake -DCMAKE_PREFIX_PATH='/contrib-build/;/usr/;/usr/local' -DOPENMS_CONTRIB_LIBS='/contrib-build/' -DHAS_XSERVER=Off -DBOOST_USE_STATIC=OFF -DPYOPENMS=On ../OpenMS -DPY_MEMLEAK_DISABLE=On
 
-# make OpenMS library
+# make and install pyOpenMS
 RUN make -j4 pyopenms
-
-# install pyOpenMS
 WORKDIR /openms-build/pyOpenMS
 RUN pip install dist/*.whl
 ENV PATH="/openms-build/bin/:${PATH}"
-
-#################################### remove source folders
-RUN rm -rf /OpenMS
 
 #################################### install streamlit
 # creates the streamlit-env conda environment
@@ -127,10 +119,13 @@ SHELL ["/bin/bash", "--rcfile", "~/.bashrc"]
 # create workdir
 WORKDIR /app
 
-# install wget and cron
-RUN apt-get install -y wget cron && rm -rf /var/lib/apt/lists/*
+# install cron (TODO: think about automatic clean up of temporary files and workspaces)
+# RUN apt-get install -y cron
 
 # make sure that conda environment is used
 SHELL ["conda", "run", "-n", "streamlit-env", "/bin/bash", "-c"]
-
+EXPOSE $PORT
 ENTRYPOINT ["conda", "run", "--no-capture-output", "-n", "streamlit-env", "streamlit", "run", "app.py"]
+
+### cleanup source folders (we do this at the end to reduce the number of rebuilds during dockerfile creation)
+RUN rm -rf /OpenMS
