@@ -7,7 +7,7 @@
 # debug container after build (comment out ENTRYPOINT) and run container with interactive /bin/bash shell
 # prune unused images/etc. to free disc space (e.g. might be needed on gitpod). Use with care.: docker system prune --all --force
 
-FROM ubuntu:22.04
+FROM ubuntu:22.04 AS stage1
 ARG OPENMS_REPO=https://github.com/OpenMS/OpenMS.git
 ARG OPENMS_BRANCH=develop
 ARG PORT=8501
@@ -86,6 +86,7 @@ RUN make -j4 && rm -rf src doc CMakeFiles
 ENV PATH="/openms-build/bin/:${PATH}"
 
 #################################### build pyOpenMS
+FROM stage1 AS stage2
 SHELL ["/bin/bash", "-c"]
 WORKDIR /openms-build
 
@@ -93,6 +94,7 @@ WORKDIR /openms-build
 RUN conda update -n base -c conda-forge conda
 RUN conda info
 RUN conda create -n py310 python=3.10
+# note: activation of conda needs to go to bashrc because every RUN command spawns new bash
 SHELL ["conda", "run", "-n", "py310", "/bin/bash", "-c"]
 RUN echo "source activate py310" > ~/.bashrc
 RUN conda install pip
@@ -109,6 +111,7 @@ RUN pip install dist/*.whl
 ENV PATH="/openms-build/bin/:${PATH}"
 
 #################################### install streamlit
+FROM stage2 AS stage3
 # creates the streamlit-env conda environment
 # install packages
 COPY environment.yml ./environment.yml
@@ -116,8 +119,14 @@ RUN mamba env create -f environment.yml
 RUN echo "conda activate streamlit-env" >> ~/.bashrc
 SHELL ["/bin/bash", "--rcfile", "~/.bashrc"]
 
-# create workdir
+# create workdir and copy over all streamlit related files/folders
 WORKDIR /app
+# note: slash as suffix is important in Dockerfile to preserve directory structure
+COPY app.py /app/app.py 
+COPY src/ /app
+COPY assets/ /app
+COPY example-data/ /app
+COPY pages/ /app
 
 # install cron (TODO: think about automatic clean up of temporary files and workspaces)
 # RUN apt-get install -y cron
