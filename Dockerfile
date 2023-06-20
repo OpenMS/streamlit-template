@@ -96,8 +96,7 @@ RUN conda update -n base -c conda-forge conda && conda info && conda create -n p
 SHELL ["conda", "run", "-n", "py310", "/bin/bash", "-c"]
 RUN echo "source activate py310" > ~/.bashrc
 RUN conda install pip
-RUN python -m pip install --upgrade pip &&
-RUN python -m pip install -U setuptools nose Cython autowrap pandas numpy pytest
+RUN python -m pip install --upgrade pip && python -m pip install -U setuptools nose Cython autowrap pandas numpy pytest
 
 RUN cmake -DCMAKE_PREFIX_PATH='/contrib-build/;/usr/;/usr/local' -DOPENMS_CONTRIB_LIBS='/contrib-build/' -DHAS_XSERVER=Off -DBOOST_USE_STATIC=OFF -DPYOPENMS=On ../OpenMS -DPY_MEMLEAK_DISABLE=On
 
