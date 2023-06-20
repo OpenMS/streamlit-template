@@ -110,6 +110,9 @@ WORKDIR /openms-build/pyOpenMS
 RUN pip install dist/*.whl
 ENV PATH="/openms-build/bin/:${PATH}"
 
+### cleanup OpenMS source folder
+RUN rm -rf /OpenMS
+
 #################################### install streamlit
 FROM stage2 AS stage3
 # creates the streamlit-env conda environment
@@ -121,12 +124,12 @@ SHELL ["/bin/bash", "--rcfile", "~/.bashrc"]
 
 # create workdir and copy over all streamlit related files/folders
 WORKDIR /app
-# note: slash as suffix is important in Dockerfile to preserve directory structure
+# note: specifying folder with slash as suffix and repeating the foder name seems important to preserve directory structure
 COPY app.py /app/app.py 
-COPY src/ /app
-COPY assets/ /app
-COPY example-data/ /app
-COPY pages/ /app
+COPY src/ /app/src
+COPY assets/ /app/assets
+COPY example-data/ /app/example-data
+COPY pages/ /app/pages
 
 # install cron (TODO: think about automatic clean up of temporary files and workspaces)
 # RUN apt-get install -y cron
@@ -135,6 +138,3 @@ COPY pages/ /app
 SHELL ["conda", "run", "-n", "streamlit-env", "/bin/bash", "-c"]
 EXPOSE $PORT
 ENTRYPOINT ["conda", "run", "--no-capture-output", "-n", "streamlit-env", "streamlit", "run", "app.py"]
-
-### cleanup source folders (we do this at the end to reduce the number of rebuilds during dockerfile creation)
-RUN rm -rf /OpenMS
