@@ -9,6 +9,9 @@
 
 FROM ubuntu:22.04
 ARG OPENMS_BRANCH=develop
+# exposed port
+EXPOSE 8501
+
 
 # Step 1: set up a sane build system
 USER root
@@ -86,22 +89,21 @@ RUN make -j4 && rm -rf src doc CMakeFiles
 ENV PATH="/openms-build/bin/:${PATH}"
 
 #################################### make pyOpenMS
-
+SHELL ["/bin/bash", "-c"]
 WORKDIR /openms-build
 
-RUN echo "deb http://archive.ubuntu.com/ubuntu/ bionic main universe" >> /etc/apt/sources.list
-RUN apt-get install -y software-properties-common dirmngr
-RUN add-apt-repository "deb http://archive.ubuntu.com/ubuntu/ bionic main universe"
-RUN apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys 3B4FE6ACC0B21F32
-RUN add-apt-repository ppa:deadsnakes/ppa -y
-RUN apt-get -y update
-#RUN apt-get install -y --no-install-recommends --no-install-suggests python3-pip python3-dev python3-numpy
-RUN apt-get install -y --no-install-recommends --no-install-suggests python3-pip python3-dev
-RUN python3 -m pip install --upgrade pip
-RUN python3 -m pip install -U setuptools
-RUN python3 -m pip install -U nose Cython autowrap pandas numpy pytest
+# Activate and configure the Conda environment to build pyOpenMS
+RUN conda update -n base -c conda-forge conda
+RUN conda info
+RUN conda create -n py310 python=3.10
+SHELL ["conda", "run", "-n", "py310", "/bin/bash", "-c"]
+RUN echo "source activate py310" > ~/.bashrc
+RUN conda install pip
+RUN python -m pip install --upgrade pip
+RUN python -m pip install -U setuptools
+RUN python -m pip install -U nose Cython autowrap pandas numpy pytest
 
-RUN /bin/bash -c "cmake -DCMAKE_PREFIX_PATH='/contrib-build/;/usr/;/usr/local' -DOPENMS_CONTRIB_LIBS='/contrib-build/' -DHAS_XSERVER=Off -DBOOST_USE_STATIC=OFF -DPYOPENMS=On ../OpenMS -DPY_MEMLEAK_DISABLE=On"
+RUN cmake -DCMAKE_PREFIX_PATH='/contrib-build/;/usr/;/usr/local' -DOPENMS_CONTRIB_LIBS='/contrib-build/' -DHAS_XSERVER=Off -DBOOST_USE_STATIC=OFF -DPYOPENMS=On ../OpenMS -DPY_MEMLEAK_DISABLE=On
 
 # make OpenMS library
 RUN make -j4 pyopenms
@@ -131,8 +133,4 @@ RUN apt-get install -y wget cron && rm -rf /var/lib/apt/lists/*
 # make sure that conda environment is used
 SHELL ["conda", "run", "-n", "streamlit-env", "/bin/bash", "-c"]
 
-# expose port
-EXPOSE 8501
-
 ENTRYPOINT ["conda", "run", "--no-capture-output", "-n", "streamlit-env", "streamlit", "run", "app.py"]
-
