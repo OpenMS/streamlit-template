@@ -81,7 +81,7 @@ WORKDIR /openms-build
 RUN /bin/bash -c "cmake -DCMAKE_BUILD_TYPE='Release' -DCMAKE_PREFIX_PATH='/OpenMS/contrib-build/;/usr/;/usr/local' -DBOOST_USE_STATIC=OFF ../OpenMS"
 
 # make OpenMS library and executables
-RUN make -j4 && rm -rf src doc CMakeFiles 
+RUN make -j4 TOPP && make -j4 UTILS && rm -rf src doc CMakeFiles 
 
 ENV PATH="/openms-build/bin/:${PATH}"
 
@@ -91,16 +91,13 @@ SHELL ["/bin/bash", "-c"]
 WORKDIR /openms-build
 
 # Activate and configure the Conda environment to build pyOpenMS (needs extra libs)
-RUN conda update -n base -c conda-forge conda
-RUN conda info
-RUN conda create -n py310 python=3.10
+RUN conda update -n base -c conda-forge conda && conda info && conda create -n py310 python=3.10
 # note: activation of conda needs to go to bashrc because every RUN command spawns new bash
 SHELL ["conda", "run", "-n", "py310", "/bin/bash", "-c"]
 RUN echo "source activate py310" > ~/.bashrc
 RUN conda install pip
-RUN python -m pip install --upgrade pip
-RUN python -m pip install -U setuptools
-RUN python -m pip install -U nose Cython autowrap pandas numpy pytest
+RUN python -m pip install --upgrade pip &&
+RUN python -m pip install -U setuptools nose Cython autowrap pandas numpy pytest
 
 RUN cmake -DCMAKE_PREFIX_PATH='/contrib-build/;/usr/;/usr/local' -DOPENMS_CONTRIB_LIBS='/contrib-build/' -DHAS_XSERVER=Off -DBOOST_USE_STATIC=OFF -DPYOPENMS=On ../OpenMS -DPY_MEMLEAK_DISABLE=On
 
@@ -124,7 +121,7 @@ SHELL ["/bin/bash", "--rcfile", "~/.bashrc"]
 
 # create workdir and copy over all streamlit related files/folders
 WORKDIR /app
-# note: specifying folder with slash as suffix and repeating the foder name seems important to preserve directory structure
+# note: specifying folder with slash as suffix and repeating the folder name seems important to preserve directory structure
 COPY app.py /app/app.py 
 COPY src/ /app/src
 COPY assets/ /app/assets
