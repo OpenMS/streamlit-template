@@ -16,7 +16,8 @@ ARG PORT=8501
 USER root
 
 RUN apt-get -y update
-RUN apt-get install -y --no-install-recommends --no-install-suggests wget ca-certificates
+# note: streamlit in docker needs libgtk2.0-dev (see https://yugdamor.medium.com/importerror-libgthread-2-0-so-0-cannot-open-shared-object-file-no-such-file-or-directory-895b94a7827b)
+RUN apt-get install -y --no-install-recommends --no-install-suggests wget ca-certificates libgtk2.0-dev
 RUN update-ca-certificates
 
 # Install mamba (faster than conda)

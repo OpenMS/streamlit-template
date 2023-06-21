@@ -1,9 +1,9 @@
 # This Dockerfile builds OpenMS, the TOPP tools, pyOpenMS and thidparty tools.
 # It also adds a basic streamlit server that serves a pyOpenMS-based app.
 # hints:
-# build image with: docker build --no-cache -t streamlitapp:latest . 2>&1 | tee build.log
+# build image and give it a name (here: streamlitappsimple) with: docker build --no-cache -t streamlitappsimple:latest . 2>&1 | tee build.log 
 # check if image was build: docker image ls
-# run container: docker run -p 8501:8501 streamlitapp:latest
+# run container: docker run -p 8501:8501 streamlitappsimple:latest
 # debug container after build (comment out ENTRYPOINT) and run container with interactive /bin/bash shell
 # prune unused images/etc. to free disc space (e.g. might be needed on gitpod). Use with care.: docker system prune --all --force
 
@@ -16,7 +16,7 @@ ARG PORT=8501
 USER root
 
 RUN apt-get -y update
-RUN apt-get install -y --no-install-recommends --no-install-suggests g++ autoconf automake patch libtool make git gpg wget ca-certificates curl
+RUN apt-get install -y --no-install-recommends --no-install-suggests g++ autoconf automake patch libtool make git gpg wget ca-certificates curl libgtk2.0-dev
 RUN update-ca-certificates
 
 # Install mamba (faster than conda)
@@ -134,4 +134,4 @@ COPY pages/ /app/pages
 # make sure that conda environment is used
 SHELL ["conda", "run", "-n", "streamlit-env", "/bin/bash", "-c"]
 EXPOSE $PORT
-#ENTRYPOINT ["conda", "run", "--no-capture-output", "-n", "streamlit-env", "streamlit", "run", "app.py"]
+ENTRYPOINT ["conda", "run", "--no-capture-output", "-n", "streamlit-env", "streamlit", "run", "app.py"]
