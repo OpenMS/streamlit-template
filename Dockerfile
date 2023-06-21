@@ -71,7 +71,8 @@ WORKDIR /OpenMS
 RUN mkdir /thirdparty && \
     git submodule update --init THIRDPARTY && \
     cp -r THIRDPARTY/All/* /thirdparty && \
-    cp -r THIRDPARTY/Linux/64bit/* /thirdparty
+    cp -r THIRDPARTY/Linux/64bit/* /thirdparty && \
+    chmod -R +x /thirdparty
 ENV PATH="/thirdparty/LuciPHOr2:/thirdparty/MSGFPlus:/thirdparty/Sirius:/thirdparty/ThermoRawFileParser:/thirdparty/Comet:/thirdparty/Fido:/thirdparty/MaRaCluster:/thirdparty/MyriMatch:/thirdparty/OMSSA:/thirdparty/Percolator:/thirdparty/SpectraST:/thirdparty/XTandem:/thirdparty/crux:${PATH}"
 
 RUN mkdir /openms-build
@@ -106,8 +107,8 @@ WORKDIR /openms-build/pyOpenMS
 RUN pip install dist/*.whl
 ENV PATH="/openms-build/bin/:${PATH}"
 
-### cleanup OpenMS source folder
-RUN rm -rf /OpenMS
+### TODO: cleanup OpenMS source folder. Probably needs a make install to have share available
+#RUN rm -rf /OpenMS
 
 #################################### install streamlit
 FROM stage2 AS stage3
@@ -133,4 +134,4 @@ COPY pages/ /app/pages
 # make sure that conda environment is used
 SHELL ["conda", "run", "-n", "streamlit-env", "/bin/bash", "-c"]
 EXPOSE $PORT
-ENTRYPOINT ["conda", "run", "--no-capture-output", "-n", "streamlit-env", "streamlit", "run", "app.py"]
+#ENTRYPOINT ["conda", "run", "--no-capture-output", "-n", "streamlit-env", "streamlit", "run", "app.py"]

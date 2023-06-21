@@ -1,0 +1,58 @@
+# This Dockerfile creates a container with pyOpenMS
+# It also adds a basic streamlit server that serves a pyOpenMS-based app.
+# hints:
+# build image with: docker build -f Dockerfile_simple --no-cache -t streamlitapp:latest . 2>&1 | tee build.log
+# check if image was build: docker image ls
+# run container: docker run -p 8501:8501 streamlitapp:latest
+# debug container after build (comment out ENTRYPOINT) and run container with interactive /bin/bash shell
+# prune unused images/etc. to free disc space (e.g. might be needed on gitpod). Use with care.: docker system prune --all --force
+
+FROM ubuntu:22.04 AS stage1
+ARG OPENMS_REPO=https://github.com/OpenMS/OpenMS.git
+ARG OPENMS_BRANCH=develop
+ARG PORT=8501
+
+# Step 1: set up a sane build system
+USER root
+
+RUN apt-get -y update
+RUN apt-get install -y --no-install-recommends --no-install-suggests wget ca-certificates
+RUN update-ca-certificates
+
+# Install mamba (faster than conda)
+ENV PATH="/root/mambaforge/bin:${PATH}"
+RUN wget -q \
+    https://github.com/conda-forge/miniforge/releases/latest/download/Mambaforge-Linux-x86_64.sh \
+    && bash Mambaforge-Linux-x86_64.sh -b \
+    && rm -f Mambaforge-Linux-x86_64.sh
+RUN mamba --version
+
+# Activate and configure the Conda environment
+RUN conda update -n base -c conda-forge conda && conda info && conda create -n streamlit-env python=3.10
+# note: activation of conda needs to go to bashrc because every RUN command spawns new bash
+SHELL ["conda", "run", "-n", "streamlit-env", "/bin/bash", "-c"]
+RUN echo "source activate streamlit-env" > ~/.bashrc
+
+#################################### install streamlit
+# install packages
+COPY requirements.txt requirements.txt
+RUN conda install pip
+RUN python -m pip install --upgrade pip
+RUN python -m pip install -r requirements.txt
+
+# create workdir and copy over all streamlit related files/folders
+WORKDIR /app
+# note: specifying folder with slash as suffix and repeating the folder name seems important to preserve directory structure
+COPY app.py /app/app.py 
+COPY src/ /app/src
+COPY assets/ /app/assets
+COPY example-data/ /app/example-data
+COPY pages/ /app/pages
+
+# install cron (TODO: think about automatic clean up of temporary files and workspaces)
+# RUN apt-get install -y cron
+
+# make sure that conda environment is used
+SHELL ["conda", "run", "-n", "streamlit-env", "/bin/bash", "-c"]
+EXPOSE $PORT
+ENTRYPOINT ["conda", "run", "--no-capture-output", "-n", "streamlit-env", "streamlit", "run", "app.py"]
