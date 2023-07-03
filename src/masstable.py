@@ -2,18 +2,12 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from pathlib import Path
-import plotly.graph_objects as go
-import plotly.express as px
-from pyopenms import *
-from pyopenms import MSExperiment, MzMLFile
-from pyopenms import Constants
-import time
+from pyopenms import MSExperiment, MzMLFile, SpectrumLookup, Constants
+
 @st.cache_data
 def parseFLASHDeconvOutput(annotated, deconvolved):
     annotated_exp = MSExperiment()
     deconvolved_exp = MSExperiment()
-    start = time.time()
-    print('........................loading files')
     MzMLFile().load(str(Path(annotated)), annotated_exp)
     MzMLFile().load(str(Path(deconvolved)), deconvolved_exp)
     #MzMLFile().load(annotated, annotated_exp)
@@ -21,11 +15,7 @@ def parseFLASHDeconvOutput(annotated, deconvolved):
     tolerance = .0
     massoffset = .0
     chargemass = .0
-    end = time.time()
-    print('................elapsed time=', end - start)
 
-    start = time.time()
-    print('........................getting df')
     df = deconvolved_exp.get_df()
     annotateddf = annotated_exp.get_df()
     allPeaks = []
@@ -40,11 +30,7 @@ def parseFLASHDeconvOutput(annotated, deconvolved):
     precursorMasses=[]
     precursorScans=[]
     scans=[]
-    end = time.time()
-    print('................elapsed time=', end - start)
 
-    start = time.time()
-    print('........................reading deconv')
     for spec, aspec in zip(deconvolved_exp, annotated_exp):
         spec.sortByPosition()
         aspec.sortByPosition()
@@ -128,16 +114,12 @@ def parseFLASHDeconvOutput(annotated, deconvolved):
 
     for k in scoreMaps:
         df[k] = scoreMaps[k]
-    end = time.time()
-    print('................elapsed time=', end - start)
 
-    start = time.time()
-    print('........................unpacking annotated_exp')
     for spec, specPeaks in zip(annotated_exp, allPeaks):
         mstr = spec.getMetaValue('DeconvMassPeakIndices')
         # Split the string into peak items
         peak_items = mstr.split(';')
-        sourcefiles = annotated_exp.getSourceFiles();
+        sourcefiles = annotated_exp.getSourceFiles()
         scan_number = SpectrumLookup().extractScanNumber(spec.getNativeID(), sourcefiles[0].getNativeIDTypeAccession()) if sourcefiles else -1
         scans.append(scan_number)
         # Create a list to store the parsed peaks
@@ -183,9 +165,6 @@ def parseFLASHDeconvOutput(annotated, deconvolved):
         noisyPeaks.append(specnpeaks)
         msLevels.append(spec.getMSLevel())
 
-    end = time.time()
-    print('................elapsed time=', end - start)
-
     df['SignalPeaks'] = signalPeaks
     df['NoisyPeaks'] = noisyPeaks
     df['MSLevel'] = msLevels
@@ -194,10 +173,11 @@ def parseFLASHDeconvOutput(annotated, deconvolved):
 
 @st.cache_data
 def getSpectraTableDF(deconv_df: pd.DataFrame):
-    out_df = deconv_df[['Scan', 'MSLevel', 'RT']]
-    out_df['#Masses'] = [len(ele) for ele in deconv_df['MinCharges'].copy()]
+    out_df = deconv_df[['Scan', 'MSLevel', 'RT', 'PrecursorMass']].copy()
+    out_df['#Masses'] = [len(ele) for ele in deconv_df['MinCharges']]
     out_df.reset_index(inplace=True)
     return out_df
+
 
 @st.cache_data
 def getMassTableDF(spec: pd.Series):
@@ -207,9 +187,13 @@ def getMassTableDF(spec: pd.Series):
                             'Max charge': spec['MaxCharges'],
                             'Min isotope': spec['MinIsotopes'],
                             'Max isotope': spec['MaxIsotopes'],
+                            'Cosine Score': spec['cos'],
+                            'SNR': spec['snr'],
+                            'QScore': spec['qscore'],                        
                             })
     mass_df.reset_index(inplace=True)
     return mass_df
+
 
 @st.cache_data
 def getMassSignalDF(spec: pd.Series):
@@ -218,6 +202,33 @@ def getMassSignalDF(spec: pd.Series):
                                    'Noisy peaks': spec['NoisyPeaks'],
                                    })
     return mass_signal_df
+
+@st.cache_data
+def getPrecursorMassSignalDF(spec: pd.Series, deconv_df: pd.DataFrame):
+    ret =  pd.DataFrame()
+    if spec['PrecursorScan'] == 0:
+        return ret
+
+    indices = deconv_df[deconv_df['Scan'] == spec['PrecursorScan']].index.values
+    if indices.size == 0:
+        return ret
+ 
+    target = deconv_df.loc[indices[0]]
+
+    mass_signal_df = getMassSignalDF(target)
+    #print(mass_signal_df)
+
+    masses = mass_signal_df['Mono mass']
+    pmass = spec['PrecursorMass']  
+    
+    for i in range(masses.size):
+        mass = (masses[i])
+        if abs(mass - pmass) < 1e-2 :    
+            ret = mass_signal_df.loc[i]
+            break
+    
+    return ret
+
 
 @st.cache_data
 def getMSSignalDF(anno_df: pd.DataFrame, point_num_cutoff=1000000):
@@ -240,12 +251,11 @@ def getMSSignalDF(anno_df: pd.DataFrame, point_num_cutoff=1000000):
     return ms_df
 
 # def main():
-#     annotated = '/Users/kyowonjeong/FLASHDeconvOut/res=35k,noise=1000_centroid_annotated.mzML'
-#     deconvolved = '/Users/kyowonjeong/FLASHDeconvOut/res=35k,noise=1000_centroid_deconv.mzML'
+#     annotated = '/Users/kyowonjeong/FLASHDeconvOut/20211216_Ecoli_SPE_method_06_R1_annotated.mzML'
+#     deconvolved = '/Users/kyowonjeong/FLASHDeconvOut/20211216_Ecoli_SPE_method_06_R1_deconv.mzML'
 #     tmp = parseFLASHDeconvOutput(annotated, deconvolved)
 #     for col in tmp[0].columns:
 #         print(col)
-#     print(tmp[0])
 # if __name__ == "__main__":
 #     main()
 
