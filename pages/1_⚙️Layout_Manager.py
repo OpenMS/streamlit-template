@@ -41,7 +41,7 @@ def containerForNewComponent(exp_index, row_index, col_index):
         st.session_state.layout_setting[exp_num][row][col] = st.session_state[new_component_option]
 
     # new component
-    st.selectbox("New component to add", COMPONENT_OPTIONS,
+    st.selectbox("New component to add", ['Select...'] + COMPONENT_OPTIONS,
                  key='SelectNewComponent%d%d%d'%(exp_index, row_index, col_index),
                  on_change=addNewComponent,
                  kwargs=dict(exp_num=exp_index, row=row_index, col=col_index),
@@ -50,7 +50,6 @@ def containerForNewComponent(exp_index, row_index, col_index):
 
 def layoutEditorPerExperiment(exp_index):
     layout_info = st.session_state.layout_setting[exp_index]
-    st.write('current layout', layout_info)
 
     for row_index, row in enumerate(layout_info):
         st_cols = st.columns(len(row)+1 if  len(row)<3 else len(row))
@@ -73,18 +72,71 @@ def layoutEditorPerExperiment(exp_index):
         layout_info.append([''])
         st.experimental_rerun()
 
+def validateSubmittedLayout():
+    # check if submitted layout is empty
+    if not any(col for exp in st.session_state.layout_setting for row in exp for col in row if col):
+        return 'Empty input'
+
+    # TODO: Err if "needed" components are not added
+    print(st.session_state.layout_setting)
+    return ''
+
+def handleEditAndSaveButtons():
+    # return: "validation"
+
+    # if "Edit" button was clicked,
+    if "edit_btn_clicked" in st.session_state and st.session_state["edit_btn_clicked"]:
+        # reset variables based on "saved_layout_setting"
+        st.session_state["num_of_experiment_to_show"] = len(st.session_state["saved_layout_setting"])
+        st.session_state["layout_setting"] = [[[COMPONENT_OPTIONS[COMPONENT_NAMES.index(col)]
+                                                for col in row if col]
+                                               for row in exp if row]
+                                              for exp in st.session_state.saved_layout_setting]
+        # remove saved state, if any
+        del st.session_state["saved_layout_setting"]
+
+    # if "Save" button was clicked,
+    if "layout_saved" in st.session_state and st.session_state["layout_saved"]:
+        got_error = validateSubmittedLayout()
+        st.session_state['save_btn_error_message'] = got_error # to show error msg at the end
+        if not got_error:
+            # get only submitted info from "layout_setting"
+            cleared_layout_setting = []
+            for exp in st.session_state.layout_setting:
+                rows = []
+                for row in exp:
+                    cols = []
+                    for col in row:
+                        if col:
+                            cols.append(COMPONENT_NAMES[COMPONENT_OPTIONS.index(col)])
+                    if cols:
+                        rows.append(cols)
+                if rows:
+                    cleared_layout_setting.append(rows)
+            st.session_state["saved_layout_setting"] = cleared_layout_setting
+
+def handleSettingButtons():
+    if "reset_btn_clicked" in st.session_state and st.session_state.reset_btn_clicked:
+        resetSettingsToDefault()
+        if "saved_layout_setting" in st.session_state:
+            del st.session_state["saved_layout_setting"]
+
 
 def content():
     defaultPageSetup()
+    # handles "onclick" of buttons
+    handleSettingButtons()
+    handleEditAndSaveButtons()
 
     # initialize setting information
     if "layout_setting" not in st.session_state:
         resetSettingsToDefault()
-    elif len(st.session_state.layout_setting) != st.session_state.num_of_experiment_to_show:
-        # the "num_of_experiment_to_show" changed
+    # the "num_of_experiment_to_show" changed
+    elif "num_of_experiment_to_show" in st.session_state and \
+            len(st.session_state.layout_setting) != st.session_state.num_of_experiment_to_show:
         resetSettingsToDefault(st.session_state.num_of_experiment_to_show)
 
-    # title and setting buttons
+    ### title and setting buttons
     c1, c2, c3, c4 = st.columns([6, 1, 1, 1])
     c1.title("Layout Manager")
 
@@ -109,29 +161,41 @@ def content():
 
     # Reset settings to default
     v_space(1, c4)
-    if c4.button("Reset Setting"):
-        resetSettingsToDefault()
+    c4.button("Reset Setting", "reset_btn_clicked")
 
-    # show default
-    st.selectbox("**#Experiments to view at once**", [1, 2, 3, 4, 5],
-        key="num_of_experiment_to_show",
-    )
+    ### Main part
+    if "saved_layout_setting" in st.session_state:
+        # show saved-mode
+        for index_of_experiment in range(len(st.session_state.saved_layout_setting)):
+            layout_info_per_experiment = st.session_state.saved_layout_setting[index_of_experiment]
+            with st.expander("Experiment #%d"%(index_of_experiment+1), expanded=True):
+                for row_index, row in enumerate(layout_info_per_experiment):
+                    st_cols = st.columns(len(row))
+                    for col_index, col in enumerate(row):
+                        st_cols[col_index].info(COMPONENT_OPTIONS[COMPONENT_NAMES.index(col)])
+    else:
+        # show edit-mode
+        st.selectbox("**#Experiments to view at once**", [1, 2, 3, 4, 5],
+                     key="num_of_experiment_to_show",
+        )
 
-    for index_of_experiment in range(st.session_state.num_of_experiment_to_show):
-        with st.expander("Experiment #%d"%(index_of_experiment+1)):
-            layoutEditorPerExperiment(index_of_experiment)
+        for index_of_experiment in range(st.session_state.num_of_experiment_to_show):
+            with st.expander("Experiment #%d"%(index_of_experiment+1)):
+                layoutEditorPerExperiment(index_of_experiment)
 
-        # save current status
+    ### buttons for edit/save
+    _, edit_btn_col, save_btn_col = st.columns([9, 1, 1])
+    edit_btn_col.button("Edit", key="edit_btn_clicked")
+    save_btn_col.button("Save", key="layout_saved")
 
-    # TODO: Send the layout info to JSON
-    _, button_col = st.columns([7,1])
-    if button_col.button("Save"):
-        st.success('Layouts Saved')
-        st.write(st.session_state.layout_setting)
-        # TODO: Err if "needed" components are not added
-        # TODO: show saved layout (with correct column sizes)
+    if "save_btn_error_message" in st.session_state and st.session_state.layout_saved:
+        error_message = st.session_state["save_btn_error_message"]
+        if error_message:
+            st.error('Error: '+error_message, icon="🚨")
+        else:
+            st.success('Layouts Saved')
 
-    ## TIPs (TODO: Add image)
+    ### TIPs (TODO: Add image)
     st.info("""
     **💡 Tips**
     """)
