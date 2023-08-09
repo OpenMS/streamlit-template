@@ -1,6 +1,6 @@
 import streamlit as st
 from src.common import defaultPageSetup, v_space
-
+import json
 
 COMPONENT_OPTIONS=[
     'MS1 raw Heatmap',
@@ -31,22 +31,29 @@ def resetSettingsToDefault(num_of_exp=1):
     for index in range(1, num_of_exp):
         st.session_state.layout_setting.append([['']])
 
+
 def containerForNewComponent(exp_index, row_index, col_index):
-    # st.markdown(css_new_component_container, unsafe_allow_html=True)
-    def addNewComponent(exp_num, row, col):
+
+    def isThisComponentUnique(new_component_option):
+        if any(col for row in st.session_state.layout_setting[exp_index] for col in row if col==new_component_option):
+            st.session_state["component_error_message"] = 'Duplicated component!'
+            return False
+        else:
+            return True
+
+
+    def addNewComponent():
         new_component_option = 'SelectNewComponent%d%d%d'%(exp_index, row_index, col_index)
-        # TODO: check if new_component_option is duplicated!
-        # st.session_state.layout_setting[exp_num][row][col] = COMPONENT_NAMES[
-        #     COMPONENT_OPTIONS.index(st.session_state[new_component_option])]
-        st.session_state.layout_setting[exp_num][row][col] = st.session_state[new_component_option]
+        if isThisComponentUnique(st.session_state[new_component_option]):
+            st.session_state.layout_setting[exp_index][row_index][col_index] = st.session_state[new_component_option]
 
     # new component
     st.selectbox("New component to add", ['Select...'] + COMPONENT_OPTIONS,
                  key='SelectNewComponent%d%d%d'%(exp_index, row_index, col_index),
                  on_change=addNewComponent,
-                 kwargs=dict(exp_num=exp_index, row=row_index, col=col_index),
                  placeholder='Select...',
                  )
+
 
 def layoutEditorPerExperiment(exp_index):
     layout_info = st.session_state.layout_setting[exp_index]
@@ -72,14 +79,44 @@ def layoutEditorPerExperiment(exp_index):
         layout_info.append([''])
         st.experimental_rerun()
 
-def validateSubmittedLayout():
+
+def validateSubmittedLayout(input_layout=None):
+    layout_setting = input_layout if input_layout is not None else st.session_state.layout_setting
+
     # check if submitted layout is empty
-    if not any(col for exp in st.session_state.layout_setting for row in exp for col in row if col):
+    if not any(col for exp in layout_setting for row in exp for col in row if col):
         return 'Empty input'
 
-    # TODO: Err if "needed" components are not added
-    print(st.session_state.layout_setting)
+    # check if submitted layout contains "needed" components
+    for exp in layout_setting:
+        submitted_components = [col for row in exp for col in row if col]
+        required_components = [comp.split('(')[1].split('needed')[0].rstrip() for comp in submitted_components if 'needed' in comp]
+        if required_components:
+            for required in required_components:
+                required_exist = False
+                for submitted in submitted_components:
+                    if submitted.startswith(required):
+                        required_exist = True
+                if not required_exist:
+                    return 'Required component is missing'
     return ''
+
+
+def getTrimmedLayoutSetting():
+    trimmed_layout_setting = []
+    for exp in st.session_state.layout_setting:
+        rows = []
+        for row in exp:
+            cols = []
+            for col in row:
+                if col:
+                    cols.append(COMPONENT_NAMES[COMPONENT_OPTIONS.index(col)])
+            if cols:
+                rows.append(cols)
+        if rows:
+            trimmed_layout_setting.append(rows)
+    return trimmed_layout_setting
+
 
 def handleEditAndSaveButtons():
     # return: "validation"
@@ -101,25 +138,25 @@ def handleEditAndSaveButtons():
         st.session_state['save_btn_error_message'] = got_error # to show error msg at the end
         if not got_error:
             # get only submitted info from "layout_setting"
-            cleared_layout_setting = []
-            for exp in st.session_state.layout_setting:
-                rows = []
-                for row in exp:
-                    cols = []
-                    for col in row:
-                        if col:
-                            cols.append(COMPONENT_NAMES[COMPONENT_OPTIONS.index(col)])
-                    if cols:
-                        rows.append(cols)
-                if rows:
-                    cleared_layout_setting.append(rows)
-            st.session_state["saved_layout_setting"] = cleared_layout_setting
+            st.session_state["saved_layout_setting"] = getTrimmedLayoutSetting()
+
 
 def handleSettingButtons():
     if "reset_btn_clicked" in st.session_state and st.session_state.reset_btn_clicked:
         resetSettingsToDefault()
         if "saved_layout_setting" in st.session_state:
             del st.session_state["saved_layout_setting"]
+
+    if "uploaded_json_file" in st.session_state and st.session_state.uploaded_json_file is not None:
+        uploaded_layout = json.load(st.session_state.uploaded_json_file)
+        validated = validateSubmittedLayout(uploaded_layout)
+        if validated!='':
+            st.session_state["component_error_message"] = validated
+        else:
+            st.session_state.layout_setting = [[[COMPONENT_OPTIONS[COMPONENT_NAMES.index(col)]
+                                                 for col in row if col]
+                                                for row in exp if row]
+                                               for exp in uploaded_layout]
 
 
 def content():
@@ -143,25 +180,25 @@ def content():
     # Load existing layout setting file
     # TODO: change the loading data part (from writing)
     v_space(1, c2)
-    if c2.button("Load Setting"):
-        uploaded_ini_file = st.file_uploader("Choose a ini file", type="ini")
-        if uploaded_ini_file is not None:
-            bytes_data = uploaded_ini_file.read()
-            st.write(bytes_data)
+    c2.button("Load Setting", key="load_btn_clicked")
 
-    # Save current layout setting
-    # TODO: change the saving location
+    # Save current layout setting (only after "Saved" button)
     v_space(1, c3)
     c3.download_button(
         label="Save Setting",
-        data="st.session_state.layout_setting", # TODO: add a function to format this
-        file_name='FLASHViewer_layout_settings.ini',
-        mime='text/plain',  # TODO: change this to JSON?
+        data=json.dumps(getTrimmedLayoutSetting()),
+        file_name='FLASHViewer_layout_settings.json',
+        mime='json',
+        disabled=(validateSubmittedLayout()!=''),
     )
 
     # Reset settings to default
     v_space(1, c4)
-    c4.button("Reset Setting", "reset_btn_clicked")
+    c4.button("Reset Setting", key="reset_btn_clicked")
+
+    ### space for File Uploader, when "Load Setting" button is clicked
+    if "load_btn_clicked" in st.session_state and st.session_state.load_btn_clicked:
+        st.file_uploader("Choose a json file", type="json", key="uploaded_json_file")
 
     ### Main part
     if "saved_layout_setting" in st.session_state:
@@ -188,12 +225,16 @@ def content():
     edit_btn_col.button("Edit", key="edit_btn_clicked")
     save_btn_col.button("Save", key="layout_saved")
 
+    ### showing error/success message
     if "save_btn_error_message" in st.session_state and st.session_state.layout_saved:
         error_message = st.session_state["save_btn_error_message"]
         if error_message:
             st.error('Error: '+error_message, icon="🚨")
         else:
-            st.success('Layouts Saved')
+            st.success('Layouts Saved', icon="✔️")
+    if "component_error_message" in st.session_state and st.session_state.component_error_message:
+        st.error('Error: ' + st.session_state.component_error_message, icon="🚨")
+        del st.session_state["component_error_message"]
 
     ### TIPs (TODO: Add image)
     st.info("""
