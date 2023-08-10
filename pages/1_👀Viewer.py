@@ -23,6 +23,12 @@ def draw3DSignalView(df, title):
     plot3d = plot3DSignalView(signal_df, noise_df, title)
     st.plotly_chart(plot3d, use_container_width=True)
 
+def create_spectra(input_df):
+    x = np.repeat(input_df["mzarray"], 3)
+    y = np.repeat(input_df["intarray"], 3)
+    y[::3] = y[2::3] = -100000
+    return x.tolist(), y.tolist()
+
 def content():
     defaultPageSetup("FLASHViewer")
 
@@ -51,10 +57,13 @@ def content():
     #### Showing MS1 heatmap & Scan table ####
     df_for_ms1_deconv = getMSSignalDF(spec_df)
     df_for_spectra_table = getSpectraTableDF(spec_df)
-    df_for_mass_table = getMassTableDF(spec_df.loc[0])
+    selected_index = 0
+    df_for_mass_table = getMassTableDF(spec_df.loc[selected_index])
+    x_anno_spec, y_anno_spec = create_spectra(anno_df.loc[selected_index])
+    x_deconv_spec, y_deconv_spec = create_spectra(spec_df.loc[selected_index])
     FlashViewerGrid(
         columns=2,
-        rows=2,
+        rows=3,
         components=[
             FlashViewerComponent(
                 component_args=PlotlyHeatmap(
@@ -87,20 +96,31 @@ def content():
                     width=2,
                     height=1
                 )
-            )
+            ),
+            FlashViewerComponent(
+                component_args=PlotlyLineplot(
+                    title = "Annotated spectrum",
+                    x = x_anno_spec,
+                    y = y_anno_spec,
+                ),
+                component_layout=ComponentLayout(
+                    width=1,
+                    height=1
+                )
+            ),
+            FlashViewerComponent(
+                component_args=PlotlyLineplot(
+                    title = "Deconvolved spectrum",
+                    x = x_deconv_spec,
+                    y = y_deconv_spec,
+                ),
+                component_layout=ComponentLayout(
+                    width=1,
+                    height=1
+                )
+            ),
         ]
     ).addGrid()
-
-    #### Spectrum plots ####
-    # listening selecting row from the spectra table
-    # if st.session_state.selected_scan["selected_rows"]:
-    # selected_index = st.session_state.selected_scan["selected_rows"][0]["index"]
-    selected_index = 0
-    # anno_spec_view, deconv_spec_view = st.columns(2)
-    # with anno_spec_view:
-    #     st.plotly_chart(plotAnnotatedMS(anno_df.loc[selected_index]), use_container_width=True)
-    # with deconv_spec_view:
-    #     st.plotly_chart(plotDeconvolvedMS(spec_df.loc[selected_index]), use_container_width=True)
 
     #### 3D signal plot ####
     # plot3d_view, _ = st.columns([9, 1])  # for little space on the right
