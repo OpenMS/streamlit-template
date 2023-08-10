@@ -119,3 +119,17 @@ class MassTable:
             self.Column(title='SNR', field='SNR').toJson(),
             self.Column(title='QScore', field='QScore').toJson(),
         ]
+
+class PlotlyLineplot:
+    title = None
+    x = []
+    y = []
+
+    def __init__(self, title, x, y):
+        self.title = title
+        self.x = x
+        self.y = y
+        self.componentName = "PlotlyLineplot"
+
+    def toJson(self):
+        return json.dumps(self, default=lambda o: o.__dict__)
