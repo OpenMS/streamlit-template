@@ -3,7 +3,7 @@ import streamlit as st
 from src.view import *
 from src.common import *
 from src.masstable import *
-from src.components import PlotlyHeatmap, FlashViewerComponent, ComponentLayout, FlashViewerGrid
+from src.components import *
 
 @st.cache_data
 def draw3DSignalView(df, title):
@@ -51,30 +51,33 @@ def content():
     #### Showing MS1 heatmap & Scan table ####
     df_for_ms1_deconv = getMSSignalDF(spec_df)
     df_for_spectra_table = getSpectraTableDF(spec_df)
-    ms1_heatmap_view, scan_table_view = st.columns(2)
-    with ms1_heatmap_view:
-        FlashViewerGrid(
-            columns=1,
-            rows=1,
-            components=[
-                FlashViewerComponent(
-                    component_args=PlotlyHeatmap(
-                        title = "Deconvolved MS1 Heatmap", 
-                        x = list(df_for_ms1_deconv['rt']), 
-                        y = list(df_for_ms1_deconv['mass']), 
-                        intensity = list(df_for_ms1_deconv['intensity'])
-                    ),
-                    component_layout=ComponentLayout(
-                        width=1,
-                        height=1
-                    )
+    FlashViewerGrid(
+        columns=2,
+        rows=1,
+        components=[
+            FlashViewerComponent(
+                component_args=PlotlyHeatmap(
+                    title = "Deconvolved MS1 Heatmap", 
+                    x = list(df_for_ms1_deconv['rt']), 
+                    y = list(df_for_ms1_deconv['mass']), 
+                    intensity = list(df_for_ms1_deconv['intensity'])
                 ),
-            ]
-        ).addGrid()
-    with scan_table_view:
-        st.title("") # to add empty space on top
-        st.write('**Scan Table**')
-        st.session_state["selected_scan"] = drawSpectraTable(df_for_spectra_table, 300)
+                component_layout=ComponentLayout(
+                    width=1,
+                    height=1
+                )
+            ),
+            FlashViewerComponent(
+                component_args=ScanTable(
+                    dataframe=df_for_spectra_table
+                ),
+                component_layout=ComponentLayout(
+                    width=1,
+                    height=1
+                )
+            )
+        ]
+    ).addGrid()
 
     #### Spectrum plots ####
     # listening selecting row from the spectra table
