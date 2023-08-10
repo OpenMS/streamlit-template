@@ -81,9 +81,10 @@ class ScanTable:
         def toJson(self):
             return json.dumps(self, default=lambda o: o.__dict__)
 
-    def __init__(self, dataframe, show_legend=False):
+    def __init__(self, dataframe, title=None, show_legend=False):
         self.componentName = "TabulatorTable"
         self.data = dataframe.to_json(orient='records')
+        self.title = title
         self.columns = [
             self.Column(title='Index', field='index').toJson(),
             self.Column(title='Scan', field='Scan').toJson(),
@@ -102,9 +103,10 @@ class MassTable:
         def toJson(self):
             return json.dumps(self, default=lambda o: o.__dict__)
 
-    def __init__(self, dataframe, show_legend=False):
+    def __init__(self, dataframe, title=None, show_legend=False):
         self.componentName = "TabulatorTable"
         self.data = dataframe.to_json(orient='records')
+        self.title = title
         self.columns = [
             self.Column(title='Index', field='index').toJson(),
             self.Column(title='Mono mass', field='Mono mass').toJson(),

@@ -70,7 +70,8 @@ def content():
             ),
             FlashViewerComponent(
                 component_args=ScanTable(
-                    dataframe=df_for_spectra_table
+                    dataframe=df_for_spectra_table,
+                    title='Scan Table'
                 ),
                 component_layout=ComponentLayout(
                     width=1,
@@ -79,7 +80,8 @@ def content():
             ),
             FlashViewerComponent(
                 component_args=MassTable(
-                    dataframe=df_for_mass_table
+                    dataframe=df_for_mass_table,
+                    title='Mass Table'
                 ),
                 component_layout=ComponentLayout(
                     width=2,
