@@ -11,3 +11,6 @@ Pipfile
 *.njsproj
 *.sln
 *.sw*
+
+src/__pycache__
+openms-streamlit-vue-component/
