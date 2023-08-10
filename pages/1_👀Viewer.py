@@ -3,7 +3,7 @@ import streamlit as st
 from src.view import *
 from src.common import *
 from src.masstable import *
-from src.components import PlotlyHeatmap, FlashViewerComponent, ComponentLayout, FlashViewerGrid
+from src.components import *
 
 @st.cache_data
 def draw3DSignalView(df, title):
@@ -51,70 +51,75 @@ def content():
     #### Showing MS1 heatmap & Scan table ####
     df_for_ms1_deconv = getMSSignalDF(spec_df)
     df_for_spectra_table = getSpectraTableDF(spec_df)
-    ms1_heatmap_view, scan_table_view = st.columns(2)
-    with ms1_heatmap_view:
-        FlashViewerGrid(
-            columns=1,
-            rows=1,
-            components=[
-                FlashViewerComponent(
-                    component_args=PlotlyHeatmap(
-                        title = "Deconvolved MS1 Heatmap", 
-                        x = list(df_for_ms1_deconv['rt']), 
-                        y = list(df_for_ms1_deconv['mass']), 
-                        intensity = list(df_for_ms1_deconv['intensity'])
-                    ),
-                    component_layout=ComponentLayout(
-                        width=1,
-                        height=1
-                    )
+    df_for_mass_table = getMassTableDF(spec_df.loc[0])
+    FlashViewerGrid(
+        columns=2,
+        rows=2,
+        components=[
+            FlashViewerComponent(
+                component_args=PlotlyHeatmap(
+                    title = "Deconvolved MS1 Heatmap", 
+                    x = list(df_for_ms1_deconv['rt']), 
+                    y = list(df_for_ms1_deconv['mass']), 
+                    intensity = list(df_for_ms1_deconv['intensity'])
                 ),
-            ]
-        ).addGrid()
-    with scan_table_view:
-        st.title("") # to add empty space on top
-        st.write('**Scan Table**')
-        st.session_state["selected_scan"] = drawSpectraTable(df_for_spectra_table, 300)
+                component_layout=ComponentLayout(
+                    width=1,
+                    height=1
+                )
+            ),
+            FlashViewerComponent(
+                component_args=ScanTable(
+                    dataframe=df_for_spectra_table,
+                    title='Scan Table'
+                ),
+                component_layout=ComponentLayout(
+                    width=1,
+                    height=1
+                )
+            ),
+            FlashViewerComponent(
+                component_args=MassTable(
+                    dataframe=df_for_mass_table,
+                    title='Mass Table'
+                ),
+                component_layout=ComponentLayout(
+                    width=2,
+                    height=1
+                )
+            )
+        ]
+    ).addGrid()
 
     #### Spectrum plots ####
     # listening selecting row from the spectra table
-    if st.session_state.selected_scan["selected_rows"]:
-        selected_index = st.session_state.selected_scan["selected_rows"][0]["index"]
-        anno_spec_view, deconv_spec_view = st.columns(2)
-        with anno_spec_view:
-            st.plotly_chart(plotAnnotatedMS(anno_df.loc[selected_index]), use_container_width=True)
-        with deconv_spec_view:
-            st.plotly_chart(plotDeconvolvedMS(spec_df.loc[selected_index]), use_container_width=True)
-
-    #### Mass table ####
-    # listening selecting row from the spectra table
-    if st.session_state.selected_scan["selected_rows"]:
-        selected_index = st.session_state.selected_scan["selected_rows"][0]["index"]
-        selected_spectrum = spec_df.loc[selected_index]
-        # preparing data for plotting (cached)
-        mass_df = getMassTableDF(selected_spectrum)
-        st.write('**Mass Table** of selected spectrum index: %d'%selected_index)
-        # drawing interactive mass table
-        st.session_state["selected_mass"] = drawSpectraTable(mass_df, 250)
+    # if st.session_state.selected_scan["selected_rows"]:
+    # selected_index = st.session_state.selected_scan["selected_rows"][0]["index"]
+    selected_index = 0
+    # anno_spec_view, deconv_spec_view = st.columns(2)
+    # with anno_spec_view:
+    #     st.plotly_chart(plotAnnotatedMS(anno_df.loc[selected_index]), use_container_width=True)
+    # with deconv_spec_view:
+    #     st.plotly_chart(plotDeconvolvedMS(spec_df.loc[selected_index]), use_container_width=True)
 
     #### 3D signal plot ####
-    plot3d_view, _ = st.columns([9, 1])  # for little space on the right
-    # listening to the selected row from the scan table
-    if st.session_state.selected_scan["selected_rows"]:
-        selected_spec = spec_df.loc[st.session_state.selected_scan["selected_rows"][0]["index"]]
-
-        # listening to the selected row from the mass table
-        if ("selected_mass" in st.session_state) and \
-            (st.session_state.selected_mass["selected_rows"]):
-            mass_signal_df = getMassSignalDF(selected_spec)
-            selected_mass_index = st.session_state.selected_mass["selected_rows"][0]["index"]
-            with plot3d_view:
-                draw3DSignalView(mass_signal_df.loc[selected_mass_index], 'Mass signals')
-        else: # draw precursor signals
-            precursor_signal = getPrecursorMassSignalDF(selected_spec, spec_df)
-            if precursor_signal.size > 0:
-                with plot3d_view:
-                    draw3DSignalView(getPrecursorMassSignalDF(selected_spec, spec_df), 'Precursor signals')
+    # plot3d_view, _ = st.columns([9, 1])  # for little space on the right
+    # # listening to the selected row from the scan table
+    # if st.session_state.selected_scan["selected_rows"]:
+    #     selected_spec = spec_df.loc[st.session_state.selected_scan["selected_rows"][0]["index"]]
+    #
+    #     # listening to the selected row from the mass table
+    #     if ("selected_mass" in st.session_state) and \
+    #         (st.session_state.selected_mass["selected_rows"]):
+    #         mass_signal_df = getMassSignalDF(selected_spec)
+    #         selected_mass_index = st.session_state.selected_mass["selected_rows"][0]["index"]
+    #         with plot3d_view:
+    #             draw3DSignalView(mass_signal_df.loc[selected_mass_index], 'Mass signals')
+    #     else: # draw precursor signals
+    #         precursor_signal = getPrecursorMassSignalDF(selected_spec, spec_df)
+    #         if precursor_signal.size > 0:
+    #             with plot3d_view:
+    #                 draw3DSignalView(getPrecursorMassSignalDF(selected_spec, spec_df), 'Precursor signals')
 
 if __name__ == "__main__":
     # try:
