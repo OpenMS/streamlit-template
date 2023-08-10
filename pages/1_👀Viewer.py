@@ -23,7 +23,29 @@ def draw3DSignalView(df, title):
     plot3d = plot3DSignalView(signal_df, noise_df, title)
     st.plotly_chart(plot3d, use_container_width=True)
 
-def create_spectra(input_df):
+def prepare3DplotData(df):
+    signal_df, noise_df = None, None # initialization
+    for index, peaks in enumerate([df['Signal peaks'], df['Noisy peaks']]):
+        xs, ys, zs = [], [], []
+        for sm in peaks:
+            xs.append(sm[1] * sm[-1])
+            ys.append(sm[-1])
+            zs.append(sm[2])
+
+        xs = np.repeat(xs, 3)  # charge
+        ys = np.repeat(ys, 3)  # mass
+        zs = np.repeat(zs, 3)  # intensity
+        # to draw vertical lines
+        zs[::3] = zs[2::3] = -100000
+
+        out_df = pd.DataFrame({'mass': xs, 'charge': ys, 'intensity': zs})
+        if index == 0:
+            signal_df = out_df
+        else:
+            noise_df = out_df
+    return signal_df, noise_df
+
+def createSpectra(input_df):
     x = np.repeat(input_df["mzarray"], 3)
     y = np.repeat(input_df["intarray"], 3)
     y[::3] = y[2::3] = -100000
@@ -59,11 +81,13 @@ def content():
     df_for_spectra_table = getSpectraTableDF(spec_df)
     selected_index = 0
     df_for_mass_table = getMassTableDF(spec_df.loc[selected_index])
-    x_anno_spec, y_anno_spec = create_spectra(anno_df.loc[selected_index])
-    x_deconv_spec, y_deconv_spec = create_spectra(spec_df.loc[selected_index])
+    x_anno_spec, y_anno_spec = createSpectra(anno_df.loc[selected_index])
+    x_deconv_spec, y_deconv_spec = createSpectra(spec_df.loc[selected_index])
+    # 3Dplot TODO: 1. add "markers" 2. draw signals from mass table (not precursor)
+    signal_df, noise_df = prepare3DplotData(getPrecursorMassSignalDF(spec_df.loc[2], spec_df))  # MS2 spectrum: index 2
     FlashViewerGrid(
         columns=2,
-        rows=3,
+        rows=5,
         components=[
             FlashViewerComponent(
                 component_args=PlotlyHeatmap(
@@ -117,6 +141,17 @@ def content():
                 component_layout=ComponentLayout(
                     width=1,
                     height=1
+                )
+            ),
+            FlashViewerComponent(
+                component_args=Plotly3Dplot(
+                    title = "Precursor signals",
+                    signal_df = signal_df,
+                    noise_df = noise_df,
+                ),
+                component_layout=ComponentLayout(
+                    width=2,
+                    height=2
                 )
             ),
         ]
