@@ -72,3 +72,24 @@ class PlotlyHeatmap:
     def toJson(self):
         return json.dumps(self, default=lambda o: o.__dict__)
 
+class ScanTable:
+    class Column:
+        def __init__(self, title, field):
+            self.title = title
+            self.field = field
+
+        def toJson(self):
+            return json.dumps(self, default=lambda o: o.__dict__)
+
+    def __init__(self, dataframe, show_legend=False):
+        self.componentName = "TabulatorTable"
+        self.data = dataframe.to_json(orient='records')
+        self.columns = [
+            self.Column(title='id', field='index').toJson(),
+            self.Column(title='Scan', field='Scan').toJson(),
+            self.Column(title='MSLevel', field='MSLevel').toJson(),
+            self.Column(title='RT', field='RT').toJson(),
+            self.Column(title='Precursor Mass', field='PrecursorMass').toJson(),
+            self.Column(title='# Masses', field='#Masses').toJson(),
+        ]
+
