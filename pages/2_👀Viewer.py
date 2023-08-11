@@ -1,5 +1,3 @@
-import numpy as np
-import streamlit as st
 from src.view import *
 from src.common import *
 from src.masstable import *
@@ -28,7 +26,31 @@ def draw3DSignalView(df, title):
     plot3d = plot3DSignalView(signal_df, noise_df, title)
     st.plotly_chart(plot3d, use_container_width=True)
 
-def create_spectra(input_df):
+
+def prepare3DplotData(df):
+    signal_df, noise_df = None, None # initialization
+    for index, peaks in enumerate([df['Signal peaks'], df['Noisy peaks']]):
+        xs, ys, zs = [], [], []
+        for sm in peaks:
+            xs.append(sm[1] * sm[-1])
+            ys.append(sm[-1])
+            zs.append(sm[2])
+
+        xs = np.repeat(xs, 3)  # charge
+        ys = np.repeat(ys, 3)  # mass
+        zs = np.repeat(zs, 3)  # intensity
+        # to draw vertical lines
+        zs[::3] = zs[2::3] = -100000
+
+        out_df = pd.DataFrame({'mass': xs, 'charge': ys, 'intensity': zs})
+        if index == 0:
+            signal_df = out_df
+        else:
+            noise_df = out_df
+    return signal_df, noise_df
+
+
+def createSpectra(input_df):
     x = np.repeat(input_df["mzarray"], 3)
     y = np.repeat(input_df["intarray"], 3)
     y[::3] = y[2::3] = -100000
@@ -56,11 +78,11 @@ def sendDataToJS(selected_data, layout_info_per_exp):
         height = 2 if '3D_SN_plot' in row else 1
         width_factor = len(row)
         for col_index, comp_name in enumerate(row):
-            print('component name: ', comp_name)
             selected_index = 0 # for test purpose
 
             # prepare component layout
             comp_layout = ComponentLayout(width=6/width_factor, height=height)
+            component_arguments = None
 
             # prepare component arguments
             if comp_name == 'ms1_raw_heatmap':
@@ -69,20 +91,24 @@ def sendDataToJS(selected_data, layout_info_per_exp):
             elif comp_name == 'ms1_deconv_heat_map':
                 df_for_ms1_deconv = getMSSignalDF(spec_df)
                 component_arguments = PlotlyHeatmap(df=df_for_ms1_deconv, title="Deconvolved MS1 Heatmap")
-            elif comp_name == 'Scan table':
+            elif comp_name == 'scan_table':
                 df_for_spectra_table = getSpectraTableDF(spec_df)
                 component_arguments = ScanTable(df=df_for_spectra_table, title='Scan Table')
-            elif comp_name == 'Deconvolved Spectrum (Scan table needed)':
-                x_deconv_spec, y_deconv_spec = create_spectra(spec_df.loc[selected_index])
+            elif comp_name == 'deconv_spectrum':
+                x_deconv_spec, y_deconv_spec = createSpectra(spec_df.loc[selected_index])
                 component_arguments = PlotlyLineplot(title="Deconvolved spectrum", x=x_deconv_spec, y=y_deconv_spec)
-            elif comp_name == 'Annotated Spectrum (Scan table needed)':
-                x_anno_spec, y_anno_spec = create_spectra(anno_df.loc[selected_index])
-                component_arguments = PlotlyLineplot(title = "Annotated spectrum", x=x_anno_spec, y=y_anno_spec)
-            elif comp_name == 'Mass table (Scan table needed)':
-                selected_index = 2
+            elif comp_name == 'anno_spectrum':
+                x_anno_spec, y_anno_spec = createSpectra(anno_df.loc[selected_index])
+                component_arguments = PlotlyLineplot(title="Annotated spectrum", x=x_anno_spec, y=y_anno_spec)
+            elif comp_name == 'mass_table':
                 df_for_mass_table = getMassTableDF(spec_df.loc[selected_index])
                 component_arguments = MassTable(df=df_for_mass_table, title='Mass Table')
-            # elif comp_name == '3D S/N plot (Mass table needed)':
+            elif comp_name == '3D_SN_plot':
+                selected_index = 2
+                # 3Dplot TODO: 1. add "markers" 2. draw signals from mass table (not precursor)
+                signal_df, noise_df = prepare3DplotData(getPrecursorMassSignalDF(spec_df.loc[selected_index], spec_df))
+                component_arguments = Plotly3Dplot(title = "Precursor signals",
+                                                   signal_df = signal_df, noise_df = noise_df)
 
             components.append(FlashViewerComponent(component_args=component_arguments, component_layout=comp_layout))
 
@@ -125,7 +151,7 @@ def content():
             # if #experiment input files are less than #layouts, all the pre-selection will be the first experiment
 
             selected_exp = experiment_df[
-                experiment_df['Experiment Name'] == st.session_state["selected_experiment%d"]%exp_index]
+                experiment_df['Experiment Name'] == st.session_state["selected_experiment%d"%exp_index]]
             layout_info = st.session_state["saved_layout_setting"][exp_index]
             sendDataToJS(selected_exp, layout_info)
 
