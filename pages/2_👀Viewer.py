@@ -139,13 +139,15 @@ def sendDataToJS(selected_data, layout_info_per_exp):
 
                 tmp_df = spec_df[['mzarray', 'intarray']].copy()
                 tmp_df.rename(columns={'mzarray': 'MonoMass', 'intarray': 'SumIntensity'}, inplace=True)
-            if key == 'anno_spectrum':
+            if key == 'anno_spec':
                 tmp_df = anno_df[['mzarray', 'intarray']].copy()
                 tmp_df.rename(columns={'mzarray': 'MonoMass_Anno', 'intarray': 'SumIntensity_Anno'}, inplace=True)
             # TODO: add 3D
+            if key == '3d':
+                continue
 
             dfs.append(tmp_df)
-        dataframes_to_send['per_scan_data'] = pd.concat(dfs, axis=1, ignore_index=True)
+        dataframes_to_send['per_scan_data'] = pd.concat(dfs, axis=1)
 
     FlashViewerGrid(
         columns=6,
