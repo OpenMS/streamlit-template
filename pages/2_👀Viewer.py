@@ -1,3 +1,5 @@
+import pandas as pd
+
 from src.view import *
 from src.common import *
 from src.masstable import *
@@ -73,6 +75,8 @@ def sendDataToJS(selected_data, layout_info_per_exp):
         num_of_rows += 1
 
     components = []
+    dataframes_to_send = {}
+    per_scan_contents = {'mass_table': False, 'anno_spec': False, 'deconv_spec': False, '3d': False}
     for row in layout_info_per_exp:
         # if this row contains 3D plot, height needs to be 2
         height = 2 if '3D_SN_plot' in row else 1
@@ -87,35 +91,67 @@ def sendDataToJS(selected_data, layout_info_per_exp):
             # prepare component arguments
             if comp_name == 'ms1_raw_heatmap':
                 df_for_ms1_raw = getMSSignalDF(anno_df)
+                dataframes_to_send['raw_heatmap_df'] = df_for_ms1_raw
                 component_arguments = PlotlyHeatmap(df=df_for_ms1_raw, title="Raw MS1 Heatmap")
             elif comp_name == 'ms1_deconv_heat_map':
                 df_for_ms1_deconv = getMSSignalDF(spec_df)
+                dataframes_to_send['deconv_heatmap_df'] = df_for_ms1_deconv
                 component_arguments = PlotlyHeatmap(df=df_for_ms1_deconv, title="Deconvolved MS1 Heatmap")
             elif comp_name == 'scan_table':
                 df_for_spectra_table = getSpectraTableDF(spec_df)
+                dataframes_to_send['per_scan_data'] = df_for_spectra_table
                 component_arguments = ScanTable(df=df_for_spectra_table, title='Scan Table')
             elif comp_name == 'deconv_spectrum':
                 x_deconv_spec, y_deconv_spec = createSpectra(spec_df.loc[selected_index])
+                per_scan_contents['deconv_spec'] = True
                 component_arguments = PlotlyLineplot(title="Deconvolved spectrum", x=x_deconv_spec, y=y_deconv_spec)
             elif comp_name == 'anno_spectrum':
                 x_anno_spec, y_anno_spec = createSpectra(anno_df.loc[selected_index])
+                per_scan_contents['anno_spec'] = True
                 component_arguments = PlotlyLineplot(title="Annotated spectrum", x=x_anno_spec, y=y_anno_spec)
             elif comp_name == 'mass_table':
                 df_for_mass_table = getMassTableDF(spec_df.loc[selected_index])
+                per_scan_contents['mass_table'] = True
                 component_arguments = MassTable(df=df_for_mass_table, title='Mass Table')
             elif comp_name == '3D_SN_plot':
                 selected_index = 2
                 # 3Dplot TODO: 1. add "markers" 2. draw signals from mass table (not precursor)
                 signal_df, noise_df = prepare3DplotData(getPrecursorMassSignalDF(spec_df.loc[selected_index], spec_df))
-                component_arguments = Plotly3Dplot(title = "Precursor signals",
-                                                   signal_df = signal_df, noise_df = noise_df)
+                per_scan_contents['3d'] = True
+                component_arguments = Plotly3Dplot(title="Precursor signals", signal_df=signal_df, noise_df=noise_df)
 
             components.append(FlashViewerComponent(component_args=component_arguments, component_layout=comp_layout))
+
+    if any(per_scan_contents.values()):
+        scan_table = dataframes_to_send['per_scan_data']
+        dfs = [scan_table]
+        for key, exist in per_scan_contents.items():
+            if not exist: continue
+
+            if key == 'mass_table':
+                tmp_df = spec_df[['mzarray', 'intarray', 'MinCharges', 'MaxCharges', 'MinIsotopes', 'MaxIsotopes',
+                                  'cos', 'snr', 'qscore']].copy()
+                tmp_df.rename(columns={'mzarray': 'MonoMass', 'intarray': 'SumIntensity', 'cos': 'CosineScore',
+                                       'snr': 'SNR', 'qscore': 'QScore'},
+                              inplace=True)
+            if key == 'deconv_spec':
+                if per_scan_contents['mass_table']: continue  # deconv_spec shares same data with mass_table
+
+                tmp_df = spec_df[['mzarray', 'intarray']].copy()
+                tmp_df.rename(columns={'mzarray': 'MonoMass', 'intarray': 'SumIntensity'}, inplace=True)
+            if key == 'anno_spectrum':
+                tmp_df = anno_df[['mzarray', 'intarray']].copy()
+                tmp_df.rename(columns={'mzarray': 'MonoMass_Anno', 'intarray': 'SumIntensity_Anno'}, inplace=True)
+            # TODO: add 3D
+
+            dfs.append(tmp_df)
+        dataframes_to_send['per_scan_data'] = pd.concat(dfs, axis=1, ignore_index=True)
 
     FlashViewerGrid(
         columns=6,
         rows=num_of_rows,
-        components=components
+        components=components,
+        dataframes=dataframes_to_send
     ).addGrid()
 
 

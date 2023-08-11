@@ -1,20 +1,30 @@
 import json
+
+import pandas as pd
 import streamlit.components.v1 as st_components
+
+DATAFRAME_NAMES = [
+    'raw_heatmap_df',
+    'deconv_heatmap_df',
+    'per_scan_data'
+]
 
 class FlashViewerGrid:
     columns = None
     rows = None
     components = []
+    dataframes = {}
 
     _flash_viewer_grid = st_components.declare_component(
         "flash_viewer_grid",
         url="http://localhost:5173",
     )
 
-    def __init__(self, components, columns=1, rows=1):
+    def __init__(self, components, dataframes, columns=1, rows=1):
         self.columns = columns
         self.rows = rows
         self.components = components
+        self.dataframes = {key: df.to_json(orient='records') for key, df in dataframes.items()}
 
     def addGrid(self, key=None):
         return self._flash_viewer_grid(
@@ -29,6 +39,7 @@ class FlashViewerGrid:
                     self.components
                 )
             ),
+            dataframes=self.dataframes,
             key=key,
         )
 
