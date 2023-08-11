@@ -1,20 +1,30 @@
 import json
+
+import pandas as pd
 import streamlit.components.v1 as st_components
+
+DATAFRAME_NAMES = [
+    'raw_heatmap_df',
+    'deconv_heatmap_df',
+    'per_scan_data'
+]
 
 class FlashViewerGrid:
     columns = None
     rows = None
     components = []
+    dataframes = {}
 
     _flash_viewer_grid = st_components.declare_component(
         "flash_viewer_grid",
         url="http://localhost:5173",
     )
 
-    def __init__(self, components, columns=1, rows=1):
+    def __init__(self, components, dataframes, columns=1, rows=1):
         self.columns = columns
         self.rows = rows
         self.components = components
+        self.dataframes = {key: df.to_json(orient='records') for key, df in dataframes.items()}
 
     def addGrid(self, key=None):
         return self._flash_viewer_grid(
@@ -29,6 +39,7 @@ class FlashViewerGrid:
                     self.components
                 )
             ),
+            dataframes=self.dataframes,
             key=key,
         )
 
@@ -61,11 +72,11 @@ class PlotlyHeatmap:
     intensity = []
     showLegend = None
 
-    def __init__(self, title, x, y, intensity, show_legend=False):
+    def __init__(self, title, df, show_legend=False):
         self.title = title
-        self.x = x
-        self.y = y
-        self.intensity = intensity
+        self.x = list(df['rt'])
+        self.y = list(df['mass'])
+        self.intensity = list(df['intensity'])
         self.show_legend = show_legend
         self.componentName = "PlotlyHeatmap"
 
@@ -81,9 +92,9 @@ class ScanTable:
         def toJson(self):
             return json.dumps(self, default=lambda o: o.__dict__)
 
-    def __init__(self, dataframe, title=None, show_legend=False):
+    def __init__(self, df, title=None, show_legend=False):
         self.componentName = "TabulatorTable"
-        self.data = dataframe.to_json(orient='records')
+        self.data = df.to_json(orient='records')
         self.title = title
         self.columns = [
             self.Column(title='Index', field='index').toJson(),
@@ -103,9 +114,9 @@ class MassTable:
         def toJson(self):
             return json.dumps(self, default=lambda o: o.__dict__)
 
-    def __init__(self, dataframe, title=None, show_legend=False):
+    def __init__(self, df, title=None, show_legend=False):
         self.componentName = "TabulatorTable"
-        self.data = dataframe.to_json(orient='records')
+        self.data = df.to_json(orient='records')
         self.title = title
         self.columns = [
             self.Column(title='Index', field='index').toJson(),

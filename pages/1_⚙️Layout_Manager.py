@@ -119,8 +119,6 @@ def getTrimmedLayoutSetting():
 
 
 def handleEditAndSaveButtons():
-    # return: "validation"
-
     # if "Edit" button was clicked,
     if "edit_btn_clicked" in st.session_state and st.session_state["edit_btn_clicked"]:
         # reset variables based on "saved_layout_setting"
@@ -178,7 +176,6 @@ def content():
     c1.title("Layout Manager")
 
     # Load existing layout setting file
-    # TODO: change the loading data part (from writing)
     v_space(1, c2)
     c2.button("Load Setting", key="load_btn_clicked")
 
