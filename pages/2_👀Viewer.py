@@ -1,5 +1,3 @@
-import pandas as pd
-
 from src.view import *
 from src.common import *
 from src.masstable import *
@@ -134,16 +132,18 @@ def sendDataToJS(selected_data, layout_info_per_exp):
                 tmp_df.rename(columns={'mzarray': 'MonoMass', 'intarray': 'SumIntensity', 'cos': 'CosineScore',
                                        'snr': 'SNR', 'qscore': 'QScore'},
                               inplace=True)
-            if key == 'deconv_spec':
+            elif key == 'deconv_spec':
                 if per_scan_contents['mass_table']: continue  # deconv_spec shares same data with mass_table
 
                 tmp_df = spec_df[['mzarray', 'intarray']].copy()
                 tmp_df.rename(columns={'mzarray': 'MonoMass', 'intarray': 'SumIntensity'}, inplace=True)
-            if key == 'anno_spec':
+            elif key == 'anno_spec':
                 tmp_df = anno_df[['mzarray', 'intarray']].copy()
                 tmp_df.rename(columns={'mzarray': 'MonoMass_Anno', 'intarray': 'SumIntensity_Anno'}, inplace=True)
-            # TODO: add 3D
-            if key == '3d':
+            elif key == '3d':
+                # PrecursorScan, SignalPeaks, NoisyPeaks - Scan, MonoMass, PrecursorMass
+                tmp_df = spec_df[['PrecursorScan', 'PrecursorMass', 'SignalPeaks', 'NoisyPeaks']].copy()
+            else:  # shouldn't come here
                 continue
 
             dfs.append(tmp_df)
