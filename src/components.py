@@ -93,11 +93,11 @@ class ScanTable:
             return json.dumps(self, default=lambda o: o.__dict__)
 
     def __init__(self, df, title=None, show_legend=False):
-        self.componentName = "TabulatorTable"
+        self.componentName = "TabulatorScanTable"
         self.data = df.to_json(orient='records')
         self.title = title
         self.columns = [
-            self.Column(title='Index', field='index').toJson(),
+            self.Column(title='Index', field='id').toJson(),
             self.Column(title='Scan', field='Scan').toJson(),
             self.Column(title='MSLevel', field='MSLevel').toJson(),
             self.Column(title='RT', field='RT').toJson(),
@@ -115,18 +115,18 @@ class MassTable:
             return json.dumps(self, default=lambda o: o.__dict__)
 
     def __init__(self, df, title=None, show_legend=False):
-        self.componentName = "TabulatorTable"
+        self.componentName = "TabulatorMassTable"
         self.data = df.to_json(orient='records')
         self.title = title
         self.columns = [
-            self.Column(title='Index', field='index').toJson(),
-            self.Column(title='Mono mass', field='Mono mass').toJson(),
-            self.Column(title='Sum intensity', field='Sum intensity').toJson(),
-            self.Column(title='Min charge', field='Min charge').toJson(),
-            self.Column(title='Max charge', field='Max charge').toJson(),
-            self.Column(title='Min isotope', field='Min isotope').toJson(),
-            self.Column(title='Max isotope', field='Max isotope').toJson(),
-            self.Column(title='Cosine score', field='Cosine Score').toJson(),
+            self.Column(title='Index', field='id').toJson(),
+            self.Column(title='Mono mass', field='MonoMass').toJson(),
+            self.Column(title='Sum intensity', field='SumIntensity').toJson(),
+            self.Column(title='Min charge', field='MinCharges').toJson(),
+            self.Column(title='Max charge', field='MaxCharges').toJson(),
+            self.Column(title='Min isotope', field='MinIsotopes').toJson(),
+            self.Column(title='Max isotope', field='MaxIsotopes').toJson(),
+            self.Column(title='Cosine score', field='CosineScore').toJson(),
             self.Column(title='SNR', field='SNR').toJson(),
             self.Column(title='QScore', field='QScore').toJson(),
         ]

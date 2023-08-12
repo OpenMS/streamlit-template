@@ -142,7 +142,7 @@ def sendDataToJS(selected_data, layout_info_per_exp):
                 tmp_df.rename(columns={'mzarray': 'MonoMass_Anno', 'intarray': 'SumIntensity_Anno'}, inplace=True)
             elif key == '3d':
                 # PrecursorScan, SignalPeaks, NoisyPeaks - Scan, MonoMass, PrecursorMass
-                tmp_df = spec_df[['PrecursorScan', 'PrecursorMass', 'SignalPeaks', 'NoisyPeaks']].copy()
+                tmp_df = spec_df[['PrecursorScan', 'SignalPeaks', 'NoisyPeaks']].copy()
             else:  # shouldn't come here
                 continue
 
