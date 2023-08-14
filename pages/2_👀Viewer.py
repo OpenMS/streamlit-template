@@ -1,4 +1,3 @@
-from src.view import *
 from src.common import *
 from src.masstable import *
 from src.components import *
@@ -6,55 +5,6 @@ from src.components import *
 
 DEFAULT_LAYOUT=[['ms1_deconv_heat_map'], ['scan_table', 'mass_table'],
                 ['anno_spectrum', 'deconv_spectrum'], ['3D_SN_plot']]
-
-
-@st.cache_data
-def draw3DSignalView(df, title):
-    signal_df, noise_df = None, None # initialization
-    for index, peaks in enumerate([df['Signal peaks'], df['Noisy peaks']]):
-        xs, ys, zs = [], [], []
-        for sm in peaks:
-            xs.append(sm[1] * sm[-1])
-            ys.append(sm[-1])
-            zs.append(sm[2])
-
-        out_df = pd.DataFrame({'mass': xs, 'charge': ys, 'intensity': zs})
-        if index == 0:
-            signal_df = out_df
-        else:
-            noise_df = out_df
-    plot3d = plot3DSignalView(signal_df, noise_df, title)
-    st.plotly_chart(plot3d, use_container_width=True)
-
-
-def prepare3DplotData(df):
-    signal_df, noise_df = None, None # initialization
-    for index, peaks in enumerate([df['Signal peaks'], df['Noisy peaks']]):
-        xs, ys, zs = [], [], []
-        for sm in peaks:
-            xs.append(sm[1] * sm[-1])
-            ys.append(sm[-1])
-            zs.append(sm[2])
-
-        xs = np.repeat(xs, 3)  # charge
-        ys = np.repeat(ys, 3)  # mass
-        zs = np.repeat(zs, 3)  # intensity
-        # to draw vertical lines
-        zs[::3] = zs[2::3] = -100000
-
-        out_df = pd.DataFrame({'mass': xs, 'charge': ys, 'intensity': zs})
-        if index == 0:
-            signal_df = out_df
-        else:
-            noise_df = out_df
-    return signal_df, noise_df
-
-
-def createSpectra(input_df):
-    x = np.repeat(input_df["mzarray"], 3)
-    y = np.repeat(input_df["intarray"], 3)
-    y[::3] = y[2::3] = -100000
-    return x.tolist(), y.tolist()
 
 
 def sendDataToJS(selected_data, layout_info_per_exp):
@@ -88,35 +38,26 @@ def sendDataToJS(selected_data, layout_info_per_exp):
 
             # prepare component arguments
             if comp_name == 'ms1_raw_heatmap':
-                df_for_ms1_raw = getMSSignalDF(anno_df)
-                dataframes_to_send['raw_heatmap_df'] = df_for_ms1_raw
-                component_arguments = PlotlyHeatmap(df=df_for_ms1_raw, title="Raw MS1 Heatmap")
+                dataframes_to_send['raw_heatmap_df'] = getMSSignalDF(anno_df)
+                component_arguments = PlotlyHeatmap(title="Raw MS1 Heatmap")
             elif comp_name == 'ms1_deconv_heat_map':
-                df_for_ms1_deconv = getMSSignalDF(spec_df)
-                dataframes_to_send['deconv_heatmap_df'] = df_for_ms1_deconv
-                component_arguments = PlotlyHeatmap(df=df_for_ms1_deconv, title="Deconvolved MS1 Heatmap")
+                dataframes_to_send['deconv_heatmap_df'] = getMSSignalDF(spec_df)
+                component_arguments = PlotlyHeatmap(title="Deconvolved MS1 Heatmap")
             elif comp_name == 'scan_table':
-                df_for_spectra_table = getSpectraTableDF(spec_df)
-                dataframes_to_send['per_scan_data'] = df_for_spectra_table
-                component_arguments = ScanTable(df=df_for_spectra_table, title='Scan Table')
+                dataframes_to_send['per_scan_data'] = getSpectraTableDF(spec_df)
+                component_arguments = Tabulator('ScanTable')
             elif comp_name == 'deconv_spectrum':
-                x_deconv_spec, y_deconv_spec = createSpectra(spec_df.loc[selected_index])
                 per_scan_contents['deconv_spec'] = True
-                component_arguments = PlotlyLineplot(title="Deconvolved spectrum", x=x_deconv_spec, y=y_deconv_spec)
+                component_arguments = PlotlyLineplot(title="Deconvolved spectrum")
             elif comp_name == 'anno_spectrum':
-                x_anno_spec, y_anno_spec = createSpectra(anno_df.loc[selected_index])
                 per_scan_contents['anno_spec'] = True
-                component_arguments = PlotlyLineplot(title="Annotated spectrum", x=x_anno_spec, y=y_anno_spec)
+                component_arguments = PlotlyLineplot(title="Annotated spectrum")
             elif comp_name == 'mass_table':
-                df_for_mass_table = getMassTableDF(spec_df.loc[selected_index])
                 per_scan_contents['mass_table'] = True
-                component_arguments = MassTable(df=df_for_mass_table, title='Mass Table')
+                component_arguments = Tabulator('MassTable')
             elif comp_name == '3D_SN_plot':
-                selected_index = 2
-                # 3Dplot TODO: 1. add "markers" 2. draw signals from mass table (not precursor)
-                signal_df, noise_df = prepare3DplotData(getPrecursorMassSignalDF(spec_df.loc[selected_index], spec_df))
                 per_scan_contents['3d'] = True
-                component_arguments = Plotly3Dplot(title="Precursor signals", signal_df=signal_df, noise_df=noise_df)
+                component_arguments = Plotly3Dplot(title="Precursor signals")
 
             components.append(FlashViewerComponent(component_args=component_arguments, component_layout=comp_layout))
 
@@ -141,7 +82,6 @@ def sendDataToJS(selected_data, layout_info_per_exp):
                 tmp_df = anno_df[['mzarray', 'intarray']].copy()
                 tmp_df.rename(columns={'mzarray': 'MonoMass_Anno', 'intarray': 'SumIntensity_Anno'}, inplace=True)
             elif key == '3d':
-                # PrecursorScan, SignalPeaks, NoisyPeaks - Scan, MonoMass, PrecursorMass
                 tmp_df = spec_df[['PrecursorScan', 'SignalPeaks', 'NoisyPeaks']].copy()
             else:  # shouldn't come here
                 continue
@@ -193,24 +133,6 @@ def content():
             layout_info = st.session_state["saved_layout_setting"][exp_index]
             sendDataToJS(selected_exp, layout_info)
 
-    #### 3D signal plot ####
-    # plot3d_view, _ = st.columns([9, 1])  # for little space on the right
-    # # listening to the selected row from the scan table
-    # if st.session_state.selected_scan["selected_rows"]:
-    #     selected_spec = spec_df.loc[st.session_state.selected_scan["selected_rows"][0]["index"]]
-    #
-    #     # listening to the selected row from the mass table
-    #     if ("selected_mass" in st.session_state) and \
-    #         (st.session_state.selected_mass["selected_rows"]):
-    #         mass_signal_df = getMassSignalDF(selected_spec)
-    #         selected_mass_index = st.session_state.selected_mass["selected_rows"][0]["index"]
-    #         with plot3d_view:
-    #             draw3DSignalView(mass_signal_df.loc[selected_mass_index], 'Mass signals')
-    #     else: # draw precursor signals
-    #         precursor_signal = getPrecursorMassSignalDF(selected_spec, spec_df)
-    #         if precursor_signal.size > 0:
-    #             with plot3d_view:
-    #                 draw3DSignalView(getPrecursorMassSignalDF(selected_spec, spec_df), 'Precursor signals')
 
 if __name__ == "__main__":
     # try:
