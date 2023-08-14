@@ -88,29 +88,23 @@ def sendDataToJS(selected_data, layout_info_per_exp):
 
             # prepare component arguments
             if comp_name == 'ms1_raw_heatmap':
-                df_for_ms1_raw = getMSSignalDF(anno_df)
-                dataframes_to_send['raw_heatmap_df'] = df_for_ms1_raw
-                component_arguments = PlotlyHeatmap(df=df_for_ms1_raw, title="Raw MS1 Heatmap")
+                dataframes_to_send['raw_heatmap_df'] = getMSSignalDF(anno_df)
+                component_arguments = PlotlyHeatmap(title="Raw MS1 Heatmap")
             elif comp_name == 'ms1_deconv_heat_map':
-                df_for_ms1_deconv = getMSSignalDF(spec_df)
-                dataframes_to_send['deconv_heatmap_df'] = df_for_ms1_deconv
-                component_arguments = PlotlyHeatmap(df=df_for_ms1_deconv, title="Deconvolved MS1 Heatmap")
+                dataframes_to_send['deconv_heatmap_df'] = getMSSignalDF(spec_df)
+                component_arguments = PlotlyHeatmap(title="Deconvolved MS1 Heatmap")
             elif comp_name == 'scan_table':
-                df_for_spectra_table = getSpectraTableDF(spec_df)
-                dataframes_to_send['per_scan_data'] = df_for_spectra_table
-                component_arguments = ScanTable(df=df_for_spectra_table, title='Scan Table')
+                dataframes_to_send['per_scan_data'] = getSpectraTableDF(spec_df)
+                component_arguments = Tabulator('ScanTable')
             elif comp_name == 'deconv_spectrum':
-                x_deconv_spec, y_deconv_spec = createSpectra(spec_df.loc[selected_index])
                 per_scan_contents['deconv_spec'] = True
-                component_arguments = PlotlyLineplot(title="Deconvolved spectrum", x=x_deconv_spec, y=y_deconv_spec)
+                component_arguments = PlotlyLineplot(title="Deconvolved spectrum")
             elif comp_name == 'anno_spectrum':
-                x_anno_spec, y_anno_spec = createSpectra(anno_df.loc[selected_index])
                 per_scan_contents['anno_spec'] = True
-                component_arguments = PlotlyLineplot(title="Annotated spectrum", x=x_anno_spec, y=y_anno_spec)
+                component_arguments = PlotlyLineplot(title="Annotated spectrum")
             elif comp_name == 'mass_table':
-                df_for_mass_table = getMassTableDF(spec_df.loc[selected_index])
                 per_scan_contents['mass_table'] = True
-                component_arguments = MassTable(df=df_for_mass_table, title='Mass Table')
+                component_arguments = Tabulator('MassTable')
             elif comp_name == '3D_SN_plot':
                 selected_index = 2
                 # 3Dplot TODO: 1. add "markers" 2. draw signals from mass table (not precursor)

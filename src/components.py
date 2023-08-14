@@ -1,6 +1,4 @@
 import json
-
-import pandas as pd
 import streamlit.components.v1 as st_components
 
 DATAFRAME_NAMES = [
@@ -67,83 +65,28 @@ class ComponentLayout:
 
 class PlotlyHeatmap:
     title = None
-    x = []
-    y = []
-    intensity = []
     showLegend = None
 
-    def __init__(self, title, df, show_legend=False):
+    def __init__(self, title, show_legend=False):
         self.title = title
-        self.x = list(df['rt'])
-        self.y = list(df['mass'])
-        self.intensity = list(df['intensity'])
         self.show_legend = show_legend
         self.componentName = "PlotlyHeatmap"
 
-    def toJson(self):
-        return json.dumps(self, default=lambda o: o.__dict__)
-
-class ScanTable:
-    class Column:
-        def __init__(self, title, field):
-            self.title = title
-            self.field = field
-
-        def toJson(self):
-            return json.dumps(self, default=lambda o: o.__dict__)
-
-    def __init__(self, df, title=None, show_legend=False):
-        self.componentName = "TabulatorScanTable"
-        self.data = df.to_json(orient='records')
-        self.title = title
-        self.columns = [
-            self.Column(title='Index', field='id').toJson(),
-            self.Column(title='Scan', field='Scan').toJson(),
-            self.Column(title='MSLevel', field='MSLevel').toJson(),
-            self.Column(title='RT', field='RT').toJson(),
-            self.Column(title='Precursor Mass', field='PrecursorMass').toJson(),
-            self.Column(title='# Masses', field='#Masses').toJson(),
-        ]
-
-class MassTable:
-    class Column:
-        def __init__(self, title, field):
-            self.title = title
-            self.field = field
-
-        def toJson(self):
-            return json.dumps(self, default=lambda o: o.__dict__)
-
-    def __init__(self, df, title=None, show_legend=False):
-        self.componentName = "TabulatorMassTable"
-        self.data = df.to_json(orient='records')
-        self.title = title
-        self.columns = [
-            self.Column(title='Index', field='id').toJson(),
-            self.Column(title='Mono mass', field='MonoMass').toJson(),
-            self.Column(title='Sum intensity', field='SumIntensity').toJson(),
-            self.Column(title='Min charge', field='MinCharges').toJson(),
-            self.Column(title='Max charge', field='MaxCharges').toJson(),
-            self.Column(title='Min isotope', field='MinIsotopes').toJson(),
-            self.Column(title='Max isotope', field='MaxIsotopes').toJson(),
-            self.Column(title='Cosine score', field='CosineScore').toJson(),
-            self.Column(title='SNR', field='SNR').toJson(),
-            self.Column(title='QScore', field='QScore').toJson(),
-        ]
+class Tabulator:
+    def __init__(self, table_type):
+        if table_type == 'ScanTable':
+            self.title = 'Scan Table'
+            self.componentName = "TabulatorScanTable"
+        elif table_type == 'MassTable':
+            self.title = 'Mass Table'
+            self.componentName = "TabulatorMassTable"
 
 class PlotlyLineplot:
     title = None
-    x = []
-    y = []
 
-    def __init__(self, title, x, y):
+    def __init__(self, title):
         self.title = title
-        self.x = x
-        self.y = y
         self.componentName = "PlotlyLineplot"
-
-    def toJson(self):
-        return json.dumps(self, default=lambda o: o.__dict__)
 
 class Plotly3Dplot:
     title = None
