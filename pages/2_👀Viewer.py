@@ -1,4 +1,3 @@
-from src.view import *
 from src.common import *
 from src.masstable import *
 from src.components import *
@@ -6,55 +5,6 @@ from src.components import *
 
 DEFAULT_LAYOUT=[['ms1_deconv_heat_map'], ['scan_table', 'mass_table'],
                 ['anno_spectrum', 'deconv_spectrum'], ['3D_SN_plot']]
-
-
-@st.cache_data
-def draw3DSignalView(df, title):
-    signal_df, noise_df = None, None # initialization
-    for index, peaks in enumerate([df['Signal peaks'], df['Noisy peaks']]):
-        xs, ys, zs = [], [], []
-        for sm in peaks:
-            xs.append(sm[1] * sm[-1])
-            ys.append(sm[-1])
-            zs.append(sm[2])
-
-        out_df = pd.DataFrame({'mass': xs, 'charge': ys, 'intensity': zs})
-        if index == 0:
-            signal_df = out_df
-        else:
-            noise_df = out_df
-    plot3d = plot3DSignalView(signal_df, noise_df, title)
-    st.plotly_chart(plot3d, use_container_width=True)
-
-
-def prepare3DplotData(df):
-    signal_df, noise_df = None, None # initialization
-    for index, peaks in enumerate([df['Signal peaks'], df['Noisy peaks']]):
-        xs, ys, zs = [], [], []
-        for sm in peaks:
-            xs.append(sm[1] * sm[-1])
-            ys.append(sm[-1])
-            zs.append(sm[2])
-
-        xs = np.repeat(xs, 3)  # charge
-        ys = np.repeat(ys, 3)  # mass
-        zs = np.repeat(zs, 3)  # intensity
-        # to draw vertical lines
-        zs[::3] = zs[2::3] = -100000
-
-        out_df = pd.DataFrame({'mass': xs, 'charge': ys, 'intensity': zs})
-        if index == 0:
-            signal_df = out_df
-        else:
-            noise_df = out_df
-    return signal_df, noise_df
-
-
-def createSpectra(input_df):
-    x = np.repeat(input_df["mzarray"], 3)
-    y = np.repeat(input_df["intarray"], 3)
-    y[::3] = y[2::3] = -100000
-    return x.tolist(), y.tolist()
 
 
 def sendDataToJS(selected_data, layout_info_per_exp):
@@ -183,24 +133,6 @@ def content():
             layout_info = st.session_state["saved_layout_setting"][exp_index]
             sendDataToJS(selected_exp, layout_info)
 
-    #### 3D signal plot ####
-    # plot3d_view, _ = st.columns([9, 1])  # for little space on the right
-    # # listening to the selected row from the scan table
-    # if st.session_state.selected_scan["selected_rows"]:
-    #     selected_spec = spec_df.loc[st.session_state.selected_scan["selected_rows"][0]["index"]]
-    #
-    #     # listening to the selected row from the mass table
-    #     if ("selected_mass" in st.session_state) and \
-    #         (st.session_state.selected_mass["selected_rows"]):
-    #         mass_signal_df = getMassSignalDF(selected_spec)
-    #         selected_mass_index = st.session_state.selected_mass["selected_rows"][0]["index"]
-    #         with plot3d_view:
-    #             draw3DSignalView(mass_signal_df.loc[selected_mass_index], 'Mass signals')
-    #     else: # draw precursor signals
-    #         precursor_signal = getPrecursorMassSignalDF(selected_spec, spec_df)
-    #         if precursor_signal.size > 0:
-    #             with plot3d_view:
-    #                 draw3DSignalView(getPrecursorMassSignalDF(selected_spec, spec_df), 'Precursor signals')
 
 if __name__ == "__main__":
     # try:
