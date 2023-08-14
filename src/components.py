@@ -82,26 +82,11 @@ class Tabulator:
             self.componentName = "TabulatorMassTable"
 
 class PlotlyLineplot:
-    title = None
-
     def __init__(self, title):
         self.title = title
         self.componentName = "PlotlyLineplot"
 
 class Plotly3Dplot:
-    title = None
-    signal_x, signal_y, signal_z = [], [], []
-    noise_x, noise_y, noise_z = [], [], []
-
-    def __init__(self, title, signal_df, noise_df):
+    def __init__(self, title):
         self.title = title
-        self.signal_x = list(signal_df['charge'])
-        self.signal_y = list(signal_df['mass'])
-        self.signal_z = list(signal_df['intensity'])
-        self.noise_x = list(noise_df['charge'])
-        self.noise_y = list(noise_df['mass'])
-        self.noise_z = list(noise_df['intensity'])
         self.componentName = "Plotly3Dplot"
-
-    def toJson(self):
-        return json.dumps(self, default=lambda o: o.__dict__)

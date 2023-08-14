@@ -106,11 +106,8 @@ def sendDataToJS(selected_data, layout_info_per_exp):
                 per_scan_contents['mass_table'] = True
                 component_arguments = Tabulator('MassTable')
             elif comp_name == '3D_SN_plot':
-                selected_index = 2
-                # 3Dplot TODO: 1. add "markers" 2. draw signals from mass table (not precursor)
-                signal_df, noise_df = prepare3DplotData(getPrecursorMassSignalDF(spec_df.loc[selected_index], spec_df))
                 per_scan_contents['3d'] = True
-                component_arguments = Plotly3Dplot(title="Precursor signals", signal_df=signal_df, noise_df=noise_df)
+                component_arguments = Plotly3Dplot(title="Precursor signals")
 
             components.append(FlashViewerComponent(component_args=component_arguments, component_layout=comp_layout))
 
@@ -135,7 +132,6 @@ def sendDataToJS(selected_data, layout_info_per_exp):
                 tmp_df = anno_df[['mzarray', 'intarray']].copy()
                 tmp_df.rename(columns={'mzarray': 'MonoMass_Anno', 'intarray': 'SumIntensity_Anno'}, inplace=True)
             elif key == '3d':
-                # PrecursorScan, SignalPeaks, NoisyPeaks - Scan, MonoMass, PrecursorMass
                 tmp_df = spec_df[['PrecursorScan', 'SignalPeaks', 'NoisyPeaks']].copy()
             else:  # shouldn't come here
                 continue
