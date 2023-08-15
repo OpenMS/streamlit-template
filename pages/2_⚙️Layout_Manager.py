@@ -10,7 +10,7 @@ COMPONENT_OPTIONS=[
     'Annotated Spectrum (Scan table needed)',
     'Mass table (Scan table needed)',
     '3D S/N plot (Mass table needed)',
-    # TODO: add Sequence view
+    # sequence view is added when "input_sequence" is submitted
 ]
 
 COMPONENT_NAMES=[
@@ -21,7 +21,7 @@ COMPONENT_NAMES=[
     'anno_spectrum',
     'mass_table',
     '3D_SN_plot',
-    # TODO: add Sequence view
+    # sequence view is added when "input_sequence" is submitted
 ]
 
 
@@ -158,8 +158,18 @@ def handleSettingButtons():
             st.session_state.num_of_experiment_to_show = len(uploaded_layout)
 
 
+def setSequenceView():
+    if 'input_sequence' in st.session_state and st.session_state.input_sequence:
+        global COMPONENT_OPTIONS
+        COMPONENT_OPTIONS = COMPONENT_OPTIONS + ['Sequence view (Mass table needed)']
+        global COMPONENT_NAMES
+        COMPONENT_NAMES = COMPONENT_NAMES + ['sequence_view']
+
+
 def content():
     defaultPageSetup()
+    setSequenceView()  # when sequence is submitted, add "Sequence View" as a component option
+
     # handles "onclick" of buttons
     handleSettingButtons()
     handleEditAndSaveButtons()

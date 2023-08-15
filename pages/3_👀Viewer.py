@@ -3,8 +3,8 @@ from src.masstable import *
 from src.components import *
 
 
-DEFAULT_LAYOUT=[['ms1_deconv_heat_map'], ['scan_table', 'mass_table'],
-                ['anno_spectrum', 'deconv_spectrum'], ['3D_SN_plot']]
+DEFAULT_LAYOUT = [['ms1_deconv_heat_map'], ['scan_table', 'mass_table'],
+                  ['anno_spectrum', 'deconv_spectrum'], ['3D_SN_plot']]
 
 
 def sendDataToJS(selected_data, layout_info_per_exp):
@@ -97,8 +97,15 @@ def sendDataToJS(selected_data, layout_info_per_exp):
     ).addGrid()
 
 
+def setSequenceViewInDefaultView():
+    if 'input_sequence' in st.session_state and st.session_state.input_sequence:
+        global DEFAULT_LAYOUT
+        DEFAULT_LAYOUT = DEFAULT_LAYOUT + [['sequence_view']]
+
+
 def content():
     defaultPageSetup("FLASHViewer")
+    setSequenceViewInDefaultView()
 
     ### if no input file is given, show blank page
     if "experiment-df" not in st.session_state:
