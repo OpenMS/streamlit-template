@@ -155,6 +155,7 @@ def handleSettingButtons():
                                                  for col in row if col]
                                                 for row in exp if row]
                                                for exp in uploaded_layout]
+            st.session_state.num_of_experiment_to_show = len(uploaded_layout)
 
 
 def content():
