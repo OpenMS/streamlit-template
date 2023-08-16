@@ -1,12 +1,14 @@
 from src.common import *
 from src.masstable import *
 from src.components import *
+from src.sequence import getFragmentDataFromSeq
 
 
 DEFAULT_LAYOUT = [['ms1_deconv_heat_map'], ['scan_table', 'mass_table'],
                   ['anno_spectrum', 'deconv_spectrum'], ['3D_SN_plot']]
 
 
+# @st.cache_resource
 def sendDataToJS(selected_data, layout_info_per_exp):
     # getting data
     selected_anno_file = selected_data.iloc[0]['Annotated Files']
@@ -23,7 +25,7 @@ def sendDataToJS(selected_data, layout_info_per_exp):
         num_of_rows += 1
 
     components = []
-    dataframes_to_send = {}
+    data_to_send = {}
     per_scan_contents = {'mass_table': False, 'anno_spec': False, 'deconv_spec': False, '3d': False}
     for row in layout_info_per_exp:
         # if this row contains 3D plot, height needs to be 2
@@ -38,13 +40,13 @@ def sendDataToJS(selected_data, layout_info_per_exp):
 
             # prepare component arguments
             if comp_name == 'ms1_raw_heatmap':
-                dataframes_to_send['raw_heatmap_df'] = getMSSignalDF(anno_df)
+                data_to_send['raw_heatmap_df'] = getMSSignalDF(anno_df)
                 component_arguments = PlotlyHeatmap(title="Raw MS1 Heatmap")
             elif comp_name == 'ms1_deconv_heat_map':
-                dataframes_to_send['deconv_heatmap_df'] = getMSSignalDF(spec_df)
+                data_to_send['deconv_heatmap_df'] = getMSSignalDF(spec_df)
                 component_arguments = PlotlyHeatmap(title="Deconvolved MS1 Heatmap")
             elif comp_name == 'scan_table':
-                dataframes_to_send['per_scan_data'] = getSpectraTableDF(spec_df)
+                data_to_send['per_scan_data'] = getSpectraTableDF(spec_df)
                 component_arguments = Tabulator('ScanTable')
             elif comp_name == 'deconv_spectrum':
                 per_scan_contents['deconv_spec'] = True
@@ -58,11 +60,15 @@ def sendDataToJS(selected_data, layout_info_per_exp):
             elif comp_name == '3D_SN_plot':
                 per_scan_contents['3d'] = True
                 component_arguments = Plotly3Dplot(title="Precursor signals")
+            elif comp_name == 'sequence_view':
+                data_to_send['sequence_data'] = getFragmentDataFromSeq(st.session_state.input_sequence,
+                                                                       st.session_state.modifications)
+                component_arguments = SequenceView()
 
             components.append(FlashViewerComponent(component_args=component_arguments, component_layout=comp_layout))
 
     if any(per_scan_contents.values()):
-        scan_table = dataframes_to_send['per_scan_data']
+        scan_table = data_to_send['per_scan_data']
         dfs = [scan_table]
         for key, exist in per_scan_contents.items():
             if not exist: continue
@@ -87,13 +93,13 @@ def sendDataToJS(selected_data, layout_info_per_exp):
                 continue
 
             dfs.append(tmp_df)
-        dataframes_to_send['per_scan_data'] = pd.concat(dfs, axis=1)
+        data_to_send['per_scan_data'] = pd.concat(dfs, axis=1)
 
     FlashViewerGrid(
         columns=6,
         rows=num_of_rows,
         components=components,
-        dataframes=dataframes_to_send
+        data=data_to_send
     ).addGrid()
 
 

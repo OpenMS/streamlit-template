@@ -100,6 +100,8 @@ def parseUploadedFiles():
 def parsingWithProgressBar(infiles_deconv, infiles_anno):
     with st.session_state['progress_bar_space']:
         for anno_f, deconv_f in zip(infiles_anno, infiles_deconv):
+            if not anno_f.endswith('.mzML'):
+                continue
             exp_name = anno_f[0: anno_f.rfind('_')]
 
             with st.spinner('Parsing the experiment %s...'%exp_name):
