@@ -42,7 +42,11 @@ def getFragmentDataFromSeq(sequence, modification_dict):
     # print(protein)
     # print(protein.toUnmodifiedString())
 
-    out_object = {'sequence': sequence} #, 'fixed_modifications': modification_dict}
+    # calculating proteoform mass from sequence
+    protein_mass = protein.getMonoWeight()
+
+    out_object = {'sequence': list(sequence),
+                  'theoretical_mass': protein_mass} #, 'fixed_modifications': modification_dict}
     # per ion type, calculate the possible fragment masses and save them in dictionary
     for ion_type in ['ax', 'by', 'cz']:
         # calculate fragment ion masses
