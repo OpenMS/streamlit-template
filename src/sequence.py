@@ -21,12 +21,12 @@ def getFragmentMassesWithSeq(protein_seq, res_type):
 
     # process prefix
     for aa_index in range(protein_length):
-        prefix_mass = protein_seq.getPrefix(aa_index+1).getMonoWeight(prefix_ion_type, 1)  # charge 1 // + added_ptm_masses
+        prefix_mass = protein_seq.getPrefix(aa_index+1).getMonoWeight(prefix_ion_type, 0)  # + added_ptm_masses
         prefix_mass_list[aa_index] = prefix_mass
 
     # process suffix
     for aa_index in reversed(range(protein_length)):
-        suffix_mass = protein_seq.getSuffix(aa_index+1).getMonoWeight(suffix_ion_type, 1)  # charge 1 // + added_ptm_masses
+        suffix_mass = protein_seq.getSuffix(aa_index+1).getMonoWeight(suffix_ion_type, 0)  # + added_ptm_masses
         suffix_mass_list[aa_index] = suffix_mass
 
     return prefix_mass_list, suffix_mass_list

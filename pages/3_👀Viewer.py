@@ -29,7 +29,7 @@ def sendDataToJS(selected_data, layout_info_per_exp):
     per_scan_contents = {'mass_table': False, 'anno_spec': False, 'deconv_spec': False, '3d': False}
     for row in layout_info_per_exp:
         # if this row contains 3D plot, height needs to be 2
-        height = 2 if '3D_SN_plot' in row else 1
+        height = 2 if '3D_SN_plot' or 'sequence_view' in row else 1
         width_factor = len(row)
         for col_index, comp_name in enumerate(row):
             selected_index = 0 # for test purpose

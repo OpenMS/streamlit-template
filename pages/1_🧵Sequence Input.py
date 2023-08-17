@@ -28,6 +28,10 @@ def validateSequenceInput(input_seq):
 def content():
     defaultPageSetup("Proteoform Sequence Input")
 
+    # if any sequence was submitted before
+    if 'input_sequence' in st.session_state and st.session_state.input_sequence:
+        st.session_state['sequence_text'] = st.session_state.input_sequence
+
     with st.form('sequence_input'):
         # sequence
         st.text_area('Proteoform sequence', key='sequence_text')
