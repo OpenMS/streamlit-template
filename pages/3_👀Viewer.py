@@ -20,9 +20,9 @@ def sendDataToJS(selected_data, layout_info_per_exp):
 
     # num of rows of layout
     num_of_rows = len(layout_info_per_exp)
-    if any(col for row in layout_info_per_exp for col in row if col == '3D_SN_plot'):
-        # for 3D_SN_plot, two row sizes are needed
-        num_of_rows += 1
+    # if any(col for row in layout_info_per_exp for col in row if (col == '3D_SN_plot') or (col == 'sequence_view')):
+    #     for 3D_SN_plot, two row sizes are needed
+        # num_of_rows += 1
 
     components = []
     data_to_send = {}
@@ -32,8 +32,6 @@ def sendDataToJS(selected_data, layout_info_per_exp):
         height = 2 if '3D_SN_plot' or 'sequence_view' in row else 1
         width_factor = len(row)
         for col_index, comp_name in enumerate(row):
-            selected_index = 0 # for test purpose
-
             # prepare component layout
             comp_layout = ComponentLayout(width=6/width_factor, height=height)
             component_arguments = None

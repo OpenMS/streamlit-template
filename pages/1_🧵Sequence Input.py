@@ -29,7 +29,8 @@ def content():
     defaultPageSetup("Proteoform Sequence Input")
 
     # if any sequence was submitted before
-    if 'input_sequence' in st.session_state and st.session_state.input_sequence:
+    if 'input_sequence' in st.session_state and st.session_state.input_sequence \
+            and 'sequence_text' not in st.session_state:
         st.session_state['sequence_text'] = st.session_state.input_sequence
 
     with st.form('sequence_input'):
@@ -54,6 +55,7 @@ def content():
                     st.session_state.modifications['fixed_mod_cysteine'] = st.session_state.selected_fixed_mod_cysteine
                 if 'selected_fixed_mod_methionine' in st.session_state:
                     st.session_state.modifications['fixed_mod_methionine'] = st.session_state.selected_fixed_mod_methionine
+                del st.session_state['sequence_text']
             else:
                 st.error('Error: sequence input is not valid')
 

@@ -32,7 +32,7 @@ def getFragmentMassesWithSeq(protein_seq, res_type):
     return prefix_mass_list, suffix_mass_list
 
 
-@st.cache_data
+# @st.cache_data
 def getFragmentDataFromSeq(sequence, modification_dict):
     protein = AASequence.fromString(sequence)
 
