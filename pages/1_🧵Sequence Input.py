@@ -3,14 +3,17 @@ import re
 from src.common import defaultPageSetup
 
 fixed_mod_cysteine = ['No modification',
-                      'S-carboxamidoethyl-L-cysteine',
-                      'S-carboxamidoethly-L-cysteine',
-                      'S-pyridylethyl-L-cysteine',
-                      'S-carboxamidomethly-L-cysteine',
-                      'cyteine mercaptoethanol']
+                      'Carbamidomethyl (+57)',
+                      'Carboxymethyl (+58)',
+                      'Xlink:Disulfide (-1 per C)']
+                      # 'S-carboxamidoethyl-L-cysteine',
+                      # 'S-carboxamidoethly-L-cysteine',
+                      # 'S-pyridylethyl-L-cysteine',
+                      # 'S-carboxamidomethly-L-cysteine',
+                      # 'cyteine mercaptoethanol']
 fixed_mod_methionine = ['No modification',
-                        'L-methionine sulfoxide',
-                        'L-methionine sulfone']
+                        'L-methionine sulfoxide (+16)',
+                        'L-methionine sulfone (+32)']
 
 
 def validateSequenceInput(input_seq):
@@ -32,6 +35,13 @@ def content():
     if 'input_sequence' in st.session_state and st.session_state.input_sequence \
             and 'sequence_text' not in st.session_state:
         st.session_state['sequence_text'] = st.session_state.input_sequence
+    # if any modification was submitted before
+    if 'fixed_mod_cysteine' in st.session_state and st.session_state.fixed_mod_cysteine \
+            and 'selected_fixed_mod_cysteine' not in st.session_state:
+        st.session_state['selected_fixed_mod_cysteine'] = st.session_state.fixed_mod_cysteine
+    if 'fixed_mod_methionine' in st.session_state and st.session_state.fixed_mod_methionine \
+            and 'selected_fixed_mod_methionine' not in st.session_state:
+        st.session_state['selected_fixed_mod_methionine'] = st.session_state.fixed_mod_methionine
 
     with st.form('sequence_input'):
         # sequence
@@ -49,12 +59,15 @@ def content():
             if 'sequence_text' in st.session_state and validateSequenceInput(st.session_state['sequence_text']):
                 st.success('Proteoform sequence is submitted')
                 # save information for sequence view
-                st.session_state['input_sequence'] = st.session_state['sequence_text']
-                st.session_state['modifications'] = {}
-                if 'selected_fixed_mod_cysteine' in st.session_state:
-                    st.session_state.modifications['fixed_mod_cysteine'] = st.session_state.selected_fixed_mod_cysteine
-                if 'selected_fixed_mod_methionine' in st.session_state:
-                    st.session_state.modifications['fixed_mod_methionine'] = st.session_state.selected_fixed_mod_methionine
+                st.session_state['input_sequence'] = st.session_state['sequence_text'].upper()
+
+                st.session_state['fixed_mod_cysteine'], st.session_state['fixed_mod_methionine'] = '', ''
+                if 'selected_fixed_mod_cysteine' in st.session_state \
+                        and st.session_state['selected_fixed_mod_cysteine'] != 'No modification':
+                    st.session_state['fixed_mod_cysteine'] = st.session_state.selected_fixed_mod_cysteine
+                if 'selected_fixed_mod_methionine' in st.session_state \
+                        and st.session_state['selected_fixed_mod_methionine'] != 'No modification':
+                    st.session_state['fixed_mod_methionine'] = st.session_state.selected_fixed_mod_methionine
                 del st.session_state['sequence_text']
             else:
                 st.error('Error: sequence input is not valid')

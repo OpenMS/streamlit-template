@@ -59,8 +59,7 @@ def sendDataToJS(selected_data, layout_info_per_exp):
                 per_scan_contents['3d'] = True
                 component_arguments = Plotly3Dplot(title="Precursor signals")
             elif comp_name == 'sequence_view':
-                data_to_send['sequence_data'] = getFragmentDataFromSeq(st.session_state.input_sequence,
-                                                                       st.session_state.modifications)
+                data_to_send['sequence_data'] = getFragmentDataFromSeq(st.session_state.input_sequence)
                 component_arguments = SequenceView()
 
             components.append(FlashViewerComponent(component_args=component_arguments, component_layout=comp_layout))
