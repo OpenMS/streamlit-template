@@ -180,57 +180,6 @@ def getSpectraTableDF(deconv_df: pd.DataFrame):
 
 
 @st.cache_data
-def getMassTableDF(spec: pd.Series):
-    mass_df = pd.DataFrame({'Mono mass': spec['mzarray'],
-                            'Sum intensity': spec['intarray'],
-                            'Min charge': spec['MinCharges'],
-                            'Max charge': spec['MaxCharges'],
-                            'Min isotope': spec['MinIsotopes'],
-                            'Max isotope': spec['MaxIsotopes'],
-                            'Cosine Score': spec['cos'],
-                            'SNR': spec['snr'],
-                            'QScore': spec['qscore'],                        
-                            })
-    mass_df.reset_index(inplace=True)
-    return mass_df
-
-
-@st.cache_data
-def getMassSignalDF(spec: pd.Series):
-    mass_signal_df = pd.DataFrame({'Mono mass': spec['mzarray'],
-                                   'Signal peaks': spec['SignalPeaks'],
-                                   'Noisy peaks': spec['NoisyPeaks'],
-                                   })
-    return mass_signal_df
-
-@st.cache_data
-def getPrecursorMassSignalDF(spec: pd.Series, deconv_df: pd.DataFrame):
-    ret =  pd.DataFrame()
-    if spec['PrecursorScan'] == 0:
-        return ret
-
-    indices = deconv_df[deconv_df['Scan'] == spec['PrecursorScan']].index.values
-    if indices.size == 0:
-        return ret
- 
-    target = deconv_df.loc[indices[0]]
-
-    mass_signal_df = getMassSignalDF(target)
-    #print(mass_signal_df)
-
-    masses = mass_signal_df['Mono mass']
-    pmass = spec['PrecursorMass']  
-    
-    for i in range(masses.size):
-        mass = (masses[i])
-        if abs(mass - pmass) < 1e-2 :    
-            ret = mass_signal_df.loc[i]
-            break
-    
-    return ret
-
-
-@st.cache_data
 def getMSSignalDF(anno_df: pd.DataFrame):
     ints = np.concatenate([anno_df.loc[index, "intarray"] for index in anno_df.index])
     mzs = np.concatenate([anno_df.loc[index, "mzarray"] for index in anno_df.index])
@@ -244,18 +193,5 @@ def getMSSignalDF(anno_df: pd.DataFrame):
     ms_df = pd.DataFrame({'mass': mzs, 'rt': rts, 'intensity': ints})
     ms_df.dropna(subset=['intensity'], inplace=True) # remove Nan
     ms_df = ms_df[ms_df['intensity']>0]
-    # if len(ms_df) > point_num_cutoff:
-    #     ms_df.sort_values(by='intensity', inplace=True, ascending=False)
-    #     ms_df = ms_df.iloc[:point_num_cutoff]
     ms_df.sort_values(by='intensity', inplace=True)
     return ms_df
-
-# def main():
-#     annotated = '/Users/kyowonjeong/FLASHDeconvOut/20211216_Ecoli_SPE_method_06_R1_annotated.mzML'
-#     deconvolved = '/Users/kyowonjeong/FLASHDeconvOut/20211216_Ecoli_SPE_method_06_R1_deconv.mzML'
-#     tmp = parseFLASHDeconvOutput(annotated, deconvolved)
-#     for col in tmp[0].columns:
-#         print(col)
-# if __name__ == "__main__":
-#     main()
-

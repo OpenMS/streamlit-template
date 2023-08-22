@@ -1,28 +1,34 @@
 import json
 import streamlit.components.v1 as st_components
 
-DATAFRAME_NAMES = [
+DATA_OBJ_NAMES = [
     'raw_heatmap_df',
     'deconv_heatmap_df',
-    'per_scan_data'
+    'per_scan_data',
+    'sequence_data'
 ]
 
 class FlashViewerGrid:
     columns = None
     rows = None
     components = []
-    dataframes = {}
+    data = {}
 
     _flash_viewer_grid = st_components.declare_component(
         "flash_viewer_grid",
         url="http://localhost:5173",
     )
 
-    def __init__(self, components, dataframes, columns=1, rows=1):
+    def __init__(self, components, data, columns=1, rows=1):
         self.columns = columns
         self.rows = rows
         self.components = components
-        self.dataframes = {key: df.to_json(orient='records') for key, df in dataframes.items()}
+        self.data = {}
+        for key, df in data.items():
+            if type(df) is dict:
+                self.data[key] = json.dumps(df)
+            else:
+                self.data[key] = df.to_json(orient='records')
 
     def addGrid(self, key=None):
         return self._flash_viewer_grid(
@@ -37,7 +43,7 @@ class FlashViewerGrid:
                     self.components
                 )
             ),
-            dataframes=self.dataframes,
+            data_for_drawing=self.data,
             key=key,
         )
 
@@ -48,9 +54,6 @@ class FlashViewerComponent:
     def __init__(self, component_args, component_layout):
         self.componentLayout = component_layout
         self.componentArgs = component_args
-    
-    def toJson(self):
-        return json.dumps(self, default=lambda o: o.__dict__)
 
 class ComponentLayout:
     width = None
@@ -59,9 +62,6 @@ class ComponentLayout:
     def __init__(self, width=None, height=None):
         self.width = width
         self.height = height
-
-    def toJson(self):
-        return json.dumps(self, default=lambda o: o.__dict__)
 
 class PlotlyHeatmap:
     title = None
@@ -90,3 +90,7 @@ class Plotly3Dplot:
     def __init__(self, title):
         self.title = title
         self.componentName = "Plotly3Dplot"
+
+class SequenceView:
+    def __init__(self):
+        self.componentName = 'SequenceView'

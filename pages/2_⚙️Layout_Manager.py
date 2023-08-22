@@ -10,7 +10,7 @@ COMPONENT_OPTIONS=[
     'Annotated Spectrum (Scan table needed)',
     'Mass table (Scan table needed)',
     '3D S/N plot (Mass table needed)',
-    # TODO: add Sequence view
+    # sequence view is added when "input_sequence" is submitted
 ]
 
 COMPONENT_NAMES=[
@@ -21,7 +21,7 @@ COMPONENT_NAMES=[
     'anno_spectrum',
     'mass_table',
     '3D_SN_plot',
-    # TODO: add Sequence view
+    # sequence view is added when "input_sequence" is submitted
 ]
 
 
@@ -40,7 +40,6 @@ def containerForNewComponent(exp_index, row_index, col_index):
             return False
         else:
             return True
-
 
     def addNewComponent():
         new_component_option = 'SelectNewComponent%d%d%d'%(exp_index, row_index, col_index)
@@ -65,11 +64,15 @@ def layoutEditorPerExperiment(exp_index):
                 with st_cols[col_index].container():
                     containerForNewComponent(exp_index, row_index, col_index)
             else:
-                st_cols[col_index].info(col)
+                with st_cols[col_index]:
+                    c1, c2 = st.columns([5, 1])
+                    c1.info(col)
+                    if c2.button("x", key='DelButton%d%d%d'%(exp_index, row_index, col_index), type='primary'):
+                        layout_info[row_index].pop(col_index)
+                        st.experimental_rerun()
 
         # new column button
         if len(row) < 3: # limit for #column is 3
-            v_space(1, st_cols[-1])
             if st_cols[-1].button("***+***", key='NewColumnButton%d%d'%(exp_index, row_index)):
                 layout_info[row_index].append('')
                 st.experimental_rerun()
@@ -158,8 +161,18 @@ def handleSettingButtons():
             st.session_state.num_of_experiment_to_show = len(uploaded_layout)
 
 
+def setSequenceView():
+    if 'input_sequence' in st.session_state and st.session_state.input_sequence:
+        global COMPONENT_OPTIONS
+        COMPONENT_OPTIONS = COMPONENT_OPTIONS + ['Sequence view (Mass table needed)']
+        global COMPONENT_NAMES
+        COMPONENT_NAMES = COMPONENT_NAMES + ['sequence_view']
+
+
 def content():
     defaultPageSetup()
+    setSequenceView()  # when sequence is submitted, add "Sequence View" as a component option
+
     # handles "onclick" of buttons
     handleSettingButtons()
     handleEditAndSaveButtons()
@@ -220,8 +233,10 @@ def content():
 
     ### buttons for edit/save
     _, edit_btn_col, save_btn_col = st.columns([9, 1, 1])
-    edit_btn_col.button("Edit", key="edit_btn_clicked")
-    save_btn_col.button("Save", key="layout_saved")
+    edit_btn_col.button("Edit", key="edit_btn_clicked",
+                        disabled=False if "saved_layout_setting" in st.session_state else True)
+    save_btn_col.button("Save", key="layout_saved",
+                        disabled=True if "saved_layout_setting" in st.session_state else False)
 
     ### showing error/success message
     if "save_btn_error_message" in st.session_state and st.session_state.layout_saved:
