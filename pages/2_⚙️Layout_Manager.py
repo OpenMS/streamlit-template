@@ -41,7 +41,6 @@ def containerForNewComponent(exp_index, row_index, col_index):
         else:
             return True
 
-
     def addNewComponent():
         new_component_option = 'SelectNewComponent%d%d%d'%(exp_index, row_index, col_index)
         if isThisComponentUnique(st.session_state[new_component_option]):
@@ -65,11 +64,15 @@ def layoutEditorPerExperiment(exp_index):
                 with st_cols[col_index].container():
                     containerForNewComponent(exp_index, row_index, col_index)
             else:
-                st_cols[col_index].info(col)
+                with st_cols[col_index]:
+                    c1, c2 = st.columns([5, 1])
+                    c1.info(col)
+                    if c2.button("x", key='DelButton%d%d%d'%(exp_index, row_index, col_index), type='primary'):
+                        layout_info[row_index].pop(col_index)
+                        st.experimental_rerun()
 
         # new column button
         if len(row) < 3: # limit for #column is 3
-            v_space(1, st_cols[-1])
             if st_cols[-1].button("***+***", key='NewColumnButton%d%d'%(exp_index, row_index)):
                 layout_info[row_index].append('')
                 st.experimental_rerun()
