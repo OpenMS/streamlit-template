@@ -230,8 +230,10 @@ def content():
 
     ### buttons for edit/save
     _, edit_btn_col, save_btn_col = st.columns([9, 1, 1])
-    edit_btn_col.button("Edit", key="edit_btn_clicked")
-    save_btn_col.button("Save", key="layout_saved")
+    edit_btn_col.button("Edit", key="edit_btn_clicked",
+                        disabled=False if "saved_layout_setting" in st.session_state else True)
+    save_btn_col.button("Save", key="layout_saved",
+                        disabled=True if "saved_layout_setting" in st.session_state else False)
 
     ### showing error/success message
     if "save_btn_error_message" in st.session_state and st.session_state.layout_saved:
