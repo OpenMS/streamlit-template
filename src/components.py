@@ -9,9 +9,7 @@ DATA_OBJ_NAMES = [
 ]
 
 class FlashViewerGrid:
-    columns = None
-    rows = None
-    components = []
+    components = [[]]
     data = {}
 
     _flash_viewer_grid = st_components.declare_component(
@@ -19,9 +17,7 @@ class FlashViewerGrid:
         url="http://localhost:5173",
     )
 
-    def __init__(self, components, data, columns=1, rows=1):
-        self.columns = columns
-        self.rows = rows
+    def __init__(self, components, data):
         self.components = components
         self.data = {}
         for key, df in data.items():
@@ -31,37 +27,21 @@ class FlashViewerGrid:
                 self.data[key] = df.to_json(orient='records')
 
     def addGrid(self, key=None):
+        out_components = []
+        for row in self.components:
+            out_components.append(list(map(lambda component: {"componentArgs": component.componentArgs.__dict__}, row)))
         return self._flash_viewer_grid(
-            columns=self.columns,
-            rows=self.rows,
-            components=list(
-                map(
-                    lambda component: { 
-                        "componentLayout": component.componentLayout.__dict__, 
-                        "componentArgs": component.componentArgs.__dict__ 
-                    }, 
-                    self.components
-                )
-            ),
+            components=out_components,
             data_for_drawing=self.data,
             key=key,
         )
 
 class FlashViewerComponent:
-    componentLayout = None
     componentArgs = None
 
-    def __init__(self, component_args, component_layout):
-        self.componentLayout = component_layout
+    def __init__(self, component_args):
         self.componentArgs = component_args
 
-class ComponentLayout:
-    width = None
-    height = None
-
-    def __init__(self, width=None, height=None):
-        self.width = width
-        self.height = height
 
 class PlotlyHeatmap:
     title = None

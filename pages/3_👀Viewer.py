@@ -18,22 +18,12 @@ def sendDataToJS(selected_data, layout_info_per_exp):
     spec_df = st.session_state['deconv_dfs'][selected_deconv_file]
     anno_df = st.session_state['anno_dfs'][selected_anno_file]
 
-    # num of rows of layout
-    num_of_rows = len(layout_info_per_exp)
-    # if any(col for row in layout_info_per_exp for col in row if (col == '3D_SN_plot') or (col == 'sequence_view')):
-    #     for 3D_SN_plot, two row sizes are needed
-        # num_of_rows += 1
-
     components = []
     data_to_send = {}
     per_scan_contents = {'mass_table': False, 'anno_spec': False, 'deconv_spec': False, '3d': False}
     for row in layout_info_per_exp:
-        # if this row contains 3D plot, height needs to be 2
-        height = 2 if '3D_SN_plot' or 'sequence_view' in row else 1
-        width_factor = len(row)
+        components_of_this_row = []
         for col_index, comp_name in enumerate(row):
-            # prepare component layout
-            comp_layout = ComponentLayout(width=6/width_factor, height=height)
             component_arguments = None
 
             # prepare component arguments
@@ -62,7 +52,8 @@ def sendDataToJS(selected_data, layout_info_per_exp):
                 data_to_send['sequence_data'] = getFragmentDataFromSeq(st.session_state.input_sequence)
                 component_arguments = SequenceView()
 
-            components.append(FlashViewerComponent(component_args=component_arguments, component_layout=comp_layout))
+            components_of_this_row.append(FlashViewerComponent(component_arguments))
+        components.append(components_of_this_row)
 
     if any(per_scan_contents.values()):
         scan_table = data_to_send['per_scan_data']
@@ -93,8 +84,6 @@ def sendDataToJS(selected_data, layout_info_per_exp):
         data_to_send['per_scan_data'] = pd.concat(dfs, axis=1)
 
     FlashViewerGrid(
-        columns=6,
-        rows=num_of_rows,
         components=components,
         data=data_to_send
     ).addGrid()
