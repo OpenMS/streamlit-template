@@ -59,7 +59,7 @@ def content():
             if 'sequence_text' in st.session_state and validateSequenceInput(st.session_state['sequence_text']):
                 st.success('Proteoform sequence is submitted')
                 # save information for sequence view
-                st.session_state['input_sequence'] = st.session_state['sequence_text'].upper()
+                st.session_state['input_sequence'] = ''.join(st.session_state['sequence_text'].split()).upper()
 
                 st.session_state['fixed_mod_cysteine'], st.session_state['fixed_mod_methionine'] = '', ''
                 if 'selected_fixed_mod_cysteine' in st.session_state \
