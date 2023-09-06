@@ -1,6 +1,5 @@
 streamlit
-streamlit-plotly-events
-streamlit-aggrid
+st-pages
 pandas
 numpy
 plotly
