@@ -14,8 +14,8 @@ def initializeWorkspace(input_types, parsed_df_types):
             st.session_state[dirname] = []
 
     # sync session state and default-workspace
-    st.session_state[input_types[0]] = os.listdir(Path(st.session_state["workspace"], input_types[0]))
-    st.session_state[input_types[1]] = os.listdir(Path(st.session_state["workspace"], input_types[1]))
+    for input_type in input_types:
+        st.session_state[input_type] = os.listdir(Path(st.session_state["workspace"], input_type))
 
     # initializing session state for storing data
     for df_type in parsed_df_types:
@@ -155,7 +155,7 @@ def content():
     1. Browse files on your computer or drag and drops files
     2. Click the **Add the uploaded mzML files** button to use them in the workflows
 
-    Select data for analysis from the uploaded files shown in the sidebar.
+    Select data for analysis from the uploaded files shown below.
     
     **💡 Make sure that the same number of deconvolved and annotated mzML files are uploaded!**
     """

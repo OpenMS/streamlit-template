@@ -16,6 +16,7 @@ def flashdeconvPages():
 def flashquantPages():
     show_pages([
         Page("FLASHViewer.py", "FLASHViewer", "🏠"),
+        Page("pages/FileUpload_FLASHQuant.py", "File Upload", "📁"),
         Page("pages/FLASHQuantViewer.py", "Viewer", "👀"),
     ])
 
