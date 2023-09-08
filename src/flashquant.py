@@ -1,6 +1,8 @@
 import pandas as pd
+import streamlit as st
 
 
+@st.cache_data
 def parseFLASHQuantOutput(quant_file, trace_file, resolution_file=None):
     quant_df = pd.read_csv(quant_file, delimiter='\t')
     trace_df = pd.read_csv(trace_file, delimiter='\t')
@@ -29,6 +31,7 @@ def parseFLASHQuantOutput(quant_file, trace_file, resolution_file=None):
     return quant_df, trace_df, res_df
 
 
+@st.cache_data
 def connectTraceWithResult(quant_df, trace_df):
     charges, isotopes, centroidmzs, rts, mzs, intensities = [], [], [], [], [], []
     for index, row in quant_df.iterrows():

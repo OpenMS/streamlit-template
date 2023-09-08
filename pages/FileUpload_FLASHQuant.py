@@ -5,6 +5,7 @@ import pandas as pd
 from src.flashquant import parseFLASHQuantOutput
 from src.common import v_space, defaultPageSetup, reset_directory
 from pages.FileUpload import initializeWorkspace
+from src.flashquant import connectTraceWithResult
 
 
 @st.cache_data
@@ -123,8 +124,8 @@ def parsingWithProgressBar(infiles_quant, infiles_trace, infiles_resolution):
                         Path(st.session_state["workspace"], "quant-files", quant_f),
                         Path(st.session_state["workspace"], "trace-files", trace_f),
                     )
-                st.session_state['quant_dfs'][quant_f] = quant_df
-                st.session_state['trace_dfs'][trace_f] = trace_df
+                st.session_state['quant_dfs'][quant_f] = connectTraceWithResult(quant_df, trace_df)
+                st.session_state['trace_dfs'][trace_f] = []  # need key name, so saving only empty array
             st.success('Done parsing the experiment %s!' % exp_name)
 
 
@@ -137,7 +138,6 @@ def content():
     initializeWorkspace(input_types, parsed_df_types)
 
     c1, c2, c3 = st.columns([0.6, 0.2, 0.2])
-    # c1, c2, c3 = st.columns(3)
     c1.title("File Upload")
 
     # Load Example Data
