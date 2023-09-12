@@ -13,10 +13,10 @@ if not _RELEASE:
     )
 else:
     parent_dir = os.path.dirname(os.path.abspath(__file__))
-    build_dir = os.path.join(parent_dir, '..', "openms-streamlit-vue-component/dist")
+    build_dir = os.path.join(parent_dir, '..', "js-component", "dist")
     _component_func = st_components.declare_component("flash_viewer_grid", path=build_dir)
 
-def flash_viewer_grid_component(components, data, component_key):
+def flash_viewer_grid_component(components, data, component_key='flash_viewer_grid'):
     out_components = []
     for row in components:
         out_components.append(list(map(lambda component: {"componentArgs": component.componentArgs.__dict__}, row)))
