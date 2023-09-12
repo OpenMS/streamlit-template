@@ -107,7 +107,7 @@ def reset_directory(path: Path):
 
 def sidebar(page=""):
     with st.sidebar:
-        if page == "main":
+        if page == "online":
             st.markdown("### Workspaces")
             if st.session_state["location"] == "online":
                 new_workspace = st.text_input("enter workspace", "")
@@ -157,8 +157,8 @@ You can share this unique workspace ID with other people.
                     shutil.rmtree(path)
                     st.session_state["workspace"] = Path("default-workspace")
             st.markdown("***")
-
         st.image("assets/OpenMS.png", "powered by")
+
 
 def defaultPageSetup(title=""):
     page_setup()

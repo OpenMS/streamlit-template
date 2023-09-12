@@ -1,12 +1,6 @@
 import json
 import streamlit.components.v1 as st_components
 
-DATA_OBJ_NAMES = [
-    'raw_heatmap_df',
-    'deconv_heatmap_df',
-    'per_scan_data',
-    'sequence_data'
-]
 
 class FlashViewerGrid:
     components = [[]]
@@ -28,6 +22,7 @@ class FlashViewerGrid:
 
     def addGrid(self, key=None):
         out_components = []
+        print(self.components)
         for row in self.components:
             out_components.append(list(map(lambda component: {"componentArgs": component.componentArgs.__dict__}, row)))
         return self._flash_viewer_grid(
@@ -74,3 +69,7 @@ class Plotly3Dplot:
 class SequenceView:
     def __init__(self):
         self.componentName = 'SequenceView'
+
+class FLASHQuant:
+    def __init__(self):
+        self.componentName = 'FLASHQuantView'
