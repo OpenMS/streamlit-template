@@ -8,7 +8,6 @@ DEFAULT_LAYOUT = [['ms1_deconv_heat_map'], ['scan_table', 'mass_table'],
                   ['anno_spectrum', 'deconv_spectrum'], ['3D_SN_plot']]
 
 
-# @st.cache_resource
 def sendDataToJS(selected_data, layout_info_per_exp):
     # getting data
     selected_anno_file = selected_data.iloc[0]['Annotated Files']
@@ -82,11 +81,7 @@ def sendDataToJS(selected_data, layout_info_per_exp):
 
             dfs.append(tmp_df)
         data_to_send['per_scan_data'] = pd.concat(dfs, axis=1)
-
-    FlashViewerGrid(
-        components=components,
-        data=data_to_send
-    ).addGrid()
+    flash_viewer_js_component = flash_viewer_grid_component(components=components, data=data_to_send)
 
 
 def setSequenceViewInDefaultView():
@@ -113,7 +108,8 @@ def content():
     layout_info = DEFAULT_LAYOUT
     if "saved_layout_setting" in st.session_state:  # when layout manager was used
         layout_info = st.session_state["saved_layout_setting"][0]
-    sendDataToJS(selected_exp0, layout_info)
+    with st.spinner('Loading component...'):
+        sendDataToJS(selected_exp0, layout_info)
 
     ### for multiple experiments on one view
     if "saved_layout_setting" in st.session_state and len(st.session_state["saved_layout_setting"]) > 1:

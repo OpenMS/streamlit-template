@@ -12,5 +12,5 @@ Pipfile
 *.sln
 *.sw*
 
-src/__pycache__
+**/__pycache__
 openms-streamlit-vue-component/
