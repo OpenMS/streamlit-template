@@ -81,7 +81,8 @@ def sendDataToJS(selected_data, layout_info_per_exp):
 
             dfs.append(tmp_df)
         data_to_send['per_scan_data'] = pd.concat(dfs, axis=1)
-    flash_viewer_js_component = flash_viewer_grid_component(components=components, data=data_to_send)
+
+    flash_viewer_grid_component(components=components, data=data_to_send)
 
 
 def setSequenceViewInDefaultView():
