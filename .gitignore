@@ -14,3 +14,4 @@ Pipfile
 
 **/__pycache__
 openms-streamlit-vue-component/
+js-component/

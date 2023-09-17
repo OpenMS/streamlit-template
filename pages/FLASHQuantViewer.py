@@ -1,6 +1,7 @@
 import streamlit as st
 from src.common import defaultPageSetup
 import streamlit.components.v1 as st_components
+from src.components import flash_viewer_grid_component, FlashViewerComponent, FLASHQuant
 
 
 def content():
@@ -22,11 +23,8 @@ def content():
     selected_quant_file = selected_exp0.iloc[0]['Quant result Files']  # getting file name
     quant_df = st.session_state['quant_dfs'][selected_quant_file]  # getting data from file name
 
-    _flash_viewer_grid = st_components.declare_component("flash_viewer_grid",
-                                                         url="http://localhost:5173")
-    _flash_viewer_grid(components=[[{'componentArgs': {'componentName': 'FLASHQuantView'}}]],
-                       data_for_drawing={'quant_data': quant_df.to_json(orient='records')},
-                       key=None)
+    component = [[FlashViewerComponent(FLASHQuant())]]
+    flash_viewer_grid_component(components=component, data={'quant_data': quant_df})
 
 
 if __name__ == "__main__":
