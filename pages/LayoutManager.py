@@ -3,14 +3,14 @@ from src.common import defaultPageSetup, v_space
 import json
 
 COMPONENT_OPTIONS=[
-    'MS1 raw Heatmap',
-    'MS1 deconvolved Heatmap',
+    'MS1 raw heatmap',
+    'MS1 deconvolved heatmap',
     'Scan table',
-    'Deconvolved Spectrum (Scan table needed)',
-    'Annotated Spectrum (Scan table needed)',
+    'Deconvolved spectrum (Scan table needed)',
+    'Annotated spectrum (Scan table needed)',
     'Mass table (Scan table needed)',
     '3D S/N plot (Mass table needed)',
-    # sequence view is added when "input_sequence" is submitted
+    # "sequence view" and "Internal fragment view" is added when "input_sequence" is submitted
 ]
 
 COMPONENT_NAMES=[
@@ -21,7 +21,7 @@ COMPONENT_NAMES=[
     'anno_spectrum',
     'mass_table',
     '3D_SN_plot',
-    # sequence view is added when "input_sequence" is submitted
+    # "sequence view" and "internal fragment view" added when "input_sequence" is submitted
 ]
 
 
@@ -164,9 +164,10 @@ def handleSettingButtons():
 def setSequenceView():
     if 'input_sequence' in st.session_state and st.session_state.input_sequence:
         global COMPONENT_OPTIONS
-        COMPONENT_OPTIONS = COMPONENT_OPTIONS + ['Sequence view (Mass table needed)']
+        COMPONENT_OPTIONS = COMPONENT_OPTIONS + ['Sequence view (Mass table needed)',
+                                                 'Internal fragment view (Mass table needed)']
         global COMPONENT_NAMES
-        COMPONENT_NAMES = COMPONENT_NAMES + ['sequence_view']
+        COMPONENT_NAMES = COMPONENT_NAMES + ['sequence_view', 'internal_fragment_view']
 
 
 def content():
