@@ -11,8 +11,11 @@ fixed_mod_methionine = {'No modification': 0,
                         'L-methionine sulfoxide (+16)': 15.994915,
                         'L-methionine sulfone (+32)': 31.989829
                         }
+H20 = 18.010564683
+NH3 = 17.0265491015
 
 
+@st.cache_data
 def getFragmentMassesWithSeq(protein, res_type):
     protein_length = protein.size()
     prefix_mass_list = [.0] * protein_length
@@ -43,6 +46,7 @@ def getFragmentMassesWithSeq(protein, res_type):
     return prefix_mass_list, suffix_mass_list
 
 
+@st.cache_data
 def setFixedModification(protein):
     fixed_mod_site = []
 
@@ -71,7 +75,7 @@ def setFixedModification(protein):
     return protein, fixed_mod_site
 
 
-# @st.cache_data
+@st.cache_data
 def getFragmentDataFromSeq(sequence):
     protein = AASequence.fromString(sequence)
     protein, fixed_mods = setFixedModification(protein)  # handling fixed modifications
@@ -87,5 +91,78 @@ def getFragmentDataFromSeq(sequence):
         prefix_ions, suffix_ions = getFragmentMassesWithSeq(protein, ion_type)
         out_object['fragment_masses_%s' % ion_type[0]] = prefix_ions
         out_object['fragment_masses_%s' % ion_type[1]] = suffix_ions
+
+    return out_object
+
+# Define amino acid masses with high resolution
+aa_masses = {
+    'A': 71.037114,
+    'R': 156.101111,
+    'N': 114.042927,
+    'D': 115.026943,
+    'C': 103.009185,
+    'E': 129.042593,
+    'Q': 128.058578,
+    'G': 57.021464,
+    'H': 137.058912,
+    'I': 113.084064,
+    'L': 113.084064,
+    'K': 128.094963,
+    'M': 131.040485,
+    'F': 147.068414,
+    'P': 97.052764,
+    'S': 87.032028,
+    'T': 101.047679,
+    'W': 186.079313,
+    'Y': 163.063329,
+    'V': 99.068414
+}
+
+def calculate_exact_mass(sequence, shift):
+    """
+    Calculates the exact mass of a protein sequence using high-resolution amino acid masses.
+
+    Parameters:
+    sequence (str): the amino acid sequence
+
+    Returns:
+    mass (float): the exact mass of the protein sequence
+    """
+    mass = sum([aa_masses[aa] for aa in sequence])
+    mass += 18.010564683 + shift  # add mass of water molecule
+    return mass
+
+
+def getInternalFragmentMassesWithSeq(sequence, res_type):
+    shift = -H20 if res_type == 'by' or res_type == 'cz' else (-H20-NH3 if res_type == 'bz' else -H20+NH3)
+    masses = []
+    start_indices = []
+    end_indices = []
+    # protein('sequence', protein.toString())
+    for i, s in enumerate(sequence):
+        if i == len(sequence)-1:
+            break
+        for j, t in enumerate(sequence):
+            if j < i+5-1:
+                continue
+            subs = sequence[i:j+1]
+            masses.append(calculate_exact_mass(subs, shift))
+            start_indices.append(i)
+            end_indices.append(j+1)
+    return masses, start_indices, end_indices
+
+
+# @st.cache_data
+def getInternalFragmentDataFromSeq(sequence):
+    # TODO: fixed modification
+    # protein = AASequence.fromString(sequence)
+    # protein, fixed_mods = setFixedModification(protein)  # handling fixed modifications
+
+    out_object = {'sequence': list(sequence)}
+    for ion_type in ['by', 'bz', 'cy']:  # by cz are the same.
+        ions, start_indices, end_indices = getInternalFragmentMassesWithSeq(sequence, ion_type)
+        out_object['fragment_masses_%s' % ion_type] = ions
+        out_object['start_indices_%s' % ion_type] = start_indices
+        out_object['end_indices_%s' % ion_type] = end_indices
 
     return out_object

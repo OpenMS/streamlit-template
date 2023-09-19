@@ -16,6 +16,7 @@ else:
     build_dir = os.path.join(parent_dir, '..', "js-component", "dist")
     _component_func = st_components.declare_component("flash_viewer_grid", path=build_dir)
 
+
 def flash_viewer_grid_component(components, data, component_key='flash_viewer_grid'):
     out_components = []
     for row in components:
@@ -36,6 +37,7 @@ def flash_viewer_grid_component(components, data, component_key='flash_viewer_gr
 
     return component_value
 
+
 class FlashViewerComponent:
     componentArgs = None
 
@@ -52,6 +54,7 @@ class PlotlyHeatmap:
         self.show_legend = show_legend
         self.componentName = "PlotlyHeatmap"
 
+
 class Tabulator:
     def __init__(self, table_type):
         if table_type == 'ScanTable':
@@ -61,19 +64,28 @@ class Tabulator:
             self.title = 'Mass Table'
             self.componentName = "TabulatorMassTable"
 
+
 class PlotlyLineplot:
     def __init__(self, title):
         self.title = title
         self.componentName = "PlotlyLineplot"
+
 
 class Plotly3Dplot:
     def __init__(self, title):
         self.title = title
         self.componentName = "Plotly3Dplot"
 
+
 class SequenceView:
     def __init__(self):
         self.componentName = 'SequenceView'
+
+
+class InternalFragmentView:
+    def __init__(self):
+        self.componentName = 'InternalFragmentView'
+
 
 class FLASHQuant:
     def __init__(self):

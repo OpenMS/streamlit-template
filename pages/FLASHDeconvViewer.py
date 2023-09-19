@@ -1,7 +1,7 @@
 from src.common import *
 from src.masstable import *
 from src.components import *
-from src.sequence import getFragmentDataFromSeq
+from src.sequence import getFragmentDataFromSeq, getInternalFragmentDataFromSeq
 
 
 DEFAULT_LAYOUT = [['ms1_deconv_heat_map'], ['scan_table', 'mass_table'],
@@ -37,19 +37,22 @@ def sendDataToJS(selected_data, layout_info_per_exp):
                 component_arguments = Tabulator('ScanTable')
             elif comp_name == 'deconv_spectrum':
                 per_scan_contents['deconv_spec'] = True
-                component_arguments = PlotlyLineplot(title="Deconvolved spectrum")
+                component_arguments = PlotlyLineplot(title="Deconvolved Spectrum")
             elif comp_name == 'anno_spectrum':
                 per_scan_contents['anno_spec'] = True
-                component_arguments = PlotlyLineplot(title="Annotated spectrum")
+                component_arguments = PlotlyLineplot(title="Annotated Spectrum")
             elif comp_name == 'mass_table':
                 per_scan_contents['mass_table'] = True
                 component_arguments = Tabulator('MassTable')
             elif comp_name == '3D_SN_plot':
                 per_scan_contents['3d'] = True
-                component_arguments = Plotly3Dplot(title="Precursor signals")
+                component_arguments = Plotly3Dplot(title="Precursor Signals")
             elif comp_name == 'sequence_view':
                 data_to_send['sequence_data'] = getFragmentDataFromSeq(st.session_state.input_sequence)
                 component_arguments = SequenceView()
+            elif comp_name == 'internal_fragment_view':
+                data_to_send['internal_fragment_data'] = getInternalFragmentDataFromSeq(st.session_state.input_sequence)
+                component_arguments = InternalFragmentView()
 
             components_of_this_row.append(FlashViewerComponent(component_arguments))
         components.append(components_of_this_row)
@@ -88,7 +91,7 @@ def sendDataToJS(selected_data, layout_info_per_exp):
 def setSequenceViewInDefaultView():
     if 'input_sequence' in st.session_state and st.session_state.input_sequence:
         global DEFAULT_LAYOUT
-        DEFAULT_LAYOUT = DEFAULT_LAYOUT + [['sequence_view']]
+        DEFAULT_LAYOUT = DEFAULT_LAYOUT + [['sequence_view']] + [['internal_fragment_view']]
 
 
 def content():
@@ -127,7 +130,8 @@ def content():
             selected_exp = experiment_df[
                 experiment_df['Experiment Name'] == st.session_state["selected_experiment%d"%exp_index]]
             layout_info = st.session_state["saved_layout_setting"][exp_index]
-            sendDataToJS(selected_exp, layout_info)
+            with st.spinner('Loading component...'):
+                sendDataToJS(selected_exp, layout_info)
 
 
 if __name__ == "__main__":
