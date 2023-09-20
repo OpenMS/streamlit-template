@@ -15,7 +15,7 @@ H20 = 18.010564683
 NH3 = 17.0265491015
 
 
-@st.cache_data
+# NOTE: cannot cache this function: cannot hash "OpenMS.AASequence"
 def getFragmentMassesWithSeq(protein, res_type):
     protein_length = protein.size()
     prefix_mass_list = [.0] * protein_length
@@ -46,7 +46,7 @@ def getFragmentMassesWithSeq(protein, res_type):
     return prefix_mass_list, suffix_mass_list
 
 
-@st.cache_data
+# NOTE: cannot cache this function: cannot hash "OpenMS.AASequence"
 def setFixedModification(protein):
     fixed_mod_site = []
 
@@ -152,7 +152,7 @@ def getInternalFragmentMassesWithSeq(sequence, res_type):
     return masses, start_indices, end_indices
 
 
-# @st.cache_data
+@st.cache_data
 def getInternalFragmentDataFromSeq(sequence):
     # TODO: fixed modification
     # protein = AASequence.fromString(sequence)
