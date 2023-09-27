@@ -158,7 +158,7 @@ def getInternalFragmentDataFromSeq(sequence):
     # protein = AASequence.fromString(sequence)
     # protein, fixed_mods = setFixedModification(protein)  # handling fixed modifications
 
-    out_object = {'sequence': list(sequence)}
+    out_object = {}  # sequence information is from "sequence_data"
     for ion_type in ['by', 'bz', 'cy']:  # by cz are the same.
         ions, start_indices, end_indices = getInternalFragmentMassesWithSeq(sequence, ion_type)
         out_object['fragment_masses_%s' % ion_type] = ions

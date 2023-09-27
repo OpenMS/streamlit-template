@@ -85,6 +85,10 @@ def sendDataToJS(selected_data, layout_info_per_exp):
             dfs.append(tmp_df)
         data_to_send['per_scan_data'] = pd.concat(dfs, axis=1)
 
+    # if Internal fragment view was selected, but sequence view was not
+    if ('internal_fragment_data' in data_to_send) and ('sequence_data' not in data_to_send):
+        data_to_send['sequence_data'] = getFragmentDataFromSeq(st.session_state.input_sequence)
+
     flash_viewer_grid_component(components=components, data=data_to_send)
 
 
