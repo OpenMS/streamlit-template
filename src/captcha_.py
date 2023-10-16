@@ -190,7 +190,7 @@ def captcha_control():
         data = image.generate(st.session_state['Captcha'])
         st.image(data)
         col1, col2 = st.columns([20, 80])
-        capta2_text = col1.text_input('Enter captcha text')
+        capta2_text = col1.text_input('Please enter the captcha as text. Note: If your captcha is not accepted you might need to disable your ad blocker.')
         
         v_space(1, col2)
         if col2.button("Verify the code", type="primary"):
