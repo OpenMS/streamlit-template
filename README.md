@@ -41,7 +41,10 @@ These steps should be done before building any version of FLASHViewer.
 
 First you need to build an image locally.
 
-`build image with: docker build -f Dockerfile --no-cache -t flashviewer:latest --build-arg GITHUB_TOKEN=<your-github-token> .`
+Prerequisite: `src/components.py` has `RELEASE=True` and `dist/` contains a build of the Vue
+component. These should be the settings on the `main` branch.
+
+build image with: `docker build -f Dockerfile --no-cache -t flashviewer:latest --build-arg GITHUB_TOKEN=<your-github-token> .`
 
 You should see a successful output, but you can check if an image is built with:
 
