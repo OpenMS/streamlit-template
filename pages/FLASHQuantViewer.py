@@ -24,7 +24,7 @@ def content():
     quant_df = st.session_state['quant_dfs'][selected_quant_file]  # getting data from file name
 
     component = [[FlashViewerComponent(FLASHQuant())]]
-    flash_viewer_grid_component(components=component, data={'quant_data': quant_df})
+    flash_viewer_grid_component(components=component, data={'quant_data': quant_df}, component_key='flash_viewer_grid')
 
 
 if __name__ == "__main__":

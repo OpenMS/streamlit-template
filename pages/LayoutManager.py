@@ -69,18 +69,18 @@ def layoutEditorPerExperiment(exp_index):
                     c1.info(col)
                     if c2.button("x", key='DelButton%d%d%d'%(exp_index, row_index, col_index), type='primary'):
                         layout_info[row_index].pop(col_index)
-                        st.experimental_rerun()
+                        st.rerun()
 
         # new column button
         if len(row) < 3: # limit for #column is 3
             if st_cols[-1].button("***+***", key='NewColumnButton%d%d'%(exp_index, row_index)):
                 layout_info[row_index].append('')
-                st.experimental_rerun()
+                st.rerun()
 
     # new row button
     if st.button("***+***", key='NewRowButton%d'%exp_index):
         layout_info.append([''])
-        st.experimental_rerun()
+        st.rerun()
 
 
 def validateSubmittedLayout(input_layout=None):

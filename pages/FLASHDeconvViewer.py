@@ -8,7 +8,7 @@ DEFAULT_LAYOUT = [['ms1_deconv_heat_map'], ['scan_table', 'mass_table'],
                   ['anno_spectrum', 'deconv_spectrum'], ['3D_SN_plot']]
 
 
-def sendDataToJS(selected_data, layout_info_per_exp):
+def sendDataToJS(selected_data, layout_info_per_exp, grid_key='flash_viewer_grid'):
     # getting data
     selected_anno_file = selected_data.iloc[0]['Annotated Files']
     selected_deconv_file = selected_data.iloc[0]['Deconvolved Files']
@@ -89,7 +89,7 @@ def sendDataToJS(selected_data, layout_info_per_exp):
     if ('internal_fragment_data' in data_to_send) and ('sequence_data' not in data_to_send):
         data_to_send['sequence_data'] = getFragmentDataFromSeq(st.session_state.input_sequence)
 
-    flash_viewer_grid_component(components=components, data=data_to_send)
+    flash_viewer_grid_component(components=components, data=data_to_send, component_key=grid_key)
 
 
 def setSequenceViewInDefaultView():
@@ -135,7 +135,7 @@ def content():
                 experiment_df['Experiment Name'] == st.session_state["selected_experiment%d"%exp_index]]
             layout_info = st.session_state["saved_layout_setting"][exp_index]
             with st.spinner('Loading component...'):
-                sendDataToJS(selected_exp, layout_info)
+                sendDataToJS(selected_exp, layout_info, 'flash_viewer_grid_%d'%exp_index)
 
 
 if __name__ == "__main__":

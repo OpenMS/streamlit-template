@@ -17,7 +17,7 @@ else:
     _component_func = st_components.declare_component("flash_viewer_grid", path=build_dir)
 
 
-def flash_viewer_grid_component(components, data, component_key='flash_viewer_grid'):
+def flash_viewer_grid_component(components, data, component_key):
     out_components = []
     for row in components:
         out_components.append(list(map(lambda component: {"componentArgs": component.componentArgs.__dict__}, row)))
