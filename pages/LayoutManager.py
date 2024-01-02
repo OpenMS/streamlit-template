@@ -10,7 +10,7 @@ COMPONENT_OPTIONS=[
     'Annotated spectrum (Scan table needed)',
     'Mass table (Scan table needed)',
     '3D S/N plot (Mass table needed)',
-    # "sequence view" and "Internal fragment view" is added when "input_sequence" is submitted
+    # "Sequence view" and "Internal fragment map" is added when "input_sequence" is submitted
 ]
 
 COMPONENT_NAMES=[
@@ -21,7 +21,7 @@ COMPONENT_NAMES=[
     'anno_spectrum',
     'mass_table',
     '3D_SN_plot',
-    # "sequence view" and "internal fragment view" added when "input_sequence" is submitted
+    # "sequence view" and "internal fragment map" added when "input_sequence" is submitted
 ]
 
 
@@ -165,9 +165,9 @@ def setSequenceView():
     if 'input_sequence' in st.session_state and st.session_state.input_sequence:
         global COMPONENT_OPTIONS
         COMPONENT_OPTIONS = COMPONENT_OPTIONS + ['Sequence view (Mass table needed)',
-                                                 'Internal fragment view (Mass table needed)']
+                                                 'Internal fragment map (Mass table needed)']
         global COMPONENT_NAMES
-        COMPONENT_NAMES = COMPONENT_NAMES + ['sequence_view', 'internal_fragment_view']
+        COMPONENT_NAMES = COMPONENT_NAMES + ['sequence_view', 'internal_fragment_map']
 
 
 def content():

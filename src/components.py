@@ -82,9 +82,9 @@ class SequenceView:
         self.componentName = 'SequenceView'
 
 
-class InternalFragmentView:
+class InternalFragmentMap:
     def __init__(self):
-        self.componentName = 'InternalFragmentView'
+        self.componentName = 'InternalFragmentMap'
 
 
 class FLASHQuant:

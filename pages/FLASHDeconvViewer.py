@@ -50,9 +50,9 @@ def sendDataToJS(selected_data, layout_info_per_exp, grid_key='flash_viewer_grid
             elif comp_name == 'sequence_view':
                 data_to_send['sequence_data'] = getFragmentDataFromSeq(st.session_state.input_sequence)
                 component_arguments = SequenceView()
-            elif comp_name == 'internal_fragment_view':
+            elif comp_name == 'internal_fragment_map':
                 data_to_send['internal_fragment_data'] = getInternalFragmentDataFromSeq(st.session_state.input_sequence)
-                component_arguments = InternalFragmentView()
+                component_arguments = InternalFragmentMap()
 
             components_of_this_row.append(FlashViewerComponent(component_arguments))
         components.append(components_of_this_row)
@@ -85,7 +85,7 @@ def sendDataToJS(selected_data, layout_info_per_exp, grid_key='flash_viewer_grid
             dfs.append(tmp_df)
         data_to_send['per_scan_data'] = pd.concat(dfs, axis=1)
 
-    # if Internal fragment view was selected, but sequence view was not
+    # if Internal fragment map was selected, but sequence view was not
     if ('internal_fragment_data' in data_to_send) and ('sequence_data' not in data_to_send):
         data_to_send['sequence_data'] = getFragmentDataFromSeq(st.session_state.input_sequence)
 
@@ -95,7 +95,7 @@ def sendDataToJS(selected_data, layout_info_per_exp, grid_key='flash_viewer_grid
 def setSequenceViewInDefaultView():
     if 'input_sequence' in st.session_state and st.session_state.input_sequence:
         global DEFAULT_LAYOUT
-        DEFAULT_LAYOUT = DEFAULT_LAYOUT + [['sequence_view']] + [['internal_fragment_view']]
+        DEFAULT_LAYOUT = DEFAULT_LAYOUT + [['sequence_view']] + [['internal_fragment_map']]
 
 
 def content():
