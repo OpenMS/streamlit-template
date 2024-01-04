@@ -8,7 +8,7 @@ run_app.spec
 clean-up-workspaces.log
 
 # FLASHViewer
-*workspace/
+workspaces
 Pipfile
 
 .DS_Store

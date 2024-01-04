@@ -1,6 +1,10 @@
+import sys
 import streamlit as st
-from src.common import defaultPageSetup
+# to convert between FLASHDeconv and FLASHQuant
 from st_pages import Page, show_pages
+
+from src.captcha_ import captcha_control
+from src.common import page_setup, save_params
 
 
 def flashdeconvPages():
@@ -32,9 +36,8 @@ def onToolChange():
         st.session_state['tool_index'] = 0 if st.session_state.changed_tool_name == 'FLASHDeconv' else 1
 
 
-def content():
-    # initializing the page
-    defaultPageSetup("FLASHViewer")
+def main():
+    st.title("FLASHViewer")
 
     # main content
     st.markdown("""
@@ -50,7 +53,7 @@ def content():
         2. Click the **👀 Viewer** page on the sidebar to view the deconvolved results in detail.
         """)
 
-    # sidebar to toggle between tools
+    # selectbox to toggle between tools
     if 'tool_index' not in st.session_state:
         st.session_state['tool_index'] = 0
     # when entered into other page, key is resetting (emptied) - thus set the value with index
@@ -59,5 +62,21 @@ def content():
     page_names_to_funcs[st.session_state.changed_tool_name]()
 
 
-if __name__ == "__main__":
-    content()
+# initializing the page
+params = page_setup(page="main")
+
+# Check if the script is run in local mode (e.g., "streamlit run app.py local")
+if "local" in sys.argv:
+    # In local mode, run the main function without applying captcha
+    main()
+
+# If not in local mode, assume it's hosted/online mode
+else:
+    # WORK LIKE MULTIPAGE APP
+    if "controllo" not in st.session_state or st.session_state["controllo"] is False:
+        # Apply captcha control to verify the user
+        captcha_control()
+
+    else:
+        # Run the main function
+        main()

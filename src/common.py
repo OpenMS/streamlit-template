@@ -109,12 +109,11 @@ def page_setup(page: str = "") -> dict[str, Any]:
             st.session_state.location = "local"
         else:
             st.session_state.location = "online"
-
         # if we run the packaged windows version, we start within the Python directory -> need to change working directory to ..\streamlit-template
         if "windows" in sys.argv:
             os.chdir("../streamlit-template")
         # Define the directory where all workspaces will be stored
-        workspaces_dir = Path("..", "workspaces-" + REPOSITORY_NAME)
+        workspaces_dir = Path("workspaces")
         if st.session_state.location == "online":
             st.session_state.workspace = Path(workspaces_dir, str(uuid.uuid1()))
         else:
@@ -124,7 +123,6 @@ def page_setup(page: str = "") -> dict[str, Any]:
 
     # Make sure the necessary directories exist
     st.session_state.workspace.mkdir(parents=True, exist_ok=True)
-    Path(st.session_state.workspace).mkdir(parents=True, exist_ok=True)
 
     # Render the sidebar
     params = render_sidebar(page)
@@ -154,7 +152,7 @@ def render_sidebar(page: str = "") -> None:
         if page == "main":
             st.markdown("🖥️ **Workspaces**")
             # Define workspaces directory outside of repository
-            workspaces_dir = Path("..", "workspaces-" + REPOSITORY_NAME)
+            workspaces_dir = Path("workspaces")
             # Online: show current workspace name in info text and option to change to other existing workspace
             if st.session_state.location == "online":
                 # Change workspace...
@@ -320,13 +318,6 @@ def reset_directory(path: Path) -> None:
     if path.exists():
         shutil.rmtree(path)
     path.mkdir(parents=True, exist_ok=True)
-
-
-def defaultPageSetup(title=""):
-    page_setup()
-    render_sidebar()
-    if title:
-        st.title(title)
 
 
 # General warning/error messages
