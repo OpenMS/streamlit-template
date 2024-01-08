@@ -5,6 +5,7 @@ import sys
 import uuid
 from typing import Any
 from pathlib import Path
+from src.captcha_ import captcha_control
 
 import streamlit as st
 import pandas as pd
@@ -36,10 +37,10 @@ def load_params(default: bool = False) -> dict[str, Any]:
 
     # Load the parameters from the file, or from the default file if the parameter file does not exist
     if path.exists() and not default:
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, "r") as f:
             params = json.load(f)
     else:
-        with open("assets/default-params.json", "r", encoding="utf-8") as f:
+        with open("assets/default-params.json", "r") as f:
             params = json.load(f)
 
     # Return the parameter dictionary
@@ -63,7 +64,7 @@ def save_params(params: dict[str, Any]) -> None:
         params (dict[str, Any]): A dictionary containing the parameters to be saved.
 
     Returns:
-        dict[str, Any]: Updated parameters.
+        None
     """
     # Update the parameter dictionary with any modified parameters from the current session
     for key, value in st.session_state.items():
@@ -72,13 +73,11 @@ def save_params(params: dict[str, Any]) -> None:
 
     # Save the parameter dictionary to a JSON file in the workspace directory
     path = Path(st.session_state.workspace, "params.json")
-    with open(path, "w", encoding="utf-8") as outfile:
+    with open(path, "w") as outfile:
         json.dump(params, outfile, indent=4)
 
-    return params
 
-
-def page_setup(page: str = "") -> dict[str, Any]:
+def page_setup(page: str = "", help_text: str = "") -> dict[str, Any]:
     """
     Set up the Streamlit page configuration and determine the workspace for the current session.
 
@@ -93,11 +92,20 @@ def page_setup(page: str = "") -> dict[str, Any]:
     # Set Streamlit page configurations
     st.set_page_config(
         page_title=APP_NAME,
-        page_icon="assets/OpenMS.png",
+        page_icon="assets/icon.png",
         layout="wide",
         initial_sidebar_state="auto",
-        menu_items=None,
+        menu_items=None
     )
+
+    st.markdown("""
+        <style>
+            .stMultiSelect [data-baseweb=select] span{
+                max-width: 500px;
+                font-size: 1rem;
+            }
+        </style>
+        """, unsafe_allow_html=True)
 
     # Determine the workspace for the current session
     if "workspace" not in st.session_state:
@@ -107,29 +115,36 @@ def page_setup(page: str = "") -> dict[str, Any]:
         # Check location
         if "local" in sys.argv:
             st.session_state.location = "local"
+            st.session_state.controlo = True
         else:
             st.session_state.location = "online"
-        # if we run the packaged windows version, we start within the Python directory -> need to change working directory to ..\streamlit-template
+            st.session_state.controlo = False
+        # if we run the packaged windows version, we start within the Python directory -> need to change working directory to ..\umetaflow-gui-main
         if "windows" in sys.argv:
-            os.chdir("../streamlit-template")
+            os.chdir("../flashviewer")
         # Define the directory where all workspaces will be stored
         workspaces_dir = Path("workspaces")
         if st.session_state.location == "online":
             st.session_state.workspace = Path(workspaces_dir, str(uuid.uuid1()))
         else:
             st.session_state.workspace = Path(workspaces_dir, "default")
-            # not any captcha so, controllo should be true
-            st.session_state["controllo"] = True
+
+    # If run in hosted mode, show captcha as long as it has not been solved
+    if not st.session_state["controlo"]:
+        # Apply captcha by calling the captcha_control function
+        captcha_control()
 
     # Make sure the necessary directories exist
     st.session_state.workspace.mkdir(parents=True, exist_ok=True)
+    # checking input directories are done in FileUpload page (to accompany both FLASHDeconv and FLASHQuant)
+    # Path(st.session_state.workspace, "mzML-files").mkdir(parents=True, exist_ok=True)
 
     # Render the sidebar
-    params = render_sidebar(page)
+    params = render_sidebar(page, help_text)
     return params
 
 
-def render_sidebar(page: str = "") -> None:
+def render_sidebar(page: str = "", help_text: str = "") -> None:
     """
     Renders the sidebar on the Streamlit app, which includes the workspace switcher,
     the mzML file selector, the logo, and settings.
@@ -137,8 +152,6 @@ def render_sidebar(page: str = "") -> None:
     Args:
         params (dict): A dictionary containing the initial parameters of the app.
             Used in the sidebar to display the following settings:
-            - selected-mzML-files : str
-                A string containing the selected mzML files.
             - image-format : str
                 A string containing the image export format.
         page (str): A string indicating the current page of the Streamlit app.
@@ -152,15 +165,16 @@ def render_sidebar(page: str = "") -> None:
         if page == "main":
             st.markdown("🖥️ **Workspaces**")
             # Define workspaces directory outside of repository
-            workspaces_dir = Path("workspaces")
+            workspaces_dir = Path("workspaces")  # workspace inside FLASHViewer directory
             # Online: show current workspace name in info text and option to change to other existing workspace
             if st.session_state.location == "online":
                 # Change workspace...
                 new_workspace = st.text_input("enter workspace", "")
-                if st.button("**Enter Workspace**") and new_workspace:
+                if st.button("**Enter Workspace**", type="primary", disabled=not new_workspace) and new_workspace:
                     path = Path(workspaces_dir, new_workspace)
                     if path.exists():
                         st.session_state.workspace = path
+                        st.success(f"Switched to workspace **{new_workspace}**")
                     else:
                         st.warning("⚠️ Workspace does not exist.")
                 # Display info on current workspace and warning
@@ -220,9 +234,9 @@ You can share this unique workspace ID with other people.
                 img_formats.index(params["image-format"]),
                 key="image-format",
             )
-        if page != "main":
-            st.info(f"**{Path(st.session_state['workspace']).stem}**")
-        st.image("assets/OpenMS.png", "powered by")
+        if help_text:
+            st.info(help_text)
+        st.image("assets/pyopenms_transparent_background.png", "powered by")
     return params
 
 
