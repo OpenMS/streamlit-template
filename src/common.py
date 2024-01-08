@@ -144,20 +144,16 @@ def page_setup(page: str = "", help_text: str = "") -> dict[str, Any]:
     return params
 
 
-def render_sidebar(page: str = "", help_text: str = "") -> None:
+def render_sidebar(page: str = "", help_text: str = "") -> dict[str, Any]:
     """
     Renders the sidebar on the Streamlit app, which includes the workspace switcher,
     the mzML file selector, the logo, and settings.
 
     Args:
-        params (dict): A dictionary containing the initial parameters of the app.
-            Used in the sidebar to display the following settings:
-            - image-format : str
-                A string containing the image export format.
         page (str): A string indicating the current page of the Streamlit app.
-
+        help_text (str): If there's information to show on the sidebar
     Returns:
-        None
+        dict[str, Any]: A dictionary containing the parameters.
     """
     params = load_params()
     with st.sidebar:
@@ -258,7 +254,7 @@ def v_space(n: int, col=None) -> None:
             st.write("#")
 
 
-def show_table(df: pd.DataFrame, download_name: str = "") -> None:
+def show_table(df: pd.DataFrame, download_name: str = "") -> pd.DataFrame:
     """
     Displays a pandas dataframe using Streamlit's `dataframe` function and
     provides a download button for the same table.

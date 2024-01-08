@@ -6,7 +6,6 @@ import shutil
 
 from src.masstable import parseFLASHDeconvOutput
 from src.common import page_setup, v_space, save_params, reset_directory
-from src.captcha_ import captcha_control
 
 
 def initializeWorkspace() -> None:
