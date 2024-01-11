@@ -7,6 +7,7 @@ from captcha.image import ImageCaptcha
 import random
 import string
 import os
+from st_pages import show_pages, Page
 
 
 def delete_all_pages(main_script_path_str: str) -> None:
@@ -194,6 +195,9 @@ def captcha_control():
     """
     # control if the captcha is correct
     if "controllo" not in st.session_state or st.session_state["controllo"] is False:
+        # remove all pages from the sidebar
+        show_pages([Page("FLASHViewer.py", "FLASHViewer", "🏠")])
+
         st.title("Make sure you are not a robot🤖")
 
         # define the session state for control if the captcha is correct

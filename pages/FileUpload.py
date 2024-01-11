@@ -8,11 +8,12 @@ from src.masstable import parseFLASHDeconvOutput
 from src.common import page_setup, v_space, save_params, reset_directory
 
 
-def initializeWorkspace() -> None:
+def initializeWorkspace(input_file_types_: list, parsed_df_types_: list) -> None:
     """
     Set up the required directory and session states
+    parameter is needed: this method is used in FLASHQuant
     """
-    for dirname in input_file_types:
+    for dirname in input_file_types_:
         Path(st.session_state.workspace, dirname).mkdir(parents=True, exist_ok=True)
         if dirname not in st.session_state:
             # initialization
@@ -21,23 +22,23 @@ def initializeWorkspace() -> None:
         st.session_state[dirname] = os.listdir(Path(st.session_state.workspace, dirname))
 
     # initializing session state for storing data
-    for df_type in parsed_df_types:
+    for df_type in parsed_df_types_:
         if df_type not in st.session_state:
             st.session_state[df_type] = {}
 
 
 @st.cache_data
-def getUploadedFileDF(deconv_files, anno_files):
+def getUploadedFileDF(deconv_files_, anno_files_):
     # leave only names
-    deconv_files = [Path(f).name for f in deconv_files]
-    anno_files = [Path(f).name for f in anno_files]
+    deconv_files_ = [Path(f).name for f in deconv_files_]
+    anno_files_ = [Path(f).name for f in anno_files_]
 
     # getting experiment name from annotated file (tsv files can be multiple per experiment)
-    experiment_names = [f[0: f.rfind('_')] for f in anno_files]
+    experiment_names = [f[0: f.rfind('_')] for f in anno_files_]
 
     df = pd.DataFrame({'Experiment Name': experiment_names,
-                       'Deconvolved Files': deconv_files,
-                       'Annotated Files': anno_files})
+                       'Deconvolved Files': deconv_files_,
+                       'Annotated Files': anno_files_})
     return df
 
 
@@ -65,6 +66,12 @@ def remove_selected_mzML_files(to_remove: list[str], params: dict) -> dict:
         #     if isinstance(v, list):
         #         if f in v:
         #             params[k].remove(f)
+
+    # update the experiment df table
+    tmp_df = st.session_state["experiment-df"]
+    tmp_df.drop(tmp_df.loc[tmp_df['Experiment Name'].isin(to_remove)].index, inplace=True)
+    st.session_state["experiment-df"] = tmp_df
+
     st.success("Selected mzML files removed!")
     return params
 
@@ -125,7 +132,7 @@ def parseUploadedFiles():
                 )
                 st.session_state['anno_dfs'][anno_f] = anno_df
                 st.session_state['deconv_dfs'][deconv_f] = spec_df
-            st.success('Done parsing the experiment %s!'%exp_name)
+            st.success('Done parsing the experiment %s!' % exp_name)
 
 
 # page initialization
@@ -134,7 +141,7 @@ params = page_setup()
 # make directory to store deconv and anno mzML files & initialize data storage
 input_file_types = ["deconv-mzMLs", "anno-mzMLs"]
 parsed_df_types = ["deconv_dfs", "anno_dfs"]
-initializeWorkspace()
+initializeWorkspace(input_file_types, parsed_df_types)
 
 st.title("File Upload")
 
@@ -239,6 +246,7 @@ else:
                     #     if df_option in k and isinstance(v, list):
                     #         params[k] = []
             st.success("All mzML files removed!")
+            del st.session_state["experiment-df"]  # reset the experiment df table
             # save_params(params)
             st.rerun()
 

@@ -3,7 +3,7 @@ from pathlib import Path
 import shutil
 import pandas as pd
 from src.flashquant import parseFLASHQuantOutput
-from src.common import v_space, defaultPageSetup, reset_directory
+from src.common import v_space, page_setup, reset_directory, save_params
 from pages.FileUpload import initializeWorkspace
 from src.flashquant import connectTraceWithResult
 
@@ -27,24 +27,33 @@ def getUploadedFileDF(quant_files, trace_files, resolution_files):
     return df
 
 
-def showUploadedFilesTable():
-    quant_files = sorted(st.session_state["quant_dfs"].keys())
-    trace_files = sorted(st.session_state["trace_dfs"].keys())
-    res_files = sorted(st.session_state["conflict_resolution_dfs"].keys())
+def remove_selected_experiment_files(to_remove: list[str], params: dict) -> dict:
+    """
+    Removes selected mzML files from the mzML directory. (From fileUpload.py)
 
-    # error message if files not exist
-    if len(quant_files) == 0 and len(trace_files) == 0:
-        st.info('No mzML added yet!', icon="ℹ️")
-    elif len(quant_files) == 0:
-        st.error("FLASHQuant result file is not added yet!")
-    elif len(trace_files) == 0:
-        st.error("FLASHQuant mass trace file is not added yet!")
-    elif len(quant_files) != len(trace_files):
-        st.error("The same number of quant result and trace tsv file should be uploaded!")
-    else:
-        st.session_state["quant-experiment-df"] = getUploadedFileDF(quant_files, trace_files, res_files)
-        st.markdown('**Uploaded experiments**')
-        st.dataframe(st.session_state["quant-experiment-df"])
+    Args:
+        to_remove (List[str]): List of mzML files to remove.
+        params (dict): Parameters.
+
+    Returns:
+        dict: parameters with updated mzML files
+    """
+    for input_type, df_type, file_postfix in zip(input_file_types, parsed_df_types,
+                                                 ['.fdq.tsv', '.fdq.mts.tsv', '.fdq_shared.tsv']):
+        input_type_dir = Path(st.session_state["workspace"], input_type)
+        # remove all given files from mzML workspace directory and selected files
+        for exp_name in to_remove:
+            file_name = exp_name + file_postfix
+            Path(input_type_dir, file_name).unlink()
+            del st.session_state[df_type][file_name]  # removing key
+
+    # update the experiment df table
+    tmp_df = st.session_state["quant-experiment-df"]
+    tmp_df.drop(tmp_df.loc[tmp_df['Experiment Name'].isin(to_remove)].index, inplace=True)
+    st.session_state["quant-experiment-df"] = tmp_df
+
+    st.success("Selected experiment files removed!")
+    return params
 
 
 def handleInputFiles(uploaded_files):
@@ -129,47 +138,46 @@ def parsingWithProgressBar(infiles_quant, infiles_trace, infiles_resolution):
             st.success('Done parsing the experiment %s!' % exp_name)
 
 
-def content():
-    defaultPageSetup()
+# page initialization
+params = page_setup()
 
-    # make directory to store files & initialize data storage
-    input_types = ["quant-files", "trace-files", "conflict-resolution-files"]
-    parsed_df_types = ["quant_dfs", "trace_dfs", "conflict_resolution_dfs"]
-    initializeWorkspace(input_types, parsed_df_types)
+# make directory to store files & initialize data storage
+input_file_types = ["quant-files", "trace-files", "conflict-resolution-files"]
+parsed_df_types = ["quant_dfs", "trace_dfs", "conflict_resolution_dfs"]
+initializeWorkspace(input_file_types, parsed_df_types)
 
-    c1, c2, c3 = st.columns([0.6, 0.2, 0.2])
-    c1.title("File Upload")
+st.title("File Upload")
 
-    # Load Example Data
-    v_space(1, c2)
-    if c2.button("Load Example Data"):
+tabs = st.tabs(["File Upload", "Example Data"])
+
+# Load Example Data
+with tabs[1]:
+    st.markdown("An example truncated file from the E. coli dataset.")
+    _, c2, _ = st.columns(3)
+    if c2.button("Load Example Data", type="primary"):
         # loading and copying example files into default workspace
         for filetype, session_name in zip(['*fdq.tsv', '*fdq.mts.tsv', '*fdq_shared.tsv'],
-                                          input_types):
+                                          input_file_types):
             for file in Path("example-data").glob(filetype):
                 if file.name not in st.session_state[session_name]:
                     shutil.copy(file, Path(st.session_state["workspace"], session_name, file.name))
                     st.session_state[session_name].append(file.name)
         # parsing the example files is done in parseUploadedFiles later
+        st.success("Example mzML files loaded!")
 
-    # Delete all uploaded files
-    v_space(1, c3)
-    if c3.button("Delete uploaded Data"):
-        for file_option, df_option in zip(input_types, parsed_df_types):
-            if file_option in st.session_state:
-                reset_directory(Path(st.session_state["workspace"], file_option))
-                st.session_state[file_option] = []
-            if df_option in st.session_state:
-                st.session_state[df_option] = {}
+# Upload files via upload widget
+with tabs[0]:
+    # Upload files via upload widget
+    st.subheader("**Upload FLASHQuant output files**")
 
     # Display info how to upload files
     st.info(
         """
     **💡 How to upload files**
-
+    
     1. Browse files on your computer or drag and drops files
     2. Click the **Add the uploaded quant files** button to use them in the workflows
-
+    
     Select data for analysis from the uploaded files shown below.
     
     **💡 Make sure that the same number of FLASHQuant result files (\*fdq.tsv and \*fdq.mts.tsv) are uploaded!**
@@ -177,38 +185,72 @@ def content():
     **💡 To visualize conflict resolution, \*fdq_shared.tsv files should be uploaded**
     """
     )
-
-    # Upload files via upload widget
-    st.subheader("**Upload FLASHQuant output files**")
-
     with st.form('files_uploader_form', clear_on_submit=True):
         uploaded_file = st.file_uploader(
-            "FLASHQuant output files (multiple files are allowed)", accept_multiple_files=True
+            "FLASHQuant output files", accept_multiple_files=True
         )
         _, c2, _ = st.columns(3)
         # User needs to click button to upload selected files
-        submitted = c2.form_submit_button("Add the tsv files")
-        if submitted:
-            # Need to have a list of uploaded files to copy to the files dir,
+        if c2.form_submit_button("Add the tsv files", type="primary"):
             # Copy uploaded files to *-files directory
             if uploaded_file:
+                # A list of files is required, since online allows only single upload, create a list
+                if type(uploaded_file) != list:
+                    uploaded_file = [uploaded_file]
+
                 # opening file dialog and closing without choosing a file results in None upload
                 handleInputFiles(uploaded_file)
                 st.success("Successfully added uploaded files!")
             else:
                 st.warning("Upload some files before adding them.")
 
-    st.session_state['progress_bar_space'] = st.container()
+# parse files if newly uploaded
+st.session_state['progress_bar_space'] = st.container()
+parseUploadedFiles()
 
-    # parse files if newly uploaded
-    parseUploadedFiles()
+# for error message or list of uploaded files
+quant_files = sorted(st.session_state["quant_dfs"].keys())
+trace_files = sorted(st.session_state["trace_dfs"].keys())
+res_files = sorted(st.session_state["conflict_resolution_dfs"].keys())
 
-    # for error message or list of uploaded files
-    showUploadedFilesTable()
+# error message if files not exist
+if len(quant_files) == 0 and len(trace_files) == 0:
+    st.info('No mzML added yet!', icon="ℹ️")
+elif len(quant_files) == 0:
+    st.error("FLASHQuant result file is not added yet!")
+elif len(trace_files) == 0:
+    st.error("FLASHQuant mass trace file is not added yet!")
+elif len(quant_files) != len(trace_files):
+    st.error("The same number of quant result and trace tsv file should be uploaded!")
+else:
+    v_space(2)
+    st.session_state["quant-experiment-df"] = getUploadedFileDF(quant_files, trace_files, res_files)
+    st.markdown('**Uploaded experiments in current workspace**')
+    st.dataframe(st.session_state["quant-experiment-df"])  # show table
+    v_space(1)
 
+    # Remove files
+    with st.expander("🗑️ Remove uploaded files"):
+        to_remove = st.multiselect(
+            "select uploaded experiments", options=st.session_state["quant-experiment-df"]['Experiment Name']
+        )
+        c1, c2 = st.columns(2)
+        if c2.button(
+                "Remove **selected**", type="primary", disabled=not any(to_remove)
+        ):
+            params = remove_selected_experiment_files(to_remove, params)
+            st.rerun()
 
-if __name__ == "__main__":
-    # try:
-    content()
-# except:
-#     st.error(ERRORS["general"])
+        if c1.button("⚠️ Remove **all**", disabled=not any(st.session_state["quant-experiment-df"])):
+            for file_option, df_option in zip(input_file_types, parsed_df_types):
+                if file_option in st.session_state:
+                    reset_directory(Path(st.session_state.workspace, file_option))
+                    st.session_state[file_option] = []
+                if df_option in st.session_state:
+                    st.session_state[df_option] = {}
+
+            st.success("All experiment files removed!")
+            del st.session_state["quant-experiment-df"]  # reset the experiment df table
+            st.rerun()
+
+save_params(params)

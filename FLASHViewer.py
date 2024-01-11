@@ -34,6 +34,8 @@ def onToolChange():
     if 'changed_tool_name' not in st.session_state:  # this is needed for initialization
         return
     for key in params.keys():
+        if key == 'controllo':  # don't remove controllo
+            continue
         if key in st.session_state.keys():
             del st.session_state[key]
     st.session_state['tool_index'] = 0 if st.session_state.changed_tool_name == 'FLASHDeconv' else 1
@@ -46,14 +48,16 @@ st.title("FLASHViewer")
 
 # main content
 st.markdown("""
-    #### FLASHViewer visualizes outputs from [FLASHDeconv](https://www.cell.com/cell-systems/fulltext/S2405-4712(20)30030-2).
+    #### FLASHViewer visualizes outputs from [FLASHDeconv](https://www.cell.com/cell-systems/fulltext/S2405-4712(20)30030-2) or FLASHQuant.
 
-    Detailed information and the latest version of FLASHDeconv can be downloaded from the [OpenMS webpage](https://openms.de/application/flashdeconv/).
+    Detailed information and the latest version of \\
+    $\quad$ FLASHDeconv can be downloaded from the [OpenMS webpage](https://openms.de/flashdeconv/) \\
+    $\quad$ FLASHQuant can be downloaded from the [OpenMS webpage](https://openms.de/flashquant/)
     """
             )
 
 st.info("""
-    **💡 How to run FLASHViewer**
+    **💡 How to run FLASHViewer (with FLASHDeconv)**
     1. Go to the **📁 File Upload** page through the sidebar and upload FLASHDeconv output files (\*_annotated.mzML & \*_deconv.mzML)
     2. Click the **👀 Viewer** page on the sidebar to view the deconvolved results in detail.
     """)
@@ -64,7 +68,6 @@ if 'tool_index' not in st.session_state:
 # when entered into other page, key is resetting (emptied) - thus set the value with index
 st.selectbox("Choose a tool", ['FLASHDeconv', 'FLASHQuant'], index=st.session_state.tool_index,
              on_change=onToolChange(), key='changed_tool_name')
-st.info('trying to catch the changed name %s'%st.session_state['changed_tool_name'])
 page_names_to_funcs[st.session_state.changed_tool_name]()
 
 # make sure new default params are saved in workspace params
