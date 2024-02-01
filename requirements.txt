@@ -5,3 +5,4 @@ numpy
 plotly
 --index-url https://pypi.cs.uni-tuebingen.de/simple/
 pyopenms-nightly
+biotite

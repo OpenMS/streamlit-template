@@ -12,6 +12,12 @@ def flashdeconvPages():
         Page("pages/FLASHDeconvViewer.py", "Viewer", "👀"),
     ])
 
+def flashtagPages():
+    show_pages([
+        Page("FLASHViewer.py", "FlashViewer", "🏠"),
+        Page("pages/FileUpload.py", "File Upload", "📁"),
+        Page("pages/FLASHTagViewer.py", "Viewer", "👀"),
+    ])
 
 def flashquantPages():
     show_pages([
@@ -22,6 +28,7 @@ def flashquantPages():
 
 
 page_names_to_funcs = {
+    "FLASHTagViewer": flashtagPages,
     "FLASHDeconv": flashdeconvPages,
     "FLASHQuant": flashquantPages,
 }
@@ -54,7 +61,7 @@ def content():
     if 'tool_index' not in st.session_state:
         st.session_state['tool_index'] = 0
     # when entered into other page, key is resetting (emptied) - thus set the value with index
-    st.selectbox("Choose a tool", ['FLASHDeconv', 'FLASHQuant'], index=st.session_state.tool_index,
+    st.selectbox("Choose a tool", ['FLASHTagViewer', 'FLASHDeconv', 'FLASHQuant'], index=st.session_state.tool_index,
                  on_change=onToolChange(), key='changed_tool_name')
     page_names_to_funcs[st.session_state.changed_tool_name]()
 

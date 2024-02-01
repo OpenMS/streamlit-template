@@ -2,10 +2,16 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from pathlib import Path
+import pandas as pd
+from biotite.sequence.io.fasta import FastaFile, get_sequences
 from pyopenms import MSExperiment, MzMLFile, SpectrumLookup, Constants
 
 @st.cache_data
-def parseFLASHDeconvOutput(annotated, deconvolved):
+def parseFLASHDeconvOutput(annotated, deconvolved, tags, db):
+
+    tag_df = pd.read_csv(tags, sep='\t')
+    db = get_sequences(FastaFile.read(db))
+
     annotated_exp = MSExperiment()
     deconvolved_exp = MSExperiment()
     MzMLFile().load(str(Path(annotated)), annotated_exp)
@@ -151,6 +157,7 @@ def parseFLASHDeconvOutput(annotated, deconvolved):
                 else:
                     massPeak.append(round(parsed_peak[0]/massPeak[1]))
                     npeaks.append(massPeak)
+                
 
             # if len(sigindicesset) != len(speaks):
                 # print("*")
@@ -163,13 +170,15 @@ def parseFLASHDeconvOutput(annotated, deconvolved):
             specnpeaks.append(npeaks)
         signalPeaks.append(specspeaks)
         noisyPeaks.append(specnpeaks)
+
         msLevels.append(spec.getMSLevel())
 
     df['SignalPeaks'] = signalPeaks
     df['NoisyPeaks'] = noisyPeaks
+    df['CombinedPeaks'] = noisyPeaks
     df['MSLevel'] = msLevels
     df['Scan'] = scans
-    return df, annotateddf, tolerance,  massoffset, chargemass
+    return df, annotateddf, tolerance,  massoffset, chargemass, tag_df, db
 
 @st.cache_data
 def getSpectraTableDF(deconv_df: pd.DataFrame):

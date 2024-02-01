@@ -63,6 +63,13 @@ class Tabulator:
         elif table_type == 'MassTable':
             self.title = 'Mass Table'
             self.componentName = "TabulatorMassTable"
+        elif table_type == 'ProteinTable':
+            self.title = 'Protein Table'
+            self.componentName = "TabulatorProteinTable"
+        elif table_type == 'TagTable':
+            self.title = 'Tag Table'
+            self.componentName = "TabulatorTagTable"
+        
 
 
 class PlotlyLineplot:

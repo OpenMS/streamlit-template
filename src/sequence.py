@@ -1,5 +1,6 @@
 import streamlit as st
 from pyopenms import Residue, AASequence, ModificationsDB
+import numpy as np
 
 
 fixed_mod_cysteine = {'No modification': 0,
@@ -76,7 +77,7 @@ def setFixedModification(protein):
 
 
 @st.cache_data
-def getFragmentDataFromSeq(sequence):
+def getFragmentDataFromSeq(sequence, coverage, maxCoverage):
     protein = AASequence.fromString(sequence)
     protein, fixed_mods = setFixedModification(protein)  # handling fixed modifications
 
@@ -84,7 +85,10 @@ def getFragmentDataFromSeq(sequence):
     protein_mass = protein.getMonoWeight()
 
     out_object = {'sequence': list(sequence),
-                  'theoretical_mass': protein_mass, 'fixed_modifications': fixed_mods}
+                  'coverage' : list(coverage),
+                  'maxCoverage' : maxCoverage,
+                  'theoretical_mass': protein_mass, 
+                  'fixed_modifications': fixed_mods}
     # per ion type, calculate the possible fragment masses and save them in dictionary
     for ion_type in ['ax', 'by', 'cz']:
         # calculate fragment ion masses
