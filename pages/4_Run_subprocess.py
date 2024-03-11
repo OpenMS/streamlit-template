@@ -19,8 +19,8 @@ if "controllo" not in st.session_state or params["controllo"] is False:
 st.title("Run subprocess")
 st.markdown(
     """                 
-        This example demonstrates how to run an external process (in this case, the Linux command 'grep') as a subprocess to extract IDs from the selected mzML file while displaying the process output. 
-        It also works with longer-running processes, such as calling an OpenMS TOPP tool.
+        This example demonstrates how to run an external process (in this case, the Linux command 'grep' or local (.exe) findstr) as a subprocess to extract IDs from the selected mzML file while displaying the process output. 
+        It also works with longer-running processes, such as calling an OpenMS TOPP tool, run executable in local mode.
         """
 )
 
@@ -71,8 +71,13 @@ if st.button("Extract ids"):
 
     # Display a status message while running the analysis
     with st.status("Please wait until fetching all ids from mzML 😑"):
-        # Define the command to run as a subprocess (example: grep)
-        args = ["grep", "idRef", mzML_file_path]
+        if st.session_state.location == "local":
+            # Define the command to run as a subprocess (example: .exe so findstr)
+            args = ["findstr", "idRef", mzML_file_path]
+
+        else:
+            # Define the command to run as a subprocess (example: grep)
+            args = ["grep", "idRef", mzML_file_path]
 
 
         # Display the command that will be executed

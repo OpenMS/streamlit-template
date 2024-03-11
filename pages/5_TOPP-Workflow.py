@@ -19,7 +19,11 @@ if __name__ == "__main__":
         wf.show_parameter_section()
 
     with t[2]:
-        wf.show_execution_section()
+        if st.session_state.location == "local":
+            st.warning("not implemented in local mode ")
+            
+        else:
+            wf.show_execution_section()
         
     with t[3]:
         wf.show_results_section()

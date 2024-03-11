@@ -34,8 +34,11 @@ class Workflow(WorkflowManager):
             # Paramters for MetaboliteAdductDecharger TOPP tool.
             self.ui.input_TOPP("MetaboliteAdductDecharger")
         with t[2]:
-            # Paramters for SiriusExport TOPP tool
-            self.ui.input_TOPP("SiriusExport")
+            if st.session_state.location == "local":
+                st.warning("not implemented in local mode ")
+            else:
+                # Paramters for SiriusExport TOPP tool
+                self.ui.input_TOPP("SiriusExport")
         with t[3]:
             # Generate input widgets for a custom Python tool, located at src/python-tools.
             # Parameters are specified within the file in the DEFAULTS dictionary.
