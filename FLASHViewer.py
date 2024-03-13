@@ -1,5 +1,5 @@
 import streamlit as st
-from src.common import defaultPageSetup
+from src.common import page_setup
 from st_pages import Page, show_pages
 
 
@@ -41,7 +41,7 @@ def onToolChange():
 
 def content():
     # initializing the page
-    defaultPageSetup("FLASHViewer")
+    page_setup("FLASHViewer")
 
     # main content
     st.markdown("""

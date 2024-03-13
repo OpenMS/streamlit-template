@@ -138,7 +138,7 @@ def parsingWithProgressBar(infiles_deconv, infiles_anno, infiles_tag, infiles_db
             st.success('Done parsing the experiment %s!'%exp_name)
 
 def content():
-    defaultPageSetup()
+    page_setup()
 
     # make directory to store deconv and anno mzML files & initialize data storage
     input_types = ["deconv-mzMLs", "anno-mzMLs", "tags-tsv", "db-fasta"]

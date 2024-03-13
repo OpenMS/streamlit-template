@@ -1,0 +1,27 @@
+name: Docker Image CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+
+  build-full-app:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Build the full Docker image
+      run: docker build . --file Dockerfile --tag streamlitapp:latest
+
+  build-simple-app:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Build the Docker image (pyOpenMS only)
+      run: docker build . --file Dockerfile_simple --tag streamlitapp-simple:latest

@@ -1,6 +1,6 @@
 import streamlit as st
 import re
-from src.common import defaultPageSetup
+from src.common import page_setup
 
 fixed_mod_cysteine = ['No modification',
                       'Carbamidomethyl (+57)',
@@ -29,7 +29,7 @@ def validateSequenceInput(input_seq):
 
 
 def content():
-    defaultPageSetup("Proteoform Sequence Input")
+    page_setup("Proteoform Sequence Input")
 
     # if any sequence was submitted before
     if 'input_sequence' in st.session_state and st.session_state.input_sequence \

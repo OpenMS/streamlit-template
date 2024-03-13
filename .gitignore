@@ -1,17 +1,8 @@
-*workspace/
-Pipfile
-
-.DS_Store
-
-# Editor directories and files
-.idea
-.vscode
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw*
-
-**/__pycache__
-openms-streamlit-vue-component/
-js-component/
+workspaces-streamlit-template
+build
+dist
+myenv
+hooks/__pycache__/
+build.log
+run_app.spec
+clean-up-workspaces.log

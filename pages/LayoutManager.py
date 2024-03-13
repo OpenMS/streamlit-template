@@ -1,5 +1,5 @@
 import streamlit as st
-from src.common import defaultPageSetup, v_space
+from src.common import page_setup, v_space
 import json
 
 COMPONENT_OPTIONS=[
@@ -171,7 +171,7 @@ def setSequenceView():
 
 
 def content():
-    defaultPageSetup()
+    page_setup()
     setSequenceView()  # when sequence is submitted, add "Sequence View" as a component option
 
     # handles "onclick" of buttons

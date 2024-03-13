@@ -166,7 +166,7 @@ def setSequenceViewInDefaultView():
 
 
 def content():
-    defaultPageSetup("TaggerViewer")
+    page_setup("TaggerViewer")
     #setSequenceViewInDefaultView()
 
     ### if no input file is given, show blank page
