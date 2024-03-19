@@ -1,7 +1,7 @@
 name: Build executable for Windows
 on:
   push:
-    branches: [ "main" , "TaggerViewerDeployment"]
+    branches: [ "main" , "TaggerViewerDeploy"]
   pull_request:
     branches: [ "main" ]
 
@@ -17,7 +17,7 @@ jobs:
       uses: actions/checkout@v3
       with:
         repository: t0mdavid-m/OpenMS
-        ref: TaggerViewerDeploy
+        ref: TaggerViewerDeployment
         path: 'OpenMS'
 
     - name: Install Qt
