@@ -8,8 +8,8 @@
 # prune unused images/etc. to free disc space (e.g. might be needed on gitpod). Use with care.: docker system prune --all --force
 
 FROM ubuntu:22.04 AS setup-build-system
-ARG OPENMS_REPO=https://github.com/OpenMS/OpenMS.git
-ARG OPENMS_BRANCH=develop
+ARG OPENMS_REPO=https://github.com/t0mdavid-m/OpenMS.git
+ARG OPENMS_BRANCH=TaggerViewerDeployment
 ARG PORT=8501
 # GitHub token to download latest OpenMS executable for Windows from Github action artifact.
 ARG GITHUB_TOKEN

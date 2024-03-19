@@ -66,7 +66,8 @@ class ParameterManager:
                     # convert strings with newlines to list
                     if isinstance(value, str):
                         if "\n" in value:
-                            value = [v.encode() for v in value.split("\n")]
+                            # value = [v.encode() for v in value.split("\n")]
+                            value = [float(v) for v in value.split("\n")]
                     # check if value is different from default
                     if ini_value != value:
                         # store non-default value

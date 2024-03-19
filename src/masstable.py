@@ -3,14 +3,15 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 import pandas as pd
-from biotite.sequence.io.fasta import FastaFile, get_sequences
 from pyopenms import MSExperiment, MzMLFile, SpectrumLookup, Constants
 
 @st.cache_data
-def parseFLASHDeconvOutput(annotated, deconvolved, tags, db):
+def parseFLASHDeconvOutput(annotated, deconvolved, tags, proteins):
 
     tag_df = pd.read_csv(tags, sep='\t')
-    db = get_sequences(FastaFile.read(db))
+
+    # db = get_sequences(FastaFile.read(db), ProteinSequence)
+    protein_df = pd.read_csv(proteins, sep='\t')
 
     annotated_exp = MSExperiment()
     deconvolved_exp = MSExperiment()
@@ -178,7 +179,7 @@ def parseFLASHDeconvOutput(annotated, deconvolved, tags, db):
     df['CombinedPeaks'] = noisyPeaks
     df['MSLevel'] = msLevels
     df['Scan'] = scans
-    return df, annotateddf, tolerance,  massoffset, chargemass, tag_df, db
+    return df, annotateddf, tolerance,  massoffset, chargemass, tag_df, protein_df
 
 @st.cache_data
 def getSpectraTableDF(deconv_df: pd.DataFrame):

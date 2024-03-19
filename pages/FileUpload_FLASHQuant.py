@@ -3,7 +3,7 @@ from pathlib import Path
 import shutil
 import pandas as pd
 from src.flashquant import parseFLASHQuantOutput
-from src.common import v_space, defaultPageSetup, reset_directory
+from src.common import v_space, page_setup, reset_directory
 from pages.FileUpload import initializeWorkspace
 from src.flashquant import connectTraceWithResult
 
@@ -130,7 +130,7 @@ def parsingWithProgressBar(infiles_quant, infiles_trace, infiles_resolution):
 
 
 def content():
-    defaultPageSetup()
+    page_setup()
 
     # make directory to store files & initialize data storage
     input_types = ["quant-files", "trace-files", "conflict-resolution-files"]

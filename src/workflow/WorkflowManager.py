@@ -6,6 +6,7 @@ from .StreamlitUI import StreamlitUI
 from .FileManager import FileManager
 import multiprocessing
 import shutil
+import streamlit as st
 
 class WorkflowManager:
     # Core workflow logic using the above classes
@@ -66,7 +67,7 @@ class WorkflowManager:
         """
         Shows the execution section of the UI with content defined in self.execution().
         """
-        self.ui.execution_section(self.start_workflow)
+        self.ui.execution_section(self.start_workflow, self.pp)
         
     def show_results_section(self) -> None:
         """

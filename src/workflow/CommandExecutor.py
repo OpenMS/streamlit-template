@@ -113,7 +113,7 @@ class CommandExecutor:
             self.logger.log(f"ERRORS OCCURRED:\n{error_message}")
             raise Exception(f"Errors occurred while running command: {' '.join(command)}\n{error_message}")
 
-    def run_topp(self, tool: str, input_output: dict, write_log: bool = True) -> None:
+    def run_topp(self, tool: str, input_output: dict, write_log: bool = True, params_manual: dict = None) -> None:
         """
         Constructs and executes commands for the specified tool OpenMS TOPP tool based on the given
         input and output configurations. Ensures that all input/output file lists
@@ -152,6 +152,11 @@ class CommandExecutor:
 
         # Load parameters for non-defaults
         params = self.parameter_manager.get_parameters_from_json()
+        if params_manual is not None:
+            if tool in params.keys():
+                params[tool].update(params_manual)
+            else:
+                params[tool] = params_manual
         # Construct commands for each process
         for i in range(n_processes):
             command = [tool]
@@ -173,7 +178,11 @@ class CommandExecutor:
             # Add non-default TOPP tool parameters
             if tool in params.keys():
                 for k, v in params[tool].items():
-                    command += [f"-{k}", str(v)]
+                    if isinstance(v, list):
+                        command += [f"-{k}"]
+                        command += [str(v_v) for v_v in v]
+                    else:
+                        command += [f"-{k}", str(v)]
             commands.append(command)
 
         # Run command(s)

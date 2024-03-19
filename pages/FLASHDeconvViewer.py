@@ -99,7 +99,7 @@ def setSequenceViewInDefaultView():
 
 
 def content():
-    defaultPageSetup("FLASHViewer")
+    page_setup("FLASHViewer")
     setSequenceViewInDefaultView()
 
     ### if no input file is given, show blank page

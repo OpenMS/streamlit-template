@@ -1,11 +1,11 @@
 import streamlit as st
-from src.common import defaultPageSetup
+from src.common import page_setup
 import streamlit.components.v1 as st_components
 from src.components import flash_viewer_grid_component, FlashViewerComponent, FLASHQuant
 
 
 def content():
-    defaultPageSetup('FLASHQuant Viewer')
+    page_setup('FLASHQuant Viewer')
 
     # if no input file is given, show blank page
     if "quant-experiment-df" not in st.session_state:

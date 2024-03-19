@@ -14,4 +14,5 @@ dependencies:
     - streamlit==1.29.0
     - streamlit-plotly-events==0.0.6
     - streamlit-aggrid==0.3.4.post3
+    - st_pages==0.4.5
     - captcha==0.5.0

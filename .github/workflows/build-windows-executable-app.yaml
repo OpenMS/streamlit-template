@@ -1,7 +1,7 @@
 name: Build executable for Windows
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main" , "TaggerViewerDeployment"]
   pull_request:
     branches: [ "main" ]
 

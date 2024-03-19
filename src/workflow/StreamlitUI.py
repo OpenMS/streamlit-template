@@ -32,6 +32,8 @@ class StreamlitUI:
         key: str,
         file_type: str,
         name: str = "",
+        enable_directory = True,
+        accept_multiple_files = True,
         fallback: Union[List, str] = None,
     ) -> None:
         """
@@ -60,7 +62,7 @@ class StreamlitUI:
                 file_type_for_uploader = [file_type]
             files = st.file_uploader(
                 f"{name}",
-                accept_multiple_files=(st.session_state.location == "local"),
+                accept_multiple_files=(st.session_state.location == "local") and accept_multiple_files,
                 type=file_type_for_uploader,
                 label_visibility="collapsed",
             )
@@ -68,6 +70,8 @@ class StreamlitUI:
                 f"Add **{name}**", use_container_width=True, type="primary"
             ):
                 if files:
+                    if (not accept_multiple_files) and (files_dir.exists()):
+                        shutil.rmtree(files_dir)
                     files_dir.mkdir(parents=True, exist_ok=True)
                     # in case of online mode a single file is returned -> put in list
                     if not isinstance(files, list):
@@ -83,7 +87,7 @@ class StreamlitUI:
                     st.error("Nothing to add, please upload file.")
 
         # Local file upload option: via directory path
-        if st.session_state.location == "local":
+        if (st.session_state.location == "local") and enable_directory:
             c2.markdown("**OR copy files from local folder**")
             with c2.form(f"{key}-local-file-upload"):
                 local_dir = st.text_input(f"path to folder with **{name}** files")
@@ -130,7 +134,11 @@ class StreamlitUI:
 
         c1, c2 = st.columns(2)
         if current_files:
-            c1.info(f"Current **{name}** files:\n\n" + "\n\n".join(current_files))
+            if accept_multiple_files:
+                c1.info(f"Current **{name}** files:\n\n" + "\n\n".join(current_files))
+            else:
+                c1.info(f"Current **{name}** file:\n\n" + "\n\n".join(current_files))
+            
             if c2.button(
                 f"🗑️ Remove all **{name}** files.",
                 use_container_width=True,
@@ -355,6 +363,139 @@ class StreamlitUI:
         else:
             st.error(f"Unsupported widget type '{widget_type}'")
 
+    def input_PyOpenMS(
+        self,
+        _class : object,
+        num_cols: int = 3,
+        exclude_parameters: List[str] = [],
+    ) -> None:
+        """
+        Generates input widgets for PyOpenMs TOPP tool parameters dynamically based on the tool's
+        .ini file. Supports excluding specific parameters and adjusting the layout.
+        File input and output parameters are excluded.
+
+        Args:
+            topp_tool_name (str): The name of the TOPP tool for which to generate inputs.
+            num_cols (int, optional): Number of columns to use for the layout. Defaults to 3.
+            exclude_parameters (List[str], optional): List of parameter names to exclude from the widget.
+        """
+
+        param = _class().getParameters()
+
+        excluded_keys = [
+            "log",
+            "debug",
+            "threads",
+            "no_progress",
+            "force",
+            "version",
+            "test",
+        ] + exclude_parameters
+
+        param_dicts = []
+        for key in param.keys():
+            # Determine if the parameter should be included based on the conditions
+            if (
+                b"input file" in param.getTags(key)
+                or b"output file" in param.getTags(key)
+            ) or (key.decode().split(":")[-1] in excluded_keys):
+                continue
+            entry = param.getEntry(key)
+            param_dict = {
+                "name": entry.name.decode(),
+                "key": key,
+                "value": entry.value,
+                "valid_strings": [v.decode() for v in entry.valid_strings],
+                "description": entry.description.decode(),
+                "advanced": (b"advanced" in param.getTags(key)),
+            }
+            param_dicts.append(param_dict)
+
+        # Update parameter values from the JSON parameters file
+        # json_params = self.params
+        # if topp_tool_name in json_params:
+        #    for p in param_dicts:
+        #        name = p["key"].decode().split(":1:")[1]
+        #        if name in json_params[topp_tool_name]:
+        #            p["value"] = json_params[topp_tool_name][name]
+
+        # input widgets in n number of columns
+        cols = st.columns(num_cols)
+        i = 0
+
+        # show input widgets
+        for p in param_dicts:
+
+            # skip avdanced parameters if not selected
+            if not st.session_state["advanced"] and p["advanced"]:
+                continue
+
+            key = f"{self.parameter_manager.topp_param_prefix}{p['key'].decode()}"
+
+            try:
+                # bools
+                if p["value"] == "true" or p["value"] == "false":
+                    cols[i].markdown("##")
+                    cols[i].checkbox(
+                        p["name"],
+                        value=(p["value"] == "true"),
+                        help=p["description"],
+                        key=key,
+                    )
+
+                # string options
+                elif isinstance(p["value"], str) and p["valid_strings"]:
+                    cols[i].selectbox(
+                        p["name"],
+                        options=p["valid_strings"],
+                        index=p["valid_strings"].index(p["value"]),
+                        help=p["description"],
+                        key=key,
+                    )
+
+                # strings
+                elif isinstance(p["value"], str):
+                    cols[i].text_input(
+                        p["name"], value=p["value"], help=p["description"], key=key
+                    )
+
+                # ints
+                elif isinstance(p["value"], int):
+                    cols[i].number_input(
+                        p["name"], value=int(p["value"]), help=p["description"], key=key
+                    )
+
+                # floats
+                elif isinstance(p["value"], float):
+                    cols[i].number_input(
+                        p["name"],
+                        value=float(p["value"]),
+                        step=1.0,
+                        help=p["description"],
+                        key=key,
+                    )
+
+                # lists
+                elif isinstance(p["value"], list):
+                    p["value"] = [
+                        v.decode() if isinstance(v, bytes) else v for v in p["value"]
+                    ]
+                    cols[i].text_area(
+                        p["name"],
+                        value="\n".join(p["value"]),
+                        help=p["description"],
+                        key=key,
+                    )
+
+                # increment number of columns, create new cols object if end of line is reached
+                i += 1
+                if i == num_cols:
+                    i = 0
+                    cols = st.columns(num_cols)
+            except:
+                cols[i].error(f"Error in parameter **{p['name']}**.")
+    
+    
     def input_TOPP(
         self,
         topp_tool_name: str,
@@ -479,10 +620,11 @@ class StreamlitUI:
                     ]
                     cols[i].text_area(
                         p["name"],
-                        value="\n".join(p["value"]),
+                        value="\n".join([str(aaa) for aaa in p["value"]]),
                         help=p["description"],
                         key=key,
                     )
+
 
                 # increment number of columns, create new cols object if end of line is reached
                 i += 1
@@ -664,18 +806,21 @@ class StreamlitUI:
         # Save parameters
         self.parameter_manager.save_parameters()
 
-    def execution_section(self, start_workflow_function) -> None:
+    def execution_section(self, start_workflow_function, stop_workflow_function) -> None:
+
         if self.executor.pid_dir.exists():
             if st.button("Stop Workflow", type="primary", use_container_width=True):
                 self.executor.stop()
                 st.rerun()
         else:
-            st.button(
+            if st.button(
                 "Start Workflow",
                 type="primary",
-                use_container_width=True,
-                on_click=start_workflow_function,
-            )
+                use_container_width=True
+            ):
+                start_workflow_function()
+                time.sleep(2)
+                st.rerun()
 
         if self.logger.log_file.exists():
             if self.executor.pid_dir.exists():
@@ -688,6 +833,7 @@ class StreamlitUI:
                 st.markdown("**Workflow log file**")
                 with open(self.logger.log_file, "r", encoding="utf-8") as f:
                     st.code(f.read(), language="neon", line_numbers=True)
+                stop_workflow_function()
 
     def results_section(self, custom_results_function) -> None:
         custom_results_function()

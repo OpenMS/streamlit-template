@@ -15,7 +15,7 @@ def flashdeconvPages():
 def flashtagPages():
     show_pages([
         Page("FLASHViewer.py", "FlashViewer", "🏠"),
-        Page("pages/FileUpload.py", "File Upload", "📁"),
+        Page("pages/5_TOPP-Workflow.py", "Workflow", "⚙️"),
         Page("pages/FLASHTagViewer.py", "Viewer", "👀"),
     ])
 
@@ -53,15 +53,16 @@ def content():
 
     st.info("""
         **💡 How to run FLASHViewer**
-        1. Go to the **📁 File Upload** page through the sidebar and upload FLASHDeconv output files (\*_annotated.mzML & \*_deconv.mzML)
-        2. Click the **👀 Viewer** page on the sidebar to view the deconvolved results in detail.
+        1. Go to the **⚙️ Workflow** page through the sidebar and run your analysis.
+        2. Click the **👀 Viewer** page on the sidebar to view the results in detail.
         """)
 
     # sidebar to toggle between tools
     if 'tool_index' not in st.session_state:
         st.session_state['tool_index'] = 0
     # when entered into other page, key is resetting (emptied) - thus set the value with index
-    st.selectbox("Choose a tool", ['FLASHTagViewer', 'FLASHDeconv', 'FLASHQuant'], index=st.session_state.tool_index,
+    # st.selectbox("Choose a tool", ['FLASHTagViewer', 'FLASHDeconv', 'FLASHQuant'], index=st.session_state.tool_index,
+    st.selectbox("Choose a tool", ['FLASHTagViewer'], index=st.session_state.tool_index,
                  on_change=onToolChange(), key='changed_tool_name')
     page_names_to_funcs[st.session_state.changed_tool_name]()
 

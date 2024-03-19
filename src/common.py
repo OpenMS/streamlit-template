@@ -128,6 +128,8 @@ def page_setup(page: str = "") -> dict[str, Any]:
 
     #st.session_state["workspace"] = Path(str(uuid.uuid1()))
     # Make sure important directories exist
+    print('AAAABBBBBBCCCCC')
+    print(st.session_state["workspace"])
     st.session_state["workspace"].mkdir(parents=True, exist_ok=True)
     # for mzML (deconvolved)
     st.session_state["deconv-mzML-files"] = Path(st.session_state["workspace"], "deconv-mzML-files")

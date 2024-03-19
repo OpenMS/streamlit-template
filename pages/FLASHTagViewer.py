@@ -2,6 +2,11 @@ from src.common import *
 from src.masstable import *
 from src.components import *
 from src.sequence import getFragmentDataFromSeq, getInternalFragmentDataFromSeq
+from io import StringIO, BytesIO
+from zipfile import ZipFile, ZIP_DEFLATED
+from pages.FileUpload import handleInputFiles
+from pages.FileUpload import parseUploadedFiles
+from pages.FileUpload import initializeWorkspace, showUploadedFilesTable
 
 
 DEFAULT_LAYOUT = [
@@ -29,43 +34,58 @@ def sendDataToJS(selected_data, layout_info_per_exp):
     spec_df.to_excel('Deconv.xlsx')
     anno_df.to_excel('Anno.xlsx')
     tag_df = st.session_state['tag_dfs'][selected_tag_file]
-    protein_db = st.session_state['protein_db'][selected_db_file]
 
-    # Stores sequence information {id : {sequence, coverage}}
-    sequence_data = {}
-
-    protein_df = tag_df.loc[:,['ProteinIndex', 'ProteinAccession', 'ProteinDescription']].drop_duplicates()
-    for i, row in protein_df.iterrows():
-        if not pd.isna(row['ProteinDescription']):
-            acc = f"{row['ProteinAccession']} {row['ProteinDescription']}"
+    # Process tag df into a linear data format
+    new_tag_df = {c : [] for c in tag_df.columns}
+    for i, row in tag_df.iterrows():
+        # No splitting if it is not recognized as string
+        if pd.isna(row['ProteinIndex']):
+            continue
+        if isinstance(row['ProteinIndex'], str) and (';' in row['ProteinIndex']):
+            no_items = row['ProteinIndex'].count(';') + 1
+            for c in new_tag_df.keys():
+                if (isinstance(row[c], str)) and (';' in row[c]):
+                    new_tag_df[c] += row[c].split(';')
+                else:
+                    new_tag_df[c] += [row[c]]*no_items
         else:
-            acc = row['ProteinAccession']
-        protein_df.loc[i,'length'] = len(protein_db[acc])
-        protein_df.loc[i,'sequence'] = str(protein_db[acc])
-        sequence_data[row['ProteinIndex']] = {'sequence' : protein_db[acc]}
+            for c in new_tag_df.keys():
+                new_tag_df[c].append(row[c])
+    tag_df = pd.DataFrame(new_tag_df)
 
+    tsv_buffer = StringIO()
+    tag_df.to_csv(tsv_buffer, sep='\t', index=False)
+    tsv_buffer.seek(0)
+    tag_df = pd.read_csv(tsv_buffer, sep='\t')
+
+    # Complete df
+    tag_df['Scan'] = 0
+    tag_df['EndPos'] = tag_df['StartPos'] + tag_df['Length'] - 1
+    tag_df['StartPos'] = tag_df['StartPos']
+    tag_df = tag_df.rename(
+        columns={
+            'DeNovoScore' : 'Score',
+            'Masses' : 'mzs'
+        }
+    )
+
+    # protein_db = st.session_state['protein_db'][selected_db_file]
+    protein_df = st.session_state['protein_dfs'][selected_db_file]
+    protein_df['length'] = protein_df['ProteinSequence'].apply(lambda x : len(x))
     protein_df = protein_df.rename(
         columns={
             'ProteinIndex' : 'index',
             'ProteinAccession' : 'accession',
-            'ProteinDescription' : 'description'
+            'ProteinDescription' : 'description',
+            'ProteinSequence' : 'sequence'
         }
     )
 
-    # Augment tags with sequence position
-    for i, row in tag_df.iterrows():
-        pid = row['ProteinIndex']
-        sequence = sequence_data[pid]['sequence']
-        tag_sequence = row['TagSequence']
-        for j in range(len(sequence)):
-            if str(sequence[j:j+len(tag_sequence)]) == str(tag_sequence):
-                tag_df.loc[i,'StartPos'] = j
-                tag_df.loc[i,'EndPos'] = j+len(tag_sequence)-1
-                break
-
+    sequence_data = {}
     # Compute coverage
-    for pid, data in sequence_data.items():
-        sequence = data['sequence']
+    for i, row in protein_df.iterrows():
+        pid = row['index']
+        sequence = row['sequence']
         coverage = np.zeros(len(sequence), dtype='float')
         for i in range(len(sequence)):
             coverage[i] = np.sum(
@@ -73,9 +93,93 @@ def sendDataToJS(selected_data, layout_info_per_exp):
                 (tag_df['StartPos'] <= i) &
                 (tag_df['EndPos'] >= i)
             )
-        sequence_data[int(pid)] = getFragmentDataFromSeq(
-            str(sequence), coverage/np.max(coverage), np.max(coverage)
+        p_cov = np.zeros(len(coverage))
+        if np.max(coverage) > 0:
+            p_cov = coverage/np.max(coverage)
+        sequence_data[pid] = getFragmentDataFromSeq(
+            str(sequence), p_cov, np.max(coverage)
         )
+
+
+
+
+
+
+    # # Stores sequence information {id : {sequence, coverage}}
+    # sequence_data = {}
+    
+    # tag_df = tag_df[~pd.isna(tag_df['ProteinIndex'])]
+    # tag_df['Scan'] = 0
+    # for i, row in tag_df.iterrows():
+    #     if isinstance(row['ProteinIndex'], str) and (';' in row['ProteinIndex']):
+    #         tag_df.loc[i, 'ProteinIndex'] = row['ProteinIndex'].split(';')[0]
+
+
+    # protein_df = tag_df.loc[:,['ProteinIndex', 'ProteinAccession', 'ProteinDescription']].drop_duplicates()
+    # for i, row in protein_df.iterrows():
+    #     if not pd.isna(row['ProteinDescription']):
+    #         acc = f"{row['ProteinAccession']} {row['ProteinDescription']}"
+    #     else:
+    #         acc = row['ProteinAccession']
+    #     if pd.isna(acc):
+    #         continue
+    #     if ';' in acc:
+    #         acc = acc.split(';')[0]
+    #     protein_df.loc[i, 'ProteinAccession'] = acc
+    #     protein_df.loc[i,'length'] = len(protein_db[acc])
+    #     protein_df.loc[i,'sequence'] = str(protein_db[acc])
+    #     sequence_data[row['ProteinIndex']] = {'sequence' : protein_db[acc]}
+
+    # protein_df = protein_df.rename(
+    #     columns={
+    #         'ProteinIndex' : 'index',
+    #         'ProteinAccession' : 'accession',
+    #         'ProteinDescription' : 'description'
+    #     }
+    # )
+    # protein_df.loc[:,'index'] = protein_df['index'].astype('int')
+
+    # # Augment tags with sequence position
+    # for i, row in tag_df.iterrows():
+    #     pid = row['ProteinIndex']
+    #     if pd.isna(pid):
+    #         continue
+    #     sequence = sequence_data[pid]['sequence']
+    #     tag_sequence = row['TagSequence']
+    #     for j in range(len(sequence)):
+    #         if str(sequence[j:j+len(tag_sequence)]) == str(tag_sequence):
+    #             tag_df.loc[i,'StartPos'] = j
+    #             tag_df.loc[i,'EndPos'] = j+len(tag_sequence)-1
+    #             break
+    
+    # tag_df = tag_df[~pd.isna(tag_df['StartPos']) | ~pd.isna(tag_df['EndPos'])]
+
+    # # Compute coverage
+    # for pid, data in sequence_data.items():
+    #     sequence = data['sequence']
+    #     coverage = np.zeros(len(sequence), dtype='float')
+    #     for i in range(len(sequence)):
+    #         coverage[i] = np.sum(
+    #             (tag_df['ProteinIndex'] == pid) &
+    #             (tag_df['StartPos'] <= i) &
+    #             (tag_df['EndPos'] >= i)
+    #         )
+    #     p_cov = np.zeros(len(coverage))
+    #     if np.max(coverage) > 0:
+    #         p_cov = coverage/np.max(coverage)
+    #     sequence_data[pid] = getFragmentDataFromSeq(
+    #         str(sequence), p_cov, np.max(coverage)
+    #     )
+
+    # tag_df.loc[:,'ProteinIndex'] = tag_df['ProteinIndex'].astype('int')
+    # tag_df.loc[:,'TagIndex'] = tag_df['TagIndex'].astype('int')
+    # if 'Score' not in tag_df.columns:
+    #     tag_df.loc[:,'Score'] = tag_df['DeNovoScore']
+
+    # print(protein_df)
+    # print(protein_df.columns)
+    # print(tag_df)
+    # print(tag_df.columns)
 
     components = []
     data_to_send = {}
@@ -168,6 +272,13 @@ def setSequenceViewInDefaultView():
 def content():
     page_setup("TaggerViewer")
     #setSequenceViewInDefaultView()
+    st.session_state['progress_bar_space'] = st.container()
+    input_types = ["deconv-mzMLs", "anno-mzMLs", "tags-tsv", "proteins-tsv"]
+    parsed_df_types = ["deconv_dfs", "anno_dfs", "tag_dfs", "protein_dfs"]
+    initializeWorkspace(input_types, parsed_df_types)
+    parseUploadedFiles()
+    showUploadedFilesTable()
+
 
     ### if no input file is given, show blank page
     if "experiment-df" not in st.session_state:
@@ -203,6 +314,28 @@ def content():
             layout_info = st.session_state["saved_layout_setting"][exp_index]
             with st.spinner('Loading component...'):
                 sendDataToJS(selected_exp, layout_info)
+
+
+    selected_tags = selected_exp0.iloc[0]['Tag Files']
+    selected_proteins = selected_exp0.iloc[0]['DB Files']
+    tag_df = st.session_state['tag_dfs'][selected_tags]
+    protein_df = st.session_state['protein_dfs'][selected_proteins]
+
+    tag_buffer = StringIO()
+    tag_df.to_csv(tag_buffer, sep='\t', index=False)
+    tag_buffer.seek(0)
+
+    protein_buffer = StringIO()
+    protein_df.to_csv(protein_buffer, sep='\t', index=False)
+    protein_buffer.seek(0)
+
+    zip_buffer = BytesIO()
+    with ZipFile(zip_buffer, 'w', ZIP_DEFLATED) as zip_file:
+        zip_file.writestr('tags.tsv', tag_buffer.getvalue())
+        zip_file.writestr('proteins.tsv', protein_buffer.getvalue())
+    zip_buffer.seek(0)
+    
+    st.download_button("Download ⬇️", zip_buffer, file_name=f'{st.session_state.selected_experiment0}.zip')
 
 
 if __name__ == "__main__":

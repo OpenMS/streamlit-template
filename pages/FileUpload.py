@@ -45,7 +45,7 @@ def showUploadedFilesTable():
     deconv_files = sorted(st.session_state["deconv_dfs"].keys())
     anno_files = sorted(st.session_state["anno_dfs"].keys())
     tag_files = sorted(st.session_state["tag_dfs"].keys())
-    db_files = sorted(st.session_state["protein_db"].keys())
+    db_files = sorted(st.session_state["protein_dfs"].keys())
 
     # error message if files not exist
     if len(deconv_files) == 0 and len(anno_files) == 0:
@@ -62,11 +62,12 @@ def showUploadedFilesTable():
         st.error("The same number of deconvolved and annotated files should be uploaded!")
     else:
         st.session_state["experiment-df"] = getUploadedFileDF(deconv_files, anno_files, tag_files, db_files)
-        st.markdown('**Uploaded experiments**')
-        st.dataframe(st.session_state["experiment-df"])
+        #st.markdown('**Uploaded experiments**')
+        #st.dataframe(st.session_state["experiment-df"])
 
 def handleInputFiles(uploaded_files):
     for file in uploaded_files:
+        file = Path(file)
         if not (file.name.endswith("mzML") or file.name.endswith("tsv") or file.name.endswith("fasta")):
             continue
 
@@ -79,6 +80,8 @@ def handleInputFiles(uploaded_files):
             session_name = 'tags-tsv'
         elif file.name.endswith('_db.fasta'):
             session_name = 'db-fasta'
+        elif file.name.endswith('_protein.tsv'):
+            session_name = 'proteins-tsv'
 
         if file.name not in st.session_state[session_name]:
             with open(
@@ -87,25 +90,27 @@ def handleInputFiles(uploaded_files):
                 f.write(file.getbuffer())
             st.session_state[session_name].append(file.name)
 
-def parseUploadedFiles():
+def parseUploadedFiles(reparse=False):
     # get newly uploaded files
     deconv_files = st.session_state['deconv-mzMLs']
     anno_files = st.session_state['anno-mzMLs']
     tag_files = st.session_state['tags-tsv']
-    db_files = st.session_state['db-fasta']
+    # db_files = st.session_state['db-fasta']
+    protein_files = st.session_state['proteins-tsv']
     # anno_files = Path(st.session_state['anno-mzMLs']).iterdir()
-    new_deconv_files = [f for f in deconv_files if f not in st.session_state['deconv_dfs']]
-    new_anno_files = [f for f in anno_files if f not in st.session_state['anno_dfs']]
-    new_tag_files = [f for f in tag_files if f not in st.session_state['tag_dfs']]
-    new_db_files = [f for f in db_files if f not in st.session_state['protein_db']]
+    new_deconv_files = [f for f in deconv_files if f not in st.session_state['deconv_dfs'] or reparse]
+    new_anno_files = [f for f in anno_files if f not in st.session_state['anno_dfs'] or reparse]
+    new_tag_files = [f for f in tag_files if f not in st.session_state['tag_dfs'] or reparse]
+    new_protein_files = [f for f in protein_files if f not in st.session_state['protein_dfs'] or reparse]
+    # new_db_files = [f for f in db_files if f not in st.session_state['protein_db']]
 
     # if newly uploaded files are not as needed
-    if len(new_deconv_files)==0 and len(new_anno_files)==0 and len(new_tag_files)==0 and len(new_db_files)==0: # if no newly uploaded files, move on
+    if len(new_deconv_files)==0 and len(new_anno_files)==0 and len(new_tag_files)==0 and len(new_protein_files)==0: # if no newly uploaded files, move on
         return
-    elif np.any(np.array([len(new_deconv_files), len(new_anno_files), len(new_db_files)]) != len(new_tag_files)): # if newly uploaded files doesn't match, write message
+    elif np.any(np.array([len(new_deconv_files), len(new_anno_files), len(new_protein_files)]) != len(new_tag_files)): # if newly uploaded files doesn't match, write message
         st.error('Added files are not in pair, so not parsed. \n Here are uploaded ones, but not parsed ones:')
         # not_parsed = [f.name for f in new_deconv_files] + [f.name for f in new_anno_files]
-        not_parsed = new_deconv_files + new_anno_files + new_tag_files + new_db_files
+        not_parsed = new_deconv_files + new_anno_files + new_tag_files + new_protein_files
         for i in not_parsed:
             st.markdown("- " + i)
         return
@@ -114,35 +119,41 @@ def parseUploadedFiles():
     new_deconv_files = sorted(new_deconv_files)
     new_anno_files = sorted(new_anno_files)
     new_tag_files = sorted(new_tag_files)
-    new_db_files = sorted(new_db_files)
-    parsingWithProgressBar(new_deconv_files, new_anno_files, new_tag_files, new_db_files)
+    # new_db_files = sorted(new_db_files)
+    new_protein_files = sorted(new_protein_files)
+    parsingWithProgressBar(new_deconv_files, new_anno_files, new_tag_files, new_protein_files)
 
-def parsingWithProgressBar(infiles_deconv, infiles_anno, infiles_tag, infiles_db):
+def parsingWithProgressBar(infiles_deconv, infiles_anno, infiles_tag, infiles_protein):
+    successes = []
     with st.session_state['progress_bar_space']:
-        for anno_f, deconv_f, tag_f, db_f in zip(infiles_anno, infiles_deconv, infiles_tag, infiles_db):
+        for anno_f, deconv_f, tag_f, protein_f in zip(infiles_anno, infiles_deconv, infiles_tag, infiles_protein):
             if not anno_f.endswith('.mzML'):
                 continue
             exp_name = anno_f[0: anno_f.rfind('_')]
 
             with st.spinner('Parsing the experiment %s...'%exp_name):
-                spec_df, anno_df, tolerance, massoffset, chargemass, tag_df, db = parseFLASHDeconvOutput(
+                spec_df, anno_df, tolerance, massoffset, chargemass, tag_df, protein_df = parseFLASHDeconvOutput(
                     Path(st.session_state["workspace"], "anno-mzMLs", anno_f),
                     Path(st.session_state["workspace"], "deconv-mzMLs", deconv_f),
                     Path(st.session_state["workspace"], "tags-tsv", tag_f),
-                    Path(st.session_state["workspace"], "db-fasta", db_f)
+                    Path(st.session_state["workspace"], "proteins-tsv", protein_f)
+                    # Path(st.session_state["workspace"], "db-fasta", db_f)
                 )
                 st.session_state['anno_dfs'][anno_f] = anno_df
                 st.session_state['deconv_dfs'][deconv_f] = spec_df
                 st.session_state['tag_dfs'][tag_f] = tag_df
-                st.session_state['protein_db'][db_f] = db
-            st.success('Done parsing the experiment %s!'%exp_name)
+                # st.session_state['protein_db'][db_f] = db
+                st.session_state['protein_dfs'][protein_f] = protein_df
+            successes.append(st.success('Done parsing the experiment %s!'%exp_name))
+        for success in successes:
+            success.empty()
 
 def content():
     page_setup()
 
     # make directory to store deconv and anno mzML files & initialize data storage
-    input_types = ["deconv-mzMLs", "anno-mzMLs", "tags-tsv", "db-fasta"]
-    parsed_df_types = ["deconv_dfs", "anno_dfs", "tag_dfs", "protein_db"]
+    input_types = ["deconv-mzMLs", "anno-mzMLs", "tags-tsv", "proteins-tsv"]
+    parsed_df_types = ["deconv_dfs", "anno_dfs", "tag_dfs", "protein_dfs"]
     initializeWorkspace(input_types, parsed_df_types)
 
     c1, c2, c3 = st.columns([0.6, 0.2, 0.2])
@@ -153,8 +164,8 @@ def content():
     v_space(1, c2)
     if c2.button("Load Example Data"):
         # loading and copying example files into default workspace
-        for filetype, session_name in zip(['*annotated.mzML', '*deconv.mzML', '*tagged.tsv', '*db.fasta'],
-                                          ['anno-mzMLs', 'deconv-mzMLs', 'tags-tsv', 'db-fasta']):
+        for filetype, session_name in zip(['*annotated.mzML', '*deconv.mzML', '*tagged.tsv', '*protein.tsv'],
+                                          ['anno-mzMLs', 'deconv-mzMLs', 'tags-tsv', 'proteins-tsv']):
             for file in Path("example-data").glob(filetype):
                 if file.name not in st.session_state[session_name]:
                     shutil.copy(file, Path(st.session_state["workspace"], session_name, file.name))
