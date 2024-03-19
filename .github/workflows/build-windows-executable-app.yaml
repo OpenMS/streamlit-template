@@ -44,6 +44,7 @@ jobs:
         # https://github.com/actions/runner-images/blob/main/images/win/scripts/Installers/Install-GitHub-CLI.ps1
         echo "C:/Program Files (x86)/GitHub CLI" >> $GITHUB_PATH
         choco install eigen -y --no-progress
+        echo "eigen_choco=C:\ProgramData\chocolatey\lib\eigen\share\cmake" >> $GITHUB_OUTPUT
 
     - name: Extract branch/PR infos
       shell: bash
