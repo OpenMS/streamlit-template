@@ -7,7 +7,7 @@ on:
 
 jobs:
   build-openms:
-    runs-on: windows-latest
+    runs-on: windows-2022
 
     env:
       OPENMS_VERSION: 3.0.0 
@@ -39,7 +39,7 @@ jobs:
     - name: Setup build tools
       shell: bash
       run: |
-        choco install ccache ninja cmake xerces-c
+        choco install ccache ninja cmake
         ## GH CLI "SHOULD BE" installed. Sometimes I had to manually install nonetheless. Super weird.
         # https://github.com/actions/runner-images/blob/main/images/win/scripts/Installers/Install-GitHub-CLI.ps1
         echo "C:/Program Files (x86)/GitHub CLI" >> $GITHUB_PATH
