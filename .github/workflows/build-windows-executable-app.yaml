@@ -16,8 +16,8 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v3
       with:
-        repository: OpenMS/OpenMS
-        ref: release/${{ env.OPENMS_VERSION }}
+        repository: t0mdavid-m/OpenMS
+        ref: TaggerViewerDeploy
         path: 'OpenMS'
 
     - name: Install Qt
