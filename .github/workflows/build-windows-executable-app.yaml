@@ -7,7 +7,7 @@ on:
 
 jobs:
   build-openms:
-    runs-on: windows-2022
+    runs-on: windows-latest
 
     env:
       OPENMS_VERSION: 3.0.0 
@@ -43,6 +43,7 @@ jobs:
         ## GH CLI "SHOULD BE" installed. Sometimes I had to manually install nonetheless. Super weird.
         # https://github.com/actions/runner-images/blob/main/images/win/scripts/Installers/Install-GitHub-CLI.ps1
         echo "C:/Program Files (x86)/GitHub CLI" >> $GITHUB_PATH
+        choco install eigen -y --no-progress
 
     - name: Extract branch/PR infos
       shell: bash
