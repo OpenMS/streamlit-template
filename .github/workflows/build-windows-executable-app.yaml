@@ -192,6 +192,7 @@ jobs:
     - name: Write function to cli.py
       shell: bash
       run: |
+        echo "{ls {D:/a/streamlit-template/streamlit-template/myenv/Lib/site-packages/streamlit/web/}}"
         head -n -2 D:/a/streamlit-template/streamlit-template/myenv/Lib/site-packages/streamlit/web/cli.py > temp_cli.py
 
         cat << EOF >> temp_cli.py

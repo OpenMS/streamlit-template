@@ -5,6 +5,7 @@ from pages.FileUpload import parseUploadedFiles
 from pages.FileUpload import initializeWorkspace, showUploadedFilesTable
 
 from os.path import join, splitext, basename, exists, dirname
+from os import makedirs
 from shutil import copyfile
 
 class Workflow(WorkflowManager):
@@ -184,9 +185,18 @@ class TagWorkflow(WorkflowManager):
         # TODO: Dont like
         base_path = join('..', 'workspaces-streamlit-template', 'default')
         base_path = dirname(self.workflow_dir)
-        print(base_path)
 
-
+        if not exists(join(base_path, 'db-fasta')):
+            makedirs(join(base_path, 'db-fasta'))
+        if not exists(join(base_path, 'anno-mzMLs')):
+            makedirs(join(base_path, 'anno-mzMLs'))
+        if not exists(join(base_path, 'deconv-mzMLs')):
+            makedirs(join(base_path, 'deconv-mzMLs'))
+        if not exists(join(base_path, 'tags-tsv')):
+            makedirs(join(base_path, 'tags-tsv'))
+        if not exists(join(base_path, 'proteins-tsv')):
+            makedirs(join(base_path, 'proteins-tsv'))
+            
         # # Log any messages.
         self.logger.log(f"Number of input mzML files: {in_mzMLs}")
         self.logger.log(f"Number of input mzML files: {database}")
@@ -204,13 +214,13 @@ class TagWorkflow(WorkflowManager):
             out_deconv = join(base_path, 'deconv-mzMLs', f'{current_base}_deconv.mzML')
             out_tag = join(base_path, 'tags-tsv', f'{current_base}_tagged.tsv')
             out_protein = join(base_path, 'proteins-tsv', f'{current_base}_protein.tsv')
-            decoy_db = join(temp_path, f'{current_base}_db.fasta')
+            #decoy_db = join(temp_path, f'{current_base}_db.fasta')
 
             self.executor.run_topp(
                 'DecoyDatabase',
                 {
                     'in' : [database[0]],
-                    'out' : [decoy_db],
+                    'out' : [out_db],
                 },
                 params_manual = {
                     'method' : 'shuffle',
@@ -219,7 +229,7 @@ class TagWorkflow(WorkflowManager):
                 }
             )
 
-            copyfile(decoy_db, out_db)
+            #copyfile(decoy_db, out_db)
             # TODO: Parallelize
             self.executor.run_topp(
                 'FLASHDeconv',
@@ -234,12 +244,11 @@ class TagWorkflow(WorkflowManager):
             self.executor.run_topp(
                 'FLASHTagger',
                 input_output={
-                    'in' : [in_mzML],
-                    'fasta' : [decoy_db],
+                    'in' : [out_deconv],
+                    'fasta' : [out_db],
                     'out_tag' :  [out_tag],
                     'out_protein' :  [out_protein]
                 },
-                params_manual = self.executor.parameter_manager.get_parameters_from_json().get('FLASHDeconv')
             )
 
             uploaded_files.append(out_db)

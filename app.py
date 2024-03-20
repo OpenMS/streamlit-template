@@ -66,6 +66,7 @@ page_names_to_funcs = {
 def onToolChange():
     if 'changed_tool_name' in st.session_state:
         st.session_state['tool_index'] = 0 if st.session_state.changed_tool_name == 'FLASHDeconv' else 1
+        st.session_state['tool_index'] = 0
 
 
 
