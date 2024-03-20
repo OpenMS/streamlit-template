@@ -101,8 +101,8 @@ def main():
     page_names_to_funcs[st.session_state.changed_tool_name]()
 
 
-    st.title("Template App")
-    st.markdown("## A template for an OpenMS streamlit app.")
+    #st.title("Template App")
+    #st.markdown("## A template for an OpenMS streamlit app.")
     if Path("OpenMS-App.zip").exists():
         st.markdown("## Installation")
         with open("OpenMS-App.zip", "rb") as file:
