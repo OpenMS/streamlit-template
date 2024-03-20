@@ -192,8 +192,8 @@ jobs:
     - name: Write function to cli.py
       shell: bash
       run: |
-        echo "{ls {D:/a/streamlit-template/streamlit-template/myenv/Lib/site-packages/streamlit/web/}}"
-        head -n -2 D:/a/streamlit-template/streamlit-template/myenv/Lib/site-packages/streamlit/web/cli.py > temp_cli.py
+        echo "{ls {D:/a/FlashViewer/FlashViewer/myenv/Lib/site-packages/streamlit/web/}}"
+        head -n -2 D:/a/FlashViewer/FlashViewer/myenv/Lib/site-packages/streamlit/web/cli.py > temp_cli.py
 
         cat << EOF >> temp_cli.py
         def _main_run_clExplicit(file, command_line, args=[], flag_options=[]):
@@ -205,7 +205,7 @@ jobs:
             main()
         EOF
 
-        mv temp_cli.py D:/a/streamlit-template/streamlit-template/myenv/Lib/site-packages/streamlit/web/cli.py  
+        mv temp_cli.py D:/a/FlashViewer/FlashViewer/myenv/Lib/site-packages/streamlit/web/cli.py  
 
     - name: Compile app with pyinstaller
       shell: cmd
