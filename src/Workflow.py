@@ -245,7 +245,7 @@ class TagWorkflow(WorkflowManager):
                 'FLASHTagger',
                 input_output={
                     'in' : [out_deconv],
-                    'fasta' : [out_db],
+                    'fasta' : [database[0]],
                     'out_tag' :  [out_tag],
                     'out_protein' :  [out_protein]
                 },

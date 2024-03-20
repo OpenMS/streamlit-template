@@ -31,8 +31,8 @@ def sendDataToJS(selected_data, layout_info_per_exp):
     # getting data from mzML files
     spec_df = st.session_state['deconv_dfs'][selected_deconv_file]
     anno_df = st.session_state['anno_dfs'][selected_anno_file]
-    spec_df.to_excel('Deconv.xlsx')
-    anno_df.to_excel('Anno.xlsx')
+    #spec_df.to_excel('Deconv.xlsx')
+    #anno_df.to_excel('Anno.xlsx')
     tag_df = st.session_state['tag_dfs'][selected_tag_file]
 
     # Process tag df into a linear data format
