@@ -34,7 +34,7 @@ params = page_setup(page="main")
 
 def flashdeconvPages():
     show_pages([
-        Page("FLASHViewer.py", "FLASHViewer", "🏠"),
+        Page("pages/FLASHViewer.py", "FLASHViewer", "🏠"),
         Page("pages/FileUpload.py", "File Upload", "📁"),
         Page("pages/SequenceInput.py", "Sequence Input", "🧵"),
         Page("pages/LayoutManager.py", "Layout Manager", "⚙️"),
@@ -43,14 +43,14 @@ def flashdeconvPages():
 
 def flashtagPages():
     show_pages([
-        Page("FLASHViewer.py", "FlashViewer", "🏠"),
+        Page("pages/FLASHViewer.py", "FlashViewer", "🏠"),
         Page("pages/5_TOPP-Workflow.py", "Workflow", "⚙️"),
         Page("pages/FLASHTagViewer.py", "Viewer", "👀"),
     ])
 
 def flashquantPages():
     show_pages([
-        Page("FLASHViewer.py", "FLASHViewer", "🏠"),
+        Page("pages/FLASHViewer.py", "FLASHViewer", "🏠"),
         Page("pages/FileUpload_FLASHQuant.py", "File Upload", "📁"),
         Page("pages/FLASHQuantViewer.py", "Viewer", "👀"),
     ])
@@ -73,8 +73,8 @@ def main():
     """
     Display main page content.
     """
-    # initializing the page
-    page_setup("FLASHViewer")
+    page_names_to_funcs['FLASHTagViewer']()
+
 
     # main content
     st.markdown("""
@@ -114,7 +114,6 @@ def main():
             )
     save_params(params)
 
-
 # Check if the script is run in local mode (e.g., "streamlit run app.py local")
 if "local" in sys.argv:
     # In local mode, run the main function without applying captcha
@@ -122,6 +121,11 @@ if "local" in sys.argv:
 
 # If not in local mode, assume it's hosted/online mode
 else:
+
+    show_pages([
+        Page("app.py", "FLASHViewer", "🏠"),
+    ])
+
     # WORK LIKE MULTIPAGE APP
     if "controllo" not in st.session_state or st.session_state["controllo"] is False:
         # Apply captcha control to verify the user
