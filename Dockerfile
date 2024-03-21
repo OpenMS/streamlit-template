@@ -34,7 +34,7 @@ ARG GITHUB_TOKEN
 # Streamlit app Gihub user name (to download artifact from).
 ARG GITHUB_USER=t0mdavid-m
 # Streamlit app Gihub repository name (to download artifact from).
-ARG GITHUB_REPO=FLASHViewer
+ARG GITHUB_REPO=FLASHTaggerViewer 
 
 
 USER root
