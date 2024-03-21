@@ -32,9 +32,9 @@ ARG PORT=8501
 # GitHub token to download latest OpenMS executable for Windows from Github action artifact.
 ARG GITHUB_TOKEN
 # Streamlit app Gihub user name (to download artifact from).
-ARG GITHUB_USER=OpenMS
+ARG GITHUB_USER=t0mdavid-m
 # Streamlit app Gihub repository name (to download artifact from).
-ARG GITHUB_REPO=streamlit-template
+ARG GITHUB_REPO=FLASHViewer
 
 
 USER root

@@ -20,7 +20,6 @@ Returns:
 
 import sys
 
-from pathlib import Path
 import streamlit as st
 
 from src.captcha_ import captcha_control
@@ -103,16 +102,7 @@ def main():
 
     #st.title("Template App")
     #st.markdown("## A template for an OpenMS streamlit app.")
-    if Path("OpenMS-App.zip").exists():
-        st.markdown("## Installation")
-        with open("OpenMS-App.zip", "rb") as file:
-            st.download_button(
-                label="Download for Windows",
-                data=file,
-                file_name="OpenMS-App.zip",
-                mime="archive/zip",
-                type="primary",
-            )
+    
     save_params(params)
 
 # Check if the script is run in local mode (e.g., "streamlit run app.py local")
