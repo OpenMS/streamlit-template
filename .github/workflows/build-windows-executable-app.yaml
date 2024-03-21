@@ -6,11 +6,8 @@ on:
     branches: [ "main" ]
 
 jobs:
-  build-openms:
-    runs-on: windows-latest
-
-    env:
-      OPENMS_VERSION: 3.0.0 
+  build-vue-js-component:
+    runs-on: window-latest
 
     steps:
 
@@ -25,19 +22,28 @@ jobs:
       uses: actions/checkout@v3
       with:
         repository: 't0mdavid-m/openms-streamlit-vue-component'
-        ref: 'TaggerViewer' # Specify the branch you want to checkout
-        path: 'openms-streamlit-vue-component' # Specify the path to clone the repo into
+        ref: 'TaggerViewer'
+        path: 'openms-streamlit-vue-component'
 
-    # Step to install npm dependencies and build the Vue.js component
     - name: Install and build Vue.js component
       run: |
         cd openms-streamlit-vue-component
         npm install
         npm run build
-        cd ..
-        mkdir dist/js-component
-        mkdir dist/js-component/dist
-        cp -r openms-streamlit-vue-component/dist/* dist/js-component/dist/
+
+    - name: Upload dist as artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: vue-js-dist
+        path: openms-streamlit-vue-component/dist
+
+  build-openms:
+    runs-on: windows-latest
+
+    env:
+      OPENMS_VERSION: 3.0.0 
+
+    steps:
 
     - name: Checkout
       uses: actions/checkout@v3
@@ -187,6 +193,12 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v3
 
+    - name: Download vue js as artifact
+      uses: actions/download-artifact@v3
+      with:
+        name: vue-js-dist
+        path: js-dist
+
     - name: Download TOPP tools as artifact
       uses: actions/download-artifact@v3
       with:
@@ -249,6 +261,7 @@ jobs:
         cp -r example-data dist/example-data
         cp -r openms-bin dist/bin
         cp -r share dist/share
+        cp -r js-dist dist/js-component/dist
         cp app.py dist/
     
     - name: Modify .spec file
