@@ -6,18 +6,22 @@ import streamlit.components.v1 as st_components
 # the component, and True when we're ready to package and distribute it.
 _RELEASE = True
 
-if not _RELEASE:
-    _component_func = st_components.declare_component(
-        "flash_viewer_grid",
-        url="http://localhost:5173",
-    )
-else:
-    parent_dir = os.path.dirname(os.path.abspath(__file__))
-    build_dir = os.path.join(parent_dir, '..', "js-component", "dist")
-    _component_func = st_components.declare_component("flash_viewer_grid", path=build_dir)
+
 
 
 def flash_viewer_grid_component(components, data, component_key='flash_viewer_grid'):
+
+    if not _RELEASE:
+        _component_func = st_components.declare_component(
+            "flash_viewer_grid",
+            url="http://localhost:5173",
+    )
+    else:
+        parent_dir = os.path.dirname(os.path.abspath(__file__))
+        build_dir = os.path.join(parent_dir, '..', "js-component", "dist")
+        _component_func = st_components.declare_component("flash_viewer_grid", path=build_dir)
+
+
     out_components = []
     for row in components:
         out_components.append(list(map(lambda component: {"componentArgs": component.componentArgs.__dict__}, row)))

@@ -282,7 +282,7 @@ def content():
 
     ### if no input file is given, show blank page
     if "experiment-df" not in st.session_state:
-        st.error('Upload input files first!')
+        st.error('No results to show yet. Please run a workflow first!')
         return
 
     # input experiment file names (for select-box later)

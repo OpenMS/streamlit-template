@@ -128,6 +128,9 @@ FROM compile-openms AS run-app
 
 # note: specifying folder with slash as suffix and repeating the folder name seems important to preserve directory structure
 WORKDIR /app
+COPY example_database.fasta /app/
+COPY example_spectrum_1.mzML /app/
+COPY example_spectrum_2.mzML /app/
 COPY app.py /app/app.py 
 COPY src/ /app/src
 COPY assets/ /app/assets
