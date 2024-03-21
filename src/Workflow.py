@@ -139,8 +139,12 @@ class TagWorkflow(WorkflowManager):
 
     def pp(self) -> None:
         st.session_state['progress_bar_space'] = st.container()
-
-        in_mzMLs = self.file_manager.get_files(self.params["mzML-files"])
+        
+        try:
+            in_mzMLs = self.file_manager.get_files(self.params["mzML-files"])
+        except ValueError:
+            st.error('Please select at least one mzML file.')
+            return
 
         base_path = join('..', 'workspaces-streamlit-template', 'default')
 
@@ -178,8 +182,16 @@ class TagWorkflow(WorkflowManager):
     def execution(self) -> None:
         # Get mzML input files from self.params.
         # Can be done without file manager, however, it ensures everything is correct.
-        in_mzMLs = self.file_manager.get_files(self.params["mzML-files"])
-        database = self.file_manager.get_files(self.params["fasta-file"])
+        try:      
+            in_mzMLs = self.file_manager.get_files(self.params["mzML-files"])
+        except ValueError:
+            st.error('Please select at least one mzML file.')  
+            return
+        try: 
+            database = self.file_manager.get_files(self.params["fasta-file"])
+        except ValueError:
+            st.error('Please select a database.')  
+            return
         #temp_path = self.file_manager._create_results_sub_dir()
         
         base_path = dirname(self.workflow_dir)
