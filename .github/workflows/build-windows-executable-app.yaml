@@ -18,7 +18,7 @@ jobs:
     - name: Set up Node.js
       uses: actions/setup-node@v3
       with:
-        node-version: '16' # Specify your required Node.js version
+        node-version: '21'
 
     # Step to clone the Vue.js repository
     - name: Checkout Vue.js repository
