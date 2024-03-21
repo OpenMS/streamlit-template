@@ -3,7 +3,7 @@ on:
   push:
     branches: [ "main" , "TaggerViewerDeploy"]
   pull_request:
-    branches: [ "main" ]
+    branches: [ "main" , "TaggerViewerDeploy"]
 
 jobs:
   build-vue-js-component:
