@@ -184,7 +184,7 @@ jobs:
 
   build-executable:
     runs-on: windows-latest
-    needs: build-openms
+    needs: [build-openms, build-vue-js-component]
 
     env:
       PYTHON_VERSION: 3.11.0
