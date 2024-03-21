@@ -180,10 +180,8 @@ class TagWorkflow(WorkflowManager):
         # Can be done without file manager, however, it ensures everything is correct.
         in_mzMLs = self.file_manager.get_files(self.params["mzML-files"])
         database = self.file_manager.get_files(self.params["fasta-file"])
-        temp_path = self.file_manager._create_results_sub_dir()
+        #temp_path = self.file_manager._create_results_sub_dir()
         
-        # TODO: Dont like
-        base_path = join('..', 'workspaces-streamlit-template', 'default')
         base_path = dirname(self.workflow_dir)
 
         if not exists(join(base_path, 'db-fasta')):
@@ -198,10 +196,10 @@ class TagWorkflow(WorkflowManager):
             makedirs(join(base_path, 'proteins-tsv'))
             
         # # Log any messages.
-        self.logger.log(f"Number of input mzML files: {in_mzMLs}")
-        self.logger.log(f"Number of input mzML files: {database}")
+        #self.logger.log(f"Number of input mzML files: {in_mzMLs}")
+        #self.logger.log(f"Number of input mzML files: {database}")
 
-        self.logger.log(self.file_manager.workflow_dir)
+        #self.logger.log(self.file_manager.workflow_dir)
 
 
         uploaded_files = []
@@ -245,7 +243,7 @@ class TagWorkflow(WorkflowManager):
                 'FLASHTagger',
                 input_output={
                     'in' : [out_deconv],
-                    'fasta' : [database[0]],
+                    'fasta' : [out_db],
                     'out_tag' :  [out_tag],
                     'out_protein' :  [out_protein]
                 },

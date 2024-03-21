@@ -49,7 +49,8 @@ def showUploadedFilesTable():
 
     # error message if files not exist
     if len(deconv_files) == 0 and len(anno_files) == 0:
-        st.info('No mzML added yet!', icon="ℹ️")
+        #st.info('No mzML added yet!', icon="ℹ️")
+        return
     elif len(deconv_files) == 0:
         st.error("FLASHDeconv deconvolved mzML file is not added yet!")
     elif len(anno_files) == 0:
@@ -108,7 +109,7 @@ def parseUploadedFiles(reparse=False):
     if len(new_deconv_files)==0 and len(new_anno_files)==0 and len(new_tag_files)==0 and len(new_protein_files)==0: # if no newly uploaded files, move on
         return
     elif np.any(np.array([len(new_deconv_files), len(new_anno_files), len(new_protein_files)]) != len(new_tag_files)): # if newly uploaded files doesn't match, write message
-        st.error('Added files are not in pair, so not parsed. \n Here are uploaded ones, but not parsed ones:')
+        st.error('Added files are not in pair, so not parsed. \n Here are added ones, but not parsed ones:')
         # not_parsed = [f.name for f in new_deconv_files] + [f.name for f in new_anno_files]
         not_parsed = new_deconv_files + new_anno_files + new_tag_files + new_protein_files
         for i in not_parsed:
