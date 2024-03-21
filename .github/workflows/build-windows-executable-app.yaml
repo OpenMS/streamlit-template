@@ -13,6 +13,32 @@ jobs:
       OPENMS_VERSION: 3.0.0 
 
     steps:
+
+    # Step to set up Node.js environment
+    - name: Set up Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '16' # Specify your required Node.js version
+
+    # Step to clone the Vue.js repository
+    - name: Checkout Vue.js repository
+      uses: actions/checkout@v3
+      with:
+        repository: 't0mdavid-m/openms-streamlit-vue-component'
+        ref: 'TaggerViewer' # Specify the branch you want to checkout
+        path: 'openms-streamlit-vue-component' # Specify the path to clone the repo into
+
+    # Step to install npm dependencies and build the Vue.js component
+    - name: Install and build Vue.js component
+      run: |
+        cd openms-streamlit-vue-component
+        npm install
+        npm run build
+        cd ..
+        mkdir dist/js-component
+        mkdir dist/js-component/dist
+        cp -r openms-streamlit-vue-component/dist/* dist/js-component/dist/
+
     - name: Checkout
       uses: actions/checkout@v3
       with:

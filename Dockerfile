@@ -7,7 +7,25 @@
 # debug container after build (comment out ENTRYPOINT) and run container with interactive /bin/bash shell
 # prune unused images/etc. to free disc space (e.g. might be needed on gitpod). Use with care.: docker system prune --all --force
 
+
+# Build JS-component
+FROM node:21 AS js-build
+
+# JS Component
+ARG VUE_REPO=https://github.com/t0mdavid-m/openms-streamlit-vue-component.git
+ARG VUE_BRANCH=TaggerViewer
+
+
+RUN git clone -b ${VUE_BRANCH} --single-branch ${VUE_REPO}
+WORKDIR /openms-streamlit-vue-component
+RUN npm install
+RUN npm run build
+
 FROM ubuntu:22.04 AS setup-build-system
+WORKDIR /
+
+COPY --from=js-build openms-streamlit-vue-component/dist /app/js-component/dist
+
 ARG OPENMS_REPO=https://github.com/t0mdavid-m/OpenMS.git
 ARG OPENMS_BRANCH=TaggerViewerDeployment
 ARG PORT=8501
@@ -17,6 +35,7 @@ ARG GITHUB_TOKEN
 ARG GITHUB_USER=OpenMS
 # Streamlit app Gihub repository name (to download artifact from).
 ARG GITHUB_REPO=streamlit-template
+
 
 USER root
 
