@@ -79,8 +79,8 @@ class StreamlitUI:
                     for f in files:
                         if f.name not in [
                             f.name for f in files_dir.iterdir()
-                        ] and f.name.endswith(file_type):
-                            with open(Path(files_dir, f.name), "wb") as fh:
+                        ] and f.name.lower().endswith(file_type.lower()):
+                            with open(Path(files_dir, f.name.replace('-', '_')), "wb") as fh:
                                 fh.write(f.getbuffer())
                     st.success("Successfully added uploaded files!")
                 else:
