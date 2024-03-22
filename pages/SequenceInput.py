@@ -1,6 +1,6 @@
 import streamlit as st
 import re
-from src.common import defaultPageSetup
+from src.common import page_setup, save_params
 
 fixed_mod_cysteine = ['No modification',
                       'Carbamidomethyl (+57)',
@@ -28,58 +28,58 @@ def validateSequenceInput(input_seq):
     return True
 
 
-def content():
-    defaultPageSetup("Proteoform Sequence Input")
+# page initialization
+params = page_setup()
 
-    # if any sequence was submitted before
-    if 'input_sequence' in st.session_state and st.session_state.input_sequence \
-            and 'sequence_text' not in st.session_state:
-        st.session_state['sequence_text'] = st.session_state.input_sequence
-    # if any modification was submitted before
-    if 'fixed_mod_cysteine' in st.session_state and st.session_state.fixed_mod_cysteine \
-            and 'selected_fixed_mod_cysteine' not in st.session_state:
-        st.session_state['selected_fixed_mod_cysteine'] = st.session_state.fixed_mod_cysteine
-    if 'fixed_mod_methionine' in st.session_state and st.session_state.fixed_mod_methionine \
-            and 'selected_fixed_mod_methionine' not in st.session_state:
-        st.session_state['selected_fixed_mod_methionine'] = st.session_state.fixed_mod_methionine
+st.title("Proteoform Sequence Input")
 
-    with st.form('sequence_input'):
-        # sequence
-        st.text_area('Proteoform sequence', key='sequence_text')
+# if any sequence was submitted before
+if 'input_sequence' in st.session_state and st.session_state.input_sequence \
+        and 'sequence_text' not in st.session_state:
+    st.session_state['sequence_text'] = st.session_state.input_sequence
+# if any modification was submitted before
+if 'fixed_mod_cysteine' in st.session_state and st.session_state.fixed_mod_cysteine \
+        and 'selected_fixed_mod_cysteine' not in st.session_state:
+    st.session_state['selected_fixed_mod_cysteine'] = st.session_state.fixed_mod_cysteine
+if 'fixed_mod_methionine' in st.session_state and st.session_state.fixed_mod_methionine \
+        and 'selected_fixed_mod_methionine' not in st.session_state:
+    st.session_state['selected_fixed_mod_methionine'] = st.session_state.fixed_mod_methionine
 
-        # fixed modification
-        c1, c2 = st.columns(2)
-        c1.selectbox('Fixed modification: Cysteine', fixed_mod_cysteine,
-                     key='selected_fixed_mod_cysteine', placeholder='No modification')
-        c2.selectbox('Fixed modification: Methionine', fixed_mod_methionine,
-                     key='selected_fixed_mod_methionine', placeholder='No modification')
-        _, c2 = st.columns([9, 1])
-        submitted = c2.form_submit_button("Save")
-        if submitted:
-            if 'sequence_text' in st.session_state and validateSequenceInput(st.session_state['sequence_text']):
-                st.success('Proteoform sequence is submitted')
-                # save information for sequence view
-                st.session_state['input_sequence'] = ''.join(st.session_state['sequence_text'].split()).upper()
+with st.form('sequence_input'):
+    # sequence
+    st.text_area('Proteoform sequence', key='sequence_text')
 
-                st.session_state['fixed_mod_cysteine'], st.session_state['fixed_mod_methionine'] = '', ''
-                if 'selected_fixed_mod_cysteine' in st.session_state \
-                        and st.session_state['selected_fixed_mod_cysteine'] != 'No modification':
-                    st.session_state['fixed_mod_cysteine'] = st.session_state.selected_fixed_mod_cysteine
-                if 'selected_fixed_mod_methionine' in st.session_state \
-                        and st.session_state['selected_fixed_mod_methionine'] != 'No modification':
-                    st.session_state['fixed_mod_methionine'] = st.session_state.selected_fixed_mod_methionine
-                del st.session_state['sequence_text']
-            else:
-                st.error('Error: sequence input is not valid')
+    # fixed modification
+    c1, c2 = st.columns(2)
+    c1.selectbox('Fixed modification: Cysteine', fixed_mod_cysteine,
+                 key='selected_fixed_mod_cysteine', placeholder='No modification')
+    c2.selectbox('Fixed modification: Methionine', fixed_mod_methionine,
+                 key='selected_fixed_mod_methionine', placeholder='No modification')
+    _, c2 = st.columns([9, 1])
+    submitted = c2.form_submit_button("Save")
+    if submitted:
+        if 'sequence_text' in st.session_state and validateSequenceInput(st.session_state['sequence_text']):
+            st.success('Proteoform sequence is submitted')
+            # save information for sequence view
+            st.session_state['input_sequence'] = ''.join(st.session_state['sequence_text'].split()).upper()
 
-    st.info("""
-    **💡 NOTE** 
-    
-    - This is only needed when "Sequence View" component will be used in 👀Viewer
+            st.session_state['fixed_mod_cysteine'], st.session_state['fixed_mod_methionine'] = '', ''
+            if 'selected_fixed_mod_cysteine' in st.session_state \
+                    and st.session_state['selected_fixed_mod_cysteine'] != 'No modification':
+                st.session_state['fixed_mod_cysteine'] = st.session_state.selected_fixed_mod_cysteine
+            if 'selected_fixed_mod_methionine' in st.session_state \
+                    and st.session_state['selected_fixed_mod_methionine'] != 'No modification':
+                st.session_state['fixed_mod_methionine'] = st.session_state.selected_fixed_mod_methionine
+            del st.session_state['sequence_text']
+        else:
+            st.error('Error: sequence input is not valid')
 
-    - Only one protein sequence is allowed
-    """)
+st.info("""
+**💡 NOTE** 
 
+- This is only needed when "Sequence View" component will be used in 👀Viewer
 
-if __name__ == "__main__":
-    content()
+- Only one protein sequence is allowed
+""")
+
+save_params(params)

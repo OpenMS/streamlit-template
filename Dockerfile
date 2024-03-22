@@ -23,7 +23,7 @@ USER root
 
 RUN apt-get -y update
 # note: streamlit in docker needs libgtk2.0-dev (see https://yugdamor.medium.com/importerror-libgthread-2-0-so-0-cannot-open-shared-object-file-no-such-file-or-directory-895b94a7827b)
-RUN apt-get install -y --no-install-recommends --no-install-suggests wget ca-certificates libgtk2.0-dev curl jq
+RUN apt-get install -y --no-install-recommends --no-install-suggests wget ca-certificates libgtk2.0-dev curl jq cron
 RUN update-ca-certificates
 
 #################################### install streamlit
@@ -41,6 +41,10 @@ COPY assets/ /app/assets
 COPY example-data/ /app/example-data
 COPY pages/ /app/pages
 COPY dist/ /app/dist
+COPY clean-up-workspaces.py /app/clean-up-workspaces.py
+
+# add cron job to the crontab
+RUN echo "0 3 * * * python /app/clean-up-workspaces.py >> /app/clean-up-workspaces.log 2>&1" | crontab -
 
 # Download latest OpenMS App executable for Windows from Github actions workflow.
 RUN WORKFLOW_ID=$(curl -s "https://api.github.com/repos/$GITHUB_USER/$GITHUB_REPO/actions/workflows" | jq -r '.workflows[] | select(.name == "Build executable for Windows") | .id') \

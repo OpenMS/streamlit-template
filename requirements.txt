@@ -1,7 +1,9 @@
-streamlit
-st-pages
-pandas
-numpy
-plotly
---index-url https://pypi.cs.uni-tuebingen.de/simple/
-pyopenms-nightly
+# the requirements.txt file is intended for deployment on streamlit cloud and if the simple container is built
+# note that it is much more restricted in terms of installing third-parties / etc.
+# preferably use the batteries included or simple docker file for local hosting
+streamlit==1.29.0
+st-pages==0.4.5
+pandas==2.1.4
+numpy==1.26.3
+pyopenms==3.1.0
+captcha==0.5.0

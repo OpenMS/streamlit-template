@@ -1,5 +1,8 @@
 import streamlit as st
-from src.common import defaultPageSetup
+import json
+from src.common import page_setup, save_params
+
+# to convert between FLASHDeconv and FLASHQuant
 from st_pages import Page, show_pages
 
 
@@ -28,36 +31,50 @@ page_names_to_funcs = {
 
 
 def onToolChange():
-    if 'changed_tool_name' in st.session_state:
-        st.session_state['tool_index'] = 0 if st.session_state.changed_tool_name == 'FLASHDeconv' else 1
+    if 'changed_tool_name' not in st.session_state:  # this is needed for initialization
+        return
+    for key in params.keys():
+        if key == 'controllo':  # don't remove controllo
+            continue
+        if key in st.session_state.keys():
+            del st.session_state[key]
+    st.session_state['tool_index'] = 0 if st.session_state.changed_tool_name == 'FLASHDeconv' else 1
+    st.rerun()  # reload the page to sync the change
 
 
-def content():
-    # initializing the page
-    defaultPageSetup("FLASHViewer")
+# initializing the page
+params = page_setup(page="main")
+st.title("FLASHViewer")
 
-    # main content
-    st.markdown("""
-        #### FLASHViewer visualizes outputs from [FLASHDeconv](https://www.cell.com/cell-systems/fulltext/S2405-4712(20)30030-2).
-    
-        Detailed information and the latest version of FLASHDeconv can be downloaded from the [OpenMS webpage](https://openms.de/application/flashdeconv/).
-        """
-                )
+# main content
+st.markdown("""
+    #### FLASHViewer visualizes outputs from [FLASHDeconv](https://www.cell.com/cell-systems/fulltext/S2405-4712(20)30030-2) or FLASHQuant.
 
-    st.info("""
-        **💡 How to run FLASHViewer**
-        1. Go to the **📁 File Upload** page through the sidebar and upload FLASHDeconv output files (\*_annotated.mzML & \*_deconv.mzML)
-        2. Click the **👀 Viewer** page on the sidebar to view the deconvolved results in detail.
-        """)
+    Detailed information and the latest version of \\
+    $\quad$ FLASHDeconv can be downloaded from the [OpenMS webpage](https://openms.de/flashdeconv/) \\
+    $\quad$ FLASHQuant can be downloaded from the [OpenMS webpage](https://openms.de/flashquant/)
+    """
+            )
 
-    # sidebar to toggle between tools
-    if 'tool_index' not in st.session_state:
-        st.session_state['tool_index'] = 0
-    # when entered into other page, key is resetting (emptied) - thus set the value with index
-    st.selectbox("Choose a tool", ['FLASHDeconv', 'FLASHQuant'], index=st.session_state.tool_index,
-                 on_change=onToolChange(), key='changed_tool_name')
-    page_names_to_funcs[st.session_state.changed_tool_name]()
+st.info("""
+    **💡 How to run FLASHViewer (with FLASHDeconv)**
+    1. Go to the **📁 File Upload** page through the sidebar and upload FLASHDeconv output files (\*_annotated.mzML & \*_deconv.mzML)
+    2. Click the **👀 Viewer** page on the sidebar to view the deconvolved results in detail.
+    """)
 
+# selectbox to toggle between tools
+if 'tool_index' not in st.session_state:
+    st.session_state['tool_index'] = 0
+# when entered into other page, key is resetting (emptied) - thus set the value with index
+st.selectbox("Choose a tool", ['FLASHDeconv', 'FLASHQuant'], index=st.session_state.tool_index,
+             on_change=onToolChange(), key='changed_tool_name')
+page_names_to_funcs[st.session_state.changed_tool_name]()
 
-if __name__ == "__main__":
-    content()
+# make sure new default params are saved in workspace params
+with open("assets/default-params.json", "r") as f:
+    default_params = json.load(f)
+for key, value in default_params.items():
+    if key not in params.keys():
+        params[key] = value
+
+save_params(params)

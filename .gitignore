@@ -1,4 +1,14 @@
-*workspace/
+# OpenMS Streamlit template
+workspaces-streamlit-template
+build
+myenv
+hooks/__pycache__/
+build.log
+run_app.spec
+clean-up-workspaces.log
+
+# FLASHViewer
+workspaces
 Pipfile
 
 .DS_Store

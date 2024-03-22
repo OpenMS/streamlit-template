@@ -4,3 +4,4 @@ developmentMode = false
 [server]
 maxMessageSize = 5000
 maxUploadSize = 5000
+port = 8501
