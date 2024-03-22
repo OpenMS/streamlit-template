@@ -228,7 +228,7 @@ def sendDataToJS(selected_data, layout_info_per_exp):
 
             components_of_this_row.append(FlashViewerComponent(component_arguments))
         components.append(components_of_this_row)
-
+    per_scan_contents['3d'] = True
     if any(per_scan_contents.values()):
         scan_table = data_to_send['per_scan_data']
         dfs = [scan_table]
