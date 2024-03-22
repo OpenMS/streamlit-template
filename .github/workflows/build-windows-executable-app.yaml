@@ -13,13 +13,13 @@ jobs:
 
     # Step to set up Node.js environment
     - name: Set up Node.js
-      uses: actions/setup-node@v3
+      uses: actions/setup-node@v4
       with:
         node-version: '21'
 
     # Step to clone the Vue.js repository
     - name: Checkout Vue.js repository
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
       with:
         repository: 't0mdavid-m/openms-streamlit-vue-component'
         ref: 'TaggerViewer'
@@ -32,7 +32,7 @@ jobs:
         npm run build
 
     - name: Upload dist as artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: vue-js-dist
         path: openms-streamlit-vue-component/dist
