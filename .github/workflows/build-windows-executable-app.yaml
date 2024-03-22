@@ -194,7 +194,7 @@ jobs:
       uses: actions/checkout@v3
 
     - name: Download vue js as artifact
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: vue-js-dist
         path: js-dist
@@ -262,6 +262,9 @@ jobs:
         cp -r openms-bin/* dist/
         cp -r share dist/share
         cp -r js-dist dist/js-component/dist
+        cp example_database.fasta dist/
+        cp example_spectrum_1.mzML dist/
+        cp example_spectrum_2.mzML dist/
         cp app.py dist/
     
     - name: Modify .spec file
