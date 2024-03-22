@@ -385,7 +385,7 @@ class StreamlitUI:
         excluded_keys = [
             "log",
             "debug",
-            "threads",
+            #"threads",
             "no_progress",
             "force",
             "version",
@@ -523,7 +523,7 @@ class StreamlitUI:
         excluded_keys = [
             "log",
             "debug",
-            "threads",
+            #"threads",
             "no_progress",
             "force",
             "version",
