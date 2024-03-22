@@ -259,7 +259,7 @@ jobs:
         cp -r src dist/src
         cp -r assets dist/assets
         cp -r example-data dist/example-data
-        cp -r openms-bin dist/
+        cp -r openms-bin/* dist/
         cp -r share dist/share
         cp -r js-dist dist/js-component/dist
         cp app.py dist/

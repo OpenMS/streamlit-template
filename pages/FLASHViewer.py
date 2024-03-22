@@ -47,12 +47,7 @@ def content():
     page_setup("FLASHViewer")
 
     # main content
-    st.markdown("""
-        #### FLASHViewer visualizes outputs from [FLASHDeconv](https://www.cell.com/cell-systems/fulltext/S2405-4712(20)30030-2).
-    
-        Detailed information and the latest version of FLASHDeconv can be downloaded from the [OpenMS webpage](https://openms.de/application/flashdeconv/).
-        """
-                )
+    st.markdown('#### FLASHViewer visualizes outputs from FLASH\* tools.')
 
     st.info("""
         **💡 How to run FLASHViewer**
