@@ -148,6 +148,8 @@ RUN echo "mamba run --no-capture-output -n streamlit-env streamlit run app.py" >
 # make the script executable
 RUN chmod +x /app/entrypoint.sh
 
+
+ARG GITHUB_REPO=FLASHViewer
 # Download latest OpenMS App executable for Windows from Github actions workflow.
 RUN WORKFLOW_ID=$(curl -s "https://api.github.com/repos/$GITHUB_USER/$GITHUB_REPO/actions/workflows" | jq -r '.workflows[] | select(.name == "Build executable for Windows") | .id') \
     && SUCCESSFUL_RUNS=$(curl -s "https://api.github.com/repos/$GITHUB_USER/$GITHUB_REPO/actions/runs?workflow_id=$WORKFLOW_ID&status=success" | jq -r '.workflow_runs[0].id') \
