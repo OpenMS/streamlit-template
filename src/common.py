@@ -161,7 +161,7 @@ def render_sidebar(page: str = "") -> None:
     params = load_params()
     with st.sidebar:
         # The main page has workspace switcher
-        if page == "main":
+        if (page == "main") or (page == 'FLASHViewer'):
             st.markdown("🖥️ **Workspaces**")
             # Define workspaces directory outside of repository
             workspaces_dir = Path("..", "workspaces-" + REPOSITORY_NAME)
@@ -232,7 +232,7 @@ You can share this unique workspace ID with other people.
                 img_formats.index(params["image-format"]),
                 key="image-format",
             )
-        if page != "main":
+        if (page != "main") and (page != "FLASHViewer"):
             st.info(f"**{Path(st.session_state['workspace']).stem}**")
         st.image("assets/OpenMS.png", "powered by")
     return params
@@ -335,7 +335,7 @@ def reset_directory(path: Path) -> None:
 # General warning/error messages
 def sidebar(page=""):
     with st.sidebar:
-        if page == "main":
+        if (page == "main") or (page == "FLASHViewer"):
             st.markdown("### Workspaces")
             if st.session_state["location"] == "online":
                 new_workspace = st.text_input("enter workspace", "")
