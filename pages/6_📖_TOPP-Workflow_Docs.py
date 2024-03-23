@@ -170,19 +170,19 @@ st.code(
     """
 # Get all file paths as strings from self.param entry.
 mzML_files = self.file_manager.get_files(self.params["mzML-files])
-# mzML_files = ['../workspaces-streamlit-template/default/topp-workflow/input-files/mzML-files/Control.mzML', '../workspaces-streamlit-template/default/topp-workflow/input-files/mzML-files/Treatment.mzML']
+# mzML_files = ['../workspaces-flashtaggerviewer/default/topp-workflow/input-files/mzML-files/Control.mzML', '../workspaces-flashtaggerviewer/default/topp-workflow/input-files/mzML-files/Treatment.mzML']
 
 # Creating output files for a TOPP tool, setting a new file type and result subdirectory name.
 feature_detection_out = self.file_manager.get_files(mzML_files, set_file_type="featureXML", set_results_dir="feature-detection")
-# feature_detection_out = ['../workspaces-streamlit-template/default/topp-workflow/results/feature-detection/Control.featureXML', '../workspaces-streamlit-template/default/topp-workflow/results/feature-detection/Treatment.featureXML']
+# feature_detection_out = ['../workspaces-flashtaggerviewer/default/topp-workflow/results/feature-detection/Control.featureXML', '../workspaces-flashtaggerviewer/default/topp-workflow/results/feature-detection/Treatment.featureXML']
 
 # Setting a name for the output directory automatically (useful if you never plan to access these files in the results section).
 feature_detection_out = self.file_manager.get_files(mzML_files, set_file_type="featureXML", set_results_dir="auto")
-# feature_detection_out = ['../workspaces-streamlit-template/default/topp-workflow/results/6DUd/Control.featureXML', '../workspaces-streamlit-template/default/topp-workflow/results/6DUd/Treatment.featureXML']
+# feature_detection_out = ['../workspaces-flashtaggerviewer/default/topp-workflow/results/6DUd/Control.featureXML', '../workspaces-flashtaggerviewer/default/topp-workflow/results/6DUd/Treatment.featureXML']
 
 # Combining all mzML files to be passed to a TOPP tool in a single run. Using "collected" files as argument for self.file_manager.get_files will "un-collect" them.
 mzML_files = self.file_manager.get_files(mzML_files, collect=True)
-# mzML_files = [['../workspaces-streamlit-template/default/topp-workflow/input-files/mzML-files/Control.mzML', '../workspaces-streamlit-template/default/topp-workflow/input-files/mzML-files/Treatment.mzML']]
+# mzML_files = [['../workspaces-flashtaggerviewer/default/topp-workflow/input-files/mzML-files/Control.mzML', '../workspaces-flashtaggerviewer/default/topp-workflow/input-files/mzML-files/Treatment.mzML']]
     """
 )
 
@@ -277,15 +277,15 @@ Number of input mzML files: 2
 Running 2 commands in parallel...
 
 Running command:
-FeatureFinderMetabo -in ../workspaces-streamlit-template/default/topp-workflow/input-files/mzML-files/Treatment.mzML -out ../workspaces-streamlit-template/default/topp-workflow/results/feature-detection/Treatment.featureXML -algorithm:common:chrom_peak_snr 4.0 -algorithm:common:noise_threshold_int 1000.0
+FeatureFinderMetabo -in ../workspaces-flashtaggerviewer/default/topp-workflow/input-files/mzML-files/Treatment.mzML -out ../workspaces-flashtaggerviewer/default/topp-workflow/results/feature-detection/Treatment.featureXML -algorithm:common:chrom_peak_snr 4.0 -algorithm:common:noise_threshold_int 1000.0
 Waiting for command to finish...
 
 Running command:
-FeatureFinderMetabo -in ../workspaces-streamlit-template/default/topp-workflow/input-files/mzML-files/Control.mzML -out ../workspaces-streamlit-template/default/topp-workflow/results/feature-detection/Control.featureXML -algorithm:common:chrom_peak_snr 4.0 -algorithm:common:noise_threshold_int 1000.0
+FeatureFinderMetabo -in ../workspaces-flashtaggerviewer/default/topp-workflow/input-files/mzML-files/Control.mzML -out ../workspaces-flashtaggerviewer/default/topp-workflow/results/feature-detection/Control.featureXML -algorithm:common:chrom_peak_snr 4.0 -algorithm:common:noise_threshold_int 1000.0
 Waiting for command to finish...
 
 Process finished:
-FeatureFinderMetabo -in ../workspaces-streamlit-template/default/topp-workflow/input-files/mzML-files/Treatment.mzML -out ../workspaces-streamlit-template/default/topp-workflow/results/feature-detection/Treatment.featureXML -algorithm:common:chrom_peak_snr 4.0 -algorithm:common:noise_threshold_int 1000.0
+FeatureFinderMetabo -in ../workspaces-flashtaggerviewer/default/topp-workflow/input-files/mzML-files/Treatment.mzML -out ../workspaces-flashtaggerviewer/default/topp-workflow/results/feature-detection/Treatment.featureXML -algorithm:common:chrom_peak_snr 4.0 -algorithm:common:noise_threshold_int 1000.0
 Total time to run command: 0.55 seconds
 
 Progress of 'loading mzML':
@@ -315,7 +315,7 @@ FeatureFinderMetabo took 0.47 s (wall), 0.90 s (CPU), 0.43 s (system), 0.47 s (u
 
 
 Process finished:
-FeatureFinderMetabo -in ../workspaces-streamlit-template/default/topp-workflow/input-files/mzML-files/Control.mzML -out ../workspaces-streamlit-template/default/topp-workflow/results/feature-detection/Control.featureXML -algorithm:common:chrom_peak_snr 4.0 -algorithm:common:noise_threshold_int 1000.0
+FeatureFinderMetabo -in ../workspaces-flashtaggerviewer/default/topp-workflow/input-files/mzML-files/Control.mzML -out ../workspaces-flashtaggerviewer/default/topp-workflow/results/feature-detection/Control.featureXML -algorithm:common:chrom_peak_snr 4.0 -algorithm:common:noise_threshold_int 1000.0
 Total time to run command: 0.60 seconds
 
 Progress of 'loading mzML':
@@ -347,19 +347,19 @@ FeatureFinderMetabo took 0.51 s (wall), 0.90 s (CPU), 0.45 s (system), 0.45 s (u
 Total time to run 2 commands: 0.60 seconds
 
 Running command:
-python src/python-tools/example.py ../workspaces-streamlit-template/default/topp-workflow/example.json
+python src/python-tools/example.py ../workspaces-flashtaggerviewer/default/topp-workflow/example.json
 Waiting for command to finish...
 
 Process finished:
-python src/python-tools/example.py ../workspaces-streamlit-template/default/topp-workflow/example.json
+python src/python-tools/example.py ../workspaces-flashtaggerviewer/default/topp-workflow/example.json
 Total time to run command: 0.04 seconds
 
 Writing stdout which will get logged...
 Parameters for this example Python tool:
 {
     "in": [
-        "../workspaces-streamlit-template/default/topp-workflow/input-files/mzML-files/Control.mzML",
-        "../workspaces-streamlit-template/default/topp-workflow/input-files/mzML-files/Treatment.mzML"
+        "../workspaces-flashtaggerviewer/default/topp-workflow/input-files/mzML-files/Control.mzML",
+        "../workspaces-flashtaggerviewer/default/topp-workflow/input-files/mzML-files/Treatment.mzML"
     ],
     "out": [],
     "number-slider": 6,
@@ -370,11 +370,11 @@ Parameters for this example Python tool:
 
 
 Running command:
-SiriusExport -in ../workspaces-streamlit-template/default/topp-workflow/input-files/mzML-files/Control.mzML ../workspaces-streamlit-template/default/topp-workflow/input-files/mzML-files/Treatment.mzML -in_featureinfo ../workspaces-streamlit-template/default/topp-workflow/results/feature-detection/Control.featureXML ../workspaces-streamlit-template/default/topp-workflow/results/feature-detection/Treatment.featureXML -out ../workspaces-streamlit-template/default/topp-workflow/results/sirius-export/sirius.ms
+SiriusExport -in ../workspaces-flashtaggerviewer/default/topp-workflow/input-files/mzML-files/Control.mzML ../workspaces-flashtaggerviewer/default/topp-workflow/input-files/mzML-files/Treatment.mzML -in_featureinfo ../workspaces-flashtaggerviewer/default/topp-workflow/results/feature-detection/Control.featureXML ../workspaces-flashtaggerviewer/default/topp-workflow/results/feature-detection/Treatment.featureXML -out ../workspaces-flashtaggerviewer/default/topp-workflow/results/sirius-export/sirius.ms
 Waiting for command to finish...
 
 Process finished:
-SiriusExport -in ../workspaces-streamlit-template/default/topp-workflow/input-files/mzML-files/Control.mzML ../workspaces-streamlit-template/default/topp-workflow/input-files/mzML-files/Treatment.mzML -in_featureinfo ../workspaces-streamlit-template/default/topp-workflow/results/feature-detection/Control.featureXML ../workspaces-streamlit-template/default/topp-workflow/results/feature-detection/Treatment.featureXML -out ../workspaces-streamlit-template/default/topp-workflow/results/sirius-export/sirius.ms
+SiriusExport -in ../workspaces-flashtaggerviewer/default/topp-workflow/input-files/mzML-files/Control.mzML ../workspaces-flashtaggerviewer/default/topp-workflow/input-files/mzML-files/Treatment.mzML -in_featureinfo ../workspaces-flashtaggerviewer/default/topp-workflow/results/feature-detection/Control.featureXML ../workspaces-flashtaggerviewer/default/topp-workflow/results/feature-detection/Treatment.featureXML -out ../workspaces-flashtaggerviewer/default/topp-workflow/results/sirius-export/sirius.ms
 Total time to run command: 0.65 seconds
 
 Number of features to be processed: 0

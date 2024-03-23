@@ -11,7 +11,7 @@ import pandas as pd
 
 # set these variables according to your project
 APP_NAME = "OpenMS Streamlit App"
-REPOSITORY_NAME = "streamlit-template"
+REPOSITORY_NAME = "flashtaggerviewer"
 
 
 def load_params(default: bool = False) -> dict[str, Any]:
@@ -111,7 +111,7 @@ def page_setup(page: str = "") -> dict[str, Any]:
             st.session_state.location = "online"
         # if we run the packaged windows version, we start within the Python directory -> need to change working directory to ..\streamlit-template
         if "windows" in sys.argv:
-            os.chdir("../streamlit-template")
+            os.chdir("../flashtaggerviewer")
         # Define the directory where all workspaces will be stored
         workspaces_dir = Path("..", "workspaces-" + REPOSITORY_NAME)
         if st.session_state.location == "online":

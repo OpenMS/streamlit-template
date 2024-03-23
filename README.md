@@ -55,7 +55,7 @@ save_params()
 
 - in `src/common.py` update the name of your app and the repository name
 - in `clean-up-workspaces.py` update the name of the workspaces directory to `/workspaces-<your-repository-name>`
-    - e.g. for the streamlit template it's "/workspaces-streamlit-template"
+    - e.g. for the streamlit template it's "/workspaces-flashtaggerviewer"
 - chose one of the Dockerfiles depending on your use case:
     - `Dockerfile` build OpenMS including TOPP tools
     - `Dockerfile_simple` uses pyOpenMS only

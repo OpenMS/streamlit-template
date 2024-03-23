@@ -146,7 +146,7 @@ class TagWorkflow(WorkflowManager):
             st.error('Please select at least one mzML file.')
             return
 
-        base_path = join('..', 'workspaces-streamlit-template', 'default')
+        base_path = join('..', 'workspaces-flashtaggerviewer', 'default')
 
         uploaded_files = []
         for in_mzML in in_mzMLs:
