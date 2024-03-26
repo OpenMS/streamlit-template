@@ -142,7 +142,7 @@ class TagWorkflow(WorkflowManager):
         
         try:
             in_mzMLs = self.file_manager.get_files(self.params["mzML-files"])
-        except ValueError:
+        except:
             st.error('Please select at least one mzML file.')
             return
 
