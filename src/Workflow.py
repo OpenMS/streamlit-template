@@ -102,7 +102,7 @@ class TagWorkflow(WorkflowManager):
             self.ui.upload_widget(key="mzML-files", name="MS data", file_type="mzML", fallback=['example_spectrum_1.mzML', 'example_spectrum_2.mzML'])
         with t[1]:
             # Example with fallback data (not used in workflow)
-            self.ui.upload_widget(key="fasta-file", name="Database", file_type="fasta", enable_directory=False, accept_multiple_files=False, fallback='example_database.fasta')
+            self.ui.upload_widget(key="fasta-file", name="Database", file_type="fasta", enable_directory=False, fallback='example_database.fasta')
 
 
     def configure(self) -> None:
