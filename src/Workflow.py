@@ -226,20 +226,20 @@ class TagWorkflow(WorkflowManager):
             out_protein = join(base_path, 'proteins-tsv', f'{current_base}_protein.tsv')
             #decoy_db = join(temp_path, f'{current_base}_db.fasta')
 
-            self.executor.run_topp(
-                'DecoyDatabase',
-                {
-                    'in' : [database[0]],
-                    'out' : [out_db],
-                },
-                params_manual = {
-                    'method' : 'shuffle',
-                    'shuffle_decoy_ratio' : 100,
-                    'enzyme' : 'no cleavage',
-                }
-            )
+            # self.executor.run_topp(
+            #     'DecoyDatabase',
+            #     {
+            #         'in' : [database[0]],
+            #         'out' : [out_db],
+            #     },
+            #     params_manual = {
+            #         'method' : 'shuffle',
+            #         'shuffle_decoy_ratio' : 100,
+            #         'enzyme' : 'no cleavage',
+            #     }
+            # )
+            copyfile(database[0], out_db)
 
-            #copyfile(decoy_db, out_db)
             # TODO: Parallelize
             self.executor.run_topp(
                 'FLASHDeconv',
