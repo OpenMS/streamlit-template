@@ -156,7 +156,7 @@ def getInternalFragmentMassesWithSeq(sequence, res_type):
     return masses, start_indices, end_indices
 
 
-ä@st.cache_data
+#@st.cache_data
 def getInternalFragmentDataFromSeq(sequence):
     # TODO: fixed modification
     # protein = AASequence.fromString(sequence)
