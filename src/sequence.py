@@ -76,7 +76,7 @@ def setFixedModification(protein):
     return protein, fixed_mod_site
 
 
-@st.cache_data
+#@st.cache_data
 def getFragmentDataFromSeq(sequence, coverage, maxCoverage):
     protein = AASequence.fromString(sequence)
     protein, fixed_mods = setFixedModification(protein)  # handling fixed modifications
@@ -156,7 +156,7 @@ def getInternalFragmentMassesWithSeq(sequence, res_type):
     return masses, start_indices, end_indices
 
 
-@st.cache_data
+ä@st.cache_data
 def getInternalFragmentDataFromSeq(sequence):
     # TODO: fixed modification
     # protein = AASequence.fromString(sequence)

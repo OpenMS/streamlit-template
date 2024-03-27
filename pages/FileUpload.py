@@ -23,7 +23,7 @@ def initializeWorkspace(input_types, parsed_df_types):
         if df_type not in st.session_state:
             st.session_state[df_type] = {}
 
-@st.cache_data
+#@st.cache_data
 def getUploadedFileDF(deconv_files, anno_files, tag_files, db_files):
     # leave only names
     deconv_files = [Path(f).name for f in deconv_files]

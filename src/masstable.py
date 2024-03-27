@@ -180,7 +180,7 @@ def parseFLASHDeconvOutput(annotated, deconvolved, tags, proteins):
     df['Scan'] = scans
     return df, annotateddf, tolerance,  massoffset, chargemass, tag_df, protein_df
 
-@st.cache_data
+#@st.cache_data
 def getSpectraTableDF(deconv_df: pd.DataFrame):
     out_df = deconv_df[['Scan', 'MSLevel', 'RT', 'PrecursorMass']].copy()
     out_df['#Masses'] = [len(ele) for ele in deconv_df['MinCharges']]
@@ -188,7 +188,7 @@ def getSpectraTableDF(deconv_df: pd.DataFrame):
     return out_df
 
 
-@st.cache_data
+#@st.cache_data
 def getMSSignalDF(anno_df: pd.DataFrame):
     ints = np.concatenate([anno_df.loc[index, "intarray"] for index in anno_df.index])
     mzs = np.concatenate([anno_df.loc[index, "mzarray"] for index in anno_df.index])
