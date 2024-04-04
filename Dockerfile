@@ -15,6 +15,7 @@ FROM node:21 AS js-build
 ARG VUE_REPO=https://github.com/t0mdavid-m/openms-streamlit-vue-component.git
 ARG VUE_BRANCH=TaggerViewer
 
+ADD https://api.github.com/repos/t0mdavid-m/openms-streamlit-vue-component/git/refs/heads/$VUE_BRANCH version.json
 
 RUN git clone -b ${VUE_BRANCH} --single-branch ${VUE_REPO}
 WORKDIR /openms-streamlit-vue-component
