@@ -261,6 +261,7 @@ jobs:
         cp -r example-data dist/example-data
         cp -r openms-bin/*.dll dist/
         cp -r openms-bin/FLASHDeconv.exe dist/
+        cp -r openms-bin/FLASHDeconvWizard.exe dist/
         cp -r openms-bin/FLASHTagger.exe dist/
         cp -r openms-bin/DecoyDatabase.exe dist/
         cp -r share dist/share
