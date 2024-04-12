@@ -34,15 +34,17 @@ params = page_setup(page="main")
 def flashdeconvPages():
     show_pages([
         Page("app.py", "FLASHViewer", "🏠"),
-        Page("pages/FileUpload.py", "File Upload", "📁"),
-        Page("pages/SequenceInput.py", "Sequence Input", "🧵"),
-        Page("pages/LayoutManager.py", "Layout Manager", "⚙️"),
-        Page("pages/FLASHDeconvViewer.py", "Viewer", "👀"),
+        Page("pages/FLASHDeconvWorkflow.py", "Workflow", "⚙️"),
+        Page("pages/FLASHDeconvDownload.py", "Download", "⬇️"),
+        #Page("pages/FileUpload.py", "File Upload", "📁"),
+        #Page("pages/SequenceInput.py", "Sequence Input", "🧵"),
+        #Page("pages/LayoutManager.py", "Layout Manager", "⚙️"),
+        #Page("pages/FLASHDeconvViewer.py", "Viewer", "👀"),
     ])
 
 def flashtagPages():
     show_pages([
-        Page("app.py", "FlashViewer", "🏠"),
+        Page("app.py", "FLASHViewer", "🏠"),
         Page("pages/FLASHTaggerWorkflow.py", "Workflow", "⚙️"),
         Page("pages/FLASHTaggerViewer.py", "Viewer", "👀"),
     ])
@@ -56,7 +58,7 @@ def flashquantPages():
 
 
 page_names_to_funcs = {
-    "FLASHTagViewer": flashtagPages,
+    "FLASHTagger": flashtagPages,
     "FLASHDeconv": flashdeconvPages,
     "FLASHQuant": flashquantPages,
 }
@@ -73,7 +75,7 @@ def main():
     """
     Display main page content.
     """
-    page_names_to_funcs['FLASHTagViewer']()
+    page_names_to_funcs['FLASHDeconv']()
 
 
     # main content
@@ -83,6 +85,7 @@ def main():
         **💡 How to run FLASHViewer**
         1. Go to the **⚙️ Workflow** page through the sidebar and run your analysis.
         2. Click the **👀 Viewer** page on the sidebar to view the results in detail.
+            **\***For FLASHDeconv only download of results is supported.
         """)
 
     # sidebar to toggle between tools
@@ -90,7 +93,7 @@ def main():
         st.session_state['tool_index'] = 0
     # when entered into other page, key is resetting (emptied) - thus set the value with index
     # st.selectbox("Choose a tool", ['FLASHTagViewer', 'FLASHDeconv', 'FLASHQuant'], index=st.session_state.tool_index,
-    st.selectbox("Choose a tool", ['FLASHTagViewer'], index=st.session_state.tool_index,
+    st.selectbox("Choose a tool", ['FLASHDeconv', 'FLASHTagger'], index=st.session_state.tool_index,
                  on_change=onToolChange(), key='changed_tool_name')
     page_names_to_funcs[st.session_state.changed_tool_name]()
 
