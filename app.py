@@ -33,7 +33,7 @@ params = page_setup(page="main")
 
 def flashdeconvPages():
     show_pages([
-        Page("pages/FLASHViewer.py", "FLASHViewer", "🏠"),
+        Page("app.py", "FLASHViewer", "🏠"),
         Page("pages/FileUpload.py", "File Upload", "📁"),
         Page("pages/SequenceInput.py", "Sequence Input", "🧵"),
         Page("pages/LayoutManager.py", "Layout Manager", "⚙️"),
@@ -42,9 +42,9 @@ def flashdeconvPages():
 
 def flashtagPages():
     show_pages([
-        Page("pages/FLASHViewer.py", "FlashViewer", "🏠"),
-        Page("pages/5_TOPP-Workflow.py", "Workflow", "⚙️"),
-        Page("pages/FLASHTagViewer.py", "Viewer", "👀"),
+        Page("app.py", "FlashViewer", "🏠"),
+        Page("pages/FLASHTaggerWorkflow.py", "Workflow", "⚙️"),
+        Page("pages/FLASHTaggerViewer.py", "Viewer", "👀"),
     ])
 
 def flashquantPages():
