@@ -6,7 +6,7 @@ from pages.FileUpload import initializeWorkspace, showUploadedFilesTable
 
 from os.path import join, splitext, basename, exists, dirname
 from os import makedirs
-from shutil import copyfile
+from shutil import copyfile, rmtree
 
 class Workflow(WorkflowManager):
     # Setup pages for upload, parameter, execution and results.
@@ -92,7 +92,7 @@ class TagWorkflow(WorkflowManager):
 
     def __init__(self) -> None:
         # Initialize the parent class with the workflow name.
-        super().__init__("Workflow", st.session_state["workspace"])
+        super().__init__("FLASHTagger", st.session_state["workspace"])
 
 
     def upload(self)-> None:
@@ -303,4 +303,84 @@ class TagWorkflow(WorkflowManager):
         # self.executor.run_topp("SiriusExport", {"in": self.file_manager.get_files(in_mzML, collect=True),
         #                                         "in_featureinfo": self.file_manager.get_files(out_ffm, collect=True),
         #                                         "out": out_se})
+
+
+
+
+class DeconvWorkflow(WorkflowManager):
+
+    def __init__(self) -> None:
+        # Initialize the parent class with the workflow name.
+        super().__init__("FLASHDeconv", st.session_state["workspace"])
+
+
+    def upload(self)-> None:
+        # Use the upload method from StreamlitUI to handle mzML file uploads.
+        self.ui.upload_widget(key="mzML-files", name="MS data", file_type="mzML", fallback=['example_spectrum_1.mzML', 'example_spectrum_2.mzML'])
+
+    def configure(self) -> None:
+        # Allow users to select mzML files for the analysis.
+        self.ui.select_input_file("mzML-files", multiple=True)
+
+        self.ui.input_TOPP(
+            'FLASHDeconv',
+            exclude_parameters = [
+                'ida_log', 'keep_empty_out'
+            ]
+        )
+    
+    def execution(self) -> None:
+        # Get mzML input files from self.params.
+        # Can be done without file manager, however, it ensures everything is correct.
+        try:      
+            in_mzMLs = self.file_manager.get_files(self.params["mzML-files"])
+        except ValueError:
+            st.error('Please select at least one mzML file.')  
+            return
+        
+        # Make sure output directory exists
+        base_path = dirname(self.workflow_dir)
+        if not exists(join(base_path, 'FLASHDeconvOutput')):
+            makedirs(join(base_path, 'FLASHDeconvOutput'))
+
+        for in_mzML in in_mzMLs:
+            # Get folder name
+            file_name = splitext(basename(in_mzML))[0]
+            folder_path = join(base_path, 'FLASHDeconvOutput', file_name)
+
+            if exists(folder_path):
+                rmtree(folder_path)
+            makedirs(folder_path)
+            
+            out_tsv = join(folder_path, f'{file_name}.tsv')
+            out_spec1 = join(folder_path, f'{file_name}_spec1.tsv')
+            out_spec2 = join(folder_path, f'{file_name}_spec2.tsv')
+            out_spec3 = join(folder_path, f'{file_name}_spec3.tsv')
+            out_spec4 = join(folder_path, f'{file_name}_spec4.tsv')
+            out_mzml = join(folder_path, f'{file_name}.mzML')
+            out_quant = join(folder_path, f'{file_name}_quant.tsv')
+            out_annotated_mzml = join(folder_path, f'{file_name}_annotated.mzML')
+            out_msalign1 = join(folder_path, f'{file_name}_msalign1.msalign')
+            out_msalign2 = join(folder_path, f'{file_name}_msalign2.msalign')
+            out_feature1 = join(folder_path, f'{file_name}_feature1.feature')
+            out_feature2 = join(folder_path, f'{file_name}_feature2.feature')
+
+            self.executor.run_topp(
+                'FLASHDeconv',
+                input_output={
+                    'in' : [in_mzML],
+                    'out' : [out_tsv],
+                    'out_spec1' : [out_spec1],
+                    'out_spec2' : [out_spec2],
+                    'out_spec3' : [out_spec3],
+                    'out_spec4' : [out_spec4],
+                    'out_mzml' : [out_mzml],
+                    'out_quant' : [out_quant],
+                    'out_annotated_mzml' : [out_annotated_mzml],
+                    'out_msalign1' : [out_msalign1],
+                    'out_msalign2' : [out_msalign2],
+                    'out_feature1' : [out_feature1],
+                    'out_feature2' : [out_feature2],
+                }
+            )
 

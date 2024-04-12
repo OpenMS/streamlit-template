@@ -1,7 +1,7 @@
 import streamlit as st
 from src.common import page_setup
 from src.workflow.WorkflowManager import WorkflowManager
-from src.Workflow import TagWorkflow, Workflow
+from src.Workflow import DeconvWorkflow, Workflow
 import pyopenms as oms
 
 
@@ -11,7 +11,7 @@ if __name__ == "__main__":
     params = page_setup()
 
     #wf = Workflow()
-    wf = TagWorkflow()
+    wf = DeconvWorkflow()
 
     st.title(wf.name)
 
