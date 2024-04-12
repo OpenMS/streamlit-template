@@ -3,6 +3,7 @@ from .workflow.WorkflowManager import WorkflowManager
 from pages.FileUpload import handleInputFiles
 from pages.FileUpload import parseUploadedFiles
 from pages.FileUpload import initializeWorkspace, showUploadedFilesTable
+from zipfile import ZipFile, ZIP_DEFLATED
 
 from os.path import join, splitext, basename, exists, dirname
 from os import makedirs
@@ -364,6 +365,11 @@ class DeconvWorkflow(WorkflowManager):
             out_msalign2 = join(folder_path, f'{file_name}_msalign2.msalign')
             out_feature1 = join(folder_path, f'{file_name}_feature1.feature')
             out_feature2 = join(folder_path, f'{file_name}_feature2.feature')
+            all_outputs = [
+                out_tsv, out_spec1, out_spec2, out_spec3, out_spec4, 
+                out_mzml, out_quant, out_annotated_mzml, out_msalign1,
+                out_msalign2, out_feature1, out_feature2
+            ]
 
             self.executor.run_topp(
                 'FLASHDeconv',
@@ -384,3 +390,18 @@ class DeconvWorkflow(WorkflowManager):
                 }
             )
 
+            self.logger.log(f"Creating zip file for {file_name}...")
+
+            out_zip = join(folder_path, 'output.zip')
+            with ZipFile(out_zip, 'w', ZIP_DEFLATED) as zip_file:
+                for output in all_outputs:
+                    
+                    if not exists(output):
+                        continue
+
+                    with open(output, 'r') as f:
+                        zip_file.writestr(basename(output), f.read())
+
+    def pp(self) -> None:
+        if 'FLASHDeconvButtons' in st.session_state:
+            del st.session_state['FLASHDeconvButtons']
