@@ -326,7 +326,7 @@ class DeconvWorkflow(WorkflowManager):
         self.ui.input_TOPP(
             'FLASHDeconv',
             exclude_parameters = [
-                'ida_log', 'keep_empty_out'
+                'ida_log'
             ]
         )
     
