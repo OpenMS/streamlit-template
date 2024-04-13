@@ -67,7 +67,6 @@ page_names_to_funcs = {
 def onToolChange():
     if 'changed_tool_name' in st.session_state:
         st.session_state['tool_index'] = 0 if st.session_state.changed_tool_name == 'FLASHDeconv' else 1
-        st.session_state['tool_index'] = 0
 
 
 
@@ -75,8 +74,11 @@ def main():
     """
     Display main page content.
     """
-    page_names_to_funcs['FLASHDeconv']()
 
+    # sidebar to toggle between tools
+    if 'tool_index' not in st.session_state:
+        page_names_to_funcs['FLASHDeconv']()
+        st.session_state['tool_index'] = 0
 
     # main content
     st.markdown('#### FLASHViewer visualizes outputs from FLASH\* tools.')
@@ -88,18 +90,11 @@ def main():
             **\***For FLASHDeconv only download of results is supported.
         """)
 
-    # sidebar to toggle between tools
-    if 'tool_index' not in st.session_state:
-        st.session_state['tool_index'] = 0
     # when entered into other page, key is resetting (emptied) - thus set the value with index
     # st.selectbox("Choose a tool", ['FLASHTagViewer', 'FLASHDeconv', 'FLASHQuant'], index=st.session_state.tool_index,
     st.selectbox("Choose a tool", ['FLASHDeconv', 'FLASHTagger'], index=st.session_state.tool_index,
                  on_change=onToolChange(), key='changed_tool_name')
     page_names_to_funcs[st.session_state.changed_tool_name]()
-
-
-    #st.title("Template App")
-    #st.markdown("## A template for an OpenMS streamlit app.")
     
     save_params(params)
 
