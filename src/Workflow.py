@@ -389,19 +389,3 @@ class DeconvWorkflow(WorkflowManager):
                     'out_feature2' : [out_feature2],
                 }
             )
-
-            self.logger.log(f"Creating zip file for {file_name}...")
-
-            out_zip = join(folder_path, 'output.zip')
-            with ZipFile(out_zip, 'w', ZIP_DEFLATED) as zip_file:
-                for output in all_outputs:
-                    
-                    if not exists(output):
-                        continue
-
-                    with open(output, 'r') as f:
-                        zip_file.writestr(basename(output), f.read())
-
-    def pp(self) -> None:
-        if 'FLASHDeconvButtons' in st.session_state:
-            del st.session_state['FLASHDeconvButtons']
