@@ -87,6 +87,7 @@ def main():
         **💡 How to run FLASHViewer**
         1. Go to the **⚙️ Workflow** page through the sidebar and run your analysis.
         2. Click the **👀 Viewer** page on the sidebar to view the results in detail.
+            
             **\***For FLASHDeconv only download of results is supported.
         """)
 
