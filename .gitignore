@@ -2,7 +2,7 @@ workspaces-flashtaggerviewer
 build
 dist
 myenv
-hooks/__pycache__/
+__pycache__
 build.log
 run_app.spec
 clean-up-workspaces.log
