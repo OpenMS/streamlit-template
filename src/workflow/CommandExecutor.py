@@ -181,6 +181,8 @@ class CommandExecutor:
                     if isinstance(v, list):
                         command += [f"-{k}"]
                         command += [str(v_v) for v_v in v]
+                    elif str(v) == 'true':
+                        command += [f"-{k}"]
                     else:
                         command += [f"-{k}", str(v)]
             commands.append(command)
