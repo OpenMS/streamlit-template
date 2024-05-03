@@ -202,10 +202,10 @@ def sendDataToJS(selected_data, layout_info_per_exp):
             elif comp_name == 'deconv_spectrum':
                 per_scan_contents['deconv_spec'] = True
                 per_scan_contents['anno_spec'] = True
-                component_arguments = PlotlyLineplot(title="Deconvolved Spectrum")
+                component_arguments = PlotlyLineplotTagger(title="Deconvolved Spectrum")
             elif comp_name == 'anno_spectrum':
                 per_scan_contents['anno_spec'] = True
-                component_arguments = PlotlyLineplot(title="Annotated Spectrum")
+                component_arguments = PlotlyLineplotTagger(title="Annotated Spectrum")
             elif comp_name == 'mass_table':
                 per_scan_contents['mass_table'] = True
                 component_arguments = Tabulator('MassTable')
@@ -221,7 +221,7 @@ def sendDataToJS(selected_data, layout_info_per_exp):
                 component_arguments = Plotly3Dplot(title="Precursor Signals")
             elif comp_name == 'sequence_view':
             #    data_to_send['sequence_data'] = getFragmentDataFromSeq(st.session_state.input_sequence)
-                component_arguments = SequenceView()
+                component_arguments = SequenceViewTagger()
             elif comp_name == 'internal_fragment_view':
             #    data_to_send['internal_fragment_data'] = getInternalFragmentDataFromSeq(st.session_state.input_sequence)
                 component_arguments = InternalFragmentView()

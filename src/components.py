@@ -4,7 +4,7 @@ import streamlit.components.v1 as st_components
 
 # Create a _RELEASE constant. We'll set this to False while we're developing
 # the component, and True when we're ready to package and distribute it.
-_RELEASE = True
+_RELEASE = False
 
 
 
@@ -81,6 +81,11 @@ class PlotlyLineplot:
         self.title = title
         self.componentName = "PlotlyLineplot"
 
+class PlotlyLineplotTagger:
+    def __init__(self, title):
+        self.title = title
+        self.componentName = "PlotlyLineplotTagger"
+
 
 class Plotly3Dplot:
     def __init__(self, title):
@@ -92,6 +97,9 @@ class SequenceView:
     def __init__(self):
         self.componentName = 'SequenceView'
 
+class SequenceViewTagger:
+    def __init__(self):
+        self.componentName = 'SequenceViewTagger'
 
 class InternalFragmentView:
     def __init__(self):
