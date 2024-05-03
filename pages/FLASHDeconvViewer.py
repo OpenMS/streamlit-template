@@ -1,6 +1,11 @@
-from src.common import *
-from src.masstable import *
-from src.components import *
+import streamlit as st
+import sys
+import pandas as pd
+
+from src.common import page_setup, save_params
+from src.masstable import getMSSignalDF, getSpectraTableDF
+from src.components import PlotlyHeatmap, PlotlyLineplot, Plotly3Dplot, Tabulator, SequenceView, InternalFragmentMap, \
+                           FlashViewerComponent, flash_viewer_grid_component
 from src.sequence import getFragmentDataFromSeq, getInternalFragmentDataFromSeq
 
 
@@ -8,7 +13,7 @@ DEFAULT_LAYOUT = [['ms1_deconv_heat_map'], ['scan_table', 'mass_table'],
                   ['anno_spectrum', 'deconv_spectrum'], ['3D_SN_plot']]
 
 
-def sendDataToJS(selected_data, layout_info_per_exp):
+def sendDataToJS(selected_data, layout_info_per_exp, grid_key='flash_viewer_grid'):
     # getting data
     selected_anno_file = selected_data.iloc[0]['Annotated Files']
     selected_deconv_file = selected_data.iloc[0]['Deconvolved Files']
@@ -50,9 +55,9 @@ def sendDataToJS(selected_data, layout_info_per_exp):
             elif comp_name == 'sequence_view':
                 data_to_send['sequence_data'] = getFragmentDataFromSeq(st.session_state.input_sequence)
                 component_arguments = SequenceView()
-            elif comp_name == 'internal_fragment_view':
+            elif comp_name == 'internal_fragment_map':
                 data_to_send['internal_fragment_data'] = getInternalFragmentDataFromSeq(st.session_state.input_sequence)
-                component_arguments = InternalFragmentView()
+                component_arguments = InternalFragmentMap()
 
             components_of_this_row.append(FlashViewerComponent(component_arguments))
         components.append(components_of_this_row)
@@ -85,61 +90,58 @@ def sendDataToJS(selected_data, layout_info_per_exp):
             dfs.append(tmp_df)
         data_to_send['per_scan_data'] = pd.concat(dfs, axis=1)
 
-    # if Internal fragment view was selected, but sequence view was not
+    # if Internal fragment map was selected, but sequence view was not
     if ('internal_fragment_data' in data_to_send) and ('sequence_data' not in data_to_send):
         data_to_send['sequence_data'] = getFragmentDataFromSeq(st.session_state.input_sequence)
 
-    flash_viewer_grid_component(components=components, data=data_to_send)
+    flash_viewer_grid_component(components=components, data=data_to_send, component_key=grid_key)
 
 
 def setSequenceViewInDefaultView():
     if 'input_sequence' in st.session_state and st.session_state.input_sequence:
         global DEFAULT_LAYOUT
-        DEFAULT_LAYOUT = DEFAULT_LAYOUT + [['sequence_view']] + [['internal_fragment_view']]
+        DEFAULT_LAYOUT = DEFAULT_LAYOUT + [['sequence_view']] + [['internal_fragment_map']]
 
 
-def content():
-    page_setup("FLASHViewer")
-    setSequenceViewInDefaultView()
+# page initialization
+params = page_setup()
 
-    ### if no input file is given, show blank page
-    if "experiment-df" not in st.session_state:
-        st.error('Upload input files first!')
-        return
+st.title("FLASHViewer")
+setSequenceViewInDefaultView()
 
-    # input experiment file names (for select-box later)
-    experiment_df = st.session_state["experiment-df"]
+### if no input file is given, show blank page
+if "experiment-df" not in st.session_state:
+    st.error('Upload input files first!')
+    sys.exit(0)
 
-    ### for only single experiment on one view
-    st.selectbox("choose experiment", experiment_df['Experiment Name'], key="selected_experiment0")
-    selected_exp0 = experiment_df[experiment_df['Experiment Name'] == st.session_state.selected_experiment0]
-    layout_info = DEFAULT_LAYOUT
-    if "saved_layout_setting" in st.session_state:  # when layout manager was used
-        layout_info = st.session_state["saved_layout_setting"][0]
-    with st.spinner('Loading component...'):
-        sendDataToJS(selected_exp0, layout_info)
+# input experiment file names (for select-box later)
+experiment_df = st.session_state["experiment-df"]
 
-    ### for multiple experiments on one view
-    if "saved_layout_setting" in st.session_state and len(st.session_state["saved_layout_setting"]) > 1:
+### for only single experiment on one view
+st.selectbox("choose experiment", experiment_df['Experiment Name'], key="selected_experiment0")
+selected_exp0 = experiment_df[experiment_df['Experiment Name'] == st.session_state.selected_experiment0]
+layout_info = DEFAULT_LAYOUT
+if "saved_layout_setting" in st.session_state:  # when layout manager was used
+    layout_info = st.session_state["saved_layout_setting"][0]
+with st.spinner('Loading component...'):
+    sendDataToJS(selected_exp0, layout_info)
 
-        for exp_index, exp_layout in enumerate(st.session_state["saved_layout_setting"]):
-            if exp_index == 0: continue  # skip the first experiment
+### for multiple experiments on one view
+if "saved_layout_setting" in st.session_state and len(st.session_state["saved_layout_setting"]) > 1:
 
-            st.divider() # horizontal line
-            st.selectbox("choose experiment", experiment_df['Experiment Name'],
-                         key="selected_experiment%d"%exp_index,
-                         index=exp_index if exp_index<len(experiment_df) else 0)
-            # if #experiment input files are less than #layouts, all the pre-selection will be the first experiment
+    for exp_index, exp_layout in enumerate(st.session_state["saved_layout_setting"]):
+        if exp_index == 0: continue  # skip the first experiment
 
-            selected_exp = experiment_df[
-                experiment_df['Experiment Name'] == st.session_state["selected_experiment%d"%exp_index]]
-            layout_info = st.session_state["saved_layout_setting"][exp_index]
-            with st.spinner('Loading component...'):
-                sendDataToJS(selected_exp, layout_info)
+        st.divider()  # horizontal line
+        st.selectbox("choose experiment", experiment_df['Experiment Name'],
+                     key="selected_experiment%d" % exp_index,
+                     index=exp_index if exp_index < len(experiment_df) else 0)
+        # if #experiment input files are less than #layouts, all the pre-selection will be the first experiment
 
+        selected_exp = experiment_df[
+            experiment_df['Experiment Name'] == st.session_state["selected_experiment%d" % exp_index]]
+        layout_info = st.session_state["saved_layout_setting"][exp_index]
+        with st.spinner('Loading component...'):
+            sendDataToJS(selected_exp, layout_info, 'flash_viewer_grid_%d' % exp_index)
 
-if __name__ == "__main__":
-    # try:
-    content()
-    # except:
-    #     st.warning(ERRORS["visualization"])
+save_params(params)

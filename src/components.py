@@ -101,9 +101,9 @@ class SequenceViewTagger:
     def __init__(self):
         self.componentName = 'SequenceViewTagger'
 
-class InternalFragmentView:
+class InternalFragmentMap:
     def __init__(self):
-        self.componentName = 'InternalFragmentView'
+        self.componentName = 'InternalFragmentMap'
 
 
 class FLASHQuant:

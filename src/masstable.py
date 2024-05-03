@@ -5,12 +5,17 @@ from pathlib import Path
 import pandas as pd
 from pyopenms import MSExperiment, MzMLFile, SpectrumLookup, Constants
 
-def parseFLASHDeconvOutput(annotated, deconvolved, tags, proteins):
+def parseFLASHDeconvOutput(annotated, deconvolved, tags=None, proteins=None):
 
-    tag_df = pd.read_csv(tags, sep='\t')
+    if tags is not None:
+        tag_df = pd.read_csv(tags, sep='\t')
 
-    # db = get_sequences(FastaFile.read(db), ProteinSequence)
-    protein_df = pd.read_csv(proteins, sep='\t')
+        # db = get_sequences(FastaFile.read(db), ProteinSequence)
+        protein_df = pd.read_csv(proteins, sep='\t')
+    else:
+        tag_df = None
+        protein_df = None
+
 
     annotated_exp = MSExperiment()
     deconvolved_exp = MSExperiment()

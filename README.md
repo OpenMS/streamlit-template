@@ -1,73 +1,57 @@
-# OpenMS streamlit template [![Open Template!](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://abi-services.cs.uni-tuebingen.de/streamlit-template/)
+# FLASHViewer
 
-This is a template app for OpenMS workflows in a web application.
+FLASHViewer for visualizing FLASHDeconv's results \
+This app is based on [OpenMS streamlit template project](https://github.com/OpenMS/streamlit-template).
 
-## Requires
+run locally:
 
-Python <= 3.10
+`streamlit run Template.py local`
 
-## Features
+### Working with submodules
 
-- Workspaces for user data with unique shareable IDs
-- Captcha control
-- Deployment with Docker
-- Packaged executables for Windows (built via GitHub action)
-- Automatic removal of unused workspaces
-- Parameters persist within a workspace
+This project uses a git submodule to integrate openms-streamlit-vue-component.
 
-## Key concepts
+When checking out this repository you will need to run a few extra commands:
 
-**Workspaces** 
+`git submodule init`
 
-Directories where all data generated and uploaded can be stored as well as a workspace specific parameter file.
+`git submodule update`
 
-**Run the app locally and online**
+If you would like to update the submodule to the latest commit, use the following:
 
-Launching the app with the `local` argument let's the user create/remove workspaces. In the online the user gets a workspace with a specific ID.
+`git submodule update --remote`
 
-**Parameters**
+See [https://git-scm.com/book/en/v2/Git-Tools-Submodules](https://git-scm.com/book/en/v2/Git-Tools-Submodules)
+for more documentation on submodules
 
-Parameters (defaults in `assets/default-params.json`) store changing parameters for each workspace. Parameters are loaded via the page_setup function at the start of each page. To track a widget variable via parameters simply give them a key and add a matching entry in the default parameters file. Initialize a widget value from the params dictionary.
+## Build
 
-```python
-params = page_setup()
+To build FLASHViewer, you first need to build the `openms-streamlit-vue-component`
+and copy the build from `./openms-streamlit-vue-component/dist` to 
+`./js-component/dist`.
 
-st.number_input(label="x dimension", min_value=1, max_value=20,
-value=params["example-y-dimension"], step=1, key="example-y-dimension")
+You then should set streamlit to production in two locations:
 
-save_params()
-```
+* in `./.streamlit/config.toml` set `developmentMode` to `false`
+* in `./src/components.py` set `_RELEASE` to `True`
 
+These steps should be done before building any version of FLASHViewer.
 
-## Code structure
+### Docker
 
-- **Pages** must be placed in the `pages` directory.
-- It is recommended to use a separate file for defining functions per page in the `src` directory.
-- The `src/common.py` file contains a set of useful functions for common use (e.g. rendering a table with download button).
+First you need to build an image locally.
 
-## App layout
+Prerequisite: `src/components.py` has `RELEASE=True` and `dist/` contains a build of the Vue
+component. These should be the settings on the `main` branch.
 
-- Main page contains explanatory text on how to use the app and a workspace selector.
-- Sidebar contains the OpenMS logo, settings panel and a workspace indicator. The main page contains a workspace selector as well.
-- See pages in the template app for example use cases. The content of this app serves as a documentation.
+build image with: `docker build -f Dockerfile --no-cache -t flashviewer:latest --build-arg GITHUB_TOKEN=<your-github-token> .`
 
-## Modify the template to build your own app
+You should see a successful output, but you can check if an image is built with:
 
-- in `src/common.py` update the name of your app and the repository name
-- in `clean-up-workspaces.py` update the name of the workspaces directory to `/workspaces-<your-repository-name>`
-    - e.g. for the streamlit template it's "/workspaces-flashtaggerviewer"
-- chose one of the Dockerfiles depending on your use case:
-    - `Dockerfile` build OpenMS including TOPP tools
-    - `Dockerfile_simple` uses pyOpenMS only
-- update the Dockerfile:
-    - with the `GITHUB_USER` owning the streamlit app repository
-    - with the `GITHUB_REPO` name of the streamlit app repository
-    - if your main streamlit file is not called `app.py` modfify the following line
-        - `RUN echo "mamba run --no-capture-output -n streamlit-env streamlit run app.py" >> /app/entrypoint.sh`
-- update Python package dependency files:
-    - `requirements.txt` if using `Dockerfile_simple`
-    - `environment.yml` if using `Dockerfile`
-- update `README.md`
-- for the Windows executable package:
-    - update `datas` in `run_app_temp.spec` with the Python packages required for your app
-    - update main streamlit file name to run in `run_app.py`
+`docker image ls`
+
+After it has been built you can run the image with:
+
+`docker run -p 8501:8501 flashviewer:latest`
+
+Navigate to `http://localhost:8501` in your browser.

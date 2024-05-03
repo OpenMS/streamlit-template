@@ -1,5 +1,9 @@
 import streamlit as st
+<<<<<<< HEAD
 from src.common import page_setup, v_space
+=======
+from src.common import page_setup, v_space, save_params
+>>>>>>> upstream/deploy_version
 import json
 
 COMPONENT_OPTIONS=[
@@ -10,7 +14,7 @@ COMPONENT_OPTIONS=[
     'Annotated spectrum (Scan table needed)',
     'Mass table (Scan table needed)',
     '3D S/N plot (Mass table needed)',
-    # "sequence view" and "Internal fragment view" is added when "input_sequence" is submitted
+    # "Sequence view" and "Internal fragment map" is added when "input_sequence" is submitted
 ]
 
 COMPONENT_NAMES=[
@@ -21,7 +25,7 @@ COMPONENT_NAMES=[
     'anno_spectrum',
     'mass_table',
     '3D_SN_plot',
-    # "sequence view" and "internal fragment view" added when "input_sequence" is submitted
+    # "sequence view" and "internal fragment map" added when "input_sequence" is submitted
 ]
 
 
@@ -69,18 +73,18 @@ def layoutEditorPerExperiment(exp_index):
                     c1.info(col)
                     if c2.button("x", key='DelButton%d%d%d'%(exp_index, row_index, col_index), type='primary'):
                         layout_info[row_index].pop(col_index)
-                        st.experimental_rerun()
+                        st.rerun()
 
         # new column button
         if len(row) < 3: # limit for #column is 3
             if st_cols[-1].button("***+***", key='NewColumnButton%d%d'%(exp_index, row_index)):
                 layout_info[row_index].append('')
-                st.experimental_rerun()
+                st.rerun()
 
     # new row button
     if st.button("***+***", key='NewRowButton%d'%exp_index):
         layout_info.append([''])
-        st.experimental_rerun()
+        st.rerun()
 
 
 def validateSubmittedLayout(input_layout=None):
@@ -165,99 +169,96 @@ def setSequenceView():
     if 'input_sequence' in st.session_state and st.session_state.input_sequence:
         global COMPONENT_OPTIONS
         COMPONENT_OPTIONS = COMPONENT_OPTIONS + ['Sequence view (Mass table needed)',
-                                                 'Internal fragment view (Mass table needed)']
+                                                 'Internal fragment map (Mass table needed)']
         global COMPONENT_NAMES
-        COMPONENT_NAMES = COMPONENT_NAMES + ['sequence_view', 'internal_fragment_view']
+        COMPONENT_NAMES = COMPONENT_NAMES + ['sequence_view', 'internal_fragment_map']
 
 
-def content():
-    page_setup()
-    setSequenceView()  # when sequence is submitted, add "Sequence View" as a component option
+# page initialization
+params = page_setup()
 
-    # handles "onclick" of buttons
-    handleSettingButtons()
-    handleEditAndSaveButtons()
+# when sequence is submitted, add "Sequence View" as a component option
+setSequenceView()
 
-    # initialize setting information
-    if "layout_setting" not in st.session_state:
-        resetSettingsToDefault()
-    # the "num_of_experiment_to_show" changed
-    elif "num_of_experiment_to_show" in st.session_state and \
-            len(st.session_state.layout_setting) != st.session_state.num_of_experiment_to_show:
-        resetSettingsToDefault(st.session_state.num_of_experiment_to_show)
+# handles "onclick" of buttons
+handleSettingButtons()
+handleEditAndSaveButtons()
 
-    ### title and setting buttons
-    c1, c2, c3, c4 = st.columns([6, 1, 1, 1])
-    c1.title("Layout Manager")
+# initialize setting information
+if "layout_setting" not in st.session_state:
+    resetSettingsToDefault()
+# the "num_of_experiment_to_show" changed
+elif "num_of_experiment_to_show" in st.session_state and \
+        len(st.session_state.layout_setting) != st.session_state.num_of_experiment_to_show:
+    resetSettingsToDefault(st.session_state.num_of_experiment_to_show)
 
-    # Load existing layout setting file
-    v_space(1, c2)
-    c2.button("Load Setting", key="load_btn_clicked")
+### title and setting buttons
+c1, c2, c3, c4 = st.columns([6, 1, 1, 1])
+c1.title("Layout Manager")
 
-    # Save current layout setting (only after "Saved" button)
-    v_space(1, c3)
-    c3.download_button(
-        label="Save Setting",
-        data=json.dumps(getTrimmedLayoutSetting()),
-        file_name='FLASHViewer_layout_settings.json',
-        mime='json',
-        disabled=(validateSubmittedLayout()!=''),
+# Load existing layout setting file
+v_space(1, c2)
+c2.button("Load Setting", key="load_btn_clicked")
+
+# Save current layout setting (only after "Saved" button)
+v_space(1, c3)
+c3.download_button(
+    label="Save Setting",
+    data=json.dumps(getTrimmedLayoutSetting()),
+    file_name='FLASHViewer_layout_settings.json',
+    mime='json',
+    disabled=(validateSubmittedLayout()!=''),
+)
+
+# Reset settings to default
+v_space(1, c4)
+c4.button("Reset Setting", key="reset_btn_clicked")
+
+### space for File Uploader, when "Load Setting" button is clicked
+if "load_btn_clicked" in st.session_state and st.session_state.load_btn_clicked:
+    st.file_uploader("Choose a json file", type="json", key="uploaded_json_file")
+
+### Main part
+if "saved_layout_setting" in st.session_state:
+    # show saved-mode
+    for index_of_experiment in range(len(st.session_state.saved_layout_setting)):
+        layout_info_per_experiment = st.session_state.saved_layout_setting[index_of_experiment]
+        with st.expander("Experiment #%d"%(index_of_experiment+1), expanded=True):
+            for row_index, row in enumerate(layout_info_per_experiment):
+                st_cols = st.columns(len(row))
+                for col_index, col in enumerate(row):
+                    st_cols[col_index].info(COMPONENT_OPTIONS[COMPONENT_NAMES.index(col)])
+else:
+    # show edit-mode
+    st.selectbox("**#Experiments to view at once**", [1, 2, 3, 4, 5],
+                 key="num_of_experiment_to_show",
     )
 
-    # Reset settings to default
-    v_space(1, c4)
-    c4.button("Reset Setting", key="reset_btn_clicked")
+    for index_of_experiment in range(st.session_state.num_of_experiment_to_show):
+        with st.expander("Experiment #%d"%(index_of_experiment+1)):
+            layoutEditorPerExperiment(index_of_experiment)
 
-    ### space for File Uploader, when "Load Setting" button is clicked
-    if "load_btn_clicked" in st.session_state and st.session_state.load_btn_clicked:
-        st.file_uploader("Choose a json file", type="json", key="uploaded_json_file")
+### buttons for edit/save
+_, edit_btn_col, save_btn_col = st.columns([9, 1, 1])
+edit_btn_col.button("Edit", key="edit_btn_clicked",
+                    disabled=False if "saved_layout_setting" in st.session_state else True)
+save_btn_col.button("Save", key="layout_saved",
+                    disabled=True if "saved_layout_setting" in st.session_state else False)
 
-    ### Main part
-    if "saved_layout_setting" in st.session_state:
-        # show saved-mode
-        for index_of_experiment in range(len(st.session_state.saved_layout_setting)):
-            layout_info_per_experiment = st.session_state.saved_layout_setting[index_of_experiment]
-            with st.expander("Experiment #%d"%(index_of_experiment+1), expanded=True):
-                for row_index, row in enumerate(layout_info_per_experiment):
-                    st_cols = st.columns(len(row))
-                    for col_index, col in enumerate(row):
-                        st_cols[col_index].info(COMPONENT_OPTIONS[COMPONENT_NAMES.index(col)])
+### showing error/success message
+if "save_btn_error_message" in st.session_state and st.session_state.layout_saved:
+    error_message = st.session_state["save_btn_error_message"]
+    if error_message:
+        st.error('Error: '+error_message, icon="🚨")
     else:
-        # show edit-mode
-        st.selectbox("**#Experiments to view at once**", [1, 2, 3, 4, 5],
-                     key="num_of_experiment_to_show",
-        )
+        st.success('Layouts Saved', icon="✔️")
+if "component_error_message" in st.session_state and st.session_state.component_error_message:
+    st.error('Error: ' + st.session_state.component_error_message, icon="🚨")
+    del st.session_state["component_error_message"]
 
-        for index_of_experiment in range(st.session_state.num_of_experiment_to_show):
-            with st.expander("Experiment #%d"%(index_of_experiment+1)):
-                layoutEditorPerExperiment(index_of_experiment)
+### TIPs (TODO: Add image)
+st.info("""
+**💡 Tips**
+""")
 
-    ### buttons for edit/save
-    _, edit_btn_col, save_btn_col = st.columns([9, 1, 1])
-    edit_btn_col.button("Edit", key="edit_btn_clicked",
-                        disabled=False if "saved_layout_setting" in st.session_state else True)
-    save_btn_col.button("Save", key="layout_saved",
-                        disabled=True if "saved_layout_setting" in st.session_state else False)
-
-    ### showing error/success message
-    if "save_btn_error_message" in st.session_state and st.session_state.layout_saved:
-        error_message = st.session_state["save_btn_error_message"]
-        if error_message:
-            st.error('Error: '+error_message, icon="🚨")
-        else:
-            st.success('Layouts Saved', icon="✔️")
-    if "component_error_message" in st.session_state and st.session_state.component_error_message:
-        st.error('Error: ' + st.session_state.component_error_message, icon="🚨")
-        del st.session_state["component_error_message"]
-
-    ### TIPs (TODO: Add image)
-    st.info("""
-    **💡 Tips**
-    """)
-
-
-if __name__ == "__main__":
-    # try:
-    content()
-# except:
-#     st.error(ERRORS["general"])
+save_params(params)

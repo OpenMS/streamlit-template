@@ -1,9 +1,31 @@
-workspaces-flashtaggerviewer
+# OpenMS Streamlit template
+workspaces-streamlit-template
 build
-dist
 myenv
-__pycache__
+hooks/__pycache__/
 build.log
 run_app.spec
 clean-up-workspaces.log
+
+# FLASHViewer
+workspaces
+Pipfile
+
 .DS_Store
+
+# Editor directories and files
+.idea
+.vscode
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw*
+
+**/__pycache__
+openms-streamlit-vue-component/
+js-component/
+
+
+workspaces-flashtaggerviewer
+dist
