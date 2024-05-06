@@ -1,12 +1,8 @@
 import streamlit as st
-<<<<<<< HEAD:pages/FLASHViewer.py
-from src.common import page_setup
-=======
 import json
 from src.common import page_setup, save_params
 
 # to convert between FLASHDeconv and FLASHQuant
->>>>>>> upstream/deploy_version:FLASHViewer.py
 from st_pages import Page, show_pages
 from pathlib import Path
 

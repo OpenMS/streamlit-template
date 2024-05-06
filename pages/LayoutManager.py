@@ -1,9 +1,5 @@
 import streamlit as st
-<<<<<<< HEAD
-from src.common import page_setup, v_space
-=======
 from src.common import page_setup, v_space, save_params
->>>>>>> upstream/deploy_version
 import json
 
 COMPONENT_OPTIONS=[
