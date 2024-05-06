@@ -12,7 +12,6 @@ import pandas as pd
 
 # set these variables according to your project
 APP_NAME = "FLASHViewer"
-REPOSITORY_NAME = "FLASHViewer"
 
 
 def load_params(default: bool = False) -> dict[str, Any]:
@@ -92,7 +91,7 @@ def page_setup(page: str = "", help_text: str = "") -> dict[str, Any]:
     # Set Streamlit page configurations
     st.set_page_config(
         page_title=APP_NAME,
-        page_icon="assets/icon.png",
+        page_icon="assets/OpenMS.png",
         layout="wide",
         initial_sidebar_state="auto",
         menu_items=None
@@ -119,9 +118,9 @@ def page_setup(page: str = "", help_text: str = "") -> dict[str, Any]:
         else:
             st.session_state.location = "online"
             st.session_state.controlo = False
-        # if we run the packaged windows version, we start within the Python directory -> need to change working directory to ..\umetaflow-gui-main
+        # if we run the packaged windows version, we start within the Python directory -> need to change working directory to ..\streamlit-template
         if "windows" in sys.argv:
-            os.chdir("../flashviewer")
+            os.chdir("../flashtaggerviewer")
         # Define the directory where all workspaces will be stored
         workspaces_dir = Path("workspaces")
         if st.session_state.location == "online":
@@ -138,6 +137,18 @@ def page_setup(page: str = "", help_text: str = "") -> dict[str, Any]:
     st.session_state.workspace.mkdir(parents=True, exist_ok=True)
     # checking input directories are done in FileUpload page (to accompany both FLASHDeconv and FLASHQuant)
     # Path(st.session_state.workspace, "mzML-files").mkdir(parents=True, exist_ok=True)
+
+
+    #st.session_state["workspace"] = Path(str(uuid.uuid1()))
+    # Make sure important directories exist
+    st.session_state["workspace"].mkdir(parents=True, exist_ok=True)
+    # for mzML (deconvolved)
+    st.session_state["deconv-mzML-files"] = Path(st.session_state["workspace"], "deconv-mzML-files")
+    st.session_state["deconv-mzML-files"].mkdir(parents=True, exist_ok=True)
+    # for FASTA
+    st.session_state["fasta-files"] = Path(st.session_state["workspace"], "fasta-files")
+    st.session_state["fasta-files"].mkdir(parents=True, exist_ok=True)
+
 
     # Render the sidebar
     params = render_sidebar(page, help_text)
@@ -158,7 +169,7 @@ def render_sidebar(page: str = "", help_text: str = "") -> dict[str, Any]:
     params = load_params()
     with st.sidebar:
         # The main page has workspace switcher
-        if page == "main":
+        if (page == "main") or (page == 'FLASHViewer'):
             st.markdown("🖥️ **Workspaces**")
             # Define workspaces directory outside of repository
             workspaces_dir = Path("workspaces")  # workspace inside FLASHViewer directory
@@ -230,6 +241,9 @@ You can share this unique workspace ID with other people.
                 img_formats.index(params["image-format"]),
                 key="image-format",
             )
+        if (page != "main") and (page != "FLASHViewer"):
+            st.info(f"**{Path(st.session_state['workspace']).stem}**")
+        st.image("assets/OpenMS.png", "powered by")
         if help_text:
             st.info(help_text)
         st.image("assets/pyopenms_transparent_background.png", "powered by")
@@ -331,6 +345,97 @@ def reset_directory(path: Path) -> None:
 
 
 # General warning/error messages
+def sidebar(page=""):
+    with st.sidebar:
+        if (page == "main") or (page == "FLASHViewer"):
+            st.markdown("### Workspaces")
+            if st.session_state["location"] == "online":
+                new_workspace = st.text_input("enter workspace", "")
+                if st.button("**Enter Workspace**") and new_workspace:
+                    st.session_state["workspace"] = Path(new_workspace)
+                st.info(
+                    f"""💡 Your workspace ID:
+
+**{st.session_state['workspace']}**
+
+You can share this unique workspace ID with other people.
+
+⚠️ Anyone with this ID can access your data!"""
+                )
+            elif st.session_state["location"] == "local":
+                # Show available workspaces
+                options = [
+                    file.name
+                    for file in Path(".").iterdir()
+                    if file.is_dir()
+                    and file.name
+                    not in (
+                        ".git",
+                        ".gitignore",
+                        ".streamlit",
+                        "example-data",
+                        "pages",
+                        "src",
+                        "assets",
+                    )
+                ]
+                chosen_workspace = st.selectbox(
+                    "choose existing workspace",
+                    options,
+                    index=options.index(str(st.session_state["workspace"])),
+                )
+                if chosen_workspace:
+                    st.session_state["workspace"] = Path(chosen_workspace)
+
+                # Create or Remove workspaces
+                st.text_input("create/remove workspace", "", key="create-remove")
+                path = Path(st.session_state["create-remove"])
+                if st.button("**Create Workspace**") and path.name:
+                    path.mkdir(parents=True, exist_ok=True)
+                    st.session_state["workspace"] = path
+                if st.button("⚠️ Delete Workspace") and path.exists:
+                    shutil.rmtree(path)
+                    st.session_state["workspace"] = Path("default-workspace")
+            st.markdown("***")
+
+        # TODO: revive this later
+        elif page == "files":
+            # Show currently available mzML files
+            st.markdown("### Uploaded Files")
+            for f in sorted(Path(st.session_state["deconv-mzML-files"]).iterdir()):
+                if f.name in st.session_state:
+                    checked = st.session_state[f.name]
+                else:
+                    checked = True
+                st.checkbox(f.name, checked, key=f.name)
+
+            for f in sorted(Path(st.session_state["fasta-files"]).iterdir()):
+                if f.name in st.session_state:
+                    checked = st.session_state[f.name]
+                else:
+                    checked = True
+                st.checkbox(f.name, checked, key=f.name)
+
+        #     # Option to remove files
+        #     v_space(1)
+        #     st.markdown("⚠️ **Remove files**")
+        #     c1, c2 = st.columns(2)
+        #     if c1.button("**All**"):
+        #         reset_directory(st.session_state["mzML-files"])
+        #
+        #     if c2.button("**Un**selected"):
+        #         for file in [
+        #             Path(st.session_state["mzML-files"], key)
+        #             for key, value in st.session_state.items()
+        #             if key.endswith("mzML") and not value  # e.g. unchecked
+        #         ]:
+        #             file.unlink()
+        #         st.experimental_rerun()
+        #
+            st.markdown("***")
+        st.image("assets/OpenMS.png", "powered by")
+
+
 WARNINGS = {
     "missing-mzML": "Upload or select some mzML files first!",
 }

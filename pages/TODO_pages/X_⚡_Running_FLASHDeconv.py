@@ -1,5 +1,5 @@
 import streamlit as st
-from src.common import defaultPageSetup, v_space
+from src.common import page_setup, v_space
 from pathlib import Path
 import os, subprocess
 
@@ -126,7 +126,7 @@ def runFLASHDeconv():
     return
 
 def content():
-    defaultPageSetup("Running FLASHDeconv")
+    page_setup("Running FLASHDeconv")
 
     # handling input
     readingInputFiles()

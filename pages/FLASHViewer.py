@@ -4,27 +4,36 @@ from src.common import page_setup, save_params
 
 # to convert between FLASHDeconv and FLASHQuant
 from st_pages import Page, show_pages
+from pathlib import Path
+
 
 
 def flashdeconvPages():
     show_pages([
-        Page("FLASHViewer.py", "FLASHViewer", "🏠"),
+        Page("pages/FLASHViewer.py", "FLASHViewer", "🏠"),
         Page("pages/FileUpload.py", "File Upload", "📁"),
         Page("pages/SequenceInput.py", "Sequence Input", "🧵"),
         Page("pages/LayoutManager.py", "Layout Manager", "⚙️"),
         Page("pages/FLASHDeconvViewer.py", "Viewer", "👀"),
     ])
 
+def flashtagPages():
+    show_pages([
+        Page("pages/FLASHViewer.py", "FlashViewer", "🏠"),
+        Page("pages/5_TOPP-Workflow.py", "Workflow", "⚙️"),
+        Page("pages/FLASHTagViewer.py", "Viewer", "👀"),
+    ])
 
 def flashquantPages():
     show_pages([
-        Page("FLASHViewer.py", "FLASHViewer", "🏠"),
+        Page("pages/FLASHViewer.py", "FLASHViewer", "🏠"),
         Page("pages/FileUpload_FLASHQuant.py", "File Upload", "📁"),
         Page("pages/FLASHQuantViewer.py", "Viewer", "👀"),
     ])
 
 
 page_names_to_funcs = {
+    "FLASHTagViewer": flashtagPages,
     "FLASHDeconv": flashdeconvPages,
     "FLASHQuant": flashquantPages,
 }
