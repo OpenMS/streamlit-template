@@ -117,6 +117,7 @@ def page_setup(page: str = "", help_text: str = "") -> dict[str, Any]:
             st.session_state.controlo = True
         else:
             st.session_state.location = "online"
+            st.session_state.controlo = False
         # if we run the packaged windows version, we start within the Python directory -> need to change working directory to ..\streamlit-template
         if "windows" in sys.argv:
             os.chdir("../flashtaggerviewer")
