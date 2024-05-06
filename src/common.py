@@ -11,8 +11,7 @@ import streamlit as st
 import pandas as pd
 
 # set these variables according to your project
-APP_NAME = "OpenMS Streamlit App"
-REPOSITORY_NAME = "flashtaggerviewer"
+APP_NAME = "FLASHViewer"
 
 
 def load_params(default: bool = False) -> dict[str, Any]:
