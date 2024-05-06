@@ -4,9 +4,9 @@ from src.components import *
 from src.sequence import getFragmentDataFromSeq, getInternalFragmentDataFromSeq
 from io import StringIO, BytesIO
 from zipfile import ZipFile, ZIP_DEFLATED
-from pages.FileUpload import handleInputFiles
-from pages.FileUpload import parseUploadedFiles
-from pages.FileUpload import initializeWorkspace, showUploadedFilesTable
+from pages.FileUploadTagger import handleInputFiles
+from pages.FileUploadTagger import parseUploadedFiles
+from pages.FileUploadTagger import initializeWorkspace, showUploadedFilesTable
 
 
 DEFAULT_LAYOUT = [

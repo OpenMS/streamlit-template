@@ -1,8 +1,8 @@
 import streamlit as st
 from .workflow.WorkflowManager import WorkflowManager
-from pages.FileUpload import handleInputFiles
-from pages.FileUpload import parseUploadedFiles
-from pages.FileUpload import initializeWorkspace, showUploadedFilesTable
+from pages.FileUploadTagger import handleInputFiles
+from pages.FileUploadTagger import parseUploadedFiles
+from pages.FileUploadTagger import initializeWorkspace, showUploadedFilesTable
 from zipfile import ZipFile, ZIP_DEFLATED
 
 from os.path import join, splitext, basename, exists, dirname

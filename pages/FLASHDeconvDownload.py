@@ -6,7 +6,6 @@ from os import listdir
 from src.common import page_setup
 from io import StringIO, BytesIO
 from zipfile import ZipFile, ZIP_DEFLATED
-from pages.FileUpload import initializeWorkspace, showUploadedFilesTable
 
 
 def content():
