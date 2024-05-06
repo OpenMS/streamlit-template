@@ -2,11 +2,21 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from pathlib import Path
+import pandas as pd
 from pyopenms import MSExperiment, MzMLFile, SpectrumLookup, Constants
 
+def parseFLASHDeconvOutput(annotated, deconvolved, tags=None, proteins=None):
 
-@st.cache_data
-def parseFLASHDeconvOutput(annotated, deconvolved):
+    if tags is not None:
+        tag_df = pd.read_csv(tags, sep='\t')
+
+        # db = get_sequences(FastaFile.read(db), ProteinSequence)
+        protein_df = pd.read_csv(proteins, sep='\t')
+    else:
+        tag_df = None
+        protein_df = None
+
+
     annotated_exp = MSExperiment()
     deconvolved_exp = MSExperiment()
     MzMLFile().load(str(Path(annotated)), annotated_exp)
@@ -152,6 +162,7 @@ def parseFLASHDeconvOutput(annotated, deconvolved):
                 else:
                     massPeak.append(round(parsed_peak[0]/massPeak[1]))
                     npeaks.append(massPeak)
+                
 
             # if len(sigindicesset) != len(speaks):
                 # print("*")
@@ -164,15 +175,17 @@ def parseFLASHDeconvOutput(annotated, deconvolved):
             specnpeaks.append(npeaks)
         signalPeaks.append(specspeaks)
         noisyPeaks.append(specnpeaks)
+
         msLevels.append(spec.getMSLevel())
 
     df['SignalPeaks'] = signalPeaks
     df['NoisyPeaks'] = noisyPeaks
+    df['CombinedPeaks'] = noisyPeaks
     df['MSLevel'] = msLevels
     df['Scan'] = scans
-    return df, annotateddf, tolerance,  massoffset, chargemass
+    return df, annotateddf, tolerance,  massoffset, chargemass, tag_df, protein_df
 
-@st.cache_data
+#@st.cache_data
 def getSpectraTableDF(deconv_df: pd.DataFrame):
     out_df = deconv_df[['Scan', 'MSLevel', 'RT', 'PrecursorMass']].copy()
     out_df['#Masses'] = [len(ele) for ele in deconv_df['MinCharges']]
@@ -180,7 +193,7 @@ def getSpectraTableDF(deconv_df: pd.DataFrame):
     return out_df
 
 
-@st.cache_data
+#@st.cache_data
 def getMSSignalDF(anno_df: pd.DataFrame):
     ints = np.concatenate([anno_df.loc[index, "intarray"] for index in anno_df.index])
     mzs = np.concatenate([anno_df.loc[index, "mzarray"] for index in anno_df.index])

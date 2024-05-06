@@ -1,11 +1,42 @@
 name: Build executable for Windows
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main" , "TaggerViewerDeploy"]
   pull_request:
-    branches: [ "main" ]
+    branches: [ "main" , "TaggerViewerDeploy"]
 
 jobs:
+  build-vue-js-component:
+    runs-on: ubuntu-latest
+
+    steps:
+
+    # Step to set up Node.js environment
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '21'
+
+    # Step to clone the Vue.js repository
+    - name: Checkout Vue.js repository
+      uses: actions/checkout@v4
+      with:
+        repository: 't0mdavid-m/openms-streamlit-vue-component'
+        ref: 'TaggerViewer'
+        path: 'openms-streamlit-vue-component'
+
+    - name: Install and build Vue.js component
+      run: |
+        cd openms-streamlit-vue-component
+        npm install
+        npm run build
+
+    - name: Upload dist as artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: vue-js-dist
+        path: openms-streamlit-vue-component/dist
+
   build-openms:
     runs-on: windows-latest
 
@@ -13,11 +44,12 @@ jobs:
       OPENMS_VERSION: 3.0.0 
 
     steps:
+
     - name: Checkout
       uses: actions/checkout@v3
       with:
-        repository: OpenMS/OpenMS
-        ref: release/${{ env.OPENMS_VERSION }}
+        repository: t0mdavid-m/OpenMS
+        ref: TaggerViewerDeployment
         path: 'OpenMS'
 
     - name: Install Qt
@@ -106,7 +138,7 @@ jobs:
           ctest --output-on-failure -V -S $GITHUB_WORKSPACE/OpenMS/tools/ci/cibuild.cmake
       env:
           #OS_PREFIX_PATH: "${{ env.Qt5_DIR }}/lib/cmake;${{ env.Qt5_DIR }}"
-          CONTRIB_BUILD_DIRECTORY: "${{ github.workspace }}/OpenMS/contrib"
+          OPENMS_CONTRIB_LIBS: "${{ github.workspace }}/OpenMS/contrib"
           CI_PROVIDER: "GitHub-Actions"
           CMAKE_GENERATOR: "Ninja"
           SOURCE_DIRECTORY: "${{ github.workspace }}/OpenMS"
@@ -127,6 +159,7 @@ jobs:
           CCACHE_COMPRESS: true
           CCACHE_COMPRESSLEVEL: 12
           CCACHE_MAXSIZE: 400M
+          Eigen3_DIR: "${{ steps.tools-prefix.outputs.eigen_choco }}"
 
     - name: Test Windows
       shell: bash
@@ -151,7 +184,7 @@ jobs:
 
   build-executable:
     runs-on: windows-latest
-    needs: build-openms
+    needs: [build-openms, build-vue-js-component]
 
     env:
       PYTHON_VERSION: 3.11.0
@@ -159,6 +192,12 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@v3
+
+    - name: Download vue js as artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: vue-js-dist
+        path: js-dist
 
     - name: Download TOPP tools as artifact
       uses: actions/download-artifact@v3
@@ -191,7 +230,8 @@ jobs:
     - name: Write function to cli.py
       shell: bash
       run: |
-        head -n -2 D:/a/streamlit-template/streamlit-template/myenv/Lib/site-packages/streamlit/web/cli.py > temp_cli.py
+        echo "{ls {D:/a/FlashViewer/FlashViewer/myenv/Lib/site-packages/streamlit/web/}}"
+        head -n -2 D:/a/FlashViewer/FlashViewer/myenv/Lib/site-packages/streamlit/web/cli.py > temp_cli.py
 
         cat << EOF >> temp_cli.py
         def _main_run_clExplicit(file, command_line, args=[], flag_options=[]):
@@ -203,7 +243,7 @@ jobs:
             main()
         EOF
 
-        mv temp_cli.py D:/a/streamlit-template/streamlit-template/myenv/Lib/site-packages/streamlit/web/cli.py  
+        mv temp_cli.py D:/a/FlashViewer/FlashViewer/myenv/Lib/site-packages/streamlit/web/cli.py  
 
     - name: Compile app with pyinstaller
       shell: cmd
@@ -219,9 +259,20 @@ jobs:
         cp -r src dist/src
         cp -r assets dist/assets
         cp -r example-data dist/example-data
-        cp -r openms-bin dist/bin
+        cp -r openms-bin/*.dll dist/
+        cp -r openms-bin/FLASHDeconv.exe dist/
+        cp -r openms-bin/FLASHTagger.exe dist/
+        cp -r openms-bin/DecoyDatabase.exe dist/
         cp -r share dist/share
+        cp -r js-dist dist/js-component/dist
+        cp example_database.fasta dist/
+        cp example_spectrum_1.mzML dist/
+        cp example_spectrum_2.mzML dist/
         cp app.py dist/
+
+    - name: Patch WorkflowManager.py for windows
+      run: |
+        cp dist/src/workflow/WorkflowManagerWindows.py dist/src/workflow/WorkflowManager.py
     
     - name: Modify .spec file
       shell: bash

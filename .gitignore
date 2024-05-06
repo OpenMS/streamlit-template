@@ -25,3 +25,6 @@ Pipfile
 **/__pycache__
 openms-streamlit-vue-component/
 js-component/
+
+
+workspaces-flashtaggerviewer
