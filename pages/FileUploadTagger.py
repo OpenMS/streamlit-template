@@ -5,6 +5,7 @@ import os, shutil
 import numpy as np
 from src.masstable import parseFLASHDeconvOutput, parseFLASHTaggerOutput
 from src.common import page_setup, v_space, save_params, reset_directory
+from pages.FileUpload import remove_selected_mzML_files
 
 
 def initializeWorkspace(input_file_types_: list, parsed_df_types_: list) -> None:
@@ -153,9 +154,8 @@ def parsingWithProgressBar(infiles_deconv, infiles_anno, infiles_tag, infiles_pr
         for success in successes:
             success.empty()
 
+params = page_setup()
 def content():
-    page_setup()
-
     # make directory to store deconv and anno mzML files & initialize data storage
     input_types = ["deconv-mzMLs", "anno-mzMLs", "tags-tsv", "proteins-tsv"]
     parsed_df_types = ["deconv_dfs", "anno_dfs", "tag_dfs", "protein_dfs"]

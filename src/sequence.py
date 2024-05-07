@@ -1,6 +1,5 @@
 import streamlit as st
 from pyopenms import Residue, AASequence, ModificationsDB
-import numpy as np
 
 
 fixed_mod_cysteine = {'No modification': 0,
