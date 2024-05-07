@@ -1,9 +1,9 @@
 import streamlit as st
+import time
 from .workflow.WorkflowManager import WorkflowManager
 from pages.FileUploadTagger import handleInputFiles
 from pages.FileUploadTagger import parseUploadedFiles
 from pages.FileUploadTagger import initializeWorkspace, showUploadedFilesTable
-from zipfile import ZipFile, ZIP_DEFLATED
 
 from os.path import join, splitext, basename, exists, dirname
 from os import makedirs
@@ -152,12 +152,13 @@ class TagWorkflow(WorkflowManager):
         uploaded_files = []
         for in_mzML in in_mzMLs:
             current_base = splitext(basename(in_mzML))[0]
+            current_time = time.strftime("%Y%m%d-%H%M%S")
 
             #out_db = join(base_path, 'db-fasta', f'{current_base}_db.fasta')
-            out_anno = join(base_path, 'anno-mzMLs', f'{current_base}_annotated.mzML')
-            out_deconv = join(base_path, 'deconv-mzMLs', f'{current_base}_deconv.mzML')
-            out_tag = join(base_path, 'tags-tsv', f'{current_base}_tagged.tsv')
-            out_protein = join(base_path, 'proteins-tsv', f'{current_base}_protein.tsv')
+            out_anno = join(base_path, 'anno-mzMLs', f'{current_base}_{current_time}_annotated.mzML')
+            out_deconv = join(base_path, 'deconv-mzMLs', f'{current_base}_{current_time}_deconv.mzML')
+            out_tag = join(base_path, 'tags-tsv', f'{current_base}_{current_time}_tagged.tsv')
+            out_protein = join(base_path, 'proteins-tsv', f'{current_base}_{current_time}_protein.tsv')
 
             if not exists(out_tag):
                 continue
@@ -218,13 +219,13 @@ class TagWorkflow(WorkflowManager):
         uploaded_files = []
         for in_mzML in in_mzMLs:
             current_base = splitext(basename(in_mzML))[0]
+            current_time = time.strftime("%Y%m%d-%H%M%S")
 
-
-            out_db = join(base_path, 'db-fasta', f'{current_base}_db.fasta')
-            out_anno = join(base_path, 'anno-mzMLs', f'{current_base}_annotated.mzML')
-            out_deconv = join(base_path, 'deconv-mzMLs', f'{current_base}_deconv.mzML')
-            out_tag = join(base_path, 'tags-tsv', f'{current_base}_tagged.tsv')
-            out_protein = join(base_path, 'proteins-tsv', f'{current_base}_protein.tsv')
+            out_db = join(base_path, 'db-fasta', f'{current_base}_{current_time}_db.fasta')
+            out_anno = join(base_path, 'anno-mzMLs', f'{current_base}_{current_time}_annotated.mzML')
+            out_deconv = join(base_path, 'deconv-mzMLs', f'{current_base}_{current_time}_deconv.mzML')
+            out_tag = join(base_path, 'tags-tsv', f'{current_base}_{current_time}_tagged.tsv')
+            out_protein = join(base_path, 'proteins-tsv', f'{current_base}_{current_time}_protein.tsv')
             #decoy_db = join(temp_path, f'{current_base}_db.fasta')
 
             # self.executor.run_topp(
@@ -347,7 +348,8 @@ class DeconvWorkflow(WorkflowManager):
         for in_mzML in in_mzMLs:
             # Get folder name
             file_name = splitext(basename(in_mzML))[0]
-            folder_path = join(base_path, 'FLASHDeconvOutput', file_name)
+            current_time = time.strftime("%Y%m%d-%H%M%S")
+            folder_path = join(base_path, 'FLASHDeconvOutput', '%s_%s'%(file_name, current_time))
 
             if exists(folder_path):
                 rmtree(folder_path)
