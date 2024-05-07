@@ -196,7 +196,7 @@ def captcha_control():
     # control if the captcha is correct
     if "controllo" not in st.session_state or st.session_state["controllo"] is False:
         # remove all pages from the sidebar
-        show_pages([Page("FLASHViewer.py", "FLASHViewer", "🏠")])
+        show_pages([Page("app.py", "FLASHViewer", "🏠")])
 
         st.title("Make sure you are not a robot🤖")
 

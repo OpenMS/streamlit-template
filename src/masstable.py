@@ -2,27 +2,15 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from pathlib import Path
-import pandas as pd
 from pyopenms import MSExperiment, MzMLFile, SpectrumLookup, Constants
 
-def parseFLASHDeconvOutput(annotated, deconvolved, tags=None, proteins=None):
 
-    if tags is not None:
-        tag_df = pd.read_csv(tags, sep='\t')
-
-        # db = get_sequences(FastaFile.read(db), ProteinSequence)
-        protein_df = pd.read_csv(proteins, sep='\t')
-    else:
-        tag_df = None
-        protein_df = None
-
-
+@st.cache_data
+def parseFLASHDeconvOutput(annotated, deconvolved):
     annotated_exp = MSExperiment()
     deconvolved_exp = MSExperiment()
     MzMLFile().load(str(Path(annotated)), annotated_exp)
     MzMLFile().load(str(Path(deconvolved)), deconvolved_exp)
-    #MzMLFile().load(annotated, annotated_exp)
-    #MzMLFile().load(deconvolved, deconvolved_exp)
     tolerance = .0
     massoffset = .0
     chargemass = .0
@@ -162,7 +150,6 @@ def parseFLASHDeconvOutput(annotated, deconvolved, tags=None, proteins=None):
                 else:
                     massPeak.append(round(parsed_peak[0]/massPeak[1]))
                     npeaks.append(massPeak)
-                
 
             # if len(sigindicesset) != len(speaks):
                 # print("*")
@@ -175,7 +162,6 @@ def parseFLASHDeconvOutput(annotated, deconvolved, tags=None, proteins=None):
             specnpeaks.append(npeaks)
         signalPeaks.append(specspeaks)
         noisyPeaks.append(specnpeaks)
-
         msLevels.append(spec.getMSLevel())
 
     df['SignalPeaks'] = signalPeaks
@@ -183,9 +169,16 @@ def parseFLASHDeconvOutput(annotated, deconvolved, tags=None, proteins=None):
     df['CombinedPeaks'] = noisyPeaks
     df['MSLevel'] = msLevels
     df['Scan'] = scans
-    return df, annotateddf, tolerance,  massoffset, chargemass, tag_df, protein_df
 
-#@st.cache_data
+    return df, annotateddf, tolerance,  massoffset, chargemass
+
+
+def parseFLASHTaggerOutput(tags, proteins):
+    # db = get_sequences(FastaFile.read(db), ProteinSequence)
+    return pd.read_csv(tags, sep='\t'), pd.read_csv(proteins, sep='\t')
+
+
+@st.cache_data
 def getSpectraTableDF(deconv_df: pd.DataFrame):
     out_df = deconv_df[['Scan', 'MSLevel', 'RT', 'PrecursorMass']].copy()
     out_df['#Masses'] = [len(ele) for ele in deconv_df['MinCharges']]
@@ -193,7 +186,7 @@ def getSpectraTableDF(deconv_df: pd.DataFrame):
     return out_df
 
 
-#@st.cache_data
+@st.cache_data
 def getMSSignalDF(anno_df: pd.DataFrame):
     ints = np.concatenate([anno_df.loc[index, "intarray"] for index in anno_df.index])
     mzs = np.concatenate([anno_df.loc[index, "mzarray"] for index in anno_df.index])

@@ -255,6 +255,10 @@ if "component_error_message" in st.session_state and st.session_state.component_
 ### TIPs (TODO: Add image)
 st.info("""
 **💡 Tips**
+
+- If nothing is set, the default layout will be used in the **👀 Viewer** page
+
+- Don't forget to click "save" on the bottom-right corner to save your setting
 """)
 
 save_params(params)

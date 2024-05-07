@@ -77,7 +77,7 @@ def setFixedModification(protein):
 
 
 #@st.cache_data
-def getFragmentDataFromSeq(sequence, coverage, maxCoverage):
+def getFragmentDataFromSeq(sequence, coverage=None, maxCoverage=None):
     protein = AASequence.fromString(sequence)
     protein, fixed_mods = setFixedModification(protein)  # handling fixed modifications
 
@@ -85,10 +85,13 @@ def getFragmentDataFromSeq(sequence, coverage, maxCoverage):
     protein_mass = protein.getMonoWeight()
 
     out_object = {'sequence': list(sequence),
-                  'coverage' : list(coverage),
-                  'maxCoverage' : maxCoverage,
                   'theoretical_mass': protein_mass, 
                   'fixed_modifications': fixed_mods}
+    if coverage:
+        out_object['coverage'] = list(coverage)
+    if maxCoverage:
+        out_object['maxCoverage'] = maxCoverage
+
     # per ion type, calculate the possible fragment masses and save them in dictionary
     for ion_type in ['ax', 'by', 'cz']:
         # calculate fragment ion masses

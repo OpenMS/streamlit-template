@@ -7,8 +7,6 @@ import streamlit.components.v1 as st_components
 _RELEASE = False
 
 
-
-
 def flash_viewer_grid_component(components, data, component_key='flash_viewer_grid'):
 
     if not _RELEASE:
@@ -20,7 +18,6 @@ def flash_viewer_grid_component(components, data, component_key='flash_viewer_gr
         parent_dir = os.path.dirname(os.path.abspath(__file__))
         build_dir = os.path.join(parent_dir, '..', "js-component", "dist")
         _component_func = st_components.declare_component("flash_viewer_grid", path=build_dir)
-
 
     out_components = []
     for row in components:
@@ -73,13 +70,13 @@ class Tabulator:
         elif table_type == 'TagTable':
             self.title = 'Tag Table'
             self.componentName = "TabulatorTagTable"
-        
 
 
 class PlotlyLineplot:
     def __init__(self, title):
         self.title = title
         self.componentName = "PlotlyLineplot"
+
 
 class PlotlyLineplotTagger:
     def __init__(self, title):
@@ -97,9 +94,11 @@ class SequenceView:
     def __init__(self):
         self.componentName = 'SequenceView'
 
+
 class SequenceViewTagger:
     def __init__(self):
         self.componentName = 'SequenceViewTagger'
+
 
 class InternalFragmentMap:
     def __init__(self):

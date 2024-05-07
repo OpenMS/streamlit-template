@@ -3,7 +3,7 @@ import pandas as pd
 from pathlib import Path
 import os, shutil
 import numpy as np
-from src.masstable import parseFLASHDeconvOutput
+from src.masstable import parseFLASHDeconvOutput, parseFLASHTaggerOutput
 from src.common import page_setup, v_space, save_params, reset_directory
 
 
@@ -135,9 +135,11 @@ def parsingWithProgressBar(infiles_deconv, infiles_anno, infiles_tag, infiles_pr
             exp_name = anno_f[0: anno_f.rfind('_')]
 
             with st.spinner('Parsing the experiment %s...'%exp_name):
-                spec_df, anno_df, tolerance, massoffset, chargemass, tag_df, protein_df = parseFLASHDeconvOutput(
+                spec_df, anno_df, tolerance, massoffset, chargemass,  = parseFLASHDeconvOutput(
                     Path(st.session_state["workspace"], "anno-mzMLs", anno_f),
                     Path(st.session_state["workspace"], "deconv-mzMLs", deconv_f),
+                )
+                tag_df, protein_df = parseFLASHTaggerOutput(
                     Path(st.session_state["workspace"], "tags-tsv", tag_f),
                     Path(st.session_state["workspace"], "proteins-tsv", protein_f)
                     # Path(st.session_state["workspace"], "db-fasta", db_f)

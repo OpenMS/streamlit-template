@@ -5,7 +5,7 @@ This app is based on [OpenMS streamlit template project](https://github.com/Open
 
 run locally:
 
-`streamlit run FLASHViewer.py local`
+`streamlit run app.py local`
 
 ### Working with submodules
 
