@@ -14,7 +14,7 @@ if "controllo" not in st.session_state or params["controllo"] is False:
     # Apply captcha by calling the captcha_control function
     captcha_control()
 
-st.title("File Upload")
+st.title("mzML Upload")
 
 tabs = ["File Upload", "Example Data"]
 if st.session_state.location == "local":
@@ -36,10 +36,10 @@ with tabs[0]:
 
 # Example mzML files
 with tabs[1]:
-    st.markdown("Short information text on example data.")
+    st.markdown("Data from a minimal RNA experiment.")
     cols = st.columns(3)
     if cols[1].button("Load Example Data", type="primary"):
-        fileupload.load_example_mzML_files()
+        fileupload.load_example_mzML_files() #FIXME CHANGE FILES
 
 # Local file upload option: via directory path
 if st.session_state.location == "local":
