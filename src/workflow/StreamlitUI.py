@@ -514,8 +514,10 @@ class StreamlitUI:
                 if i == num_cols:
                     i = 0
                     cols = st.columns(num_cols)
-            except:
+            except Exception as e:
                 cols[i].error(f"Error in parameter **{p['name']}**.")
+                print("Error parsing \""+ p['name'] + "\": " + str(e))
+
 
     def input_python(
         self,
