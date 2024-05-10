@@ -111,12 +111,13 @@ class Workflow(WorkflowManager):
         if self.params["ms1_resolution"] <= 1500:
             #MS1 low-res
             self.params["NucleicAcidSearchEngine"]["precursor:mass_tolerance"] = 1500
-            self.params["NucleicAcidSearchEngine"]["precursor:use_avg_mass"] = ''
-            self.params["NucleicAcidSearchEngine"]["precursor:include_unknown_charge"] = ''
+            self.params["NucleicAcidSearchEngine"]["precursor:use_avg_mass"] = True
+            self.params["NucleicAcidSearchEngine"]["precursor:include_unknown_charge"] = True
         elif self.params["ms1_resolution"] <= 30000:
             #MS1 medium-res
             self.params["NucleicAcidSearchEngine"]["precursor:mass_tolerance"] = 100
-            self.params["NucleicAcidSearchEngine"]["precursor:include_unknown_charge"] = ''
+            self.params["NucleicAcidSearchEngine"]["precursor:use_avg_mass"] = False
+            self.params["NucleicAcidSearchEngine"]["precursor:include_unknown_charge"] = True
         elif self.params["ms1_resolution"] <= 1000000:
             #MS1 high-res
             self.params["NucleicAcidSearchEngine"]["precursor:mass_tolerance"] = 10

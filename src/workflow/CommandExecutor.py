@@ -166,9 +166,15 @@ class CommandExecutor:
             # Add non-default TOPP tool parameters
             if tool in params.keys():
                 for k, v in params[tool].items():
-                    command += [f"-{k}"]
+                    # Handle the case where f is a flag and v is false by just skipping
+                    if v != False:
+                      command += [f"-{k}"]
+                    # add the value if we aren't a flag
                     if isinstance(v, str) and "\n" in v:
                         command += v.split("\n")
+                    # If we are a flag don't append the value
+                    elif isinstance(v, bool):
+                        continue
                     else:
                         command += [str(v)]
             # Add custom parameters
