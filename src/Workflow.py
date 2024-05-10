@@ -20,7 +20,7 @@ class Workflow(WorkflowManager):
 
     def configure(self) -> None:
         # Allow users to select mzML files for the analysis.
-        self.ui.select_input_file("mzML-files", multiple=True)
+        self.ui.select_input_file("mzML-files", multiple=False)
         self.ui.select_input_file("fasta-files", multiple=False)
 
         # Create tabs for different analysis steps.
