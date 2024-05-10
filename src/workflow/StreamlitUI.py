@@ -414,10 +414,17 @@ class StreamlitUI:
         params_decoded = []
         for key in valid_keys:
             entry = param.getEntry(key)
+            # There is no paramValue ValueType for bool, so we have to make it bool manually
+            if entry.value == "false":
+                local_value = bool(False)
+            elif entry.value == "true":
+                local_value = bool(True)
+            else:
+                local_value = entry.value
             tmp = {
                 "name": entry.name.decode(),
                 "key": key,
-                "value": entry.value,
+                "value": local_value,
                 "valid_strings": [v.decode() for v in entry.valid_strings],
                 "description": entry.description.decode(),
                 "advanced": (b"advanced" in param.getTags(key)),
