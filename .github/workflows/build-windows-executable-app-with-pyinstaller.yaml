@@ -1,9 +1,6 @@
-name: Build executable for Windows
+name: Build executable for Windows with pyinstaller
 on:
-  push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
+  workflow_dispatch:
 
 jobs:
   build-openms:
@@ -177,44 +174,67 @@ jobs:
         name: OpenMS-share
         path: share
 
-    - name: Setup python embeddable version
-      run: |
-        mkdir python-${{ env.PYTHON_VERSION }}
-        curl -O https://www.python.org/ftp/python/${{ env.PYTHON_VERSION }}/python-${{ env.PYTHON_VERSION }}-embed-amd64.zip
-        unzip python-${{ env.PYTHON_VERSION }}-embed-amd64.zip -d python-${{ env.PYTHON_VERSION }}
-        rm python-${{ env.PYTHON_VERSION }}-embed-amd64.zip
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
 
-    - name: Install pip
+    - name: Setup virtual environment
+      shell: cmd
       run: |
-        curl -O https://bootstrap.pypa.io/get-pip.py
-        ./python-${{ env.PYTHON_VERSION }}/python get-pip.py --no-warn-script-location
-        rm get-pip.py
+        python -m venv myenv
 
-    - name: Uncomment 'import site' in python311._pth file
-      run: |
-        sed -i 's/#import site/import site/' python-${{ env.PYTHON_VERSION }}/python311._pth
+        call myenv\Scripts\activate.bat   
 
-    - name: Install Required Packages
-      run: .\python-${{ env.PYTHON_VERSION }}\python -m pip install --force-reinstall -r requirements.txt --no-warn-script-location
+        pip install -r requirements.txt
 
-    - name: Create run_app.bat file
+        pip install pyinstaller
+
+    - name: Write function to cli.py
+      shell: bash
       run: |
-        echo '@echo off' > run_app.bat
-        echo '.\\python-${{ env.PYTHON_VERSION }}\\python -m streamlit run app.py local' >> run_app.bat
-      
-    - name: Create All-in-one executable folder
+        head -n -2 D:/a/streamlit-template/streamlit-template/myenv/Lib/site-packages/streamlit/web/cli.py > temp_cli.py
+
+        cat << EOF >> temp_cli.py
+        def _main_run_clExplicit(file, command_line, args=[], flag_options=[]):
+            main._is_running_with_streamlit = True
+            bootstrap.run(file, command_line, args, flag_options)
+
+
+        if __name__ == "__main__":
+            main()
+        EOF
+
+        mv temp_cli.py D:/a/streamlit-template/streamlit-template/myenv/Lib/site-packages/streamlit/web/cli.py  
+
+    - name: Compile app with pyinstaller
+      shell: cmd
       run: |
-        mkdir streamlit_exe
-        mv python-${{ env.PYTHON_VERSION }} streamlit_exe
-        mv run_app.bat streamlit_exe
-        cp -r src streamlit_exe
-        cp -r pages streamlit_exe
-        cp -r assets streamlit_exe
-        cp -r example-data streamlit_exe
-        cp -r .streamlit streamlit_exe
-        cp -r openms-bin streamlit_exe/bin
-        cp -r share streamlit_exe/share
-        cp app.py streamlit_exe
+        call myenv\Scripts\activate.bat 
+        pyinstaller --onefile --additional-hooks-dir ./hooks run_app.py --clean
+
+
+    - name: Copy everything to dist directory
+      run: |
+        cp -r .streamlit dist/.streamlit
+        cp -r pages dist/pages
+        cp -r src dist/src
+        cp -r assets dist/assets
+        cp -r example-data dist/example-data
+        cp -r openms-bin dist/bin
+        cp -r share dist/share
+        cp app.py dist/
+    
+    - name: Modify .spec file
+      shell: bash
+      run: |
+        cp run_app_temp.spec run_app.spec
+
+    - name: Make executable
+      shell: cmd
+      run: |
+        call myenv\Scripts\activate.bat
+        pyinstaller run_app.spec --clean
 
     - name: Delete OpenMS bin artifact
       uses: geekyeggo/delete-artifact@v2
@@ -225,14 +245,9 @@ jobs:
       uses: geekyeggo/delete-artifact@v2
       with:
           name: OpenMS-share
-          
-    - name: Compress streamlit_exe folder to OpenMS-App.zip
-      run: |
-        7z a OpenMS-App.zip ./streamlit_exe/* -r
 
     - name: Upload artifact
       uses: actions/upload-artifact@v3
       with:
         name: OpenMS-App
-        path: OpenMS-App.zip
-
+        path: dist

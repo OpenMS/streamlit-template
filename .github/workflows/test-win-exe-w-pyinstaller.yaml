@@ -1,9 +1,9 @@
-name: Test streamlit executable for Windows
+name: Test streamlit executable for Windows with pyinstaller
 on: 
   workflow_dispatch:
 
 jobs:
-  build-executable:
+  build-win-executable-with-pyinstaller:
     runs-on: windows-latest 
     
     env:

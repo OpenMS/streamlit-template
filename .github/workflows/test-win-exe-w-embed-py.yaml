@@ -1,0 +1,61 @@
+name: Test streamlit executable for Windows with embeddable python
+on: 
+  workflow_dispatch:
+
+jobs:
+  build-win-executable-with-embeddable-python:
+    runs-on: windows-latest
+
+    env:
+      PYTHON_VERSION: 3.11.9
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Download python embeddable version
+        run: |
+           mkdir python-${{ env.PYTHON_VERSION }}
+           curl -O https://www.python.org/ftp/python/${{ env.PYTHON_VERSION }}/python-${{ env.PYTHON_VERSION }}-embed-amd64.zip
+           unzip python-${{ env.PYTHON_VERSION }}-embed-amd64.zip -d python-${{ env.PYTHON_VERSION }}
+           rm python-${{ env.PYTHON_VERSION }}-embed-amd64.zip
+
+      - name: Install pip
+        run: |
+          curl -O https://bootstrap.pypa.io/get-pip.py
+          ./python-${{ env.PYTHON_VERSION }}/python get-pip.py --no-warn-script-location
+          rm get-pip.py
+          
+      - name: Uncomment 'import site' in python311._pth file
+        run: |
+          sed -i 's/#import site/import site/' python-${{ env.PYTHON_VERSION }}/python311._pth
+          
+      - name: Print content of python311._pth file
+        run: |
+          cat python-${{ env.PYTHON_VERSION }}/python311._pth
+
+      - name: Install Required Packages
+        run: .\python-${{ env.PYTHON_VERSION }}\python -m pip install -r requirements.txt --no-warn-script-location
+
+      - name: Create run_app.bat file
+        run: |
+          echo '@echo off' > run_app.bat
+          echo '.\\python-${{ env.PYTHON_VERSION }}\\python -m streamlit run app.py local' >> run_app.bat
+      
+      - name: Create All-in-one executable folder
+        run: |
+          mkdir streamlit_exe
+          mv python-${{ env.PYTHON_VERSION }} streamlit_exe
+          mv run_app.bat streamlit_exe
+          cp -r src streamlit_exe
+          cp -r pages streamlit_exe
+          cp -r assets streamlit_exe
+          cp -r example-data streamlit_exe
+          cp -r .streamlit streamlit_exe
+          cp app.py streamlit_exe
+
+      - name: Archive streamlit_exe folder
+        uses: actions/upload-artifact@v2
+        with:
+          name: streamlit_exe
+          path: streamlit_exe
