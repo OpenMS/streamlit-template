@@ -1,13 +1,16 @@
 import streamlit as st
 import json
 from .workflow.WorkflowManager import WorkflowManager
+from src import view
+from src.common import show_table
+from pathlib import Path
 
 class Workflow(WorkflowManager):
     # Setup pages for upload, parameter, execution and results.
     # For layout use any streamlit components such as tabs (as shown in example), columns, or even expanders.
     def __init__(self) -> None:
         # Initialize the parent class with the workflow name.
-        super().__init__("TOPP Workflow", st.session_state["workspace"])
+        super().__init__("NASE-weis", st.session_state["workspace"])
 
     def upload(self)-> None:
         t = st.tabs(["MS data", "Nucleotide sequences"])
@@ -38,7 +41,7 @@ class Workflow(WorkflowManager):
             #self.ui.input_widget("run-adduct-detection", False, "Adduct Detection")
             # Paramters for MetaboliteAdductDecharger TOPP tool.
             self.ui.input_widget("ms1_resolution", 60000.0, "MS1 approximate resolution?", "The approximate resolution at which MS1 scans were acquired", "number", min_value=1, max_value=10000000)
-            self.ui.input_widget("ms2_resolution", 60000.0, "MS2 approximate resolution?", "The approximate resolution at which MS1 scans were acquired", "number", min_value=1, max_value=10000000)
+            self.ui.input_widget("ms2_resolution", 60000.0, "MS2 approximate resolution?", "The approximate resolution at which MS2 scans were acquired", "number", min_value=1, max_value=10000000)
             self.ui.input_TOPP("NucleicAcidSearchEngine", exclude_parameters=["variable", "precursor:mass_tolerance", "precursor:mass_tolerance_unit", "decharge_ms2", "include_unknown_charge" , "precursor:use_avg_mass", "precursor:isotopes", "precursor:min_charge", "precursor:max_charge", "precursor:use_adducts", "precursor:potential_adducts", "fragment:mass_tolerance", "fragment:mass_tolerance_unit", "fragment:ions", "resolve_ambiguities", "decoy_pattern", "max_size", "cutoff", "remove_decoys", "min_size"])
             # MS1 resolution
             # MS2 resolution
@@ -146,9 +149,37 @@ class Workflow(WorkflowManager):
             json.dump(self.params, f, indent=4)      
 
         tab_out = self.file_manager.get_files("tab_out", set_results_dir="mztab_results")
+        id_out = self.file_manager.get_files("id_out", set_results_dir="idxml_results")
         self.executor.run_topp("NucleicAcidSearchEngine", {"in": self.file_manager.get_files(in_mzML, collect=True),
                                                 "database": self.file_manager.get_files(out_fasta, collect=True),
-                                                "out": tab_out})
+                                                "out": tab_out, "id_out": id_out})
 
     def results(self) -> None:
-        st.warning("Not implemented yet.")
+        if Path(self.file_manager.get_files("id_out", set_results_dir="idxml_results")[0]).is_file():
+            # Load the hits from the idXML file
+            df = view.get_id_df( self.file_manager.get_files("id_out", set_results_dir="idxml_results")[0])
+            # select a subset of the columns to display
+            formatted_df = df[['protein_accession','label','RT','mz','charge','hyperscore']]
+            # update column names
+            formatted_df = formatted_df.rename(columns={"protein_accession": "Accession", "RT": "Retention Time (s)", "mz": "M/Z", "hyperscore": "Hyperscore"})
+            # if we have FDR data, add that
+            if self.params["add-decoys"]:
+              formatted_df['q-value %'] = df.loc[:,('PSM-level q-value')] * 100
+            # Tabley goodness
+            show_table(formatted_df, download_name="results")
+
+            with open (self.file_manager.get_files("id_out", set_results_dir="idxml_results")[0]) as file:
+              st.download_button(
+                label = "Download idXML",
+                data = file,
+                file_name = 'results.idXML',
+                mime = "idXML"
+            )
+              
+            with open (self.file_manager.get_files("tab_out", set_results_dir="mztab_results")[0]) as file:
+              st.download_button(
+                label = "Download mztab",
+                data = file,
+                file_name = 'results.mztab',
+                mime = "mztab"
+            )

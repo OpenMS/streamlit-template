@@ -41,6 +41,27 @@ def get_df(file: Union[str, Path]) -> pd.DataFrame:
         return df
     return pd.DataFrame()
 
+@st.cache_data
+def get_id_df(file: Union[str, Path]) -> pd.DataFrame:
+    """
+    Loads a list of Peptide identifications from a given idXML file and return
+    a pandas dataframe representation of the identifications.
+
+    Args:
+        file (Union[str, Path]): The path to the idXML file to load.
+
+    Returns:
+        pd.DataFrame: A pandas DataFrame with the following columns: "id", 
+        "RT", "mz", "q-value", "charge", "protein accession", "start", "end"
+        and probably some other stuff that just isn't documented #FIXME
+    """
+    prot_ids = []
+    pep_ids = []
+    poms.IdXMLFile().load(str(file),prot_ids, pep_ids)
+    df = poms.peptide_identifications_to_df(pep_ids)
+    if not df.empty:
+        return df
+    return pd.DataFrame()
 
 @st.cache_resource
 def plot_2D_map(df_ms1: pd.DataFrame, df_ms2: pd.DataFrame, cutoff: int) -> go.Figure:
