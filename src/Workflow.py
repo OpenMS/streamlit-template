@@ -37,24 +37,10 @@ class Workflow(WorkflowManager):
             self.ui.input_TOPP("DecoyDatabase", custom_defaults={"type" : "RNA", "method" : "shuffle" }, exclude_parameters=["decoy_string", "decoy_string_position", "enzyme", "only_decoy", "type", "non_shuffle_pattern", "method"])
 
         with t[1]:
-            # A single checkbox widget for workflow logic.
-            #self.ui.input_widget("run-adduct-detection", False, "Adduct Detection")
-            # Paramters for MetaboliteAdductDecharger TOPP tool.
             self.ui.input_widget("ms1_resolution", 60000.0, "MS1 approximate resolution?", "The approximate resolution at which MS1 scans were acquired", "number", min_value=1, max_value=10000000)
             self.ui.input_widget("ms2_resolution", 60000.0, "MS2 approximate resolution?", "The approximate resolution at which MS2 scans were acquired", "number", min_value=1, max_value=10000000)
             self.ui.input_TOPP("NucleicAcidSearchEngine", exclude_parameters=["variable", "precursor:mass_tolerance", "precursor:mass_tolerance_unit", "decharge_ms2", "include_unknown_charge" , "precursor:use_avg_mass", "precursor:isotopes", "precursor:min_charge", "precursor:max_charge", "precursor:use_adducts", "precursor:potential_adducts", "fragment:mass_tolerance", "fragment:mass_tolerance_unit", "fragment:ions", "resolve_ambiguities", "decoy_pattern", "max_size", "cutoff", "remove_decoys", "min_size"])
-            # MS1 resolution
-            # MS2 resolution
-            # Enzyme
-            # missed cleavages (default to 1)
 
-        #with t[2]:
-            # Paramters for SiriusExport TOPP tool
-            #self.ui.input_TOPP("SiriusExport")
-        #with t[3]:
-            # Generate input widgets for a custom Python tool, located at src/python-tools.
-            # Parameters are specified within the file in the DEFAULTS dictionary.
-            #self.ui.input_python("example")
 
     def execution(self) -> None:
         # Any parameter checks, here simply checking if mzML files are selected
@@ -73,13 +59,7 @@ class Workflow(WorkflowManager):
         in_fasta = self.file_manager.get_files(self.params["fasta-files"])
         
         # Log any messages.
-        self.logger.log(f"Number of input mzML files: {len(in_mzML)}")
-
-
-        # If we've got no non-default settings, we need to create the params object for NucleicAcidSearchEngine
-        #if "NucleicAcidSearchEngine" not in self.params:
-        #    self.params["NucleicAcidSearchEngine"] = {"Fuck": "aduck"}
-
+        #self.logger.log(f"Number of input mzML files: {len(in_mzML)}")
 
         if self.params["add-decoys"]:
             # Prepare output files for feature detection.
@@ -93,20 +73,6 @@ class Workflow(WorkflowManager):
             self.params["NucleicAcidSearchEngine"]["fdr:decoy_pattern"] = "DECOY_"
         else:
             out_fasta = in_fasta # Use the un-decoyed fasta if we don't want decoys
-
-        # Check if adduct detection should be run.
-        #if self.params["run-adduct-detection"]:
-        
-            # Run MetaboliteAdductDecharger for adduct detection, with disabled logs.
-            # Without a new file list for output, the input files will be overwritten in this case.
-            #self.executor.run_topp(
-            #    "MetaboliteAdductDecharger", {"in": out_ffm, "out_fm": out_ffm}
-            #)
-
-        # Example for a custom Python tool, which is located in src/python-tools.
-        #self.executor.run_python("example", {"in": in_mzML})
-
-        # Prepare output file for SiriusExport.
 
         # Magic UX improving logic
         self.params["NucleicAcidSearchEngine"]["precursor:mass_tolerance"] = float(self.params["ms1_resolution"]) / 1000000
@@ -155,31 +121,34 @@ class Workflow(WorkflowManager):
                                                 "out": tab_out, "id_out": id_out})
 
     def results(self) -> None:
-        if Path(self.file_manager.get_files("id_out", set_results_dir="idxml_results")[0]).is_file():
+        if Path(self.workflow_dir, "results" ).is_dir() and Path(self.file_manager.get_files("id_out", set_results_dir="idxml_results")[0]).is_file():
             # Load the hits from the idXML file
             df = view.get_id_df( self.file_manager.get_files("id_out", set_results_dir="idxml_results")[0])
-            # select a subset of the columns to display
-            formatted_df = df[['protein_accession','label','RT','mz','charge','hyperscore']]
-            # update column names
-            formatted_df = formatted_df.rename(columns={"protein_accession": "Accession", "RT": "Retention Time (s)", "mz": "M/Z", "hyperscore": "Hyperscore"})
-            # if we have FDR data, add that
-            if self.params["add-decoys"]:
-              formatted_df['q-value %'] = df.loc[:,('PSM-level q-value')] * 100
-            # Tabley goodness
-            show_table(formatted_df, download_name="results")
+            if not df.empty:
+                # select a subset of the columns to display
+                formatted_df = df[['protein_accession','label','RT','mz','charge','hyperscore']]
+                # update column names
+                formatted_df = formatted_df.rename(columns={"protein_accession": "Accession", "RT": "Retention Time (s)", "mz": "M/Z", "hyperscore": "Hyperscore"})
+                # if we have FDR data, add that
+                if self.params["add-decoys"]:
+                  formatted_df['q-value %'] = df.loc[:,('PSM-level q-value')] * 100
+                # Tabley goodness
+                show_table(formatted_df, download_name="results")
 
-            with open (self.file_manager.get_files("id_out", set_results_dir="idxml_results")[0]) as file:
-              st.download_button(
-                label = "Download idXML",
-                data = file,
-                file_name = 'results.idXML',
-                mime = "idXML"
-            )
-              
-            with open (self.file_manager.get_files("tab_out", set_results_dir="mztab_results")[0]) as file:
-              st.download_button(
-                label = "Download mztab",
-                data = file,
-                file_name = 'results.mztab',
-                mime = "mztab"
-            )
+                with open (self.file_manager.get_files("id_out", set_results_dir="idxml_results")[0]) as file:
+                  st.download_button(
+                    label = "Download idXML",
+                    data = file,
+                    file_name = Path(self.params["mzML-files"]).stem + '.idXML',
+                    mime = "idXML"
+                )
+                  
+                with open (self.file_manager.get_files("tab_out", set_results_dir="mztab_results")[0]) as file:
+                  st.download_button(
+                    label = "Download mztab",
+                    data = file,
+                    file_name = Path(self.params["mzML-files"]).stem + '.mztab',
+                    mime = "mztab"
+                )
+            else:
+                st.warning("Search returned no results") #FIXME need to get to refresh right
