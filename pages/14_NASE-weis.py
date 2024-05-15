@@ -14,20 +14,6 @@ if __name__ == "__main__":
     t = st.tabs(["**How to use NASE-Weis**", "📁 **File Upload**", "⚙️ **Configure**", "🚀 **Run**", "📊 **Results**"])
     with t[0]:
         st.markdown("""
-                      # Quick start
-                                        
-                      1. Load the example MzMl (raw data) by clicking the "Load Example Data" button under the "MS data" tab of "📁File Upload".
-                    
-                      2. Load the example RNA sequence file by clicking the "Load Example Data" button under the "Nucleotide sequences" tab of "📁File Upload".
-                    
-                      3. Go to the ⚙️ Configure tab and Select the example files in the "mzML-files" and "fasta-files" entries.
-                    
-                      4. Click on the 🚀 **Run** tab and hit "Run" and click "Start Workflow"
-                    
-                      5. Go to the📊 **Results** tab and scroll through the results table. You can also download the table, a mzTab formatted version of the results, and a TOPPView idXML set of results.
-                    
-                      # More leisurely start
-
                       ## What is NASE-Weis
 
                       NASE-Weis (short for NucleicAcidSearchEngine Web execution in streamlit). Is a Web-app version of the [NucleicAcidSearchEngine](https://doi.org/10.1038/s41467-020-14665-7). 

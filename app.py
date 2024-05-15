@@ -33,9 +33,9 @@ def main():
     """
     Display main page content.
     """
-    st.title("OpenMS Streamlit Template App")
+    st.title("NASE-Weis App")
     st.info("""
-This repository contains a template app for OpenMS workflows in a web application using the **streamlit** framework. It serves as a foundation for apps ranging from simple workflows with **pyOpenMS** to complex workflows utilizing **OpenMS TOPP tools** with parallel execution. It includes solutions for handling user data and parameters in workspaces as well as deployment with docker-compose.
+This repository contains a simple NucleicAcidSearchEngine workflow in a web application using the **streamlit** framework. It includes solutions for handling user data and parameters in workspaces as well as deployment with docker-compose.
 """)
     st.subheader("Features")
     st.markdown("""
@@ -47,6 +47,19 @@ This repository contains a template app for OpenMS workflows in a web applicatio
 - Deployment [with docker-compose](https://github.com/OpenMS/streamlit-deployment)
 """)
     st.subheader("Quick Start")
+    st.markdown("""
+                      1. Select "NASE-weis" in the sidebar.
+                                 
+                      2. Load the example MzMl (raw data) by clicking the "Load Example Data" button under the "MS data" tab of "📁File Upload".
+                    
+                      3. Load the example RNA sequence file by clicking the "Load Example Data" button under the "Nucleotide sequences" tab of "📁File Upload".
+                    
+                      4. Go to the ⚙️ Configure tab and Select the example files in the "mzML-files" and "fasta-files" entries.
+                    
+                      5. Click on the 🚀 **Run** tab and hit "Run" and click "Start Workflow"
+                    
+                      6. Go to the📊 **Results** tab and scroll through the results table. You can also download the table, a mzTab formatted version of the results, and a TOPPView idXML set of results.
+                    """)
     if Path("OpenMS-App.zip").exists():
         st.markdow("""
 Download the latest version for Windows here by clicking the button below.
