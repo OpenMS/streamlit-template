@@ -57,24 +57,25 @@ def copy_local_mzML_files_from_directory(local_mzML_directory: str) -> None:
     st.success("Successfully added local files!")
 
 
-def load_example_files(extension, directory) -> None:
+def load_example_files(file_type, directory) -> None:
     """
     Copies example files to the `extension` directory 
 
     Args:
-        None
+        file_type (str): the extension of the example files to load
+        directory (str): where to load them
 
     Returns:
         None
     """
-    file_dir = Path(directory, extension + "-files")
+    file_dir = Path(directory, file_type + "-files")
     #Create any folders necessary to copy the files
     makedirs(file_dir, exist_ok=True)
     print(file_dir)
     # Copy files from example-data/mzML to workspace mzML directory, add to selected files
-    for f in Path("example-data", extension).glob("*."+ extension):
+    for f in Path("example-data", file_type).glob("*."+ file_type):
         shutil.copy(f, file_dir)
-    st.success("Example " + extension + " files loaded!")
+    st.success("Example " + file_type + " files loaded!")
 
 
 def load_example_mzML_files() -> None:

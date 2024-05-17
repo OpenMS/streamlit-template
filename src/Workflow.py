@@ -21,13 +21,13 @@ class Workflow(WorkflowManager):
             self.ui.upload_widget(key="mzML-files", name="MS data", file_type="mzML")
             cols = st.columns(3)
             if cols[1].button("Load Example Data", type="primary", help="Import the example mzML files", key="example_mzml"):
-                fileupload.load_example_files("mzML",Path(self.workflow_dir, "input-files"))
+                fileupload.load_example_files("mzML",self.workflow_dir)
         with t[1]:
             # Example with fallback data (not used in workflow)
             self.ui.upload_widget(key="fasta-files", name="nucleotide sequence file", file_type="fasta")
             cols = st.columns(3)
             if cols[1].button("Load Example Data", type="primary", help="Import the example mzML files", key="example_fasta" ):
-                fileupload.load_example_files("fasta",Path(self.workflow_dir, "input-files"))
+                fileupload.load_example_files("fasta",self.workflow_dir)
 
     def configure(self) -> None:
         # Allow users to select mzML files for the analysis.

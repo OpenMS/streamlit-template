@@ -28,6 +28,24 @@ class StreamlitUI:
         self.parameter_manager = paramter_manager
         self.params = self.parameter_manager.get_parameters_from_json()
 
+    def _upload_callback(files_dir: str, file_type: str) -> None:
+        files = st.session_state["upload_files"+file_type]
+        if files:
+            files_dir.mkdir(parents=True, exist_ok=True)
+            # in case of online mode a single file is returned -> put in list
+            if not isinstance(files, list):
+                files = [files]
+            for f in files:
+                if f.name not in [
+                    f.name for f in files_dir.iterdir()
+                ] and f.name.endswith(file_type):
+                    with open(Path(files_dir, f.name), "wb") as fh:
+                        fh.write(f.getbuffer())
+            st.success("Successfully added uploaded files!")
+        else:
+            st.error("Nothing to add, please upload file.")
+            
+    @st.experimental_fragment
     def upload_widget(
         self,
         key: str,
@@ -54,34 +72,19 @@ class StreamlitUI:
 
         c1, c2 = st.columns(2)
         c1.markdown("**Upload file(s)**")
-        with c1.form(f"{key}-upload", clear_on_submit=True):
-            if any(c.isupper() for c in file_type) and (c.islower() for c in file_type):
-                file_type_for_uploader = None
-            else:
-                file_type_for_uploader = [file_type]
-            files = st.file_uploader(
-                f"{name}",
-                accept_multiple_files=(st.session_state.location == "local"),
-                type=file_type_for_uploader,
-                label_visibility="collapsed",
-            )
-            if st.form_submit_button(
-                f"Add **{name}**", use_container_width=True, type="primary"
-            ):
-                if files:
-                    files_dir.mkdir(parents=True, exist_ok=True)
-                    # in case of online mode a single file is returned -> put in list
-                    if not isinstance(files, list):
-                        files = [files]
-                    for f in files:
-                        if f.name not in [
-                            f.name for f in files_dir.iterdir()
-                        ] and f.name.endswith(file_type):
-                            with open(Path(files_dir, f.name), "wb") as fh:
-                                fh.write(f.getbuffer())
-                    st.success("Successfully added uploaded files!")
-                else:
-                    st.error("Nothing to add, please upload file.")
+        if any(c.isupper() for c in file_type) and (c.islower() for c in file_type):
+            file_type_for_uploader = None
+        else:
+            file_type_for_uploader = [file_type]
+        files = c1.file_uploader(
+            f"{name}",
+            accept_multiple_files=(st.session_state.location == "local"),
+            type=file_type_for_uploader,
+            label_visibility="collapsed",
+            key = 'upload_files'+file_type,
+            on_change= StreamlitUI._upload_callback,
+            args=(files_dir, file_type)
+        )
 
         # Local file upload option: via directory path
         if st.session_state.location == "local":
