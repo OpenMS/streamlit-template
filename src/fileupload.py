@@ -1,6 +1,6 @@
 import shutil
 from pathlib import Path
-
+from os import makedirs
 import streamlit as st
 
 from src.common import reset_directory
@@ -57,6 +57,26 @@ def copy_local_mzML_files_from_directory(local_mzML_directory: str) -> None:
     st.success("Successfully added local files!")
 
 
+def load_example_files(extension, directory) -> None:
+    """
+    Copies example files to the `extension` directory 
+
+    Args:
+        None
+
+    Returns:
+        None
+    """
+    file_dir = Path(directory, extension + "-files")
+    #Create any folders necessary to copy the files
+    makedirs(file_dir, exist_ok=True)
+    print(file_dir)
+    # Copy files from example-data/mzML to workspace mzML directory, add to selected files
+    for f in Path("example-data", extension).glob("*."+ extension):
+        shutil.copy(f, file_dir)
+    st.success("Example " + extension + " files loaded!")
+
+
 def load_example_mzML_files() -> None:
     """
     Copies example mzML files to the mzML directory.
@@ -67,11 +87,7 @@ def load_example_mzML_files() -> None:
     Returns:
         None
     """
-    mzML_dir = Path(st.session_state.workspace, "mzML-files")
-    # Copy files from example-data/mzML to workspace mzML directory, add to selected files
-    for f in Path("example-data", "mzML").glob("*.mzML"):
-        shutil.copy(f, mzML_dir)
-    st.success("Example mzML files loaded!")
+    load_example_files("mzML", st.session_state.workspace)
 
 
 def remove_selected_mzML_files(to_remove: list[str], params: dict) -> dict:

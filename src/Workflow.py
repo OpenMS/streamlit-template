@@ -1,7 +1,9 @@
 import streamlit as st
 import json
+import shutil
 from .workflow.WorkflowManager import WorkflowManager
 from src import view
+from src import fileupload
 from src.common import show_table
 from pathlib import Path
 
@@ -17,9 +19,15 @@ class Workflow(WorkflowManager):
         with t[0]:
             # Use the upload method from StreamlitUI to handle mzML file uploads.
             self.ui.upload_widget(key="mzML-files", name="MS data", file_type="mzML")
+            cols = st.columns(3)
+            if cols[1].button("Load Example Data", type="primary", help="Import the example mzML files", key="example_mzml"):
+                fileupload.load_example_files("mzML",Path(self.workflow_dir, "input-files"))
         with t[1]:
             # Example with fallback data (not used in workflow)
             self.ui.upload_widget(key="fasta-files", name="nucleotide sequence file", file_type="fasta")
+            cols = st.columns(3)
+            if cols[1].button("Load Example Data", type="primary", help="Import the example mzML files", key="example_fasta" ):
+                fileupload.load_example_files("fasta",Path(self.workflow_dir, "input-files"))
 
     def configure(self) -> None:
         # Allow users to select mzML files for the analysis.
@@ -121,7 +129,8 @@ class Workflow(WorkflowManager):
                                                 "out": tab_out, "id_out": id_out})
 
     def results(self) -> None:
-        if Path(self.workflow_dir, "results" ).is_dir() and Path(self.file_manager.get_files("id_out", set_results_dir="idxml_results")[0]).is_file():
+        # Check that results exists at all, that we have output id_xml and that mzML-files is set
+        if Path(self.workflow_dir, "results" ).is_dir() and Path(self.file_manager.get_files("id_out", set_results_dir="idxml_results")[0]).is_file()  and  "mzML-files" in self.params:
             # Load the hits from the idXML file
             df = view.get_id_df( self.file_manager.get_files("id_out", set_results_dir="idxml_results")[0])
             if not df.empty:
