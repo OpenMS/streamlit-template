@@ -134,7 +134,7 @@ class StreamlitUI:
 
         c1, c2 = st.columns(2)
         if current_files:
-            c1.info(f"Current **{name}** files:\n\n" + "\n\n".join(current_files))
+            c1.info(f"Uploaded **{name}** files:\n\n" + "\n\n".join(current_files))
             if c2.button(
                 f"🗑️ Remove all **{name}** files.",
                 use_container_width=True,

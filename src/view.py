@@ -8,7 +8,7 @@ import pyopenms as poms
 
 from typing import Union
 
-@st.cache_data
+
 def get_df(file: Union[str, Path]) -> pd.DataFrame:
     """
     Load a Mass Spectrometry (MS) experiment from a given mzML file and return
@@ -41,7 +41,6 @@ def get_df(file: Union[str, Path]) -> pd.DataFrame:
         return df
     return pd.DataFrame()
 
-@st.cache_data
 def get_id_df(file: Union[str, Path]) -> pd.DataFrame:
     """
     Loads a list of Peptide identifications from a given idXML file and return

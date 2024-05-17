@@ -9,6 +9,7 @@ from .ParameterManager import ParameterManager
 import sys
 import importlib.util
 import json
+from streamlit import rerun
 
 class CommandExecutor:
     """

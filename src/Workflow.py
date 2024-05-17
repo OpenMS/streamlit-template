@@ -6,6 +6,7 @@ from src import view
 from src import fileupload
 from src.common import show_table
 from pathlib import Path
+from os.path import getsize
 
 class Workflow(WorkflowManager):
     # Setup pages for upload, parameter, execution and results.
@@ -132,17 +133,32 @@ class Workflow(WorkflowManager):
         # Check that results exists at all, that we have output id_xml and that mzML-files is set
         if Path(self.workflow_dir, "results" ).is_dir() and Path(self.file_manager.get_files("id_out", set_results_dir="idxml_results")[0]).is_file()  and  "mzML-files" in self.params:
             # Load the hits from the idXML file
-            df = view.get_id_df( self.file_manager.get_files("id_out", set_results_dir="idxml_results")[0])
-            if not df.empty:
-                # select a subset of the columns to display
-                formatted_df = df[['protein_accession','label','RT','mz','charge','hyperscore']]
-                # update column names
-                formatted_df = formatted_df.rename(columns={"protein_accession": "Accession", "RT": "Retention Time (s)", "mz": "M/Z", "hyperscore": "Hyperscore"})
-                # if we have FDR data, add that
-                if self.params["add-decoys"]:
-                  formatted_df['q-value %'] = df.loc[:,('PSM-level q-value')] * 100
+
+            df_file = self.file_manager.get_files("id_out", set_results_dir="idxml_results")[0]
+            # File_size is not a guarantee of no changes, but it's very unlikely that we see a collision.
+            file_size = getsize(df_file)
+            # Only do the actual loading from file if the file size has changed
+            if "df_last_size" not in st.session_state or file_size != st.session_state['df_last_size']:
+                st.session_state['df_last_size'] = file_size
+                df = view.get_id_df( self.file_manager.get_files("id_out", set_results_dir="idxml_results")[0])
+                if not df.empty:
+                    # select a subset of the columns to display
+                    formatted_df = df[['protein_accession','label','RT','mz','charge','hyperscore']]
+                    # update column names
+                    formatted_df = formatted_df.rename(columns={"protein_accession": "Accession", "label":"Sequence", "RT": "Retention Time (s)", "mz": "M/Z", "hyperscore": "Hyperscore"})
+                    # if we have FDR data, add that
+                    if self.params["add-decoys"]:
+                      formatted_df['q-value %'] = df.loc[:,('PSM-level q-value')] * 100
+                    # store the df to our session state
+                    st.session_state['df'] = formatted_df
+                else:
+                    # Make sure that we store the empty df otherwise
+                    st.session_state['df'] = None
+
+            # We are using the cached DF. Just do the display
+            if not st.session_state['df'].empty:
                 # Tabley goodness
-                show_table(formatted_df, download_name="results")
+                show_table(st.session_state['df'], download_name="results")
 
                 with open (self.file_manager.get_files("id_out", set_results_dir="idxml_results")[0]) as file:
                   st.download_button(
@@ -159,5 +175,6 @@ class Workflow(WorkflowManager):
                     file_name = Path(self.params["mzML-files"]).stem + '.mztab',
                     mime = "mztab"
                 )
+            #It is possible that we cached an empty df if there were no results from the search
             else:
-                st.warning("Search returned no results") #FIXME need to get to refresh right
+                st.warning("Search returned no results")
