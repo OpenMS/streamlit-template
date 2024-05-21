@@ -366,6 +366,7 @@ class StreamlitUI:
         exclude_parameters: List[str] = [],
         include_parameters: List[str] = [],
         display_full_parameter_names: bool = False,
+        display_subsections: bool = False,
         custom_defaults: dict = {},
     ) -> None:
         """
@@ -378,7 +379,8 @@ class StreamlitUI:
             num_cols (int, optional): Number of columns to use for the layout. Defaults to 3.
             exclude_parameters (List[str], optional): List of parameter names to exclude from the widget. Defaults to an empty list.
             include_parameters (List[str], optional): List of parameter names to include in the widget. Defaults to an empty list.
-            display_full_parameter_names (bool, optional): Whether to display the full parameter names. Defaults to True.
+            display_full_parameter_names (bool, optional): Whether to display the full parameter names. Defaults to False.
+            display_subsections (bool, optional): Whether to split parameters into subsections based on the prefix (disables display_full_parameter_names). Defaults to False.
             custom_defaults (dict, optional): Dictionary of custom defaults to use. Defaults to an empty dict.
         """
         # write defaults ini files
@@ -394,6 +396,7 @@ class StreamlitUI:
                     if encoded_key in param.keys():
                         param.setValue(encoded_key, value)
                 poms.ParamXMLFile().store(str(ini_file_path), param)
+            
 
         # read into Param object
         param = poms.Param()
@@ -413,7 +416,6 @@ class StreamlitUI:
             valid_keys = [key for key in param.keys() if not (b"input file" in param.getTags(key)
                                                             or b"output file" in param.getTags(key)
                                                             or any([k.encode() in key for k in excluded_keys]))]
-        
         params_decoded = []
         for key in valid_keys:
             entry = param.getEntry(key)
@@ -431,6 +433,7 @@ class StreamlitUI:
                 "valid_strings": [v.decode() for v in entry.valid_strings],
                 "description": entry.description.decode(),
                 "advanced": (b"advanced" in param.getTags(key)),
+                "section_description": param.getSectionDescription(':'.join(key.decode().split(':')[:-1]))
             }
             params_decoded.append(tmp)
                     
@@ -448,6 +451,7 @@ class StreamlitUI:
                 p["value"] = custom_defaults[name]
 
         # show input widgets
+        section_description = None
         cols = st.columns(num_cols)
         i = 0
         
@@ -457,7 +461,17 @@ class StreamlitUI:
                 continue
 
             key = f"{self.parameter_manager.topp_param_prefix}{p['key'].decode()}"
-            if display_full_parameter_names:
+            if display_subsections:
+                 name = p["name"]
+                 if section_description is None:
+                    section_description = p['section_description']
+                    
+                 elif section_description != p['section_description']:
+                    section_description = p['section_description']
+                    st.markdown(f"**{section_description}**")
+                    cols = st.columns(num_cols)
+                    i = 0
+            elif display_full_parameter_names:
                 name = key.split(":1:")[1].replace("algorithm:", "").replace(":", " : ")
             else:
                 name = p["name"]
@@ -514,7 +528,7 @@ class StreamlitUI:
                     ]
                     cols[i].text_area(
                         name,
-                        value="\n".join(p["value"]),
+                        value="\n".join([str(val) for val in p["value"]]),
                         help=p["description"],
                         key=key,
                     )
@@ -527,7 +541,6 @@ class StreamlitUI:
             except Exception as e:
                 cols[i].error(f"Error in parameter **{p['name']}**.")
                 print("Error parsing \""+ p['name'] + "\": " + str(e))
-
 
     def input_python(
         self,

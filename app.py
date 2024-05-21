@@ -61,7 +61,7 @@ This repository contains a simple NucleicAcidSearchEngine workflow in a web appl
                       6. Go to the📊 **Results** tab and scroll through the results table. You can also download the table, a mzTab formatted version of the results, and a TOPPView idXML set of results.
                     """)
     if Path("OpenMS-App.zip").exists():
-        st.markdow("""
+        st.markdown("""
 Download the latest version for Windows here by clicking the button below.
 """)
         with open("OpenMS-App.zip", "rb") as file:
