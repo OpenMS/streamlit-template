@@ -66,7 +66,7 @@ Install all required packages from `requirements.txt`:
 1. Test by running app
 
     ```batch
-        .\python-3.11.9\python -m streamlit run app.py local
+        .\python-3.11.9\Scripts\streamlit.exe run app.py local
     ```
 
 2. Create a Clickable Shortcut
@@ -75,7 +75,7 @@ Install all required packages from `requirements.txt`:
     
     ```batch
     echo @echo off > run_app.bat
-    echo .\\python-3.11.9\\python -m streamlit run app.py local >> run_app.bat
+    echo .\\python-3.11.9\\Scripts\\streamlit.exe run app.py local >> run_app.bat
      ```
 
 ### Create one executable folder
