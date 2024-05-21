@@ -48,7 +48,7 @@ This repository contains a template app for OpenMS workflows in a web applicatio
 """)
     st.subheader("Quick Start")
     if Path("OpenMS-App.zip").exists():
-        st.markdow("""
+        st.markdown("""
 Download the latest version for Windows here by clicking the button below.
 """)
         with open("OpenMS-App.zip", "rb") as file:

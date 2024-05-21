@@ -34,9 +34,9 @@ css = '''
 st.markdown(css, unsafe_allow_html=True)
 
 st.markdown("""
-# 💻  How to package everything for window executables
+# 💻  How to package everything for Windows executables
 
-This guide explains how to package streamlit apps into Windows executables using two different methods:
+This guide explains how to package OpenMS apps into Windows executables using two different methods:
 """)
 
 def fetch_markdown_content(url):
@@ -49,7 +49,7 @@ def fetch_markdown_content(url):
     else:
         return None
 
-tabs = ["window executable with embeddable python", "window executable with pyinstaller"]
+tabs = ["embeddable Python", "PyInstaller"]
 tabs = st.tabs(tabs)
 
 # window executable with embeddable python
