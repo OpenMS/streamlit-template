@@ -33,7 +33,7 @@ def main():
     """
     Display main page content.
     """
-    st.title("NASE-Weis App")
+    st.title("NASEWEIS App")
     st.info("""
 This repository contains a simple NucleicAcidSearchEngine workflow in a web application using the **streamlit** framework. It includes solutions for handling user data and parameters in workspaces as well as deployment with docker-compose.
 """)
@@ -48,7 +48,7 @@ This repository contains a simple NucleicAcidSearchEngine workflow in a web appl
 """)
     st.subheader("Quick Start")
     st.markdown("""
-                      1. Select "NASE-weis" in the sidebar.
+                      1. Select "NASEWEIS" in the sidebar.
                                  
                       2. Load the example mzML (raw data) by clicking the "Load Example Data" button under the "MS data" tab of "📁File Upload".
                     

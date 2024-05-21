@@ -13,7 +13,7 @@ class Workflow(WorkflowManager):
     # For layout use any streamlit components such as tabs (as shown in example), columns, or even expanders.
     def __init__(self) -> None:
         # Initialize the parent class with the workflow name.
-        super().__init__("NASE-weis", st.session_state["workspace"])
+        super().__init__("NASEWEIS", st.session_state["workspace"])
 
     def upload(self)-> None:
         t = st.tabs(["MS data", "Nucleotide sequences"])
