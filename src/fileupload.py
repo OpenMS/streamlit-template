@@ -71,7 +71,6 @@ def load_example_files(file_type, directory) -> None:
     file_dir = Path(directory, file_type + "-files")
     #Create any folders necessary to copy the files
     makedirs(file_dir, exist_ok=True)
-    print(file_dir)
     # Copy files from example-data/mzML to workspace mzML directory, add to selected files
     for f in Path("example-data", file_type).glob("*."+ file_type):
         shutil.copy(f, file_dir)
