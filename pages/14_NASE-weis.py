@@ -40,8 +40,8 @@ if __name__ == "__main__":
                     
                       ### Uploading your files
                     
-                      Navigate to the "📁File Upload" tab in NASE-Weis. There are two sub-tabs "MS data" and "Nucleotide sequences". You can upload your mzML file under the MS-data sub-tab, and your FASTA file under the "Nucleotide sequences" sub-tab by clicking "Browse files",
-                      selecting your file, and then clicking  **Add MS data** or **Add nucleotide sequence file**. After uploading the files, you should see a "Current files" box showing the files that you have uploaded.
+                      Navigate to the "📁File Upload" tab in NASE-Weis. There are two sub-tabs "MS data" and "Nucleotide sequences". You can upload your mzML file under the MS-data sub-tab, and your FASTA file under the "Nucleotide sequences" sub-tab by clicking "Browse files" and
+                      selecting your file. After uploading the files, you should see a "Current files" box showing the files that you have uploaded. Alternatively, you can use the supplied example data by clicking the "Load Example Data" button.
                     
                       ### Configuring NASE-Weis
 

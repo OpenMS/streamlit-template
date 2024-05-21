@@ -20,14 +20,12 @@ class Workflow(WorkflowManager):
         with t[0]:
             # Use the upload method from StreamlitUI to handle mzML file uploads.
             self.ui.upload_widget(key="mzML-files", name="MS data", file_type="mzML")
-            cols = st.columns(3)
-            if cols[1].button("Load Example Data", type="primary", help="Import the example mzML files", key="example_mzml"):
+            if st.button("Load Example Data", type="primary", help="Import the example mzML files", key="example_mzml"):
                 fileupload.load_example_files("mzML",Path(self.workflow_dir,"input-files"))
         with t[1]:
             # Example with fallback data (not used in workflow)
             self.ui.upload_widget(key="fasta-files", name="nucleotide sequence file", file_type="fasta")
-            cols = st.columns(3)
-            if cols[1].button("Load Example Data", type="primary", help="Import the example mzML files", key="example_fasta" ):
+            if st.button("Load Example Data", type="primary", help="Import the example mzML files", key="example_fasta" ):
                 fileupload.load_example_files("fasta",Path(self.workflow_dir,"input-files"))
 
     def configure(self) -> None:
@@ -48,7 +46,7 @@ class Workflow(WorkflowManager):
         with t[1]:
             self.ui.input_widget("ms1_resolution", 60000.0, "MS1 approximate resolution?", "The approximate resolution at which MS1 scans were acquired", "number", min_value=1, max_value=10000000)
             self.ui.input_widget("ms2_resolution", 60000.0, "MS2 approximate resolution?", "The approximate resolution at which MS2 scans were acquired", "number", min_value=1, max_value=10000000)
-            self.ui.input_TOPP("NucleicAcidSearchEngine", exclude_parameters=["variable", "precursor:mass_tolerance", "precursor:mass_tolerance_unit", "decharge_ms2", "include_unknown_charge" , "precursor:use_avg_mass", "precursor:isotopes", "precursor:min_charge", "precursor:max_charge", "precursor:use_adducts", "precursor:potential_adducts", "fragment:mass_tolerance", "fragment:mass_tolerance_unit", "fragment:ions", "resolve_ambiguities", "decoy_pattern", "max_size", "cutoff", "remove_decoys", "min_size"])
+            self.ui.input_TOPP("NucleicAcidSearchEngine", custom_defaults={"oligo:enzyme" : "RNase_T1"}, exclude_parameters=["variable", "precursor:mass_tolerance", "precursor:mass_tolerance_unit", "decharge_ms2", "include_unknown_charge" , "precursor:use_avg_mass", "precursor:isotopes", "precursor:min_charge", "precursor:max_charge", "precursor:use_adducts", "precursor:potential_adducts", "fragment:mass_tolerance", "fragment:mass_tolerance_unit", "fragment:ions", "resolve_ambiguities", "decoy_pattern", "max_size", "cutoff", "remove_decoys", "min_size"])
 
 
     def execution(self) -> None:

@@ -50,7 +50,7 @@ This repository contains a simple NucleicAcidSearchEngine workflow in a web appl
     st.markdown("""
                       1. Select "NASE-weis" in the sidebar.
                                  
-                      2. Load the example MzMl (raw data) by clicking the "Load Example Data" button under the "MS data" tab of "📁File Upload".
+                      2. Load the example mzML (raw data) by clicking the "Load Example Data" button under the "MS data" tab of "📁File Upload".
                     
                       3. Load the example RNA sequence file by clicking the "Load Example Data" button under the "Nucleotide sequences" tab of "📁File Upload".
                     
@@ -74,11 +74,6 @@ Download the latest version for Windows here by clicking the button below.
             )
         st.markdown("""
 Extract the zip file and run the executable (.exe) file to launch the app. Since every dependency is compressed and packacked the app will take a while to launch (up to one minute).
-""")
-    st.markdown("""
-Check out the documentation for **users** and **developers** is included as pages indicated by the 📖 icon
-
-Try the example pages **📁 mzML file upload**, **👀 visualization** and **example workflows**.
 """)
     save_params(params)
 

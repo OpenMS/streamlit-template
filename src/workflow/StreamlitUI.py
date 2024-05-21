@@ -132,7 +132,7 @@ class StreamlitUI:
         if files_dir.exists() and not any(files_dir.iterdir()):
             shutil.rmtree(files_dir)
 
-        c1, c2 = st.columns(2)
+        #c1, c2 = st.columns(2)
         if current_files:
             c1.info(f"Uploaded **{name}** files:\n\n" + "\n\n".join(current_files))
             if c2.button(
