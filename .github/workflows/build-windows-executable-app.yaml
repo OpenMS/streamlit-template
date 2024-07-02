@@ -15,14 +15,14 @@ jobs:
 
     steps:
     - name: Checkout
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
       with:
         repository: OpenMS/OpenMS
         ref: release/${{ env.OPENMS_VERSION }}
         path: 'OpenMS'
 
     - name: Install Qt
-      uses: jurplel/install-qt-action@v3
+      uses: jurplel/install-qt-action@v4
       with:
         version: '5.15.2' # 5.12.7 is broken https://bugreports.qt.io/browse/QTBUG-81715, > 5.15.2 is not available on official archives (https://github.com/miurahr/aqtinstall/issues/636)
         host: 'windows' # default: win64_msvc2017_64
@@ -58,7 +58,7 @@ jobs:
 
     - name: Cache contrib
       id: cache-contrib-win
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: ${{ github.workspace }}/OpenMS/contrib
         key: ${{ runner.os }}-contrib3
@@ -77,7 +77,7 @@ jobs:
         ls
 
     - name: Setup ccache cache
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: .ccache
         key: ${{ runner.os }}-ccache-${{ env.RUN_NAME }}-${{ github.run_number }}
@@ -144,13 +144,13 @@ jobs:
           BUILD_NAME: "${{ env.RUN_NAME }}-Win64-class-topp-${{ github.run_number }}"
 
     - name: Upload TOPP tools as artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: OpenMS-bin
         path: OpenMS/bld/bin
 
     - name: Upload share as artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: OpenMS-share
         path: OpenMS/share
@@ -164,16 +164,16 @@ jobs:
 
     steps:
     - name: Checkout
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: Download TOPP tools as artifact
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: OpenMS-bin
         path: openms-bin
 
     - name: Download share as artifact
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: OpenMS-share
         path: share
@@ -218,7 +218,7 @@ jobs:
         cp app.py streamlit_exe
 
     - name: Delete OpenMS bin artifact
-      uses: geekyeggo/delete-artifact@v2
+      uses: geekyeggo/delete-artifact@v4
       with:
           name: OpenMS-bin
 
@@ -232,7 +232,7 @@ jobs:
         7z a OpenMS-App.zip ./streamlit_exe/* -r
 
     - name: Upload artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: OpenMS-App
         path: OpenMS-App.zip
