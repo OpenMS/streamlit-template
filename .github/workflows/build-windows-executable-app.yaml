@@ -5,13 +5,14 @@ on:
   pull_request:
     branches: [ "main" ]
   workflow_dispatch:
+env:
+  OPENMS_VERSION: 3.0.0 
+  # Define needed TOPP tools here
+  TOPP_TOOLS: "FeatureFinderMetabo MetaboliteAdductDecharger SiriusExport"
 
 jobs:
   build-openms:
     runs-on: windows-latest
-
-    env:
-      OPENMS_VERSION: 3.0.0 
 
     steps:
     - name: Checkout
@@ -206,16 +207,23 @@ jobs:
     - name: Create All-in-one executable folder
       run: |
         mkdir streamlit_exe
+        mkdir streamlit_exe/bin
+
         mv python-${{ env.PYTHON_VERSION }} streamlit_exe
         mv run_app.bat streamlit_exe
         cp -r src streamlit_exe
         cp -r content streamlit_exe
         cp -r assets streamlit_exe
         cp -r example-data streamlit_exe
+        cp openms-bin/*.dll streamlit_exe/bin/
         cp -r .streamlit streamlit_exe
-        cp -r openms-bin streamlit_exe/bin
         cp -r share streamlit_exe/share
         cp app.py streamlit_exe
+
+        $files = $env:TOPP_TOOLS -split ' '
+        foreach ($file in $files) {
+          Copy-Item "openms-bin/${file}.exe" -Destination "streamlit_exe/bin/${file}.exe"
+        }
 
     - name: Delete OpenMS bin artifact
       uses: geekyeggo/delete-artifact@v4

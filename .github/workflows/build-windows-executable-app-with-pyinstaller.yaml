@@ -1,13 +1,14 @@
 name: Build executable for Windows with pyinstaller
 on:
   workflow_dispatch:
+env:
+  OPENMS_VERSION: 3.0.0 
+  # Define needed TOPP tools here
+  TOPP_TOOLS: "FeatureFinderMetabo MetaboliteAdductDecharger SiriusExport"
 
 jobs:
   build-openms:
     runs-on: windows-latest
-
-    env:
-      OPENMS_VERSION: 3.0.0 
 
     steps:
     - name: Checkout
@@ -216,14 +217,22 @@ jobs:
 
     - name: Copy everything to dist directory
       run: |
+        mkdir dist
+        mkdir dist/bin
+        
         cp -r .streamlit dist/.streamlit
         cp -r pages dist/pages
         cp -r src dist/src
         cp -r assets dist/assets
         cp -r example-data dist/example-data
-        cp -r openms-bin dist/bin
+        cp openms-bin/*.dll streamlit_exe/bin/
         cp -r share dist/share
         cp app.py dist/
+
+        $files = $env:TOPP_TOOLS -split ' '
+        foreach ($file in $files) {
+          Copy-Item "openms-bin/${file}.exe" -Destination "dist/bin/${file}.exe"
+        }
     
     - name: Modify .spec file
       shell: bash
