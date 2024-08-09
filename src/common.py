@@ -3,8 +3,10 @@ import os
 import shutil
 import sys
 import uuid
+import time
 from typing import Any
 from pathlib import Path
+from streamlit.components.v1 import html
 
 import streamlit as st
 import pandas as pd
@@ -92,6 +94,10 @@ def page_setup(page: str = "") -> dict[str, Any]:
     Returns:
         dict[str, Any]: A dictionary containing the parameters loaded from the parameter file.
     """
+    if 'settings' not in st.session_state:
+        with open('settings.json', 'r') as f:
+            st.session_state.settings = json.load(f)
+
     # Set Streamlit page configurations
     st.set_page_config(
         page_title=APP_NAME,
@@ -103,8 +109,30 @@ def page_setup(page: str = "") -> dict[str, Any]:
 
     st.logo("assets/pyopenms_transparent_background.png")
 
+    if 'tracking_consent' not in st.session_state:
+        st.session_state.tracking_consent = None
+    if (st.session_state.settings['google_analytics']['enabled']) and (st.session_state.tracking_consent == True):
+        html(
+            f"""
+            <!-- Google tag (gtag.js) -->
+            <script async src="https://www.googletagmanager.com/gtag/js?id={st.session_state.settings['google_analytics']['tag']}"></script>
+            <script>
+                window.dataLayer = window.dataLayer || [];
+                function gtag(){{dataLayer.push(arguments);}}
+                gtag('js', new Date());
+                
+                gtag('config', '{st.session_state.settings['google_analytics']['tag']}');
+            </script>
+            """, 
+            width=1, height=1
+        )
+
     # Determine the workspace for the current session
-    if "workspace" not in st.session_state:
+    if (
+        ("workspace" not in st.session_state) or 
+        (('workspace' in st.query_params) and
+        (st.query_params.workspace != st.session_state.workspace.name))
+        ):
         # Clear any previous caches
         st.cache_data.clear()
         st.cache_resource.clear()
@@ -118,13 +146,23 @@ def page_setup(page: str = "") -> dict[str, Any]:
             os.chdir("../streamlit-template")
         # Define the directory where all workspaces will be stored
         workspaces_dir = Path("..", "workspaces-" + REPOSITORY_NAME)
-        if st.session_state.location == "online":
-            st.session_state.workspace = Path(workspaces_dir, str(uuid.uuid1()))
+        if 'workspace' in st.query_params:
+            st.session_state.workspace = Path(workspaces_dir, st.query_params.workspace)
+        elif st.session_state.location == "online":
+            workspace_id = str(uuid.uuid1())
+            st.session_state.workspace = Path(workspaces_dir, workspace_id)
+            st.query_params.workspace = workspace_id
         else:
             st.session_state.workspace = Path(workspaces_dir, "default")
+            st.query_params.workspace = 'default'
+            
+        if st.session_state.location != "online":
             # not any captcha so, controllo should be true
             st.session_state["controllo"] = True
 
+    if 'workspace' not in st.query_params:
+        st.query_params.workspace = st.session_state.workspace.name
+        
     # Make sure the necessary directories exist
     st.session_state.workspace.mkdir(parents=True, exist_ok=True)
     Path(st.session_state.workspace, "mzML-files").mkdir(parents=True, exist_ok=True)
@@ -165,27 +203,7 @@ def render_sidebar(page: str = "") -> None:
             # Define workspaces directory outside of repository
             workspaces_dir = Path("..", "workspaces-" + REPOSITORY_NAME)
             # Online: show current workspace name in info text and option to change to other existing workspace
-            if st.session_state.location == "online":
-                # Change workspace...
-                new_workspace = st.text_input("enter workspace", "")
-                if st.button("**Enter Workspace**") and new_workspace:
-                    path = Path(workspaces_dir, new_workspace)
-                    if path.exists():
-                        st.session_state.workspace = path
-                    else:
-                        st.warning("⚠️ Workspace does not exist.")
-                # Display info on current workspace and warning
-                st.info(
-                    f"""💡 Your workspace ID:
-
-**{st.session_state['workspace'].name}**
-
-You can share this unique workspace ID with other people.
-
-⚠️ Anyone with this ID can access your data!"""
-                )
-            # Local: user can create/remove workspaces as well and see all available
-            elif st.session_state.location == "local":
+            if st.session_state.location == "local":
                 # Define callback function to change workspace
                 def change_workspace():
                     for key in params.keys():
@@ -194,6 +212,7 @@ You can share this unique workspace ID with other people.
                     st.session_state.workspace = Path(
                         workspaces_dir, st.session_state["chosen-workspace"]
                     )
+                    st.query_params.workspace = st.session_state["chosen-workspace"]
 
                 # Get all available workspaces as options
                 options = [
@@ -214,12 +233,16 @@ You can share this unique workspace ID with other people.
                 if st.button("**Create Workspace**"):
                     path.mkdir(parents=True, exist_ok=True)
                     st.session_state.workspace = path
+                    st.query_params.workspace = create_remove
+                    # Temporary as the query update takes a short amount of time
+                    time.sleep(1)
                     st.rerun()
                 # Remove existing workspace and fall back to default
                 if st.button("⚠️ Delete Workspace"):
                     if path.exists():
                         shutil.rmtree(path)
                         st.session_state.workspace = Path(workspaces_dir, "default")
+                        st.query_params.workspace = 'default'
                         st.rerun()
 
         # All pages have settings, workflow indicator and logo

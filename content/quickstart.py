@@ -117,7 +117,7 @@ st.page_link(
     icon="➡️",
 )
 st.page_link(
-    "content/topp_workflow.py", label="Play around with the example workflow.", icon="➡️"
+    "content/topp_workflow_file_upload.py", label="Play around with the example workflow.", icon="➡️"
 )
 st.markdown(
     """

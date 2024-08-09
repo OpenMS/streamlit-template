@@ -5,7 +5,9 @@ from .CommandExecutor import CommandExecutor
 from .StreamlitUI import StreamlitUI
 from .FileManager import FileManager
 import multiprocessing
+import streamlit as st
 import shutil
+import time
 
 class WorkflowManager:
     # Core workflow logic using the above classes
@@ -32,6 +34,8 @@ class WorkflowManager:
         # Add workflow process id to pid dir
         self.executor.pid_dir.mkdir()
         Path(self.executor.pid_dir, str(workflow_process.pid)).touch()
+        time.sleep(3)
+        st.rerun()
 
     def workflow_process(self) -> None:
         """

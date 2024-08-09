@@ -1,5 +1,6 @@
 from pathlib import Path
 import streamlit as st
+import streamlit.components.v1 as st_components
 from streamlit.source_util import page_icon_and_name, calc_md5, get_pages, _on_pages_changed
 
 from captcha.image import ImageCaptcha
@@ -7,6 +8,9 @@ from captcha.image import ImageCaptcha
 import random
 import string
 import os
+
+
+consent_component = st_components.declare_component("gdpr_consent", path=Path("gdpr_consent"))
 
 
 def delete_all_pages(main_script_path_str: str) -> None:
@@ -193,7 +197,18 @@ def captcha_control():
         None
     """
     # control if the captcha is correct
-    if "controllo" not in st.session_state or st.session_state["controllo"] is False:
+    if "controllo" not in st.session_state or st.session_state["controllo"] == False:
+        
+        if st.session_state.tracking_consent is None:
+            with st.spinner():
+                st.session_state.tracking_consent = consent_component()
+                if st.session_state.tracking_consent is None:
+                    st.stop()
+                else:
+                    print(st.session_state.tracking_consent)
+                    st.rerun()
+
+
         st.title("Make sure you are not a robot🤖")
 
         # define the session state for control if the captcha is correct
