@@ -53,11 +53,17 @@ RUN python -m pip install -r requirements.txt
 # create workdir and copy over all streamlit related files/folders
 WORKDIR /app
 # note: specifying folder with slash as suffix and repeating the folder name seems important to preserve directory structure
-COPY app.py /app/app.py 
-COPY src/ /app/src
+WORKDIR /app
 COPY assets/ /app/assets
-COPY example-data/ /app/example-data
 COPY content/ /app/content
+COPY docs/ /app/docs
+COPY example-data/ /app/example-data
+COPY gdpr_consent/ /app/gdpr_consent
+COPY src/ /app/src
+COPY app.py /app/app.py
+COPY settings.json /app/settings.json
+COPY default-parameters.json /app/default-parameters.json
+
 # For streamlit configuration
 COPY .streamlit/config.toml /app/.streamlit/config.toml
 
