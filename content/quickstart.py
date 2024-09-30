@@ -1,5 +1,5 @@
 """
-Main page for the OpenMS Template App.
+Main page for the OpenMS SageAdapter App.
 
 This module sets up and displays the Streamlit app for the OpenMS Template App.
 It includes:
@@ -25,141 +25,61 @@ from src.common.common import page_setup, v_space
 
 page_setup(page="main")
 
-st.markdown("# 👋 Quick Start")
-st.markdown("## Template for OpenMS web apps using the **streamlit** framework")
-c1, c2 = st.columns(2)
-c1.markdown(
-    """
-## ⭐ Features
-       
-- Simple workflows with **pyOpenMS** 
-- Complex workflows utilizing **OpenMS TOPP tools** with parallel execution.
-- Workspaces for user data with unique shareable IDs
-- Persistent parameters and input files within a workspace
-- Captcha control
-- Packaged executables for Windows
-- Deploy multiple apps easily with [docker-compose](https://github.com/OpenMS/streamlit-deployment)
-"""
-)
-v_space(1, c2)
-c2.image("assets/pyopenms_transparent_background.png", width=300)
-if Path("OpenMS-App.zip").exists():
-    st.subsubheader(
+st.markdown(
         """
-Download the latest version for Windows here by clicking the button below.
-"""
-    )
-    with open("OpenMS-App.zip", "rb") as file:
-        st.download_button(
-            label="Download for Windows",
-            data=file,
-            file_name="OpenMS-App.zip",
-            mime="archive/zip",
-            type="primary",
-        )
-    st.markdown(
+        # PTMScanner
+        ### SageAdapter: Integrating the proteomics search engine into the OpenMS framework. 
+        Welcome to the PTMScanner app, a web application for the SageAdapter tool from OpenMS built using [OpenMS](https://openms.de/) and [pyOpenMS](https://pyopenms.readthedocs.io/en/latest/).
+
         """
-Extract the zip file and run the executable (.exe) file to launch the app. Since every dependency is compressed and packacked the app will take a while to launch (up to one minute).
-"""
     )
-
-st.markdown("## 📖 Documentation")
+    #st.image("assets/NuXL_image.png")
 st.markdown(
-    f"""
-This template app includes documentation for **users** including **installation** and introduction to template specific concepts such as **workspaces** and developers with detailed instructions on **how to create and deploy your own app** based on this template.
-"""
-)
-st.page_link(
-    "content/documentation.py",
-    label="Read documentation here, select chapter in the content menu.",
-    icon="➡️",
-)
+        """
+        In this web-app the Sage search engine is presented in a simple and easy-to-use graphical interface. Sage is a fast and reliable proteomics search engine for the anaylsis of MS data, for more see: [Sage](https://lazear.github.io/sage/). 
+        This tool allows for annotation of various ions, fast discovery of PTMs, and FDR-filtering of results! 
+        """
+    )
+    #In docker, OpenMS-app (executable) can be downloadable from github
+    #TODO: make zip possible 
+    
+st.markdown("""
+        ## Quickstart 
 
-st.markdown(
-    """##  Workspaces and Settings
-The **sidebar** contains to boxes, one for **workspaces** (in local mode) and one for **settings**.
+        You can start right away analyzing your data by following the steps below:
 
-🖥️ **Workspaces** store user inputs, parameters and results for a specific session or analysis task.
+        ### 1. Create a workspace
+        On the left side of this page a workspace  defined where all your data including uploaded files will be stored. In the web app, you can share your results via the unique workspace ID. Be careful with sensitive data, anyone with access to this ID can view your data.
 
-In **online mode** where the app is hosted on a remote server the workspace has a unique identifier number embedded within the URL. To share your data analysis with collaboration partners simply share the URL.
+        ⚠️ Note: In the web app, all users with a unique workspace ID have the same rights.
+                
+        ### 2. 📁 Upload your files
+        Upload `mzML` and `fasta` files via the **File Upload** tab. The data will be stored in your workspace. With the web app you can upload only one file at a time.
+        Locally there is no limit in files. However, it is recommended to upload large number of files by specifying the path to a directory containing the files.
 
-In **local mode** where the app is run locally on a PC (e.g. via Windows executable) the user can create and delete separate workspaces for different projects.
+        Your uploaded files will be shown on the same **File Upload** page. Also you can remove the files from workspace.
 
-⚙️ **Settings** contain global settings which are relevant for all pages, such as the image export format.
-"""
-)
+        ### 3. ⚙️ Analyze your uploaded data
 
+        Select the `mzML` and `fasta` files for analysis, configure user settings, and start the analysis using the **Run-analysis** button.
+        You can terminate the analysis immediately using the **Terminate/Clear** button and you can review the search engine log on the page.
+        Once the analysis completed successfully, the output table will be displayed on the page, along with downloadable links for crosslink identification files.
 
-st.markdown("## Example pages: workflows, visualization and more")
-st.markdown(
-    """
-This app serves both as documentation and showcase what's possible with OpenMS web apps. 
-            
-In general there are two options for building workflows.
-            
-### 1. 🚀 **TOPP Workflow Framework**
-            
-Use this option if you want a standardized framework for building your workflow.
+        #### 4. 📊 View your results
+        Here, you can visualize and explore the output of the search engine. All crosslink output files in the workspace are available on the **View Results** tab.
+        After selecting any file, you can view the "Sage Output Table" and the "PTMs table".
 
-- **Pre-defined user interface** all in one streamlit page with all steps on different pages:
-    - **File Upload**: upload, download and delete input files
-    - **Configure**: Automatically display input widgets for all paramters in TOPP tools and custom Python scripts
-    - **Run**: Start and stop workflow execution, includes continous log
-    - **Results**: Interactive result dashboard
-- **Write less code**: everything from file upload, input widget generation and execution of tools is handled via convenient functions
-- **Fast and performant workflows**: Automatic parallel execution of TOPP tools ensures great speed, comparable with workflows written in bash
-- **Ideal for longer workflows**: Close the app and come back to the still running or finish workflow the next day, by entering your workspace again.
-"""
-)
-st.page_link(
-    "content/documentation.py",
-    label="Check out extensive documentation on the TOPP tool framework.",
-    icon="➡️",
-)
-st.page_link(
-    "content/topp_workflow_file_upload.py", label="Play around with the example workflow.", icon="➡️"
-)
-st.markdown(
-    """
-### 2. 🐍 **Flexible, custom workflow with pyOpenMS on multiple pages**
-            
-Use this option if you want full control over your workflow implementation and user interface.
+        Note: Every table and plot can be downloaded, as indicated in the side-bar under ⚙️ Settings.
 
-Uses the integrated parameter handling with global parameters across pages, including uploaded files.
-            
-To get an idea check out the following pages from the example worklfow (file upload first!).
-"""
-)
-st.page_link(
-    "content/file_upload.py",
-    label="Upload your own mzML files or use the provided example data set.",
-    icon="➡️",
-)
-st.page_link(
-    "content/raw_data_viewer.py",
-    label="Visualize mzML file content in an interactive dashboard.",
-    icon="➡️",
-)
-st.page_link(
-    "content/run_example_workflow.py",
-    label="Run a small example workflow with mzML files and check out results.",
-    icon="➡️",
-)
+        #### How to accessing previously analysed results?
+        Under the **Result Files** tab, you can manage your results. You can `remove` or `download` files from the output files list.
 
-st.markdown(
-    """
-### Other Topics
-            
-Includes other example pages which are independent to showcase other functionalities.
-"""
-)
-st.page_link(
-    "content/simple_workflow.py",
-    label="A very simple worklfow explaining the concepts of data caching in streamlit.",
-    icon="➡️",
-)
-st.page_link(
-    "content/run_subprocess.py",
-    label="How to run any command line tool as subprocess from within the OpenMS web app.",
-    icon="➡️",
-)
+        #### How to upload result files (e.g., from external sources/collaborator) for manual inspection and visualization?
+        At **Upload result files** tab, user can  `upload` the results files and can visualize in **View Results** tab.
+        In the web app, collaborators can visualize files by sharing a unique workspace ID.
+        
+        #### Contact
+        For any inquiries or assistance, please feel free to reach out to us.  
+        [![Discord Shield](https://img.shields.io/discord/832282841836159006?style=flat-square&message=Discord&color=5865F2&logo=Discord&logoColor=FFFFFF&label=Discord)](https://discord.gg/4TAGhqJ7s5) [![Gitter](https://img.shields.io/static/v1?style=flat-square&message=on%20Gitter&color=ED1965&logo=Gitter&logoColor=FFFFFF&label=Chat)](https://gitter.im/OpenMS/OpenMS?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge)
+
+    """)

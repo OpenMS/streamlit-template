@@ -8,15 +8,15 @@
 # prune unused images/etc. to free disc space (e.g. might be needed on gitpod). Use with care.: docker system prune --all --force
 
 FROM ubuntu:22.04 AS setup-build-system
-ARG OPENMS_REPO=https://github.com/OpenMS/OpenMS.git
-ARG OPENMS_BRANCH=develop
+ARG OPENMS_REPO=https://github.com/JohannesvKL/OpenMSOpenSageSearch
+ARG OPENMS_BRANCH=OpenSageSearch
 ARG PORT=8501
 # GitHub token to download latest OpenMS executable for Windows from Github action artifact.
-ARG GITHUB_TOKEN
+#ARG GITHUB_TOKEN
 # Streamlit app Gihub user name (to download artifact from).
-ARG GITHUB_USER=OpenMS
+#ARG GITHUB_USER=OpenMS
 # Streamlit app Gihub repository name (to download artifact from).
-ARG GITHUB_REPO=streamlit-template
+#ARG GITHUB_REPO=streamlit-template
 
 USER root
 
@@ -52,7 +52,7 @@ RUN mamba install cmake
 RUN pip install --upgrade pip && python -m pip install -U setuptools nose Cython autowrap pandas numpy pytest
 
 # Clone OpenMS branch and the associcated contrib+thirdparties+pyOpenMS-doc submodules.
-RUN git clone --recursive --depth=1 -b ${OPENMS_BRANCH} --single-branch ${OPENMS_REPO} && cd /OpenMS
+RUN git clone --recursive --depth=1 -b ${OPENMS_BRANCH} --single-branch ${OPENMS_REPO} /OpenMS
 
 # Pull Linux compatible third-party dependencies and store them in directory thirdparty.
 WORKDIR /OpenMS
@@ -133,10 +133,10 @@ RUN echo "mamba run --no-capture-output -n streamlit-env streamlit run app.py" >
 RUN chmod +x /app/entrypoint.sh
 
 # Download latest OpenMS App executable for Windows from Github actions workflow.
-RUN WORKFLOW_ID=$(curl -s "https://api.github.com/repos/$GITHUB_USER/$GITHUB_REPO/actions/workflows" | jq -r '.workflows[] | select(.name == "Build executable for Windows") | .id') \
-    && SUCCESSFUL_RUNS=$(curl -s "https://api.github.com/repos/$GITHUB_USER/$GITHUB_REPO/actions/runs?workflow_id=$WORKFLOW_ID&status=success" | jq -r '.workflow_runs[0].id') \
-    && ARTIFACT_ID=$(curl -s "https://api.github.com/repos/$GITHUB_USER/$GITHUB_REPO/actions/runs/$SUCCESSFUL_RUNS/artifacts" | jq -r '.artifacts[] | select(.name == "OpenMS-App") | .id') \
-    && curl -LJO -H "Authorization: Bearer $GITHUB_TOKEN" "https://api.github.com/repos/$GITHUB_USER/$GITHUB_REPO/actions/artifacts/$ARTIFACT_ID/zip" -o /app/OpenMS-App
+#RUN WORKFLOW_ID=$(curl -s "https://api.github.com/repos/$GITHUB_USER/$GITHUB_REPO/actions/workflows" | jq -r '.workflows[] | select(.name == "Build executable for Windows") | .id') \
+#    && SUCCESSFUL_RUNS=$(curl -s "https://api.github.com/repos/$GITHUB_USER/$GITHUB_REPO/actions/runs?workflow_id=$WORKFLOW_ID&status=success" | jq -r '.workflow_runs[0].id') \
+#    && ARTIFACT_ID=$(curl -s "https://api.github.com/repos/$GITHUB_USER/$GITHUB_REPO/actions/runs/$SUCCESSFUL_RUNS/artifacts" | jq -r '.artifacts[] | select(.name == "OpenMS-App") | .id') \
+#    && curl -LJO -H "Authorization: Bearer $GITHUB_TOKEN" "https://api.github.com/repos/$GITHUB_USER/$GITHUB_REPO/actions/artifacts/$ARTIFACT_ID/zip" -o /app/OpenMS-App
 
 # Run app as container entrypoint.
 EXPOSE $PORT
