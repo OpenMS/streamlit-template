@@ -45,14 +45,6 @@ sections = [
 current_dir = os.getcwd()
 # take .ini config path
 config_path = os.path.join(current_dir, 'assets', 'OpenMS_Init.ini')
-# take NuXL config dictionary 
-# (will give every section as 1 entry: 
-# entry = {
-        #"name": node_name,
-        #"default": node_default,
-        #"description": node_desc,
-        #"restrictions": restrictions_list
-        # })
 Sage_Config=ini2dict(config_path, sections)
 
 # make sure "selected-mzML-files" is in session state
@@ -408,10 +400,6 @@ if cols[0].form_submit_button("Run-analysis", type="primary"):
                     'Mass': 'first'  # Keep the first occurrence for other columns
                     })
         result_df = result_df.sort_values(by='Modified Peptides', ascending=False)
-
-        st.write(result_df)
-        
-        st.write(result_df["Name"].iloc[1])
                 
         mod_name_top = result_df["Name"].iloc[0]
         i = 1
@@ -423,7 +411,6 @@ if cols[0].form_submit_button("Run-analysis", type="primary"):
 
         research_list.append(top_mod)
         
-        st.write(research_list)
 
         if rerun: 
             for mzML_file_path in mzML_file_paths: 

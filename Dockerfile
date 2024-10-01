@@ -14,9 +14,9 @@ ARG PORT=8501
 # GitHub token to download latest OpenMS executable for Windows from Github action artifact.
 ARG GITHUB_TOKEN
 # Streamlit app Gihub user name (to download artifact from).
-ARG GITHUB_USER=OpenMS
+ARG GITHUB_USER=JohannesvKL
 # Streamlit app Gihub repository name (to download artifact from).
-ARG GITHUB_REPO=streamlit-template
+ARG GITHUB_REPO=PTMScanner
 
 USER root
 
@@ -32,12 +32,14 @@ RUN apt-get install -y --no-install-recommends --no-install-suggests libboost-da
                                                                      libboost-random1.74-dev
 RUN apt-get install -y --no-install-recommends --no-install-suggests qtbase5-dev libqt5svg5-dev libqt5opengl5-dev
 
-# Download and install mamba.
-ENV PATH="/root/mambaforge/bin:${PATH}"
+# Download and install Miniforge (replace Mambaforge)
+ENV PATH="/root/miniforge3/bin:${PATH}"
 RUN wget -q \
-    https://github.com/conda-forge/miniforge/releases/latest/download/Mambaforge-Linux-x86_64.sh \
-    && bash Mambaforge-Linux-x86_64.sh -b \
-    && rm -f Mambaforge-Linux-x86_64.sh
+    https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh \
+    && bash Miniforge3-Linux-x86_64.sh -b \
+    && rm -f Miniforge3-Linux-x86_64.sh
+
+# Check Miniforge and mamba versions to ensure installation
 RUN mamba --version
 
 # Setup mamba environment.

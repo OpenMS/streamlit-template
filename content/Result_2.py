@@ -91,8 +91,6 @@ def remove_substrings(original_string, substrings_to_remove):
         modified_string = modified_string.replace(substring, "")
     return modified_string
 
-nuxl_out_pattern = ["_perc_0.0100_XLs.idXML", "_0.0100_XLs.idXML", "_perc_0.1000_XLs.idXML", "_0.1000_XLs.idXML", "_perc_1.0000_XLs.idXML", "_1.0000_XLs.idXML"]
-
 ########################
 
 ### main content of page

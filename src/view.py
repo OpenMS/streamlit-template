@@ -390,7 +390,7 @@ def plot_ms2_spectrum_full(spec, title, base_color):
         x=df["mz"], y=df["intensity"], 
         mode='lines', 
         line=dict(color=base_color, width=1),
-        name='Annotated peaks'  
+        name='Peaks'  
     ))
 
     # Annotate every line with a string if annotation exists
