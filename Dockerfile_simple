@@ -29,11 +29,13 @@ RUN update-ca-certificates
 
 
 # Install mamba (faster than conda)
-ENV PATH="/root/mambaforge/bin:${PATH}"
+ENV PATH="/root/miniforge3/bin:${PATH}"
 RUN wget -q \
-    https://github.com/conda-forge/miniforge/releases/latest/download/Mambaforge-Linux-x86_64.sh \
-    && bash Mambaforge-Linux-x86_64.sh -b \
-    && rm -f Mambaforge-Linux-x86_64.sh
+    https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh \
+    && bash Miniforge3-Linux-x86_64.sh -b \
+    && rm -f Miniforge3-Linux-x86_64.sh
+
+# Check Miniforge and mamba versions to ensure installation
 RUN mamba --version
 
 # Activate and configure the mamba environment
