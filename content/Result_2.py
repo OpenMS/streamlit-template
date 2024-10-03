@@ -9,11 +9,6 @@ from pyopenms import *
 
 params = page_setup()
 
-# If run in hosted mode, show captcha as long as it has not been solved
-if 'controllo' not in st.session_state or params["controllo"] == False:
-    # Apply captcha by calling the captcha_control function
-    captcha_control()
-
 
 ##################################
 

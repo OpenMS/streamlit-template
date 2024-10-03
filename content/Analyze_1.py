@@ -306,6 +306,8 @@ if cols[0].form_submit_button("Run-analysis", type="primary"):
             result_dict["success"] = False
             # If session state is local
             if st.session_state.location == "local":
+                SageAdapter_exec = os.path.join(os.getcwd(),'bin', 'SageAdapter')
+                sage_exec = os.path.join(os.getcwd(), 'sage', 'sage') 
                 args = [SageAdapter_exec, "-in"]
                 args.extend((mzMLfilepath))
                 args.extend([ "-database", database_file_path, "-out", result_path,
@@ -329,7 +331,7 @@ if cols[0].form_submit_button("Run-analysis", type="primary"):
                         "-fragment_tol_left",  Fragment_MT_left, "-fragment_tol_right", Fragment_MT_right , "-fragment_tol_unit",  Fragment_MT_unit,
                         "-min_len", peptide_min, "-max_len",peptide_max, "-missed_cleavages",Missed_cleavages, "-enzyme", Enzyme,
                         "-max_variable_mods", Variable_max_per_peptide,"-annotate_matches",str(Annotate_TF).lower(), "-report_psms",str(psm_scores).lower(),"-deisotope", str(Deisotope).lower(), "-chimera", str(Chimera).lower(),"-predict_rt",str(Predict_rt).lower(), 
-                        "-wide_window", str(Wide_window_mode).lower(),"-smoothing", str(smoothing).lower(), "-q_value_threshold", FDR_Var ,  "-sage_executable", "sage"
+                        "-wide_window", str(Wide_window_mode).lower(),"-smoothing", str(smoothing).lower(), "-q_value_threshold", FDR_Var
                         ])
 
             
@@ -418,7 +420,6 @@ if cols[0].form_submit_button("Run-analysis", type="primary"):
                 mzMLfilepath = [mzML_file_path]
                 base_name = os.path.basename(mzML_file_path)
                 base = base_name.removesuffix(".mzML")
-                st.write(base)
                 result_path = os.path.join(result_dir, base + "Output-Rerun" + ".idXML")
                 # If session state is local
                 if st.session_state.location == "local":
@@ -459,12 +460,10 @@ if cols[0].form_submit_button("Run-analysis", type="primary"):
 
                 # run subprocess command
                 #st.write(st.session_state.location)
-                st.write(args)
                 run_subprocess(args, result_dict)
 
     # if run_subprocess success (no need if not success because error will show/display in run_subprocess command)
         if result_dict["success"]:
-            st.write("Great Success! ")
 
             # Save the log to a text file in the result_dir
             log_file_path = result_dir / f"log.txt"

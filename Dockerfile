@@ -63,7 +63,7 @@ RUN mkdir /thirdparty && \
     cp -r THIRDPARTY/All/* /thirdparty && \
     cp -r THIRDPARTY/Linux/64bit/* /thirdparty && \
     chmod -R +x /thirdparty
-ENV PATH="/thirdparty/LuciPHOr2:/thirdparty/MSGFPlus:/thirdparty/Sirius:/thirdparty/ThermoRawFileParser:/thirdparty/Comet:/thirdparty/Fido:/thirdparty/MaRaCluster:/thirdparty/MyriMatch:/thirdparty/OMSSA:/thirdparty/Percolator:/thirdparty/SpectraST:/thirdparty/XTandem:/thirdparty/crux:${PATH}"
+ENV PATH="/thirdparty/Sage:/thirdparty/LuciPHOr2:/thirdparty/MSGFPlus:/thirdparty/Sirius:/thirdparty/ThermoRawFileParser:/thirdparty/Comet:/thirdparty/Fido:/thirdparty/MaRaCluster:/thirdparty/MyriMatch:/thirdparty/OMSSA:/thirdparty/Percolator:/thirdparty/SpectraST:/thirdparty/XTandem:/thirdparty/crux:${PATH}"
 
 # Build OpenMS and pyOpenMS.
 FROM setup-build-system AS compile-openms
@@ -111,9 +111,8 @@ FROM compile-openms AS run-app
 
 # note: specifying folder with slash as suffix and repeating the folder name seems important to preserve directory structure
 WORKDIR /app
-COPY app.py /app/app.py 
-COPY src/ /app/src
 COPY assets/ /app/assets
+COPY content/ /app/content
 COPY example-data/ /app/example-data
 COPY gdpr_consent/ /app/gdpr_consent
 COPY src/ /app/src
