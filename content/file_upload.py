@@ -16,6 +16,14 @@ if st.session_state.location == "local":
 
 tabs = st.tabs(tabs)
 
+# Make sure "selected-mzML-files" is in session state
+if "selected-mzML-files" not in st.session_state:
+    st.session_state["selected-mzML-files"] = params["selected-mzML-files"]
+
+# Make sure "selected-fasta-files" is in session state
+if "selected-fasta-files" not in st.session_state:
+    st.session_state["selected-fasta-files"] = params.get("selected-fasta-files", [])
+
 with tabs[0]:
     with st.form("mzML-upload", clear_on_submit=True):
         files = st.file_uploader(
@@ -131,3 +139,4 @@ if any(Path(mzML_dir).iterdir()):
             st.rerun()
 
 save_params(params)
+

@@ -119,8 +119,8 @@ with tabs[0]:
         session_files = [f.name for f in Path(st.session_state.workspace,"result-files").iterdir() if (f.name.endswith(".idXML"))]
         mzML_files = [f2.name for f2 in Path(st.session_state.workspace,"mzML-files").iterdir() if (f2.name.endswith(".mzML"))]
         # select box to select .idXML file to see the results
-        selected_file = st.selectbox("choose a currently protocol file to view",session_files)
-        selected_mzML_file = st.selectbox("choose a currently protocol file to view",mzML_files)
+        selected_file = st.selectbox("choose an output idXML file to view",session_files)
+        selected_mzML_file = st.selectbox("choose the corresponding mzML file for annotation",mzML_files)
 
         #current workspace session path
         workspace_path = Path(st.session_state.workspace)
@@ -141,10 +141,7 @@ with tabs[0]:
             else: 
                 file_name_wout_out = selected_file.replace(".idXML", "")
 
-            #st.write( os.path.join(Path.cwd().parent ,  str(st.session_state.workspace)[3:] , "mzML-files" ,f"{file_name_wout_out}.mzML"))
-
-            #if os.path.isfile(os.path.join(Path.cwd().parent ,  str(st.session_state.workspace)[3:] , "mzML-files" ,f"{file_name_wout_out}.mzML")): 
-                #st.write("File found")
+         
             if selected_mzML_file: 
                 MS2 = process_mzML_file(os.path.join(Path.cwd().parent ,  str(st.session_state.workspace)[3:] , "mzML-files" ,selected_mzML_file))
                 if MS2 is None:
@@ -185,13 +182,7 @@ with tabs[0]:
 
                     
 
-                        #st.write(selected_row)
-                        
-                        #st.write(type(selected_row))
-                        #st.write(selected_row.get(0))
-                        #st.write(selected_row["Label"])
-                        #st.write( selected_row[ "Label"] )
-                        #st.write(selected_row['intensities'])
+                    
 
                         if not(selected_row is None):
                             # Create a dictionary of annotation features
@@ -200,29 +191,21 @@ with tabs[0]:
                                     'anotarray': [str(value) for value in {selected_row['ions'][0]}.pop().split(',')]
                                 }
                             
-                            #annotation_data_idxml_df = pd.DataFrame(annotation_data_idxml)
-                            #annotation_data_idxml_df.to_csv(str(selected_row[0]['ScanNr']) + "_idxml_annot.csv")
-                            #st.write("ANOT:", annotation_data_idxml["anotarray"])
-                            #st.write("MZ:",annotation_data_idxml["mzarray"])
-                            #st.write("INT:",annotation_data_idxml["intarray"])
+                 
 
 
                             if MS2 is not None:
                                 # Extract m/z and intensity data from the selected MS2 spectrum
                                 mz_full, inten_full = get_mz_intensities_from_ms2(MS2_spectras=MS2, native_id=selected_row['SpecId'][0])
-                                #st.write("MZFULL: ",list(mz_full) )
-                                #st.write("INTENFULL: ",list(inten_full) )
+                      
                                 scaled = []
                                 for i in annotation_data_idxml['intarray']: 
                                     scaled.append(i/max(annotation_data_idxml['intarray']))
                                 
-                                #st.write("scaled", scaled)
+
                                 # Convert annotation_data into a dictionary for efficient matching
                                 annotation_dict = {(round(mz, 2)): (anot, i) for i, mz, anot in zip(scaled, annotation_data_idxml['mzarray'], annotation_data_idxml['anotarray'])}
 
-                                #st.write(list(zip(scaled, annotation_data_idxml['mzarray'], annotation_data_idxml['anotarray'])))
-                                #st.write(annotation_dict.keys())
-                                #st.write(annotation_dict.values())
 
                                 # Annotate the data
                                 annotation_data = []
@@ -266,8 +249,7 @@ with tabs[0]:
 
             ptm_output_files = [f.name for f in Path(st.session_state.workspace,"result-files").iterdir() if (f.name.find("OutputTable.tsv")) != -1]
             selected_ptm_files = st.multiselect("choose a PTM-output file to view",ptm_output_files)
-            # Creating the new filename as same as selected idXML file
-            #new_filename = ""#f"{}_proteins{}_XLs.tsv"
+
 
             ptm_paths = []
 

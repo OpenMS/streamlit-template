@@ -298,7 +298,7 @@ if cols[0].form_submit_button("Run-analysis", type="primary"):
     with st.status("Running analysis... Please wait until analysis done 😑"):
         for mzML_file_path in mzML_file_paths: 
 
-            mzMLfilepath = [mzML_file_path]
+            mzMLfilepath = mzML_file_path
             base_name = os.path.basename(mzML_file_path)
             base = base_name.removesuffix(".mzML")
             result_path = os.path.join(result_dir, base + "Output" + ".idXML")
@@ -309,7 +309,7 @@ if cols[0].form_submit_button("Run-analysis", type="primary"):
                 SageAdapter_exec = os.path.join(os.getcwd(),'bin', 'SageAdapter')
                 sage_exec = os.path.join(os.getcwd(), 'sage', 'sage') 
                 args = [SageAdapter_exec, "-in"]
-                args.extend((mzMLfilepath))
+                args.append(mzMLfilepath)
                 args.extend([ "-database", database_file_path, "-out", result_path,
                             "-precursor_tol_left",  Precursor_MT_left, "-precursor_tol_right", Precursor_MT_right, "-precursor_tol_unit",  Precursor_MT_unit,
                             "-fragment_tol_left",  Fragment_MT_left, "-fragment_tol_right", Fragment_MT_right , "-fragment_tol_unit",  Fragment_MT_unit,
@@ -325,7 +325,7 @@ if cols[0].form_submit_button("Run-analysis", type="primary"):
                 #st.write("In docker")
                 #sage_exec = "/usr/local/bin/sage"
                 args = ["SageAdapter", "-in"]
-                args.extend((mzMLfilepath))
+                args.append(mzMLfilepath)
                 args.extend([ "-database", database_file_path, "-out", result_path,
                         "-precursor_tol_left",  Precursor_MT_left, "-precursor_tol_right", Precursor_MT_right, "-precursor_tol_unit",  Precursor_MT_unit,
                         "-fragment_tol_left",  Fragment_MT_left, "-fragment_tol_right", Fragment_MT_right , "-fragment_tol_unit",  Fragment_MT_unit,
@@ -417,14 +417,14 @@ if cols[0].form_submit_button("Run-analysis", type="primary"):
         if rerun: 
             for mzML_file_path in mzML_file_paths: 
 
-                mzMLfilepath = [mzML_file_path]
+                mzMLfilepath = mzML_file_path
                 base_name = os.path.basename(mzML_file_path)
                 base = base_name.removesuffix(".mzML")
                 result_path = os.path.join(result_dir, base + "Output-Rerun" + ".idXML")
                 # If session state is local
                 if st.session_state.location == "local":
                     args = [SageAdapter_exec, "-in"]
-                    args.extend((mzMLfilepath))
+                    args.append(mzMLfilepath)
                     args.extend([ "-database", database_file_path, "-out", result_path,
                                 "-precursor_tol_left",  Precursor_MT_left, "-precursor_tol_right", Precursor_MT_right, "-precursor_tol_unit",  Precursor_MT_unit,
                                 "-fragment_tol_left",  Fragment_MT_left, "-fragment_tol_right", Fragment_MT_right , "-fragment_tol_unit",  Fragment_MT_unit,
@@ -436,7 +436,7 @@ if cols[0].form_submit_button("Run-analysis", type="primary"):
                 # If session state is online/docker
                 else:     
                     args = ["SageAdapter", "-in"]
-                    args.extend(mzMLfilepath)
+                    args.append(mzML_file_path)
                     args.extend([ "-database", database_file_path, "-out", result_path,
                             "-precursor_tol_left",  Precursor_MT_left, "-precursor_tol_right", Precursor_MT_right, "-precursor_tol_unit",  Precursor_MT_unit,
                             "-fragment_tol_left",  Fragment_MT_left, "-fragment_tol_right", Fragment_MT_right , "-fragment_tol_unit",  Fragment_MT_unit,
