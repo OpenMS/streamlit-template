@@ -176,7 +176,7 @@ with tabs[0]:
                                     columns_auto_size_mode=ColumnsAutoSizeMode.FIT_CONTENTS)
 
                         #download table
-                        show_table(CSM_, f"{os.path.splitext(selected_file)[0]}")
+                        #show_table(CSM_, f"{os.path.splitext(selected_file)[0]}")
                         #select row by user
                         selected_row = data["selected_rows"]
 

@@ -383,7 +383,6 @@ if cols[0].form_submit_button("Run-analysis", type="primary"):
 
         for file in outfiles: 
             outfile_val = pd.read_csv( (str(result_dir) + "/" + file), sep = "\t")
-            show_table(outfile_val)
             combined_df_list.append(outfile_val)
 
     
@@ -463,7 +462,7 @@ if cols[0].form_submit_button("Run-analysis", type="primary"):
                 run_subprocess(args, result_dict)
 
     # if run_subprocess success (no need if not success because error will show/display in run_subprocess command)
-        if result_dict["success"]:
+        if result_dict["success"] and rerun:
 
             # Save the log to a text file in the result_dir
             log_file_path = result_dir / f"log.txt"
