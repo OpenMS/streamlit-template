@@ -221,8 +221,6 @@ jobs:
 
     - name: Copy everything to dist directory
       run: |
-        mkdir dist
-        mkdir dist/bin
         
         cp -r .streamlit dist/.streamlit
         cp -r content dist/content
