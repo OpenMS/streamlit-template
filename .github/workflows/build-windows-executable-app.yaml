@@ -5,13 +5,14 @@ on:
   pull_request:
     branches: [ "main" ]
   workflow_dispatch:
+env:
+  OPENMS_VERSION: 3.2.0 
+  # Define needed TOPP tools here
+  TOPP_TOOLS: "FeatureFinderMetabo MetaboliteAdductDecharger SiriusExport"
 
 jobs:
   build-openms:
     runs-on: windows-latest
-
-    env:
-      OPENMS_VERSION: 3.0.0 
 
     steps:
     - name: Checkout
@@ -112,7 +113,7 @@ jobs:
           ctest --output-on-failure -V -S $GITHUB_WORKSPACE/OpenMS/tools/ci/cibuild.cmake
       env:
           #OS_PREFIX_PATH: "${{ env.Qt5_DIR }}/lib/cmake;${{ env.Qt5_DIR }}"
-          CONTRIB_BUILD_DIRECTORY: "${{ github.workspace }}/OpenMS/contrib"
+          OPENMS_CONTRIB_LIBS: "${{ github.workspace }}/OpenMS/contrib"
           CI_PROVIDER: "GitHub-Actions"
           CMAKE_GENERATOR: "Ninja"
           SOURCE_DIRECTORY: "${{ github.workspace }}/OpenMS"
@@ -136,24 +137,28 @@ jobs:
 
     - name: Test Windows
       shell: bash
-      run: $LAUNCHER ctest --output-on-failure -V -S $GITHUB_WORKSPACE/OpenMS/tools/ci/citest.cmake
+      run: ctest --output-on-failure -V -S $GITHUB_WORKSPACE/OpenMS/tools/ci/citest.cmake
       env:
-          LAUNCHER: ""
           SOURCE_DIRECTORY: "${{ github.workspace }}/OpenMS"
           CI_PROVIDER: "GitHub-Actions"
           BUILD_NAME: "${{ env.RUN_NAME }}-Win64-class-topp-${{ github.run_number }}"
 
-    - name: Upload TOPP tools as artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: OpenMS-bin
-        path: OpenMS/bld/bin
+    - name: Package
+      shell: bash
+      run: |
+          ctest --output-on-failure -V -S $GITHUB_WORKSPACE/OpenMS/tools/ci/cipackage.cmake
+      env:
+          SOURCE_DIRECTORY: "${{ github.workspace }}/OpenMS"
+          PACKAGE_TYPE: zip
+          SEARCH_ENGINES_DIRECTORY: "${{ github.workspace }}/_thirdparty"
+          CI_PROVIDER: "GitHub-Actions"
+          CPACK_PACKAGE_FILE_NAME: "openms-package"
 
-    - name: Upload share as artifact
+    - name: Upload package as artifact
       uses: actions/upload-artifact@v4
       with:
-        name: OpenMS-share
-        path: OpenMS/share
+        name: openms-package
+        path: ${{ github.workspace }}/OpenMS/bld/*.zip
 
   build-executable:
     runs-on: windows-latest
@@ -166,17 +171,18 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
 
-    - name: Download TOPP tools as artifact
+    - name: Download package as artifact
       uses: actions/download-artifact@v4
       with:
-        name: OpenMS-bin
-        path: openms-bin
+        name: openms-package
+        path: openms-package
 
-    - name: Download share as artifact
-      uses: actions/download-artifact@v4
-      with:
-        name: OpenMS-share
-        path: share
+    - name: Extract bin and share from package
+      run: |
+        cd openms-package
+        unzip "*.zip" -d .
+        cp -r openms-package/bin ../openms-bin
+        cp -r openms-package/share ../share
 
     - name: Setup python embeddable version
       run: |
@@ -206,26 +212,28 @@ jobs:
     - name: Create All-in-one executable folder
       run: |
         mkdir streamlit_exe
+        mkdir streamlit_exe/bin
+
         mv python-${{ env.PYTHON_VERSION }} streamlit_exe
         mv run_app.bat streamlit_exe
         cp -r src streamlit_exe
         cp -r content streamlit_exe
         cp -r assets streamlit_exe
         cp -r example-data streamlit_exe
+        cp openms-bin/*.dll streamlit_exe/bin/
         cp -r .streamlit streamlit_exe
-        cp -r openms-bin streamlit_exe/bin
         cp -r share streamlit_exe/share
         cp app.py streamlit_exe
+
+        $files = $env:TOPP_TOOLS -split ' '
+        foreach ($file in $files) {
+          Copy-Item "openms-bin/${file}.exe" -Destination "streamlit_exe/bin/${file}.exe"
+        }
 
     - name: Delete OpenMS bin artifact
       uses: geekyeggo/delete-artifact@v5
       with:
-          name: OpenMS-bin
-
-    - name: Delete OpenMS share artifact
-      uses: geekyeggo/delete-artifact@v5
-      with:
-          name: OpenMS-share
+          name: openms-package
           
     - name: Compress streamlit_exe folder to OpenMS-App.zip
       run: |
