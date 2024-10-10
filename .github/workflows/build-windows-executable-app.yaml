@@ -8,7 +8,7 @@ on:
 env:
   OPENMS_VERSION: 3.0.0 
   # Define needed TOPP tools here
-  TOPP_TOOLS: "FeatureFinderMetabo MetaboliteAdductDecharger SiriusExport"
+  TOPP_TOOLS: "FeatureFinderMetabo FeatureLinkerUnlabeledKD"
 
 jobs:
   build-openms:
