@@ -1,26 +1,17 @@
-import streamlit as st 
-
-from src.common import page_setup
-
-page_setup()
-
-st.markdown("""
 # Build your own app based on this template
 
 ## App layout
 
-- *Main page* contains explanatory text on how to use the app and a workspace selector. `app.py`
-- *Pages* can be navigated via *Sidebar*. Sidebar also contains the OpenMS logo, settings panel and a workspace indicator. The *main page* contains a workspace selector as well.
-- See *pages* in the template app for example use cases. The content of this app serves as a documentation.
+*Pages* can be navigated via the *sidebar*, which also contains the OpenMS logo, settings panel and a workspace indicator.
 
 ## Key concepts
 
 - **Workspaces**
 : Directories where all data is generated and uploaded can be stored as well as a workspace specific parameter file.
 - **Run the app locally and online**
-: Launching the app with the `local` argument lets the user create/remove workspaces. In the online the user gets a workspace with a specific ID.
+: Launching the app with online mode disabled in the settings.json lets the user create/remove workspaces. In the online the user gets a workspace with a specific ID.
 - **Parameters**
-: Parameters (defaults in `assets/default-params.json`) store changing parameters for each workspace. Parameters are loaded via the page_setup function at the start of each page. To track a widget variable via parameters simply give them a key and add a matching entry in the default parameters file. Initialize a widget value from the params dictionary.
+: Parameters (defaults in `default-parameters.json`) store changing parameters for each workspace. Parameters are loaded via the page_setup function at the start of each page. To track a widget variable via parameters simply give them a key and add a matching entry in the default parameters file. Initialize a widget value from the params dictionary.
 
 ```python
 params = page_setup()
@@ -32,8 +23,8 @@ save_params()
 ```
 
 ## Code structure
-
-- **Pages** must be placed in the `pages` directory.
+- The main file `app.py` defines page layout.
+- **Pages** must be placed in the `content` directory.
 - It is recommended to use a separate file for defining functions per page in the `src` directory.
 - The `src/common.py` file contains a set of useful functions for common use (e.g. rendering a table with download button).
 
@@ -65,7 +56,7 @@ save_params()
 3. Update Python package dependency files:
     - `requirements.txt` if using `Dockerfile_simple`
     - `environment.yml` if using `Dockerfile`
-   
+
 ## How to build a workflow
 
 ### Simple workflow using pyOpenMS
@@ -75,4 +66,3 @@ Take a look at the example pages `Simple Workflow` or `Workflow with mzML files`
 ### Complex workflow using TOPP tools
 
 This template app features a module in `src/workflow` that allows for complex and long workflows to be built very efficiently. Check out the `TOPP Workflow Framework` page for more information (on the *sidebar*).
-""")

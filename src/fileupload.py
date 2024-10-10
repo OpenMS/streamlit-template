@@ -3,7 +3,7 @@ from pathlib import Path
 
 import streamlit as st
 
-from src.common import reset_directory
+from src.common.common import reset_directory
 
 
 @st.cache_data
@@ -35,12 +35,13 @@ def save_uploaded_mzML(uploaded_files: list[bytes]) -> None:
     st.success("Successfully added uploaded files!")
 
 
-def copy_local_mzML_files_from_directory(local_mzML_directory: str) -> None:
+def copy_local_mzML_files_from_directory(local_mzML_directory: str, make_copy: bool=True) -> None:
     """
     Copies local mzML files from a specified directory to the mzML directory.
 
     Args:
         local_mzML_directory (str): Path to the directory containing the mzML files.
+        make_copy (bool): Whether to make a copy of the files in the workspace. Default is True. If False, local file paths will be written to an external_files.txt file.
 
     Returns:
         None
@@ -53,7 +54,18 @@ def copy_local_mzML_files_from_directory(local_mzML_directory: str) -> None:
     # Copy all mzML files to workspace mzML directory, add to selected files
     files = Path(local_mzML_directory).glob("*.mzML")
     for f in files:
-        shutil.copy(f, Path(mzML_dir, f.name))
+        if make_copy:
+            shutil.copy(f, Path(mzML_dir, f.name))
+        else:
+            # Create a temporary file to store the path to the local directories
+            external_files = Path(mzML_dir, "external_files.txt")
+            # Check if the file exists, if not create it
+            if not external_files.exists():
+                external_files.touch()
+            # Write the path to the local directories to the file
+            with open(external_files, "a") as f_handle:
+                f_handle.write(f"{f}\n")
+                
     st.success("Successfully added local files!")
 
 

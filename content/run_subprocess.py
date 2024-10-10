@@ -4,17 +4,11 @@ import os
 
 from pathlib import Path
 
-from src.common import page_setup, save_params
-from src.captcha_ import captcha_control
+from src.common.common import page_setup, save_params
 from src.run_subprocess import run_subprocess
 
 # Page name "workflow" will show mzML file selector in sidebar
 params = page_setup()
-
-# If run in hosted mode, show captcha as long as it has not been solved
-if "controllo" not in st.session_state or params["controllo"] is False:
-    # Apply captcha by calling the captcha_control function
-    captcha_control()
 
 st.title("Run subprocess")
 st.markdown(

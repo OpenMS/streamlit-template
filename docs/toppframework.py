@@ -3,17 +3,13 @@ from src.Workflow import Workflow
 from src.workflow.StreamlitUI import StreamlitUI
 from src.workflow.FileManager import FileManager
 from src.workflow.CommandExecutor import CommandExecutor
-from src.common import page_setup
 from inspect import getsource
 
-page_setup()
+def content():
+    st.title("TOPP Workflow Framework Documentation")
 
-wf = Workflow()
-
-st.title("📖 TOPP Workflow Framework Documentation")
-
-st.markdown(
-"""
+    st.markdown(
+        """
 ## Features
 
 - streamlined methods for uploading files, setting parameters, and executing workflows
@@ -24,10 +20,10 @@ st.markdown(
 - user can leave the app and return to the running workflow at any time
 - quickly build a workflow with multiple steps channelling files between steps
 """
-)
+    )
 
-st.markdown(
-"""
+    st.markdown(
+        """
 ## Quickstart
 
 This repository contains a module in `src/workflow` that provides a framework for building and running analysis workflows.
@@ -38,7 +34,7 @@ To build your own workflow edit the file `src/TOPPWorkflow.py`. Use any streamli
 
 > 💡 Simply set a name for the workflow and overwrite the **`upload`**, **`configure`**, **`execution`** and **`results`** methods in your **`Workflow`** class.
 
-The file `pages/6_TOPP-Workflow.py` displays the workflow content and can, but does not have to be modified.
+The file `content/6_TOPP-Workflow.py` displays the workflow content and can, but does not have to be modified.
 
 The `Workflow` class contains four important members, which you can use to build your own workflow:
 
@@ -52,44 +48,47 @@ The `Workflow` class contains four important members, which you can use to build
 
 > **`self.file_manager`:** object of type `FileManager` to handle file types and creation of output directories.
 """
-)
+    )
 
-with st.expander("**Complete example for custom Workflow class**", expanded=False):
-    st.code(getsource(Workflow))
+    with st.expander("**Complete example for custom Workflow class**", expanded=False):
+        st.code(getsource(Workflow))
 
-st.markdown(
-"""
+    st.markdown(
+        """
 ## File Upload
 
 All input files for the workflow will be stored within the workflow directory in the subdirectory `input-files` within it's own subdirectory for the file type.
 
 The subdirectory name will be determined by a **key** that is defined in the `self.ui.upload_widget` method. The uploaded files are available by the specific key for parameter input widgets and accessible while building the workflow.
 
-Calling this method will create a complete file upload widget section with the following components:
+Calling this method will create a complete file upload page with the following components:
 
 - file uploader
 - list of currently uploaded files with this key (or a warning if there are none)
 - button to delete all files
 
 Fallback files(s) can be specified, which will be used if the user doesn't upload any files. This can be useful for example for database files where a default is provided.
-""")
+"""
+    )
 
-st.code(getsource(Workflow.upload))
+    st.code(getsource(Workflow.upload))
 
-st.info("💡 Use the same **key** for parameter widgets, to select which of the uploaded files to use for analysis.")
+    st.info(
+        "💡 Use the same **key** for parameter widgets, to select which of the uploaded files to use for analysis."
+    )
 
-with st.expander("**Code documentation:**", expanded=True):
-    st.help(StreamlitUI.upload_widget)
+    with st.expander("**Code documentation:**", expanded=True):
+        st.help(StreamlitUI.upload_widget)
 
-st.markdown(
-    """
+    st.markdown(
+        """
 ## Parameter Input
 
-The paramter section is already pre-defined as a form with buttons to **save parameters** and **load defaults** and a toggle to show TOPP tool parameters marked as advanced.
+The parameter page is already pre-defined as a form with buttons to **save parameters** and **load defaults** and a toggle to show TOPP tool parameters marked as advanced.
 
 Generating parameter input widgets is done with the `self.ui.input` method for any parameter and the `self.ui.input_TOPP` method for TOPP tools.
 
-**1. Choose `self.ui.input_widget` for any paramter not-related to a TOPP tool or `self.ui.select_input_file` for any input file:**
+**1. Choose `self.ui.input_widget` for any parameter not-related to a TOPP tool or `self.ui.select_input_file` for any input file:**
 
 It takes the obligatory **key** parameter. The key is used to access the parameter value in the workflow parameters dictionary `self.params`. Default values do not need to be specified in a separate file. Instead they are determined from the widgets default value automatically. Widget types can be specified or automatically determined from **default** and **options** parameters. It's suggested to add a **help** text and other parameters for numerical input.
 
@@ -102,10 +101,14 @@ It takes the obligatory **topp_tool_name** parameter and generates input widgets
 **3. Choose `self.ui.input_python` to automatically generate complete input sections for a custom Python tool:**
 
 Takes the obligatory **script_file** argument. The default location for the Python script files is in `src/python-tools` (in this case the `.py` file extension is optional in the **script_file** argument), however, any other path can be specified as well. Parameters need to be specified in the Python script in the **DEFAULTS** variable with the mandatory **key** and **value** parameters.
-""")
+"""
+    )
 
-with st.expander("Options to use as dictionary keys for parameter definitions (see `src/python-tools/example.py` for an example)"):
-    st.markdown("""
+    with st.expander(
+        "Options to use as dictionary keys for parameter definitions (see `src/python-tools/example.py` for an example)"
+    ):
+        st.markdown(
+            """
 **Mandatory** keys for each parameter
 - *key:* a unique identifier
 - *value:* the default value
@@ -120,23 +123,24 @@ with st.expander("Options to use as dictionary keys for parameter definitions (s
 - *help:* a description of the parameter
 - *widget_type:* the type of widget to use for the parameter (default: auto)
 - *advanced:* whether or not the parameter is advanced (default: False)
-""")
-    
-st.code(
-getsource(Workflow.configure)
-)
-st.info("💡 Access parameter widget values by their **key** in the `self.params` object, e.g. `self.params['mzML-files']` will give all selected mzML files.")
+"""
+        )
 
-with st.expander("**Code documentation**", expanded=True):
-    st.help(StreamlitUI.input_widget)
-    st.help(StreamlitUI.select_input_file)
-    st.help(StreamlitUI.input_TOPP)
-    st.help(StreamlitUI.input_python)
-st.markdown(
-    """
+    st.code(getsource(Workflow.configure))
+    st.info(
+        "💡 Access parameter widget values by their **key** in the `self.params` object, e.g. `self.params['mzML-files']` will give all selected mzML files."
+    )
+
+    with st.expander("**Code documentation**", expanded=True):
+        st.help(StreamlitUI.input_widget)
+        st.help(StreamlitUI.select_input_file)
+        st.help(StreamlitUI.input_TOPP)
+        st.help(StreamlitUI.input_python)
+    st.markdown(
+        """
 ## Building the Workflow
 
-Building the workflow involves **calling all (TOPP) tools** using **`self.executor`** with **input and output files** based on the **`FileManager`** class. For TOPP tools non-input-output parameters are handled automatically. Parameters for other processes and workflow logic can be accessed via widget keys (set in the parameter section) in the **`self.params`** dictionary.
+Building the workflow involves **calling all (TOPP) tools** using **`self.executor`** with **input and output files** based on the **`FileManager`** class. For TOPP tools non-input-output parameters are handled automatically. Parameters for other processes and workflow logic can be accessed via widget keys (set on the parameter page) in the **`self.params`** dictionary.
 
 ### FileManager
 
@@ -149,10 +153,11 @@ Optionally set the following parameters modify the files:
 - **set_file_type** (str): set new file types and result subdirectory. 
 - **set_results_dir** (str): set a new subdirectory in the workflows result directory.
 - **collect** (bool): collect all files into a single list. Will return a list with a single entry, which is a list of all files. Useful to pass to tools which can handle multiple input files at once.
-""")
+"""
+    )
 
-st.code(
-    """
+    st.code(
+        """
 # Get all file paths as strings from self.param entry.
 mzML_files = self.file_manager.get_files(self.params["mzML-files])
 # mzML_files = ['../workspaces-streamlit-template/default/topp-workflow/input-files/mzML-files/Control.mzML', '../workspaces-streamlit-template/default/topp-workflow/input-files/mzML-files/Treatment.mzML']
@@ -161,7 +166,7 @@ mzML_files = self.file_manager.get_files(self.params["mzML-files])
 feature_detection_out = self.file_manager.get_files(mzML_files, set_file_type="featureXML", set_results_dir="feature-detection")
 # feature_detection_out = ['../workspaces-streamlit-template/default/topp-workflow/results/feature-detection/Control.featureXML', '../workspaces-streamlit-template/default/topp-workflow/results/feature-detection/Treatment.featureXML']
 
-# Setting a name for the output directory automatically (useful if you never plan to access these files in the results section).
+# Setting a name for the output directory automatically (useful if you never plan to access these files within the results page).
 feature_detection_out = self.file_manager.get_files(mzML_files, set_file_type="featureXML", set_results_dir="auto")
 # feature_detection_out = ['../workspaces-streamlit-template/default/topp-workflow/results/6DUd/Control.featureXML', '../workspaces-streamlit-template/default/topp-workflow/results/6DUd/Treatment.featureXML']
 
@@ -169,13 +174,13 @@ feature_detection_out = self.file_manager.get_files(mzML_files, set_file_type="f
 mzML_files = self.file_manager.get_files(mzML_files, collect=True)
 # mzML_files = [['../workspaces-streamlit-template/default/topp-workflow/input-files/mzML-files/Control.mzML', '../workspaces-streamlit-template/default/topp-workflow/input-files/mzML-files/Treatment.mzML']]
     """
-)
+    )
 
-with st.expander("**Code documentation**", expanded=True):
-    st.help(FileManager.get_files)
+    with st.expander("**Code documentation**", expanded=True):
+        st.help(FileManager.get_files)
 
-st.markdown(
-    """
+    st.markdown(
+        """
 ### Running commands
 
 It is possible to execute any command line command using the **`self.executor`** object, either a single command or a list of commands in parallel. Furthermore a method to run TOPP tools is included.
@@ -183,14 +188,17 @@ It is possible to execute any command line command using the **`self.executor`**
 **1. Single command**
 
 The `self.executor.run_command` method takes a single command as input and optionally logs stdout and stderr to the workflow log (default True).
-""")
+"""
+    )
 
-st.code("""
+    st.code(
+        """
 self.executor.run_command(["command", "arg1", "arg2", ...])
-""")
+"""
+    )
 
-st.markdown(
-    """
+    st.markdown(
+        """
 **2. Run multiple commands in parallel**
 
 The `self.executor.run_multiple_commands` method takes a list of commands as inputs.
@@ -200,17 +208,21 @@ The `self.executor.run_multiple_commands` method takes a list of commands as inp
 The `self.executor.run_topp` method takes a TOPP tool name as input and a dictionary of input and output files as input. The **keys** need to match the actual input and output parameter names of the TOPP tool. The **values** should be of type `FileManager`. All other **non-default parameters (from input widgets)** will be passed to the TOPP tool automatically.
 
 Depending on the number of input files, the TOPP tool will be run either in parallel or in a single run (using **`FileManager.collect`**).
-""")
+"""
+    )
 
-st.info("""💡 **Input and output file order**
+    st.info(
+        """💡 **Input and output file order**
         
 In many tools, a single input file is processed to produce a single output file.
 When dealing with lists of input or output files, the convention is that
 files are paired based on their order. For instance, the n-th input file is
 assumed to correspond to the n-th output file, maintaining a structured
 relationship between input and output data.       
-""")
-st.code("""
+"""
+    )
+    st.code(
+        """
 # e.g. FeatureFinderMetabo takes single input files
 in_files = self.file_manager.get_files(["sample1.mzML", "sample2.mzML"])
 out_files = self.file_manager.get_files(in_files, set_file_type="featureXML", set_results_dir="feature-detection")
@@ -226,29 +238,32 @@ self.executor.run_topp("SiriusExport", {"in": self.file_manager.get_files(in_fil
                                         "in_featureinfo": self.file_manager.get_files(out_files, collect=True),
                                         "out": out_se})
 # SiriusExport -in sample1.mzML sample2.mzML -in_featureinfo sample1.featureXML sample2.featureXML -out sirius.ms
-        """)
+        """
+    )
 
-st.markdown("""
+    st.markdown(
+        """
 **4. Run custom Python scripts**
 
 Sometimes it is useful to run custom Python scripts, for example for extra functionality which is not included in a TOPP tool.
 
 `self.executor.run_python` works similar to `self.executor.run_topp`, but takes a single Python script as input instead of a TOPP tool name. The default location for the Python script files is in `src/python-tools` (in this case the `.py` file extension is optional in the **script_file** argument), however, any other path can be specified as well. Input and output file parameters need to be specified in the **input_output** dictionary.
-""")
+"""
+    )
 
-st.code("""
+    st.code(
+        """
 # e.g. example Python tool which modifies mzML files in place based on experimental design
 self.ui.input_python(script_file="example", input_output={"in": in_mzML, "in_experimantal_design": FileManager(["path/to/experimantal-design.tsv"])})       
-        """)
+        """
+    )
 
-st.markdown("**Example for a complete workflow section:**")
+    st.markdown("**Example for a complete workflow:**")
 
-st.code(
-getsource(Workflow.execution)
-)
+    st.code(getsource(Workflow.execution))
 
-with st.expander("**Code documentation**", expanded=True):
-    st.help(CommandExecutor.run_command)
-    st.help(CommandExecutor.run_multiple_commands)
-    st.help(CommandExecutor.run_topp)
-    st.help(CommandExecutor.run_python)
+    with st.expander("**Code documentation**", expanded=True):
+        st.help(CommandExecutor.run_command)
+        st.help(CommandExecutor.run_multiple_commands)
+        st.help(CommandExecutor.run_topp)
+        st.help(CommandExecutor.run_python)

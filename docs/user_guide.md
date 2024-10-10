@@ -1,9 +1,3 @@
-import streamlit as st
-from src.common import page_setup
-
-page_setup()
-
-st.markdown("""
 # User Guide
 
 Welcome to the OpenMS Streamlit Web Application! This guide will help you understand how to use our tools effectively.
@@ -19,7 +13,7 @@ OpenMS web applications provide a user-friendly interface for accessing the powe
 
 In the OpenMS web application, workspaces are designed to keep your analysis organized:
 - **Workspace Specific Parameters and Files**: Each workspace stores parameters and files (uploaded input files and results from workflows).
-- **Persistence**: Your workspaces and parameters are saved, so you can return to your analysis anytime and pick up where you left off.
+- **Persistence**: Your workspaces and parameters are saved, so you can return to your analysis anytime and pick up where you left off. Simply bookmark the page!
 
 ## Online and Local Mode Differences
 
@@ -33,9 +27,10 @@ There are a few key differences between operating in online and local modes:
 
 ## Downloading Results
 
-You can download the results of your analyses, including figures and tables, directly from the application:
+You can download the results of your analyses, including data, figures and tables, directly from the application:
 - **Figures**: Click the camera icon button, appearing while hovering on the top right corner of the figure. Set the desired image format in the settings panel in the side bar.
 - **Tables**: Use the download button to save tables in *csv* format, appearing while hovering on the top right corner of the table.
+- **Data**: Use the download section in the sidebar to download the raw results of your analysis.
 
 ## Getting Started
 
@@ -47,6 +42,3 @@ To get started:
 5. View and download your results.
 
 For more detailed information on each step, refer to the specific sections of this guide.
-""")
-
-

@@ -1,5 +1,6 @@
 from pathlib import Path
 import streamlit as st
+import streamlit.components.v1 as st_components
 from streamlit.source_util import page_icon_and_name, calc_md5, get_pages, _on_pages_changed
 
 from captcha.image import ImageCaptcha
@@ -7,6 +8,9 @@ from captcha.image import ImageCaptcha
 import random
 import string
 import os
+
+
+consent_component = st_components.declare_component("gdpr_consent", path=Path("gdpr_consent"))
 
 
 def delete_all_pages(main_script_path_str: str) -> None:
@@ -64,7 +68,7 @@ def delete_page(main_script_path_str: str, page_name: str) -> None:
 
 def restore_all_pages(main_script_path_str: str) -> None:
     """
-    restore all pages found in the "pages" directory to an app's configuration.
+    restore all pages found in the "content" directory to an app's configuration.
 
     Args:
         main_script_path_str (str): The name of the main page, typically the app's name.
@@ -79,12 +83,12 @@ def restore_all_pages(main_script_path_str: str) -> None:
     main_script_path = Path(main_script_path_str)
 
     # Define the directory where pages are stored
-    pages_dir = main_script_path.parent / "pages"
+    pages_dir = main_script_path.parent / "content"
 
     # To store the pages for later, to add in ascending order
     pages_temp = []
 
-    # Iterate over all .py files in the "pages" directory
+    # Iterate over all .py files in the "content" directory
     for script_path in pages_dir.glob("*.py"):
         # append path with file name
         script_path_str = str(script_path.resolve())
@@ -146,7 +150,7 @@ def add_page(main_script_path_str: str, page_name: str) -> None:
     main_script_path = Path(main_script_path_str)
 
     # Define the directory where pages are stored
-    pages_dir = main_script_path.parent / "pages"
+    pages_dir = main_script_path.parent / "content"
 
     # Find the script path corresponding to the new page
     script_path = [f for f in pages_dir.glob("*.py") if f.name.find(page_name) != -1][0]
@@ -193,7 +197,20 @@ def captcha_control():
         None
     """
     # control if the captcha is correct
-    if "controllo" not in st.session_state or st.session_state["controllo"] is False:
+    if "controllo" not in st.session_state or st.session_state["controllo"] == False:
+        
+        # Check if consent for tracking was given
+        if (st.session_state.settings['google_analytics']['enabled']) and (st.session_state.tracking_consent is None):
+            with st.spinner():
+                # Ask for consent
+                st.session_state.tracking_consent = consent_component()
+                if st.session_state.tracking_consent is None:
+                    # No response by user yet
+                    st.stop()
+                else:
+                    # Consent choice was made
+                    st.rerun()
+
         st.title("Make sure you are not a robot🤖")
 
         # define the session state for control if the captcha is correct
@@ -203,7 +220,7 @@ def captcha_control():
         if "Captcha" not in st.session_state:
             st.session_state["Captcha"] = "".join(
                 random.choices(string.ascii_uppercase + string.digits, k=length_captcha)
-            )
+            ).replace("0", "A").replace("O", "B")
 
         col1, _ = st.columns(2)
         with col1.form("captcha-form"):

@@ -1,23 +1,3 @@
-import streamlit as st 
-from pathlib import Path
-from src.common import page_setup
-
-page_setup()
-
-if Path("OpenMS-App.zip").exists():
-    st.markdown("""
-Download the latest version for **Windows** here clicking the button below.
-""")
-    with open("OpenMS-App.zip", "rb") as file:
-        st.download_button(
-            label="Download for Windows",
-            data=file,
-            file_name="OpenMS-App.zip",
-            mime="archive/zip",
-            type="primary",
-        )
-
-st.markdown("""
 # Installation
 
 ## Windows
@@ -47,9 +27,9 @@ Create and activate the conda environment:
 
 ### run the app
 
-Run the app via streamlit command in the terminal with or without *local* mode (default is *online* mode). Learn more about *local* and *online* mode in the documentation page 📖 **OpenMS Template App**.
+Run the app via streamlit command in the terminal. *local* and *online* mode can be toggled in the settings.json. Learn more about *local* and *online* mode in the documentation page 📖 **OpenMS Template App**.
 
-`streamlit run app.py [local]`
+`streamlit run app.py`
 
 ## Docker
 
@@ -57,5 +37,3 @@ This repository contains two Dockerfiles.
 
 1. `Dockerfile`: This Dockerfile builds all dependencies for the app including Python packages and the OpenMS TOPP tools. Recommended for more complex workflows where you want to use the OpenMS TOPP tools for instance with the **TOPP Workflow Framework**.
 2. `Dockerfile_simple`: This Dockerfile builds only the Python packages. Recommended for simple apps using pyOpenMS only.
-
-""")

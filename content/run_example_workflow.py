@@ -1,21 +1,12 @@
 import streamlit as st
-import pandas as pd
-import plotly.express as px
 
 from pathlib import Path
 
-from src.common import page_setup, save_params, show_fig, show_table
+from src.common.common import page_setup, save_params
 from src import mzmlfileworkflow
-from src.captcha_ import captcha_control
-
 
 # Page name "workflow" will show mzML file selector in sidebar
 params = page_setup()
-
-# If run in hosted mode, show captcha as long as it has not been solved
-if "controllo" not in st.session_state or params["controllo"] is False:
-    # Apply captcha by calling the captcha_control function
-    captcha_control()
 
 st.title("Workflow")
 st.markdown(
@@ -29,9 +20,20 @@ This is great for large parameter sections.
 
 with st.form("workflow-with-mzML-form"):
     st.markdown("**Parameters**")
+    
+    file_options = [f.stem for f in Path(st.session_state.workspace, "mzML-files").glob("*.mzML") if "external_files.txt" not in f.name]
+    
+    # Check if local files are available
+    external_files = Path(Path(st.session_state.workspace, "mzML-files"), "external_files.txt")
+    if external_files.exists():
+        with open(external_files, "r") as f_handle:
+            external_files = f_handle.readlines()
+            external_files = [str(Path(f.strip()).with_suffix('')) for f in external_files]
+            file_options += external_files
+
     st.multiselect(
         "**input mzML files**",
-        [f.stem for f in Path(st.session_state.workspace, "mzML-files").glob("*.mzML")],
+        file_options,
         params["example-workflow-selected-mzML-files"],
         key="example-workflow-selected-mzML-files",
     )
@@ -52,21 +54,6 @@ if run_workflow_button:
     else:
         st.warning("Select some mzML files.")
 
-# visualize workflow results if there are any
-result_file_path = Path(result_dir, "result.tsv")
 
-if result_file_path.exists():
-    df = pd.read_csv(result_file_path, sep="\t", index_col="filenames")
 
-    if not df.empty:
-        tabs = st.tabs(["📁 data", "📊 plot"])
-
-        with tabs[0]:
-            show_table(df, "mzML-workflow-result")
-
-        with tabs[1]:
-            fig = px.bar(df)
-            st.info(
-                "💡 Download figure with camera icon in top right corner. File format can be specified in settings."
-            )
-            show_fig(fig, "mzML-workflow-results")
+mzmlfileworkflow.result_section(result_dir)
