@@ -6,7 +6,7 @@ on:
     branches: [ "main" ]
   workflow_dispatch:
 env:
-  OPENMS_VERSION: 3.0.0 
+  OPENMS_VERSION: 3.2.0 
   # Define needed TOPP tools here
   TOPP_TOOLS: "FeatureFinderMetabo FeatureLinkerUnlabeledKD"
 
@@ -19,8 +19,7 @@ jobs:
       uses: actions/checkout@v4
       with:
         repository: OpenMS/OpenMS
-        # ref: release/${{ env.OPENMS_VERSION }}
-        ref: develop
+        ref: release/${{ env.OPENMS_VERSION }}
         path: 'OpenMS'
 
     - name: Install Qt
