@@ -1,13 +1,18 @@
 name: Build executable for Windows with pyinstaller
 on:
+  push:
+      branches: [ "main" ]
+  pull_request:
+      branches: [ "main" ]
   workflow_dispatch:
+env:
+  OPENMS_VERSION: 3.2.0 
+  # Define needed TOPP tools here
+  TOPP_TOOLS: "FeatureFinderMetabo FeatureLinkerUnlabeledKD"
 
 jobs:
   build-openms:
     runs-on: windows-latest
-
-    env:
-      OPENMS_VERSION: 3.0.0 
 
     steps:
     - name: Checkout
@@ -108,7 +113,7 @@ jobs:
           ctest --output-on-failure -V -S $GITHUB_WORKSPACE/OpenMS/tools/ci/cibuild.cmake
       env:
           #OS_PREFIX_PATH: "${{ env.Qt5_DIR }}/lib/cmake;${{ env.Qt5_DIR }}"
-          CONTRIB_BUILD_DIRECTORY: "${{ github.workspace }}/OpenMS/contrib"
+          OPENMS_CONTRIB_LIBS: "${{ github.workspace }}/OpenMS/contrib"
           CI_PROVIDER: "GitHub-Actions"
           CMAKE_GENERATOR: "Ninja"
           SOURCE_DIRECTORY: "${{ github.workspace }}/OpenMS"
@@ -216,14 +221,20 @@ jobs:
 
     - name: Copy everything to dist directory
       run: |
+        
         cp -r .streamlit dist/.streamlit
         cp -r content dist/content
         cp -r src dist/src
         cp -r assets dist/assets
         cp -r example-data dist/example-data
-        cp -r openms-bin dist/bin
+        cp openms-bin/*.dll streamlit_exe/bin/
         cp -r share dist/share
         cp app.py dist/
+
+        $files = $env:TOPP_TOOLS -split ' '
+        foreach ($file in $files) {
+          Copy-Item "openms-bin/${file}.exe" -Destination "dist/bin/${file}.exe"
+        }
     
     - name: Modify .spec file
       shell: bash
