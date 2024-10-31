@@ -1,8 +1,6 @@
 workspaces-streamlit-template
 build
-dist
 myenv
-hooks/__pycache__/
 build.log
 run_app.spec
 clean-up-workspaces.log
@@ -10,3 +8,5 @@ clean-up-workspaces.log
 get-pip.py
 run_app.bat
 python*
+**/__pycache__/
+gdpr_consent/node_modules/

@@ -1,25 +1,4 @@
-"""
-Main page for the OpenMS Template App.
-
-This module sets up and displays the Streamlit app for the OpenMS Template App.
-It includes:
-- Setting the app title.
-- Displaying a description.
-- Providing a download button for the Windows version of the app.
-
-Usage:
-Run this script to launch the OpenMS Template App.
-
-Note:
-- If run in local mode, the CAPTCHA control is not applied.
-- If not in local mode, CAPTCHA control is applied to verify the user.
-
-Returns:
-    None
-"""
-
-import sys
-
+import streamlit as st
 from pathlib import Path
 import streamlit as st
 

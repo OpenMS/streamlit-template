@@ -209,7 +209,7 @@ jobs:
         mv python-${{ env.PYTHON_VERSION }} streamlit_exe
         mv run_app.bat streamlit_exe
         cp -r src streamlit_exe
-        cp -r pages streamlit_exe
+        cp -r content streamlit_exe
         cp -r assets streamlit_exe
         cp -r example-data streamlit_exe
         cp -r .streamlit streamlit_exe
@@ -218,12 +218,12 @@ jobs:
         cp app.py streamlit_exe
 
     - name: Delete OpenMS bin artifact
-      uses: geekyeggo/delete-artifact@v4
+      uses: geekyeggo/delete-artifact@v5
       with:
           name: OpenMS-bin
 
     - name: Delete OpenMS share artifact
-      uses: geekyeggo/delete-artifact@v2
+      uses: geekyeggo/delete-artifact@v5
       with:
           name: OpenMS-share
           

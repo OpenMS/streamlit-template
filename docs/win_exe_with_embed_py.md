@@ -66,7 +66,7 @@ Install all required packages from `requirements.txt`:
 1. Test by running app
 
     ```batch
-        .\python-3.11.9\python -m streamlit run app.py local
+        .\python-3.11.9\python -m streamlit run app.py
     ```
 
 2. Create a Clickable Shortcut
@@ -75,7 +75,7 @@ Install all required packages from `requirements.txt`:
     
     ```batch
     echo @echo off > run_app.bat
-    echo .\\python-3.11.9\\python -m streamlit run app.py local >> run_app.bat
+    echo .\\python-3.11.9\\python -m streamlit run app.py >> run_app.bat
      ```
 
 ### Create one executable folder
@@ -100,7 +100,7 @@ Install all required packages from `requirements.txt`:
     cp app.py ../streamlit_exe
     ```
     
-#### 🚀 <code> After successfully completing all these steps, the Streamlit app will be available by running the run_app.bat file.</code>
+#### 🚀 After successfully completing all these steps, the Streamlit app will be available by running the run_app.bat file.
 
 :pencil: You can still change the configuration of Streamlit app with .streamlit/config.toml file, e.g., provide a different port, change upload size, etc.
 

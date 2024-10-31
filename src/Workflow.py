@@ -66,7 +66,7 @@ class Workflow(WorkflowManager):
         in_fasta = self.file_manager.get_files(self.params["fasta-files"])
         
         # Log any messages.
-        #self.logger.log(f"Number of input mzML files: {len(in_mzML)}")
+        self.logger.log(f"Number of input mzML files: {len(in_mzML)}")
 
         if self.params["add-decoys"]:
             # Prepare output files for feature detection.
