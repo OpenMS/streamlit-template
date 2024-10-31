@@ -3,7 +3,7 @@ from pathlib import Path
 
 import streamlit as st
 
-from src.common import reset_directory
+from src.common.common import reset_directory
 
 
 @st.cache_data
