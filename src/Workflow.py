@@ -4,7 +4,7 @@ import shutil
 from .workflow.WorkflowManager import WorkflowManager
 from src import view
 from src import fileupload
-from src.common import show_table
+from src.common.common import show_table
 from pathlib import Path
 from os.path import getsize
 
