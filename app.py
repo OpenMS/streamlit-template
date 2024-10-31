@@ -1,9 +1,8 @@
 import streamlit as st
 from pathlib import Path
-import streamlit as st
 
-from src.captcha_ import captcha_control
-from src.common import page_setup, save_params
+from src.common.captcha_ import captcha_control
+from src.common.common import page_setup, save_params
 
 params = page_setup(page="main")
 
