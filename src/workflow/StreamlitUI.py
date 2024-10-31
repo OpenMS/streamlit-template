@@ -55,12 +55,13 @@ class StreamlitUI:
         # create the files dir
         files_dir.mkdir(exist_ok=True, parents=True)
 
-        # check if only fallback files are in files_dir, if yes, reset the directory before adding new files
-        if [Path(f).name for f in Path(files_dir).iterdir()] == [
-            Path(f).name for f in fallback
-        ]:
-            shutil.rmtree(files_dir)
-            files_dir.mkdir()
+        if fallback is not None:
+            # check if only fallback files are in files_dir, if yes, reset the directory before adding new files
+            if [Path(f).name for f in Path(files_dir).iterdir()] == [
+                Path(f).name for f in fallback
+            ]:
+                shutil.rmtree(files_dir)
+                files_dir.mkdir()
 
         if not name:
             name = key.replace("-", " ")
@@ -159,15 +160,15 @@ class StreamlitUI:
                 with st_cols[0]:
                     st.write("\n")
                     st.write("\n")
-                    dialog_button = st.button("📁", key='local_browse', help="Browse for your local directory with MS data.", disabled=not TK_AVAILABLE)
+                    dialog_button = st.button("📁", key=f'local_browse_{key}', help="Browse for your local directory with MS data.", disabled=not TK_AVAILABLE)
                     if dialog_button:
                         st.session_state["local_dir"] = tk_directory_dialog("Select directory with your MS data", st.session_state["previous_dir"])
                         st.session_state["previous_dir"] = st.session_state["local_dir"]
 
                 with st_cols[1]:
-                    local_dir = st.text_input(f"path to folder with **{name}** files", value=st.session_state["local_dir"])
+                    local_dir = st.text_input(f"path to folder with **{name}** files", key=f"path_to_folder_{key}", value=st.session_state["local_dir"])
 
-                if c2.button(f"Add **{name}** files from local folder", use_container_width=True):
+                if c2.button(f"Add **{name}** files from local folder", use_container_width=True, key=f"add_files_from_local_{key}", help="Add files from local directory."):
                     files = []
                     local_dir = Path(
                         local_dir
