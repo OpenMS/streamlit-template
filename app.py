@@ -3,7 +3,7 @@ from pathlib import Path
 
 from src.common.captcha_ import captcha_control
 from src.common.common import page_setup, save_params
-
+import sys
 params = page_setup(page="main")
 
 

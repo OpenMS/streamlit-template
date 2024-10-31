@@ -19,12 +19,12 @@ class Workflow(WorkflowManager):
         t = st.tabs(["MS data", "Nucleotide sequences"])
         with t[0]:
             # Use the upload method from StreamlitUI to handle mzML file uploads.
-            self.ui.upload_widget(key="mzML-files", name="MS data", file_type="mzML")
+            self.ui.upload_widget(key="mzML-files", name="MS data", file_types=["mzML"])
             if st.button("Load Example Data", type="primary", help="Import the example mzML files", key="example_mzml"):
                 fileupload.load_example_files("mzML",Path(self.workflow_dir,"input-files"))
         with t[1]:
             # Example with fallback data (not used in workflow)
-            self.ui.upload_widget(key="fasta-files", name="nucleotide sequence file", file_type="fasta")
+            self.ui.upload_widget(key="fasta-files", name="nucleotide sequence file", file_types=["fasta"])
             if st.button("Load Example Data", type="primary", help="Import the example mzML files", key="example_fasta" ):
                 fileupload.load_example_files("fasta",Path(self.workflow_dir,"input-files"))
 
@@ -74,7 +74,7 @@ class Workflow(WorkflowManager):
 
             # Run FeatureFinderMetabo tool with input and output files.
             self.executor.run_topp(
-            "DecoyDatabase", input_output={"in": in_fasta, "out": out_fasta}
+            "base", input_output={"in": in_fasta, "out": out_fasta}
             )
             self.params["NucleicAcidSearchEngine"]["fdr:cutoff"] = self.params["FDR_cutoff"]
             self.params["NucleicAcidSearchEngine"]["fdr:decoy_pattern"] = "DECOY_"
