@@ -1,6 +1,6 @@
 # SAGE PTMScanner App 
 
-[![Open Template!](/assets/pyopenms_transparent_background.png)](https://abi-services.cs.uni-tuebingen.de/streamlit-template/)
+[![Open Template!](/assets/SagePTMScanner.png)](https://abi-services.cs.uni-tuebingen.de/streamlit-template/)
 
 This repository contains the PTMScanner tool in a web application using the **streamlit** framework. It serves as a PTM-discovery tool which utilizies the **TOPP** tool SageAdapter . It includes solutions for handling user data and parameters in workspaces as well as deployment with docker-compose.
 
