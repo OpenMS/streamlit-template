@@ -28,7 +28,14 @@ page_setup(page="main")
 st.markdown(
         """
         # PTMScanner
-        ### SageAdapter: Integrating the proteomics search engine into the OpenMS framework. 
+        ### SageAdapter: Integrating the proteomics search engine into the OpenMS framework.
+        """
+)
+
+st.image("assets/SagePTMScanner.png") 
+
+st.markdown(
+        """
         Welcome to the PTMScanner app, a web application for the SageAdapter tool from OpenMS built using [OpenMS](https://openms.de/) and [pyOpenMS](https://pyopenms.readthedocs.io/en/latest/).
 
         """
