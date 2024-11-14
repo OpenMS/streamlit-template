@@ -231,10 +231,15 @@ def page_setup(page: str = "") -> dict[str, Any]:
     params = render_sidebar(page)
 
     # If run in hosted mode, show captcha as long as it has not been solved
-    if not "local" in sys.argv:
-        if "controllo" not in st.session_state:
-            # Apply captcha by calling the captcha_control function
-            captcha_control()
+    #if not "local" in sys.argv:
+    #    if "controllo" not in st.session_state:
+    #        # Apply captcha by calling the captcha_control function
+    #        captcha_control()
+    
+    # If run in hosted mode, show captcha as long as it has not been solved
+    if 'controllo' not in st.session_state or params["controllo"] == False:
+        # Apply captcha by calling the captcha_control function
+        captcha_control()  
 
     return params
 
