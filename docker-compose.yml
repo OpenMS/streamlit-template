@@ -1,0 +1,17 @@
+version: "3"
+services:
+  streamlit:
+    build: .
+    command: "streamlit run src/monitor.py local --server.enableCORS false " ### for checking as local add local
+    ports:
+      - "8501:8501"
+    volumes:
+      - "./src:/usr/src/app/src"
+
+# docker-compose up --build (This command will build the Docker image using the provided Dockerfile and start the container)
+# Then can access via http://localhost:8501
+# docker-compose exec streamlit /bin/bash (to run tools inside container)
+
+# check the packages versions? can specify in enviroment.yml
+# docker ps #to get the ID
+# docker cp ID:/app/package_versions_in_docker.txt ./package_versions_in_docker.txt
