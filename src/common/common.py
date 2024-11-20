@@ -327,6 +327,10 @@ def render_sidebar(page: str = "") -> None:
                 )
             else:
                 st.session_state["spectrum_num_bins"] = 50
+
+        
+        st.image("assets/OpenMS.png", "powered by")
+
     return params
 
 
