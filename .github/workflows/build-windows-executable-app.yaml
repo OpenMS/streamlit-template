@@ -8,6 +8,9 @@ on:
   
 env:
   OPENMS_VERSION: 3.2.0 
+  PYTHON_VERSION: 3.11.0
+  # Name of the installer
+  APP_NAME: OpenMS-StreamlitTemplateApp
   # Define needed TOPP tools here
   TOPP_TOOLS: "FeatureFinderMetabo FeatureLinkerUnlabeledKD SiriusExport"
 
@@ -42,18 +45,9 @@ jobs:
     - name: Setup build tools
       shell: bash
       run: |
-        #choco install ccache ninja cmake
+        choco install ccache ninja cmake
         ## GH CLI "SHOULD BE" installed. Sometimes I had to manually install nonetheless. Super weird.
         # https://github.com/actions/runner-images/blob/main/images/win/scripts/Installers/Install-GitHub-CLI.ps1
-        
-        # Update Chocolatey to the latest version
-        choco upgrade chocolatey -y
-        # Install compatible versions of tools
-        choco install ccache -y
-        choco install ninja -y
-        choco install cmake --version=3.31.0 -y
-        choco install cmake.install --version=3.31.0 -y
-        
         echo "C:/Program Files (x86)/GitHub CLI" >> $GITHUB_PATH
 
     - name: Extract branch/PR infos
@@ -172,11 +166,7 @@ jobs:
 
   build-executable:
     runs-on: windows-latest
-    needs: build-openms
-
-    env:
-      PYTHON_VERSION: 3.11.0
-      APP_NAME: OpenMS-StreamlitTemplateApp
+    needs: build-openms  
 
     steps:
     - name: Checkout
@@ -405,9 +395,13 @@ jobs:
       run: |
         ./wix/light.exe -ext WixUIExtension -sice:ICE60 -o ${{ env.APP_NAME }}.msi streamlit_exe_files.wixobj streamlit_exe.wixobj
 
+    - name: Compress Installer
+      run: |
+        7z a OpenMS-App.zip ${{ env.APP_NAME }}.msi
+
     - name: Archive build artifacts
       uses: actions/upload-artifact@v4
       with:
         name: OpenMS-App
         path: |
-          ${{ env.APP_NAME }}.msi
+          OpenMS-App.zip
