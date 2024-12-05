@@ -1055,8 +1055,6 @@ class StreamlitUI:
 
         for k, v in params.items():
             # skip if v is a file path
-            if Path(str(v)).exists():
-                continue
             if isinstance(v, dict):
                 topp[k] = v
             elif ".py" in k:
