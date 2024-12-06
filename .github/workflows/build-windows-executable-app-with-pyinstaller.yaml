@@ -1,13 +1,14 @@
 name: Build executable for Windows with pyinstaller
 on:
   workflow_dispatch:
+env:
+  OPENMS_VERSION: 3.2.0 
+  # Define needed TOPP tools here
+  TOPP_TOOLS: "FeatureFinderMetabo MetaboliteAdductDecharger SiriusExport"
 
 jobs:
   build-openms:
     runs-on: windows-latest
-
-    env:
-      OPENMS_VERSION: 3.0.0 
 
     steps:
     - name: Checkout
@@ -130,6 +131,17 @@ jobs:
           CCACHE_COMPRESSLEVEL: 12
           CCACHE_MAXSIZE: 400M
 
+    - name: Package
+      shell: bash
+      run: |
+          ctest --output-on-failure -V -S $GITHUB_WORKSPACE/OpenMS/tools/ci/cipackage.cmake
+      env:
+          SOURCE_DIRECTORY: "${{ github.workspace }}/OpenMS"
+          PACKAGE_TYPE: zip
+          SEARCH_ENGINES_DIRECTORY: "${{ github.workspace }}/_thirdparty"
+          CI_PROVIDER: "GitHub-Actions"
+          CPACK_PACKAGE_FILE_NAME: "openms-package"
+
     - name: Test Windows
       shell: bash
       run: $LAUNCHER ctest --output-on-failure -V -S $GITHUB_WORKSPACE/OpenMS/tools/ci/citest.cmake
@@ -139,17 +151,11 @@ jobs:
           CI_PROVIDER: "GitHub-Actions"
           BUILD_NAME: "${{ env.RUN_NAME }}-Win64-class-topp-${{ github.run_number }}"
 
-    - name: Upload TOPP tools as artifact
-      uses: actions/upload-artifact@v3
+    - name: Upload package as artifact
+      uses: actions/upload-artifact@v4
       with:
-        name: OpenMS-bin
-        path: OpenMS/bld/bin
-
-    - name: Upload share as artifact
-      uses: actions/upload-artifact@v3
-      with:
-        name: OpenMS-share
-        path: OpenMS/share
+        name: openms-package
+        path: ${{ github.workspace }}/OpenMS/bld/*.zip
 
   build-executable:
     runs-on: windows-latest
@@ -162,17 +168,18 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v3
 
-    - name: Download TOPP tools as artifact
-      uses: actions/download-artifact@v3
+    - name: Download package as artifact
+      uses: actions/download-artifact@v4
       with:
-        name: OpenMS-bin
-        path: openms-bin
+        name: openms-package
+        path: openms-package
 
-    - name: Download share as artifact
-      uses: actions/download-artifact@v3
-      with:
-        name: OpenMS-share
-        path: share
+    - name: Extract bin and share from package
+      run: |
+        cd openms-package
+        unzip "*.zip" -d .
+        cp -r openms-package/bin ../openms-bin
+        cp -r openms-package/share ../share
 
     - name: Set up Python
       uses: actions/setup-python@v4
@@ -213,17 +220,34 @@ jobs:
         call myenv\Scripts\activate.bat 
         pyinstaller --onefile --additional-hooks-dir ./hooks run_app.py --clean
 
+    - name: Set to offline deployment
+      run: |
+        $content = Get-Content -Raw settings.json | ConvertFrom-Json
+        $content.online_deployment = $false
+        $content | ConvertTo-Json -Depth 100 | Set-Content settings.json
 
     - name: Copy everything to dist directory
       run: |
-        cp -r .streamlit dist/.streamlit
-        cp -r content dist/content
-        cp -r src dist/src
-        cp -r assets dist/assets
-        cp -r example-data dist/example-data
-        cp -r openms-bin dist/bin
-        cp -r share dist/share
-        cp app.py dist/
+        mkdir streamlit_exe
+
+        mv python-${{ env.PYTHON_VERSION }} streamlit_exe
+        mv run_app.bat streamlit_exe
+        cp -r src streamlit_exe
+        cp -r content streamlit_exe
+        cp -r docs streamlit_exe
+        cp -r assets streamlit_exe
+        cp -r example-data streamlit_exe
+        cp openms-bin/*.dll streamlit_exe
+        cp -r .streamlit streamlit_exe
+        cp -r share streamlit_exe/share
+        cp app.py streamlit_exe
+        cp settings.json streamlit_exe
+        cp default-parameters.json streamlit_exe
+
+        $files = $env:TOPP_TOOLS -split ' '
+        foreach ($file in $files) {
+          Copy-Item "openms-bin/${file}.exe" -Destination "streamlit_exe/${file}.exe"
+        }
     
     - name: Modify .spec file
       shell: bash
@@ -236,15 +260,10 @@ jobs:
         call myenv\Scripts\activate.bat
         pyinstaller run_app.spec --clean
 
-    - name: Delete OpenMS bin artifact
-      uses: geekyeggo/delete-artifact@v2
+    - name: Delete OpenMS package artifact
+      uses: geekyeggo/delete-artifact@v5
       with:
-          name: OpenMS-bin
-
-    - name: Delete OpenMS share artifact
-      uses: geekyeggo/delete-artifact@v2
-      with:
-          name: OpenMS-share
+          name: openms-package
 
     - name: Upload artifact
       uses: actions/upload-artifact@v3

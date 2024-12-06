@@ -13,6 +13,7 @@ ARG OPENMS_BRANCH=develop
 ARG PORT=8501
 # GitHub token to download latest OpenMS executable for Windows from Github action artifact.
 ARG GITHUB_TOKEN
+ENV GH_TOKEN=${GITHUB_TOKEN}
 # Streamlit app Gihub user name (to download artifact from).
 ARG GITHUB_USER=OpenMS
 # Streamlit app Gihub repository name (to download artifact from).
@@ -27,6 +28,14 @@ RUN apt-get -y update
 RUN apt-get install -y --no-install-recommends --no-install-suggests wget ca-certificates libgtk2.0-dev curl jq cron
 RUN update-ca-certificates
 
+# Install Github CLI
+RUN (type -p wget >/dev/null || (apt-get update && apt-get install wget -y)) \
+	&& mkdir -p -m 755 /etc/apt/keyrings \
+	&& wget -qO- https://cli.github.com/packages/githubcli-archive-keyring.gpg | tee /etc/apt/keyrings/githubcli-archive-keyring.gpg > /dev/null \
+	&& chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+	&& echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
+	&& apt-get update \
+	&& apt-get install gh -y
 
 # Download and install miniforge.
 ENV PATH="/root/miniforge3/bin:${PATH}"
@@ -59,6 +68,7 @@ COPY content/ /app/content
 COPY docs/ /app/docs
 COPY example-data/ /app/example-data
 COPY gdpr_consent/ /app/gdpr_consent
+COPY hooks/ /app/hooks
 COPY src/ /app/src
 COPY app.py /app/app.py
 COPY settings.json /app/settings.json
@@ -79,12 +89,19 @@ RUN echo "mamba run --no-capture-output -n streamlit-env streamlit run app.py" >
 # make the script executable
 RUN chmod +x /app/entrypoint.sh
 
-# Download latest OpenMS App executable for Windows from Github actions workflow.
-RUN WORKFLOW_ID=$(curl -s "https://api.github.com/repos/$GITHUB_USER/$GITHUB_REPO/actions/workflows" | jq -r '.workflows[] | select(.name == "Build executable for Windows") | .id') \
-    && SUCCESSFUL_RUNS=$(curl -s "https://api.github.com/repos/$GITHUB_USER/$GITHUB_REPO/actions/runs?workflow_id=$WORKFLOW_ID&status=success" | jq -r '.workflow_runs[0].id') \
-    && ARTIFACT_ID=$(curl -s "https://api.github.com/repos/$GITHUB_USER/$GITHUB_REPO/actions/runs/$SUCCESSFUL_RUNS/artifacts" | jq -r '.artifacts[] | select(.name == "OpenMS-App") | .id') \
-    && curl -LJO -H "Authorization: Bearer $GITHUB_TOKEN" "https://api.github.com/repos/$GITHUB_USER/$GITHUB_REPO/actions/artifacts/$ARTIFACT_ID/zip" -o /app/OpenMS-App
+# Patch Analytics
+RUN mamba run -n streamlit-env python hooks/hook-analytics.py
 
+# Set Online Deployment
+RUN jq '.online_deployment = true' settings.json > tmp.json && mv tmp.json settings.json
+
+# Download latest OpenMS App executable for Windows from Github actions workflow.
+RUN if [ -n "$GH_TOKEN" ]; then \
+        echo "GH_TOKEN is set, proceeding to download the release asset..."; \
+        gh run download -R ${GITHUB_USER}/${GITHUB_REPO} $(gh run list -R ${GITHUB_USER}/${GITHUB_REPO} -b main -e push -s completed -w "Build executable for Windows" --json databaseId -q '.[0].databaseId') -n OpenMS-App --dir /app; \
+    else \
+        echo "GH_TOKEN is not set, skipping the release asset download."; \
+    fi
 
 # make sure that mamba environment is used
 SHELL ["mamba", "run", "-n", "streamlit-env", "/bin/bash", "-c"]

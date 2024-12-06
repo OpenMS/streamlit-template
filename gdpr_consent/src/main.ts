@@ -1,21 +1,23 @@
 import { Streamlit, RenderData } from "streamlit-component-lib"
 
+// Define service
+type Service = {
+    name: string;
+    purposes: string[];
+    onAccept: () => Promise<void>;
+    onDecline: () => Promise<void>;
+    cookies?: (string | RegExp)[];
+};
+
 // Defines the configuration for Klaro
-const klaroConfig = {
+let klaroConfig: {
+    mustConsent: boolean;
+    acceptAll: boolean;
+    services: Service[];
+} = {
     mustConsent: true,
     acceptAll: true,
-    services: [
-        {
-            // In GTM, you should define a custom event trigger named `klaro-google-analytics-accepted` which should trigger the Google Analytics integration.
-            name: 'google-analytics',
-            cookies: [
-                /^_ga(_.*)?/ // we delete the Google Analytics cookies if the user declines its use
-            ],
-            purposes: ['analytics'],
-            onAccept: onAcceptCallback,
-            onDecline: onDeclineCallback,
-        },
-    ]
+    services: []
 };
 
 // This will make klaroConfig globally accessible
@@ -62,23 +64,15 @@ function handleError(error: unknown): void {
 }
 
 // Tracking was accepted
-async function onAcceptCallback(): Promise<void> {
+async function callback(): Promise<void> {
     try {
         const manager = await waitForKlaroManager()
         if (manager.confirmed) {
-            Streamlit.setComponentValue(true)
-        }
-    } catch (error) {
-        handleError(error)
-    }
-}
-
-// Tracking was declined
-async function onDeclineCallback(): Promise<void> {
-    try {
-        const manager = await waitForKlaroManager()
-        if (manager.confirmed) {
-            Streamlit.setComponentValue(false)
+            let return_vals :  Record<string, boolean> = {}
+            for (const service of klaroConfig.services) {
+                return_vals[service.name] = manager.getConsent(service.name)
+            }            
+            Streamlit.setComponentValue(return_vals)
         }
     } catch (error) {
         handleError(error)
@@ -95,6 +89,32 @@ function onRender(event: Event): void {
     }
     rendered = true
 
+    const data = (event as CustomEvent<RenderData>).detail
+
+    if (data.args['google_analytics']) {
+        klaroConfig.services.push(
+            {
+                name: 'google-analytics',
+                cookies: [
+                    /^_ga(_.*)?/ // we delete the Google Analytics cookies if the user declines its use
+                ],
+                purposes: ['analytics'],
+                onAccept: callback,
+                onDecline: callback,
+            }
+        )
+    }
+    if (data.args['piwik_pro']) {
+        klaroConfig.services.push(
+            {
+                name: 'piwik-pro',
+                purposes: ['analytics'],
+                onAccept: callback,
+                onDecline: callback,
+            }
+        )
+    }
+
     // Create a new script element
     var script = document.createElement('script')
 
@@ -108,6 +128,7 @@ function onRender(event: Event): void {
 
     // Append the script to the head or body
     document.head.appendChild(script)
+
 }
 
 // Attach our `onRender` handler to Streamlit's render event.

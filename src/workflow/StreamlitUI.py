@@ -3,7 +3,7 @@ import pyopenms as poms
 from pathlib import Path
 import shutil
 import subprocess
-from typing import Any, Union, List
+from typing import Any, Union, List, Literal
 import json
 import os
 import sys
@@ -12,9 +12,16 @@ import time
 from io import BytesIO
 import zipfile
 from datetime import datetime
+from streamlit_js_eval import streamlit_js_eval
 
 
-from src.common.common import OS_PLATFORM, TK_AVAILABLE, tk_directory_dialog, tk_file_dialog
+from src.common.common import (
+    OS_PLATFORM,
+    TK_AVAILABLE,
+    tk_directory_dialog,
+    tk_file_dialog,
+)
+
 
 class StreamlitUI:
     """
@@ -25,11 +32,11 @@ class StreamlitUI:
     """
 
     # Methods for Streamlit UI components
-    def __init__(self, workflow_dir, logger, executor, paramter_manager):
+    def __init__(self, workflow_dir, logger, executor, parameter_manager):
         self.workflow_dir = workflow_dir
         self.logger = logger
         self.executor = executor
-        self.parameter_manager = paramter_manager
+        self.parameter_manager = parameter_manager
         self.params = self.parameter_manager.get_parameters_from_json()
 
     def upload_widget(
@@ -37,7 +44,7 @@ class StreamlitUI:
         key: str,
         file_types: Union[str, List[str]],
         name: str = "",
-        fallback: Union[List, str] = None
+        fallback: Union[List, str] = None,
     ) -> None:
         """
         Handles file uploads through the Streamlit interface, supporting both direct
@@ -55,12 +62,13 @@ class StreamlitUI:
         # create the files dir
         files_dir.mkdir(exist_ok=True, parents=True)
 
-        # check if only fallback files are in files_dir, if yes, reset the directory before adding new files
-        if [Path(f).name for f in Path(files_dir).iterdir()] == [
-            Path(f).name for f in fallback
-        ]:
-            shutil.rmtree(files_dir)
-            files_dir.mkdir()
+        if fallback is not None:
+            # check if only fallback files are in files_dir, if yes, reset the directory before adding new files
+            if [Path(f).name for f in Path(files_dir).iterdir()] == [
+                Path(f).name for f in fallback
+            ]:
+                shutil.rmtree(files_dir)
+                files_dir.mkdir()
 
         if not name:
             name = key.replace("-", " ")
@@ -71,14 +79,19 @@ class StreamlitUI:
         if st.session_state.location == "local":
             c2_text, c2_checkbox = c2.columns([1.5, 1], gap="large")
             c2_text.markdown("**OR add files from local folder**")
-            use_copy = c2_checkbox.checkbox("Make a copy of files", key=f"{key}-copy_files", value=True, help="Create a copy of files in workspace.")
+            use_copy = c2_checkbox.checkbox(
+                "Make a copy of files",
+                key=f"{key}-copy_files",
+                value=True,
+                help="Create a copy of files in workspace.",
+            )
         else:
             use_copy = True
 
         # Convert file_types to a list if it's a string
         if isinstance(file_types, str):
             file_types = [file_types]
-            
+
         if use_copy:
             with c1.form(f"{key}-upload", clear_on_submit=True):
                 # Streamlit file uploader accepts file types as a list or None
@@ -99,9 +112,9 @@ class StreamlitUI:
                             files = [files]
                         for f in files:
                             # Check if file type is in the list of accepted file types
-                            if f.name not in [f.name for f in files_dir.iterdir()] and any(
-                                f.name.endswith(ft) for ft in file_types
-                            ):
+                            if f.name not in [
+                                f.name for f in files_dir.iterdir()
+                            ] and any(f.name.endswith(ft) for ft in file_types):
                                 with open(Path(files_dir, f.name), "wb") as fh:
                                     fh.write(f.getbuffer())
                         st.success("Successfully added uploaded files!")
@@ -123,7 +136,7 @@ class StreamlitUI:
                     help="Browse for your local MS data files.",
                     disabled=not TK_AVAILABLE,
                 )
-                
+
                 # Tk file dialog requires file types to be a list of tuples
                 if isinstance(file_types, str):
                     tk_file_types = [(f"{file_types}", f"*.{file_types}")]
@@ -131,8 +144,7 @@ class StreamlitUI:
                     tk_file_types = [(f"{ft}", f"*.{ft}") for ft in file_types]
                 else:
                     raise ValueError("'file_types' must be either of type str or list")
-                
-                
+
                 if dialog_button:
                     local_files = tk_file_dialog(
                         "Select your local MS data files",
@@ -146,7 +158,7 @@ class StreamlitUI:
                                 f_handle.write(f"{f}\n")
                         my_bar.empty()
                         st.success("Successfully added files!")
-                        
+
                         st.session_state["previous_dir"] = Path(local_files[0]).parent
 
         # Local file upload option: via directory path
@@ -159,15 +171,32 @@ class StreamlitUI:
                 with st_cols[0]:
                     st.write("\n")
                     st.write("\n")
-                    dialog_button = st.button("📁", key='local_browse', help="Browse for your local directory with MS data.", disabled=not TK_AVAILABLE)
+                    dialog_button = st.button(
+                        "📁",
+                        key=f"local_browse_{key}",
+                        help="Browse for your local directory with MS data.",
+                        disabled=not TK_AVAILABLE,
+                    )
                     if dialog_button:
-                        st.session_state["local_dir"] = tk_directory_dialog("Select directory with your MS data", st.session_state["previous_dir"])
+                        st.session_state["local_dir"] = tk_directory_dialog(
+                            "Select directory with your MS data",
+                            st.session_state["previous_dir"],
+                        )
                         st.session_state["previous_dir"] = st.session_state["local_dir"]
 
                 with st_cols[1]:
-                    local_dir = st.text_input(f"path to folder with **{name}** files", value=st.session_state["local_dir"])
+                    local_dir = st.text_input(
+                        f"path to folder with **{name}** files",
+                        key=f"path_to_folder_{key}",
+                        value=st.session_state["local_dir"],
+                    )
 
-                if c2.button(f"Add **{name}** files from local folder", use_container_width=True):
+                if c2.button(
+                    f"Add **{name}** files from local folder",
+                    use_container_width=True,
+                    key=f"add_files_from_local_{key}",
+                    help="Add files from local directory.",
+                ):
                     files = []
                     local_dir = Path(
                         local_dir
@@ -193,7 +222,9 @@ class StreamlitUI:
                                 if os.path.isfile(f):
                                     shutil.copy(f, Path(files_dir, f.name))
                                 elif os.path.isdir(f):
-                                    shutil.copytree(f, Path(files_dir, f.name), dirs_exist_ok=True)
+                                    shutil.copytree(
+                                        f, Path(files_dir, f.name), dirs_exist_ok=True
+                                    )
                             else:
                                 # Write the path to the local directories to the file
                                 with open(external_files, "a") as f_handle:
@@ -202,16 +233,18 @@ class StreamlitUI:
                         st.success("Successfully copied files!")
 
             if not TK_AVAILABLE:
-                c2.warning("**Warning**: Failed to import tkinter, either it is not installed, or this is being called from a cloud context. " "This function is not available in a Streamlit Cloud context. "
-                "You will have to manually enter the path to the folder with the MS files."
-                           )
+                c2.warning(
+                    "**Warning**: Failed to import tkinter, either it is not installed, or this is being called from a cloud context. "
+                    "This function is not available in a Streamlit Cloud context. "
+                    "You will have to manually enter the path to the folder with the MS files."
+                )
 
             if not use_copy:
                 c2.warning(
-        "**Warning**: You have deselected the `Make a copy of files` option. "
-        "This **_assumes you know what you are doing_**. "
-        "This means that the original files will be used instead. "
-    )
+                    "**Warning**: You have deselected the `Make a copy of files` option. "
+                    "This **_assumes you know what you are doing_**. "
+                    "This means that the original files will be used instead. "
+                )
 
         if fallback and not any(Path(files_dir).iterdir()):
             if isinstance(fallback, str):
@@ -228,16 +261,26 @@ class StreamlitUI:
             ]
         else:
             if files_dir.exists():
-                current_files = [f.name for f in files_dir.iterdir() if "external_files.txt" not in f.name]
+                current_files = [
+                    f.name
+                    for f in files_dir.iterdir()
+                    if "external_files.txt" not in f.name
+                ]
 
                 # Check if local files are available
-                external_files = Path(self.workflow_dir, "input-files", key, "external_files.txt")
+                external_files = Path(
+                    self.workflow_dir, "input-files", key, "external_files.txt"
+                )
 
                 if external_files.exists():
                     with open(external_files, "r") as f:
                         external_files_list = f.read().splitlines()
                     # Only make files available that still exist
-                    current_files += [f"(local) {Path(f).name}" for f in external_files_list if os.path.exists(f)]            
+                    current_files += [
+                        f"(local) {Path(f).name}"
+                        for f in external_files_list
+                        if os.path.exists(f)
+                    ]
             else:
                 current_files = []
 
@@ -288,7 +331,9 @@ class StreamlitUI:
         options = [str(f) for f in path.iterdir() if "external_files.txt" not in str(f)]
 
         # Check if local files are available
-        external_files = Path(self.workflow_dir, "input-files", key, "external_files.txt")
+        external_files = Path(
+            self.workflow_dir, "input-files", key, "external_files.txt"
+        )
 
         if external_files.exists():
             with open(external_files, "r") as f:
@@ -475,21 +520,25 @@ class StreamlitUI:
                     help=help,
                 )
             elif isinstance(value, bool):
-                self.input_widget(key, value, widget_type="checkbox", name=name, help=help)
+                self.input_widget(
+                    key, value, widget_type="checkbox", name=name, help=help
+                )
             else:
                 self.input_widget(key, value, widget_type="text", name=name, help=help)
 
         else:
             st.error(f"Unsupported widget type '{widget_type}'")
 
+    @st.fragment
     def input_TOPP(
         self,
         topp_tool_name: str,
         num_cols: int = 4,
         exclude_parameters: List[str] = [],
         include_parameters: List[str] = [],
-        display_full_parameter_names: bool = False,
-        display_subsections: bool = False,
+        display_tool_name: bool = True,
+        display_subsections: bool = True,
+        display_subsection_tabs: bool = False,
         custom_defaults: dict = {},
     ) -> None:
         """
@@ -502,14 +551,25 @@ class StreamlitUI:
             num_cols (int, optional): Number of columns to use for the layout. Defaults to 3.
             exclude_parameters (List[str], optional): List of parameter names to exclude from the widget. Defaults to an empty list.
             include_parameters (List[str], optional): List of parameter names to include in the widget. Defaults to an empty list.
-            display_full_parameter_names (bool, optional): Whether to display the full parameter names. Defaults to False.
-            display_subsections (bool, optional): Whether to split parameters into subsections based on the prefix (disables display_full_parameter_names). Defaults to False.
+            display_tool_name (bool, optional): Whether to display the TOPP tool name. Defaults to True.
+            display_subsections (bool, optional): Whether to split parameters into subsections based on the prefix. Defaults to True.
+            display_subsection_tabs (bool, optional): Whether to display main subsections in separate tabs (if more than one main section). Defaults to False.
             custom_defaults (dict, optional): Dictionary of custom defaults to use. Defaults to an empty dict.
         """
+
+        if not display_subsections:
+            display_subsection_tabs = False
+        if display_subsection_tabs:
+            display_subsections = True
+
         # write defaults ini files
         ini_file_path = Path(self.parameter_manager.ini_dir, f"{topp_tool_name}.ini")
         if not ini_file_path.exists():
-            subprocess.call([topp_tool_name, "-write_ini", str(ini_file_path)])
+            try:
+                subprocess.call([topp_tool_name, "-write_ini", str(ini_file_path)])
+            except FileNotFoundError:
+                st.error(f"TOPP tool **'{topp_tool_name}'** not found.")
+                return
             # update custom defaults if necessary
             if custom_defaults:
                 param = poms.Param()
@@ -524,7 +584,11 @@ class StreamlitUI:
         param = poms.Param()
         poms.ParamXMLFile().load(str(ini_file_path), param)
         if include_parameters:
-            valid_keys = [key for key in param.keys() if any([k.encode() in key for k in include_parameters])]
+            valid_keys = [
+                key
+                for key in param.keys()
+                if any([k.encode() in key for k in include_parameters])
+            ]
         else:
             excluded_keys = [
                 "log",
@@ -535,27 +599,40 @@ class StreamlitUI:
                 "version",
                 "test",
             ] + exclude_parameters
-            valid_keys = [key for key in param.keys() if not (b"input file" in param.getTags(key)
-                                                            or b"output file" in param.getTags(key)
-                                                            or any([k.encode() in key for k in excluded_keys]))]
-        params_decoded = []
+            valid_keys = [
+                key
+                for key in param.keys()
+                if not (
+                    b"input file" in param.getTags(key)
+                    or b"output file" in param.getTags(key)
+                    or any([k.encode() in key for k in excluded_keys])
+                )
+            ]
+        params = []
         for key in valid_keys:
             entry = param.getEntry(key)
-            tmp = {
+            p = {
                 "name": entry.name.decode(),
                 "key": key,
                 "value": entry.value,
                 "valid_strings": [v.decode() for v in entry.valid_strings],
                 "description": entry.description.decode(),
                 "advanced": (b"advanced" in param.getTags(key)),
-                "section_description": param.getSectionDescription(':'.join(key.decode().split(':')[:-1]))
+                "section_description": param.getSectionDescription(
+                    ":".join(key.decode().split(":")[:-1])
+                ),
             }
-            params_decoded.append(tmp)
+            # Parameter sections and subsections as string (e.g. "section:subsection")
+            if display_subsections:
+                p["sections"] = ":".join(
+                    p["key"].decode().split(":1:")[1].split(":")[:-1]
+                )
+            params.append(p)
 
         # for each parameter in params_decoded
         # if a parameter with custom default value exists, use that value
         # else check if the parameter is already in self.params, if yes take the value from self.params
-        for p in params_decoded:
+        for p in params:
             name = p["key"].decode().split(":1:")[1]
             if topp_tool_name in self.params:
                 if name in self.params[topp_tool_name]:
@@ -565,120 +642,170 @@ class StreamlitUI:
             elif name in custom_defaults:
                 p["value"] = custom_defaults[name]
 
-        # show input widgets
-        section_description = None
-        cols = st.columns(num_cols)
-        i = 0
+        # Split into subsections if required
+        param_sections = {}
+        section_descriptions = {}
+        if display_subsections:
+            for p in params:
+                # Skip adavnaced parameters if not selected
+                if not st.session_state["advanced"] and p["advanced"]:
+                    continue
+                # Add section description to section_descriptions dictionary if it exists
+                if p["section_description"]:
+                    section_descriptions[p["sections"]] = p["section_description"]
+                # Add parameter to appropriate section in param_sections dictionary
+                if not p["sections"]:
+                    p["sections"] = "General"
+                if p["sections"] in param_sections:
+                    param_sections[p["sections"]].append(p)
+                else:
+                    param_sections[p["sections"]] = [p]
+        else:
+            # Simply put all parameters in "all" section if no subsections required
+            param_sections["all"] = params
 
-        for p in params_decoded:
-            # skip avdanced parameters if not selected
-            if not st.session_state["advanced"] and p["advanced"]:
-                continue
+        # Display tool name if required
+        if display_tool_name:
+            st.markdown(f"**{topp_tool_name}**")
 
-            key = f"{self.parameter_manager.topp_param_prefix}{p['key'].decode()}"
-            if display_subsections:
+        tab_names = [k for k in param_sections.keys() if ":" not in k]
+        tabs = None
+        if tab_names and display_subsection_tabs:
+            tabs = st.tabs([k for k in param_sections.keys() if ":" not in k])
+
+        # Show input widgets
+        def show_subsection_header(section: str, display_subsections: bool):
+            # Display section name and help text (section description) if required
+            if section and display_subsections:
+                parts = section.split(":")
+                st.markdown(
+                    ":".join(parts[:-1])
+                    + (":" if len(parts) > 1 else "")
+                    + f"**{parts[-1]}**",
+                    help=(
+                        section_descriptions[section]
+                        if section in section_descriptions
+                        else None
+                    ),
+                )
+
+        def display_TOPP_params(params: dict, num_cols):
+            """Displays individual TOPP parameters in given number of columns"""
+            cols = st.columns(num_cols)
+            i = 0
+            for p in params:
+                # get key and name
+                key = f"{self.parameter_manager.topp_param_prefix}{p['key'].decode()}"
                 name = p["name"]
-                if section_description is None:
-                    section_description = p['section_description']
-
-                elif section_description != p['section_description']:
-                    section_description = p['section_description']
-                    st.markdown(f"**{section_description}**")
-                    cols = st.columns(num_cols)
-                    i = 0
-            elif display_full_parameter_names:
-                name = key.split(":1:")[1].replace("algorithm:", "").replace(":", " : ")
-            else:
-                name = p["name"]
-            try:
-                # # sometimes strings with newline, handle as list
-                if isinstance(p["value"], str) and "\n" in p["value"]:
-                    p["value"] = p["value"].split("\n")
-                # bools
-                if isinstance(p["value"], bool):
-                    cols[i].markdown("##")
-                    cols[i].checkbox(
-                        name,
-                        value=(p["value"] == "true") if type(p["value"]) == str else p["value"],
-                        help=p["description"],
-                        key=key,
-                    )
-
-                # strings
-                elif isinstance(p["value"], str):
-                    # string options
-                    if p["valid_strings"]:
-                        cols[i].selectbox(
+                try:
+                    # sometimes strings with newline, handle as list
+                    if isinstance(p["value"], str) and "\n" in p["value"]:
+                        p["value"] = p["value"].split("\n")
+                    # bools
+                    if isinstance(p["value"], bool):
+                        cols[i].markdown("##")
+                        cols[i].checkbox(
                             name,
-                            options=p["valid_strings"],
-                            index=p["valid_strings"].index(p["value"]),
+                            value=(
+                                (p["value"] == "true")
+                                if type(p["value"]) == str
+                                else p["value"]
+                            ),
                             help=p["description"],
                             key=key,
                         )
-                    else:
-                        cols[i].text_input(
-                            name, value=p["value"], help=p["description"], key=key
+
+                    # strings
+                    elif isinstance(p["value"], str):
+                        # string options
+                        if p["valid_strings"]:
+                            cols[i].selectbox(
+                                name,
+                                options=p["valid_strings"],
+                                index=p["valid_strings"].index(p["value"]),
+                                help=p["description"],
+                                key=key,
+                            )
+                        else:
+                            cols[i].text_input(
+                                name, value=p["value"], help=p["description"], key=key
+                            )
+
+                    # ints
+                    elif isinstance(p["value"], int):
+                        cols[i].number_input(
+                            name, value=int(p["value"]), help=p["description"], key=key
                         )
 
-                # ints
-                elif isinstance(p["value"], int):
-                    cols[i].number_input(
-                        name, value=int(p["value"]), help=p["description"], key=key
-                    )
+                    # floats
+                    elif isinstance(p["value"], float):
+                        cols[i].number_input(
+                            name,
+                            value=float(p["value"]),
+                            step=1.0,
+                            help=p["description"],
+                            key=key,
+                        )
 
-                # floats
-                elif isinstance(p["value"], float):
-                    cols[i].number_input(
-                        name,
-                        value=float(p["value"]),
-                        step=1.0,
-                        help=p["description"],
-                        key=key,
-                    )
+                    # lists
+                    elif isinstance(p["value"], list):
+                        p["value"] = [
+                            v.decode() if isinstance(v, bytes) else v
+                            for v in p["value"]
+                        ]
+                        cols[i].text_area(
+                            name,
+                            value="\n".join([str(val) for val in p["value"]]),
+                            help=p["description"],
+                            key=key,
+                        )
 
-                # lists
-                elif isinstance(p["value"], list):
-                    p["value"] = [
-                        v.decode() if isinstance(v, bytes) else v for v in p["value"]
-                    ]
-                    cols[i].text_area(
-                        name,
-                        value="\n".join([str(val) for val in p["value"]]),
-                        help=p["description"],
-                        key=key,
-                    )
+                    # increment number of columns, create new cols object if end of line is reached
+                    i += 1
+                    if i == num_cols:
+                        i = 0
+                        cols = st.columns(num_cols)
+                except Exception as e:
+                    cols[i].error(f"Error in parameter **{p['name']}**.")
+                    print('Error parsing "' + p["name"] + '": ' + str(e))
 
-                # increment number of columns, create new cols object if end of line is reached
-                i += 1
-                if i == num_cols:
-                    i = 0
-                    cols = st.columns(num_cols)
-            except Exception as e:
-                cols[i].error(f"Error in parameter **{p['name']}**.")
-                print("Error parsing \""+ p['name'] + "\": " + str(e))
 
+        for section, params in param_sections.items():
+            if tabs is None:
+                show_subsection_header(section, display_subsections)
+                display_TOPP_params(params, num_cols)
+            else:
+                tab_name = section.split(":")[0]
+                with tabs[tab_names.index(tab_name)]:
+                    show_subsection_header(section, display_subsections)
+                    display_TOPP_params(params, num_cols)
+        
+        self.parameter_manager.save_parameters()
+            
+
+    @st.fragment
     def input_python(
         self,
         script_file: str,
         num_cols: int = 3,
     ) -> None:
         """
-    Dynamically generates and displays input widgets based on the DEFAULTS 
-    dictionary defined in a specified Python script file.
+        Dynamically generates and displays input widgets based on the DEFAULTS
+        dictionary defined in a specified Python script file.
 
-    For each entry in the DEFAULTS dictionary, an input widget is displayed, 
-    allowing the user to specify values for the parameters defined in the 
-    script. The widgets are arranged in a grid with a specified number of 
-    columns. Parameters can be marked as hidden or advanced within the DEFAULTS 
-    dictionary; hidden parameters are not displayed, and advanced parameters 
-    are displayed only if the user has selected to view advanced options.
+        For each entry in the DEFAULTS dictionary, an input widget is displayed,
+        allowing the user to specify values for the parameters defined in the
+        script. The widgets are arranged in a grid with a specified number of
+        columns. Parameters can be marked as hidden or advanced within the DEFAULTS
+        dictionary; hidden parameters are not displayed, and advanced parameters
+        are displayed only if the user has selected to view advanced options.
 
-    Args:
-    script_file (str): The file name or path to the Python script containing 
-                       the DEFAULTS dictionary. If the path is omitted, the method searches in 
-                       src/python-tools/'.
-    num_cols (int, optional): The number of columns to use for displaying input widgets. Defaults to 3.
-    """
+        Args:
+        script_file (str): The file name or path to the Python script containing
+                           the DEFAULTS dictionary. If the path is omitted, the method searches in
+                           src/python-tools/'.
+        num_cols (int, optional): The number of columns to use for displaying input widgets. Defaults to 3.
+        """
 
         # Check if script file exists (can be specified without path and extension)
         # default location: src/python-tools/script_file
@@ -730,8 +857,6 @@ class StreamlitUI:
                 options = entry["options"] if "options" in entry else None
 
                 with cols[i]:
-                    if isinstance(value, bool):
-                        st.markdown("#")
                     self.input_widget(
                         key=key,
                         default=value,
@@ -748,6 +873,7 @@ class StreamlitUI:
                 if i == num_cols:
                     i = 0
                     cols = st.columns(num_cols)
+        self.parameter_manager.save_parameters()
 
     def zip_and_download_files(self, directory: str):
         """
@@ -779,7 +905,9 @@ class StreamlitUI:
 
         with zipfile.ZipFile(bytes_io, "w", zipfile.ZIP_DEFLATED) as zip_file:
             for i, file_path in enumerate(files):
-                if file_path.is_file():  # Ensure we're only adding files, not directories
+                if (
+                    file_path.is_file()
+                ):  # Ensure we're only adding files, not directories
                     # Preserve directory structure relative to the original directory
                     zip_file.write(file_path, file_path.relative_to(directory.parent))
                     my_bar.progress((i + 1) / n_files)  # Update progress bar
@@ -793,7 +921,7 @@ class StreamlitUI:
             data=bytes_io,
             file_name="input-files.zip",
             mime="application/zip",
-            use_container_width=True
+            use_container_width=True,
         )
 
     def file_upload_section(self, custom_upload_function) -> None:
@@ -802,58 +930,61 @@ class StreamlitUI:
         if c1.button("⬇️ Download all uploaded files", use_container_width=True):
             self.zip_and_download_files(Path(self.workflow_dir, "input-files"))
 
-    def parameter_section(self, custom_paramter_function) -> None:
+    def parameter_section(self, custom_parameter_function) -> None:
         st.toggle("Show advanced parameters", value=False, key="advanced")
 
-        form = st.form(
-            key=f"{self.workflow_dir.stem}-input-form",
-            clear_on_submit=True,
-        )
+        custom_parameter_function()
 
-        with form:
-            cols = st.columns(4)
-
-            cols[2].form_submit_button(
-                label="Save parameters",
-                on_click=self.parameter_manager.save_parameters,
-                type="primary",
+        # File Import / Export section       
+        st.markdown("---")
+        cols = st.columns(3)
+        with cols[0]:
+            if st.button(
+                "⚠️ Load default parameters",
+                help="Reset paramter section to default.",
+                use_container_width=True,
+            ):
+                self.parameter_manager.reset_to_default_parameters()
+                streamlit_js_eval(js_expressions="parent.window.location.reload()")
+        with cols[1]:
+            if self.parameter_manager.params_file.exists():
+                with open(self.parameter_manager.params_file, "rb") as f:
+                    st.download_button(
+                        "⬇️ Export parameters",
+                        data=f,
+                        file_name="parameters.json",
+                        mime="text/json",
+                        help="Export parameter, can be used to import to this workflow.",
+                        use_container_width=True,
+                    )
+            text = self.export_parameters_markdown()
+            st.download_button(
+                "📑 Method summary",
+                data=text,
+                file_name="method-summary.md",
+                mime="text/md",
+                help="Download method summary for publications.",
                 use_container_width=True,
             )
 
-            if cols[3].form_submit_button(
-                label="Load default parameters", use_container_width=True
-            ):
-                self.parameter_manager.reset_to_default_parameters()
-
-            custom_paramter_function()
-        # Save parameters
-        self.parameter_manager.save_parameters()
+        with cols[2]:
+            up = st.file_uploader(
+                "⬆️ Import parameters", help="Reset parameter section to default."
+            )
+            if up is not None:
+                with open(self.parameter_manager.params_file, "w") as f:
+                    f.write(up.read().decode("utf-8"))
+                streamlit_js_eval(js_expressions="parent.window.location.reload()")
 
     def execution_section(self, start_workflow_function) -> None:
-        # Display a summary of non-default TOPP paramters and all others (custom and python scripts)
-        summary_text = ""
-        for key, value in self.params.items():
-            if not isinstance(value, dict):
-                summary_text += f"""
-
-{key}: **{value}**                
-""" 
-            elif value:
-                summary_text += f"""
-**{key}**:
-
-"""                 
-                for k, v in value.items():
-                    summary_text += f"""
-{key}: **{v}**
-
-"""     
-        with st.expander("**Parameter Summary**"):
-            st.markdown(summary_text)
+        with st.expander("**Summary**"):
+            st.markdown(self.export_parameters_markdown())
 
         c1, c2 = st.columns(2)
         # Select log level, this can be changed at run time or later without re-running the workflow
-        log_level = c1.selectbox("log details", ["minimal", "commands and run times", "all"], key="log_level")
+        log_level = c1.selectbox(
+            "log details", ["minimal", "commands and run times", "all"], key="log_level"
+        )
         if self.executor.pid_dir.exists():
             if c1.button("Stop Workflow", type="primary", use_container_width=True):
                 self.executor.stop()
@@ -866,17 +997,121 @@ class StreamlitUI:
             if self.executor.pid_dir.exists():
                 with st.spinner("**Workflow running...**"):
                     with open(log_path, "r", encoding="utf-8") as f:
-                        st.code(f.read(), language="neon", line_numbers=True)
+                        st.code(
+                            "".join(f.readlines()[-30:]),
+                            language="neon",
+                            line_numbers=False,
+                        )
                     time.sleep(2)
                 st.rerun()
             else:
-                st.markdown(f"**Workflow log file: {datetime.fromtimestamp(log_path.stat().st_ctime).strftime('%Y-%m-%d %H:%M')} CET**")
+                st.markdown(
+                    f"**Workflow log file: {datetime.fromtimestamp(log_path.stat().st_ctime).strftime('%Y-%m-%d %H:%M')} CET**"
+                )
                 with open(log_path, "r", encoding="utf-8") as f:
                     content = f.read()
                     # Check if workflow finished successfully
                     if not "WORKFLOW FINISHED" in content:
-                        st.error("**Errors occured, check log file.**")
-                    st.code(content, language="neon", line_numbers=True)
+                        st.error("**Errors occurred, check log file.**")
+                    st.code(content, language="neon", line_numbers=False)
 
     def results_section(self, custom_results_function) -> None:
         custom_results_function()
+
+    def non_default_params_summary(self):
+        # Display a summary of non-default TOPP parameters and all others (custom and python scripts)
+
+        def remove_full_paths(d: dict) -> dict:
+            # Create a copy to avoid modifying the original dictionary
+            cleaned_dict = {}
+
+            for key, value in d.items():
+                if isinstance(value, dict):
+                    # Recursively clean nested dictionaries
+                    nested_cleaned = remove_full_paths(value)
+                    if nested_cleaned:  # Only add non-empty dictionaries
+                        cleaned_dict[key] = nested_cleaned
+                elif isinstance(value, list):
+                    # Filter out existing paths from the list
+                    filtered_list = [
+                        item if not Path(str(item)).exists() else Path(str(item)).name
+                        for item in value
+                    ]
+                    if filtered_list:  # Only add non-empty lists
+                        cleaned_dict[key] = ", ".join(filtered_list)
+                elif not Path(str(value)).exists():
+                    # Add entries that are not existing paths
+                    cleaned_dict[key] = value
+
+            return cleaned_dict
+
+        # Don't want file paths to be shown in summary for export
+        params = remove_full_paths(self.params)
+
+        summary_text = ""
+        python = {}
+        topp = {}
+        general = {}
+
+        for k, v in params.items():
+            # skip if v is a file path
+            if Path(str(v)).exists():
+                continue
+            if isinstance(v, dict):
+                topp[k] = v
+            elif ".py" in k:
+                script = k.split(".py")[0] + ".py"
+                if script not in python:
+                    python[script] = {}
+                python[script][k.split(".py")[1][1:]] = v
+            else:
+                general[k] = v
+
+        markdown = []
+
+        def dict_to_markdown(d: dict):
+            for key, value in d.items():
+                if isinstance(value, dict):
+                    # Add a header for nested dictionaries
+                    markdown.append(f"> **{key}**\n")
+                    dict_to_markdown(value)
+                else:
+                    # Add key-value pairs as list items
+                    markdown.append(f">> {key}: **{value}**\n")
+
+        if len(general) > 0:
+            markdown.append("**General**")
+            dict_to_markdown(general)
+        if len(topp) > 0:
+            markdown.append("**OpenMS TOPP Tools**\n")
+            dict_to_markdown(topp)
+        if len(python) > 0:
+            markdown.append("**Python Scripts**")
+            dict_to_markdown(python)
+        return "\n".join(markdown)
+
+    def export_parameters_markdown(self):
+        markdown = []
+
+        url = f"https://github.com/{st.session_state.settings['github-user']}/{st.session_state.settings['repository-name']}"
+        tools = [p.stem for p in Path(self.parameter_manager.ini_dir).iterdir()]
+        if len(tools) > 1:
+            tools = ", ".join(tools[:-1]) + " and " + tools[-1]
+
+        result = subprocess.run(
+            "FileFilter --help", shell=True, text=True, capture_output=True
+        )
+        version = ""
+        if result.returncode == 0:
+            version = result.stderr.split("Version: ")[1].split("-")[0]
+
+        markdown.append(
+            f"""Data was processed using **{st.session_state.settings['app-name']}** ([{url}]({url})), a web application based on the OpenMS WebApps framework.
+OpenMS ([https://www.openms.de](https://www.openms.de)) is a free and open-source software for LC-MS data analysis [1].
+The workflow includes the **OpenMS {version}** TOPP tools {tools} as well as Python scripts. Non-default parameters are listed in the supplementary section below.
+
+[1] Sachsenberg, Timo, et al. "OpenMS 3 expands the frontiers of open-source computational mass spectrometry." (2023).
+"""
+        )
+        markdown.append(self.non_default_params_summary())
+        return "\n".join(markdown)

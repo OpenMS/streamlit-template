@@ -7,7 +7,5 @@ params = page_setup()
 
 wf = Workflow()
 
-st.title(wf.name)
-
 wf.show_results_section()
 

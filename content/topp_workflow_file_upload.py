@@ -7,8 +7,6 @@ params = page_setup()
 
 wf = Workflow()
 
-st.title(wf.name)
-
 wf.show_file_upload_section()
 
 

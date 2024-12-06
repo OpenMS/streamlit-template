@@ -37,6 +37,11 @@ class ParameterManager:
             for k, v in st.session_state.items()
             if k.startswith(self.param_prefix)
         }
+
+        # Merge with parameters from json
+        # Advanced parameters are only in session state if the view is active
+        json_params = self.get_parameters_from_json() | json_params
+
         # get a list of TOPP tools which are in session state
         current_topp_tools = list(
             set(
@@ -49,7 +54,8 @@ class ParameterManager:
         )
         # for each TOPP tool, open the ini file
         for tool in current_topp_tools:
-            json_params[tool] = {}
+            if tool not in json_params:
+                json_params[tool] = {}
             # load the param object
             param = poms.Param()
             poms.ParamXMLFile().load(str(Path(self.ini_dir, f"{tool}.ini")), param)
@@ -82,16 +88,17 @@ class ParameterManager:
             return {}
         else:
             # Load parameters from json file
-            with open(self.params_file, "r", encoding="utf-8") as f:
-                return json.load(f)
+            try:
+                with open(self.params_file, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except:
+                st.error("**ERROR**: Attempting to load an invalid JSON parameter file. Reset to defaults.")
+                return {}
 
     def reset_to_default_parameters(self) -> None:
         """
         Resets the parameters to their default values by deleting the custom parameters
-        JSON file and the directory containing .ini files for TOPP tools. This method
-        also triggers a Streamlit rerun to refresh the application state.
+        JSON file.
         """
         # Delete custom params json file
         self.params_file.unlink(missing_ok=True)
-        shutil.rmtree(self.ini_dir)
-        st.rerun()

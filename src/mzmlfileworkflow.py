@@ -31,7 +31,7 @@ def mzML_file_get_num_spectra(filepath):
 def run_workflow(params, result_dir):
     """Load each mzML file into pyOpenMS Experiment and get the number of spectra."""
 
-    result_dir = Path(result_dir, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+    result_dir = Path(result_dir, datetime.now().strftime("%Y-%m-%d %H_%M_%S"))
     # delete old workflow results and set new directory
     reset_directory(result_dir)
 
@@ -78,7 +78,7 @@ def result_section(result_dir):
 
     date_strings = [f.name for f in Path(result_dir).iterdir() if f.is_dir()]
 
-    result_dirs = sorted(date_strings, key=lambda date: datetime.strptime(date, "%Y-%m-%d %H:%M:%S"))[::-1]
+    result_dirs = sorted(date_strings, key=lambda date: datetime.strptime(date, "%Y-%m-%d %H_%M_%S"))[::-1]
 
     run_dir = st.selectbox("select result from run", result_dirs)
 

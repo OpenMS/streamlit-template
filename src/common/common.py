@@ -20,10 +20,6 @@ except ImportError:
 
 from src.common.captcha_ import captcha_control
 
-# set these variables according to your project
-APP_NAME = "OpenMS Streamlit App"
-REPOSITORY_NAME = "streamlit-template"
-
 # Detect system platform
 OS_PLATFORM = sys.platform
 
@@ -110,7 +106,7 @@ def page_setup(page: str = "") -> dict[str, Any]:
 
     # Set Streamlit page configurations
     st.set_page_config(
-        page_title=APP_NAME,
+        page_title=st.session_state.settings["app-name"],
         page_icon="assets/OpenMS.png",
         layout="wide",
         initial_sidebar_state="auto",
@@ -134,26 +130,54 @@ def page_setup(page: str = "") -> dict[str, Any]:
     st.logo("assets/pyopenms_transparent_background.png")
 
     # Create google analytics if consent was given
-    if "tracking_consent" not in st.session_state:
-        st.session_state.tracking_consent = None
-    if (st.session_state.settings["google_analytics"]["enabled"]) and (
-        st.session_state.tracking_consent == True
+    if (
+        ("tracking_consent" not in st.session_state) 
+        or (st.session_state.tracking_consent is None)
+        or (not st.session_state.settings['online_deployment'])
     ):
-        html(
-            """
-            <!DOCTYPE html>
-            <html lang="en">
-                <head></head>
-                <body><script>
-                window.parent.gtag('consent', 'update', {
-                  'analytics_storage': 'granted'
-                });
-                </script></body>
-            </html>
-            """,
-            width=1,
-            height=1,
-        )
+        st.session_state.tracking_consent = None
+    else:
+        if (st.session_state.settings["analytics"]["google-analytics"]["enabled"]) and (
+            st.session_state.tracking_consent["google-analytics"] == True
+        ):
+            html(
+                """
+                <!DOCTYPE html>
+                <html lang="en">
+                    <head></head>
+                    <body><script>
+                    window.parent.gtag('consent', 'update', {
+                    'analytics_storage': 'granted'
+                    });
+                    </script></body>
+                </html>
+                """,
+                width=1,
+                height=1,
+            )
+        if (st.session_state.settings["analytics"]["piwik-pro"]["enabled"]) and (
+            st.session_state.tracking_consent["piwik-pro"] == True
+        ):
+            html(
+                """
+                <!DOCTYPE html>
+                <html lang="en">
+                    <head></head>
+                    <body><script>
+                    var consentSettings = {
+                        analytics: { status: 1 } // Set Analytics consent to 'on' (1 for on, 0 for off)
+                    };
+                    window.parent.ppms.cm.api('setComplianceSettings', { consents: consentSettings }, function() {
+                        console.log("PiwikPro Analytics consent set to on.");
+                    }, function(error) {
+                        console.error("Failed to set PiwikPro analytics consent:", error);
+                    });
+                    </script></body>
+                </html>
+                """,
+                width=1,
+                height=1,
+            )
 
     # Determine the workspace for the current session
     if ("workspace" not in st.session_state) or (
@@ -174,7 +198,7 @@ def page_setup(page: str = "") -> dict[str, Any]:
         if "windows" in sys.argv:
             os.chdir("../streamlit-template")
         # Define the directory where all workspaces will be stored
-        workspaces_dir = Path("..", "workspaces-" + REPOSITORY_NAME)
+        workspaces_dir = Path("..", "workspaces-" + st.session_state.settings["repository-name"])
         if "workspace" in st.query_params:
             st.session_state.workspace = Path(workspaces_dir, st.query_params.workspace)
         elif st.session_state.location == "online":
@@ -200,10 +224,15 @@ def page_setup(page: str = "") -> dict[str, Any]:
     params = render_sidebar(page)
 
     # If run in hosted mode, show captcha as long as it has not been solved
-    if not "local" in sys.argv:
-        if "controllo" not in st.session_state:
-            # Apply captcha by calling the captcha_control function
-            captcha_control()
+    #if not "local" in sys.argv:
+    #    if "controllo" not in st.session_state:
+    #        # Apply captcha by calling the captcha_control function
+    #        captcha_control()
+    
+    # If run in hosted mode, show captcha as long as it has not been solved
+    if 'controllo' not in st.session_state or params["controllo"] == False:
+        # Apply captcha by calling the captcha_control function
+        captcha_control()  
 
     return params
 
@@ -230,7 +259,7 @@ def render_sidebar(page: str = "") -> None:
         # The main page has workspace switcher
         with st.expander("🖥️ **Workspaces**"):
             # Define workspaces directory outside of repository
-            workspaces_dir = Path("..", "workspaces-" + REPOSITORY_NAME)
+            workspaces_dir = Path("..", "workspaces-" + st.session_state.settings["repository-name"])
             # Online: show current workspace name in info text and option to change to other existing workspace
             if st.session_state.location == "local":
                 # Define callback function to change workspace

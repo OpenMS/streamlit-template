@@ -1,5 +1,7 @@
 name: Test streamlit executable for Windows with embeddable python
 on: 
+  push:
+    branches: [ "main" ]
   workflow_dispatch:
 
 jobs:
@@ -8,17 +10,18 @@ jobs:
 
     env:
       PYTHON_VERSION: 3.11.9
+      APP_NAME: OpenMS-StreamlitTemplateApp-Test
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: Download python embeddable version
         run: |
-           mkdir python-${{ env.PYTHON_VERSION }}
-           curl -O https://www.python.org/ftp/python/${{ env.PYTHON_VERSION }}/python-${{ env.PYTHON_VERSION }}-embed-amd64.zip
-           unzip python-${{ env.PYTHON_VERSION }}-embed-amd64.zip -d python-${{ env.PYTHON_VERSION }}
-           rm python-${{ env.PYTHON_VERSION }}-embed-amd64.zip
+          mkdir python-${{ env.PYTHON_VERSION }}
+          curl -O https://www.python.org/ftp/python/${{ env.PYTHON_VERSION }}/python-${{ env.PYTHON_VERSION }}-embed-amd64.zip
+          unzip python-${{ env.PYTHON_VERSION }}-embed-amd64.zip -d python-${{ env.PYTHON_VERSION }}
+          rm python-${{ env.PYTHON_VERSION }}-embed-amd64.zip
 
       - name: Install pip
         run: |
@@ -36,26 +39,164 @@ jobs:
 
       - name: Install Required Packages
         run: .\python-${{ env.PYTHON_VERSION }}\python -m pip install -r requirements.txt --no-warn-script-location
-
-      - name: Create run_app.bat file
-        run: |
-          echo '@echo off' > run_app.bat
-          echo '.\\python-${{ env.PYTHON_VERSION }}\\python -m streamlit run app.py local' >> run_app.bat
       
+      - name: Create .bat file
+        run: |
+          echo " start /min .\python-${{ env.PYTHON_VERSION }}\python -m streamlit run app.py local" > ${{ env.APP_NAME }}.bat
+          
       - name: Create All-in-one executable folder
         run: |
           mkdir streamlit_exe
           mv python-${{ env.PYTHON_VERSION }} streamlit_exe
-          mv run_app.bat streamlit_exe
           cp -r src streamlit_exe
           cp -r content streamlit_exe
+          cp -r docs streamlit_exe
           cp -r assets streamlit_exe
           cp -r example-data streamlit_exe
           cp -r .streamlit streamlit_exe
           cp app.py streamlit_exe
+          cp settings.json streamlit_exe
+          cp default-parameters.json streamlit_exe
+          cp ${{ env.APP_NAME }}.bat streamlit_exe
+          
+      - name: Generate Readme.txt
+        shell: bash
+        run: |
+          cat <<EOF > streamlit_exe/Readme.txt
+          Welcome to ${{ env.APP_NAME }} app!
 
-      - name: Archive streamlit_exe folder
-        uses: actions/upload-artifact@v2
+          To launch the application:
+          1. Navigate to the installation directory.
+          2. Double-click on the file: ${{ env.APP_NAME }}.bat or ${{ env.APP_NAME }} shortcut.
+
+          Additional Information:
+          - If multiple Streamlit apps are running, you can change the port in the .streamlit/config.toml file.
+            Example:
+              [server]
+              port = 8502
+
+          Reach out to us:
+          - Join our Discord server for support and community discussions: https://discord.com/invite/4TAGhqJ7s5
+          - Contribute or stay updated with the latest OpenMS web app developments on GitHub: https://github.com/OpenMS/streamlit-template
+          - Visit our website for more information: https://openms.de/
+          
+          Thank you for using ${{ env.APP_NAME }}!
+          EOF
+          
+      - name: Install WiX Toolset
+        run: |
+          curl -LO https://github.com/wixtoolset/wix3/releases/download/wix3111rtm/wix311-binaries.zip
+          unzip wix311-binaries.zip -d wix
+          rm wix311-binaries.zip
+      
+      - name: Build .wxs for streamlit_exe folder
+        run: |
+          ./wix/heat.exe dir streamlit_exe -gg -sfrag -sreg -srd -template component -cg StreamlitExeFiles -dr AppSubFolder -out streamlit_exe_files.wxs
+      
+      - name: Generate VBScript file
+        shell: bash
+        run: |
+          cat <<EOF > ShowSuccessMessage.vbs
+          MsgBox " The ${{ env.APP_NAME }} application is successfully installed.", vbInformation, "Installation Complete"
+          EOF
+
+      - name: Prepare SourceDir
+        run: |
+          mkdir SourceDir
+          mv streamlit_exe/* SourceDir
+          cp ShowSuccessMessage.vbs SourceDir
+          cp assets/openms_license.rtf SourceDir
+          # Logo of app
+          cp assets/openms.ico SourceDir
+          
+      - name: Generate WiX XML file
+        shell: bash
+        run: |
+          cat <<EOF > streamlit_exe.wxs
+          <?xml version="1.0"?>
+          <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+            <Product Id="8434b940-a943-40f1-ab1f-4db3feedb4ba" Name="${{ env.APP_NAME }}" Language="1033" Version="1.0.0.0" Codepage="1252" Manufacturer="OpenMS Developer Team" UpgradeCode="8d28e8c7-45dc-446c-b889-99a6aea2f1a5">
+              <Package Id="*" InstallerVersion="300" Compressed="yes" InstallPrivileges="elevated" Platform="x64" />
+              <Media Id="1" Cabinet="streamlit.cab" EmbedCab="yes" />
+          
+              <!-- Folder structure -->
+              <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
+              <Directory Id="TARGETDIR" Name="SourceDir">
+                <Directory Id="ProgramFilesFolder"> 
+                  <Directory Id="INSTALLFOLDER" Name="${{ env.APP_NAME }}">
+                    <Directory Id="AppSubFolder" Name="${{ env.APP_NAME }}" /> 
+                    <Component Id="CreateAppFolder" Guid="95dbfa06-d36a-427f-995c-e87769ac2e59">
+                      <CreateFolder>
+                        <Permission User="Everyone" GenericAll="yes" />
+                      </CreateFolder>
+                    </Component>
+                  </Directory>
+                </Directory>
+                <Directory Id="DesktopFolder" />
+              </Directory>
+          
+              <!-- Add components -->
+              <Feature Id="MainFeature" Title="Main Application" Level="1">
+                <ComponentGroupRef Id="StreamlitExeFiles" />
+                <ComponentRef Id="CreateAppFolder" />
+                <ComponentRef Id="DesktopShortcutComponent" />
+                <ComponentRef Id="InstallDirShortcutComponent" />
+              </Feature>
+          
+              <!-- Create shortcut for running app on desktop -->
+              <Component Id="DesktopShortcutComponent" Guid="3597b243-9180-4d0b-b105-30d8b0d1a334" Directory="DesktopFolder">
+                <Shortcut Id="DesktopShortcut" Name="${{ env.APP_NAME }}" Description="Launch ${{ env.APP_NAME }}" Target="[AppSubFolder]${{ env.APP_NAME }}.bat" WorkingDirectory="AppSubFolder" Icon="AppIcon" />
+                <RegistryValue Root="HKCU" Key="Software\\OpenMS\\${{ env.APP_NAME }}" Name="DesktopShortcut" Type="integer" Value="1" KeyPath="yes" />
+              </Component>
+          
+              <!-- Create shortcut for running app in installer folder -->
+              <Component Id="InstallDirShortcutComponent" Guid="c2df9472-3b45-4558-a56d-6034cf7c8b72" Directory="AppSubFolder">
+                <Shortcut Id="InstallDirShortcut" Name="${{ env.APP_NAME }}" Description="Launch ${{ env.APP_NAME }}" Target="[AppSubFolder]${{ env.APP_NAME }}.bat" WorkingDirectory="AppSubFolder" Icon="AppIcon" />
+                <RegistryValue Root="HKCU" Key="Software\\OpenMS\\${{ env.APP_NAME }}" Name="InstallFolderShortcut" Type="integer" Value="1" KeyPath="yes" />
+              </Component>
+          
+              <!-- Provide icon here; it should exist in the SourceDir folder -->
+              <Icon Id="AppIcon" SourceFile="SourceDir/openms.ico" />
+          
+              <!-- Run app directly after installation -->
+              <!-- <CustomAction Id="RunApp" Directory="AppSubFolder" Execute="deferred" Return="asyncNoWait" Impersonate="no"
+                            ExeCommand="cmd.exe /c &quot;[AppSubFolder]${{ env.APP_NAME }}.bat&quot;" /> -->
+              
+              <!-- Custom Action to Show Success Message -->
+              <Binary Id="ShowMessageScript" SourceFile="SourceDir/ShowSuccessMessage.vbs" />
+              <CustomAction Id="ShowSuccessMessage" BinaryKey="ShowMessageScript" VBScriptCall="" Execute="immediate" Return="check" />
+          
+              <!-- Add all Custom Actions -->
+              <InstallExecuteSequence>
+                <!-- Custom action display success message -->
+                <Custom Action="ShowSuccessMessage" After="InstallFinalize">NOT Installed</Custom>
+                <!-- Run app directly after installation -->
+                <!-- <Custom Action="RunApp" Before="InstallFinalize">NOT REMOVE</Custom> -->
+              </InstallExecuteSequence>
+          
+              <!-- Interface options -->
+              <UI>
+                    <UIRef Id="WixUI_InstallDir" />
+                    <UIRef Id="WixUI_ErrorProgressText" />
+              </UI> 
+          
+              <!-- Provide license; it should exist in the SourceDir folder -->
+              <WixVariable Id="WixUILicenseRtf" Value="SourceDir/openms_license.rtf" />
+            </Product>
+          </Wix>
+          EOF
+
+      - name: Build .wixobj file with candle.exe
+        run: |
+          ./wix/candle.exe streamlit_exe.wxs streamlit_exe_files.wxs
+          
+      - name: Link .wixobj file into .msi with light.exe
+        run: |
+          ./wix/light.exe -ext WixUIExtension -sice:ICE60 -o ${{ env.APP_NAME }}.msi streamlit_exe_files.wixobj streamlit_exe.wixobj
+
+      - name: Archive build artifacts
+        uses: actions/upload-artifact@v4
         with:
-          name: streamlit_exe
-          path: streamlit_exe
+          name: OpenMS-App-Test
+          path: |
+            ${{ env.APP_NAME }}.msi
