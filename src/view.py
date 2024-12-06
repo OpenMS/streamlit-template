@@ -83,7 +83,6 @@ def plot_bpc_tic() -> go.Figure:
             show_plot=False,
             grid=False,
         )
-        fig = fig.fig
     if st.session_state.view_bpc:
         df = st.session_state.view_ms1.groupby("RT").max().reset_index()
         df["type"] = "BPC"
@@ -100,7 +99,6 @@ def plot_bpc_tic() -> go.Figure:
             show_plot=False,
             grid=False,
         )
-        fig = fig.fig
     if st.session_state.view_eic:
         df = st.session_state.view_ms1
         target_value = st.session_state.view_eic_mz.strip().replace(",", ".")
@@ -129,7 +127,6 @@ def plot_bpc_tic() -> go.Figure:
                     show_plot=False,
                     grid=False,
                 )
-                fig = fig.fig
         except ValueError:
             st.error("Invalid m/z value for XIC provided. Please enter a valid number.")
 
@@ -159,7 +156,6 @@ def plot_ms_spectrum(df, title, bin_peaks, num_x_bins):
         bin_peaks=bin_peaks,
         num_x_bins=num_x_bins,
     )
-    fig = fig.fig
     fig.update_layout(
         template="plotly_white", dragmode="select", plot_bgcolor="rgb(255,255,255)"
     )
@@ -188,8 +184,7 @@ def view_peak_map():
         bin_peaks=True,
         backend="ms_plotly",
     )
-    peak_map.fig.update_layout(template="simple_white", dragmode="select")
-    peak_map = peak_map.fig
+    peak_map.update_layout(template="simple_white", dragmode="select")
     c1, c2 = st.columns(2)
     with c1:
         st.info(
@@ -218,7 +213,6 @@ def view_peak_map():
                 height=650,
                 width=900,
             )
-            peak_map_3D = peak_map_3D.fig
             st.plotly_chart(peak_map_3D, use_container_width=True)
 
 
