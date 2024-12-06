@@ -1,5 +1,6 @@
 from streamlit.testing.v1 import AppTest
 import pytest
+from src import fileupload
 
 
 @pytest.fixture
@@ -64,8 +65,11 @@ def test_file_upload(launch, tab):
 @pytest.mark.parametrize('launch,tab', [("content/raw_data_viewer.py", "Peak map (MS1)"), 
                                          ("content/raw_data_viewer.py", "Spectra (MS1 + MS2)"), 
                                          ("content/raw_data_viewer.py", "Chromatograms (MS1)")], indirect=['launch'])
-def view_raw_ms_data(launch, tab):
+def test_view_raw_ms_data(launch, tab):
+    ## Load Example file ##    
     launch.run()
+    fileupload.load_example_mzML_files()
+
     for i in launch.tabs:
         if i.label == tab:
             i.button[0].click().run()
