@@ -11,10 +11,16 @@ import time
 
 class WorkflowManager:
     # Core workflow logic using the above classes
-    def __init__(self, name: str, workspace: str):
+    def __init__(self, name: str, workspace: str, share_cache: bool = False):
         self.name = name
         self.workflow_dir = Path(workspace, name.replace(" ", "-").lower())
-        self.file_manager = FileManager(self.workflow_dir)
+
+        if share_cache:
+            cache_path = Path(workspace, 'cache')
+        else:
+            cache_path = Path(self.workflow_dir, 'cache')
+        
+        self.file_manager = FileManager(self.workflow_dir, cache_path)
         self.logger = Logger(self.workflow_dir)
         self.parameter_manager = ParameterManager(self.workflow_dir)
         self.executor = CommandExecutor(self.workflow_dir, self.logger, self.parameter_manager)
