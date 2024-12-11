@@ -313,7 +313,7 @@ if cols[0].form_submit_button("Run-analysis", type="primary"):
                 args.extend([ "-database", database_file_path, "-out", result_path,
                             "-precursor_tol_left",  Precursor_MT_left, "-precursor_tol_right", Precursor_MT_right, "-precursor_tol_unit",  Precursor_MT_unit,
                             "-fragment_tol_left",  Fragment_MT_left, "-fragment_tol_right", Fragment_MT_right , "-fragment_tol_unit",  Fragment_MT_unit,
-                            "-min_len", peptide_min, "-max_len",peptide_max, "-missed_cleavages",Missed_cleavages, "-enzyme", Enzyme,
+                            "-min_len", peptide_min, "-max_len",peptide_max, "-missed_cleavages",Missed_cleavages, "-enzyme", *Enzyme,
                             "-max_variable_mods", Variable_max_per_peptide,"-annotate_matches",str(Annotate_TF).lower(), "-report_psms",str(psm_scores).lower(),"-deisotope", str(Deisotope).lower(), "-chimera", str(Chimera).lower(),"-predict_rt",str(Predict_rt).lower(), 
                             "-wide_window", str(Wide_window_mode).lower(), "-smoothing", str(smoothing).lower(), "-q_value_threshold", FDR_Var , "-sage_executable", sage_exec
                             ])
@@ -329,7 +329,7 @@ if cols[0].form_submit_button("Run-analysis", type="primary"):
                 args.extend([ "-database", database_file_path, "-out", result_path,
                         "-precursor_tol_left",  Precursor_MT_left, "-precursor_tol_right", Precursor_MT_right, "-precursor_tol_unit",  Precursor_MT_unit,
                         "-fragment_tol_left",  Fragment_MT_left, "-fragment_tol_right", Fragment_MT_right , "-fragment_tol_unit",  Fragment_MT_unit,
-                        "-min_len", peptide_min, "-max_len",peptide_max, "-missed_cleavages",Missed_cleavages, "-enzyme", Enzyme,
+                        "-min_len", peptide_min, "-max_len",peptide_max, "-missed_cleavages",Missed_cleavages, "-enzyme", *Enzyme,
                         "-max_variable_mods", Variable_max_per_peptide,"-annotate_matches",str(Annotate_TF).lower(), "-report_psms",str(psm_scores).lower(),"-deisotope", str(Deisotope).lower(), "-chimera", str(Chimera).lower(),"-predict_rt",str(Predict_rt).lower(), 
                         "-wide_window", str(Wide_window_mode).lower(),"-smoothing", str(smoothing).lower(), "-q_value_threshold", FDR_Var
                         ])
@@ -427,7 +427,7 @@ if cols[0].form_submit_button("Run-analysis", type="primary"):
                     args.extend([ "-database", database_file_path, "-out", result_path,
                                 "-precursor_tol_left",  Precursor_MT_left, "-precursor_tol_right", Precursor_MT_right, "-precursor_tol_unit",  Precursor_MT_unit,
                                 "-fragment_tol_left",  Fragment_MT_left, "-fragment_tol_right", Fragment_MT_right , "-fragment_tol_unit",  Fragment_MT_unit,
-                                "-min_len", peptide_min, "-max_len",peptide_max, "-missed_cleavages",Missed_cleavages, "-enzyme", Enzyme,
+                                "-min_len", peptide_min, "-max_len",peptide_max, "-missed_cleavages",Missed_cleavages, "-enzyme", *Enzyme,
                                 "-max_variable_mods", Variable_max_per_peptide,"-annotate_matches",str(Annotate_TF).lower(), "-report_psms",str(psm_scores).lower(),"-deisotope", str(Deisotope).lower(), "-chimera", str(Chimera).lower(),"-predict_rt",str(Predict_rt).lower(), 
                                 "-wide_window", str(Wide_window_mode).lower(), "-smoothing", str(smoothing).lower(), "-q_value_threshold", FDR_Var , "-sage_executable", sage_exec
                                 ])
@@ -439,7 +439,7 @@ if cols[0].form_submit_button("Run-analysis", type="primary"):
                     args.extend([ "-database", database_file_path, "-out", result_path,
                             "-precursor_tol_left",  Precursor_MT_left, "-precursor_tol_right", Precursor_MT_right, "-precursor_tol_unit",  Precursor_MT_unit,
                             "-fragment_tol_left",  Fragment_MT_left, "-fragment_tol_right", Fragment_MT_right , "-fragment_tol_unit",  Fragment_MT_unit,
-                            "-min_len", peptide_min, "-max_len",peptide_max, "-missed_cleavages",Missed_cleavages, "-enzyme", Enzyme,
+                            "-min_len", peptide_min, "-max_len",peptide_max, "-missed_cleavages",Missed_cleavages, "-enzyme", *Enzyme,
                             "-max_variable_mods", Variable_max_per_peptide,"-annotate_matches",str(Annotate_TF).lower(), "-report_psms",str(psm_scores).lower(),"-deisotope", str(Deisotope).lower(), "-chimera", str(Chimera).lower(),"-predict_rt",str(Predict_rt).lower(), 
                             "-wide_window", str(Wide_window_mode).lower(),"-smoothing", str(smoothing).lower(), "-q_value_threshold", FDR_Var ,  "-sage_executable", "sage"
                             ])
