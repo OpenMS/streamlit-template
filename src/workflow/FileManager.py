@@ -36,6 +36,9 @@ class FileManager:
         # Setup Caching
         self.cache_path = cache_path
         Path(self.cache_path, 'files').mkdir(parents=True, exist_ok=True)
+        self._connect_to_sql()
+        
+    def _connect_to_sql(self):
         self.cache_connection = sqlite3.connect(
             Path(self.cache_path, 'cache.db'), isolation_level=None
         )
@@ -50,6 +53,16 @@ class FileManager:
                             id TEXT PRIMARY KEY
                           );
         """)
+
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        del state['cache_connection']
+        del state['cache_cursor']
+        return state
+    
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        self._connect_to_sql()
 
     def get_files(
         self,
