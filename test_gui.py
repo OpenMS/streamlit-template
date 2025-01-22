@@ -12,6 +12,7 @@ def launch(request):
     ## Initialize session state ##
     with open("settings.json", "r") as f:
         test.session_state.settings = json.load(f)
+    test.session_state.settings['test'] = True 
     test.secrets['workspace'] = 'test'
     return test
 
