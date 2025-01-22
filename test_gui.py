@@ -66,14 +66,16 @@ def test_file_upload_load_example(launch):
                                             ("content/raw_data_viewer.py", 'Control.mzML')], indirect=['launch'])
 def test_view_raw_ms_data(launch, example):
     launch.run()
+
     ## Load Example file, based on implementation of fileupload.load_example_mzML_files() ###
     mzML_dir = Path(launch.session_state.workspace, "mzML-files")
+
     # Copy files from example-data/mzML to workspace mzML directory, add to selected files
     for f in Path("example-data", "mzML").glob("*.mzML"):
         shutil.copy(f, mzML_dir)
     launch.run()
 
-    ## Select file and check if it is displayed
+    ## TODO: Figure out a way to select a spectrum to be displayed 
     launch.selectbox[0].select(example).run()
     assert not launch.exception
 
