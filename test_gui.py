@@ -97,7 +97,11 @@ def test_run_workflow(launch, example):
     launch.run()
 
     ## Select experiments to process 
-    launch.multiselect[0].select(example)
+    for e in example:
+        launch.multiselect[0].select(e)
+    
+    launch.run()
+    assert not launch.exception
     
     # Press the "Run Workflow" button
     launch.button[1].click().run(timeout=60)
