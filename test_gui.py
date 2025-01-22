@@ -78,20 +78,24 @@ def test_view_raw_ms_data(launch, example):
     assert not launch.exception
 
 
-@pytest.mark.parametrize('launch,example', [("content/run_example_workflow.py", 'Blank'),
-                                            ("content/run_example_workflow.py", 'Treatment'),
-                                            ("content/run_example_workflow.py", 'Pool'),
-                                            ("content/run_example_workflow.py", 'Control')], indirect=['launch'])
+@pytest.mark.parametrize('launch,example', [("content/run_example_workflow.py", ['Blank']),
+                                            ("content/run_example_workflow.py", ['Treatment']),
+                                            ("content/run_example_workflow.py", ['Pool']),
+                                            ("content/run_example_workflow.py", ['Control']),
+                                            ("content/run_example_workflow.py", ['Control', 'Blank'])], indirect=['launch'])
 def test_run_workflow(launch, example):
     launch.run()
     ## Load Example file, based on implementation of fileupload.load_example_mzML_files() ###
     mzML_dir = Path(launch.session_state.workspace, "mzML-files")
+
     # Copy files from example-data/mzML to workspace mzML directory, add to selected files
     for f in Path("example-data", "mzML").glob("*.mzML"):
         shutil.copy(f, mzML_dir)
     launch.run()
 
-    ## Select file and check if it is displayed
+    ## Select experiments to process 
     launch.multiselect[0].select(example)
-    launch.button[0].click().run()
+    
+    # Press the "Run Workflow" button
+    launch.button[1].click().run(timeout=60)
     assert not launch.exception
