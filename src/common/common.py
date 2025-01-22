@@ -222,6 +222,8 @@ def page_setup(page: str = "") -> dict[str, Any]:
 
     # Render the sidebar
     params = render_sidebar(page)
+    
+    captcha_control()  
 
     # If run in hosted mode, show captcha as long as it has not been solved
     #if not "local" in sys.argv:

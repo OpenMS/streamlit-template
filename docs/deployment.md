@@ -82,3 +82,8 @@ Run docker-compose to launch all services.
 - test functionality of your app
 
 **7. Make a pull request with your changes to OpenMS/streamlit-deployment main branch.**
+
+
+
+# Other Architectures
+In principle OpenMS runs on most processor architectures. The images are provided and tested for x86 but OpenMS can also be compiled on architectures like arm64. Please note that you might have to adjust the miniforge version according to the processor architecture.

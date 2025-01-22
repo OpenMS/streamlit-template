@@ -67,7 +67,10 @@ class ParameterManager:
                     # get ini (default) value by ini_key
                     ini_value = param.getValue(ini_key)
                     # check if value is different from default
-                    if ini_value != value:
+                    if (
+                        (ini_value != value) 
+                        or (key.split(":1:")[1] in json_params[tool])
+                    ):
                         # store non-default value
                         json_params[tool][key.split(":1:")[1]] = value
         # Save to json file

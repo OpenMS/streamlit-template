@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  openms-streamlit-template:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        GITHUB_TOKEN: $GITHUB_TOKEN
+    image: openms_streamlit_template
+    container_name: openms-streamlit-template
+    restart: always
+    ports:
+      - 8501:8501
+    volumes:
+      - workspaces-streamlit-template:/workspaces-streamlit-template
+    command: streamlit run openms-streamlit-template/app.py
+volumes:
+  workspaces-streamlit-template:

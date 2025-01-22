@@ -138,9 +138,10 @@ COPY clean-up-workspaces.py /app/clean-up-workspaces.py
 RUN echo "0 3 * * * /root/miniforge3/envs/streamlit-env/bin/python /app/clean-up-workspaces.py >> /app/clean-up-workspaces.log 2>&1" | crontab -
 
 # create entrypoint script to start cron service and launch streamlit app
-RUN echo "#!/bin/bash" > /app/entrypoint.sh
-RUN echo "service cron start" >> /app/entrypoint.sh
-RUN echo "mamba run --no-capture-output -n streamlit-env streamlit run app.py" >> /app/entrypoint.sh
+RUN echo "#!/bin/bash" > /app/entrypoint.sh && \
+    echo "source /root/miniforge3/bin/activate streamlit-env" >> /app/entrypoint.sh && \
+    echo "service cron start" >> /app/entrypoint.sh && \
+    echo "streamlit run app.py" >> /app/entrypoint.sh
 # make the script executable
 RUN chmod +x /app/entrypoint.sh
 

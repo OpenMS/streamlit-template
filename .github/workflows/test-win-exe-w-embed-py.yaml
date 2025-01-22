@@ -10,6 +10,7 @@ jobs:
 
     env:
       PYTHON_VERSION: 3.11.9
+      APP_UpgradeCode: 4abc2e23-3ba5-40e4-95c9-09e6cb8ecaeb
       APP_NAME: OpenMS-StreamlitTemplateApp-Test
 
     steps:
@@ -115,7 +116,7 @@ jobs:
           cat <<EOF > streamlit_exe.wxs
           <?xml version="1.0"?>
           <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
-            <Product Id="8434b940-a943-40f1-ab1f-4db3feedb4ba" Name="${{ env.APP_NAME }}" Language="1033" Version="1.0.0.0" Codepage="1252" Manufacturer="OpenMS Developer Team" UpgradeCode="8d28e8c7-45dc-446c-b889-99a6aea2f1a5">
+            <Product Id="*" Name="${{ env.APP_NAME }}" Language="1033" Version="1.0.0.0" Codepage="1252" Manufacturer="OpenMS Developer Team" UpgradeCode="${{ env.APP_UpgradeCode }}">
               <Package Id="*" InstallerVersion="300" Compressed="yes" InstallPrivileges="elevated" Platform="x64" />
               <Media Id="1" Cabinet="streamlit.cab" EmbedCab="yes" />
           

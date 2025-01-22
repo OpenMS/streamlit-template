@@ -39,6 +39,7 @@ class StreamlitUI:
         self.parameter_manager = parameter_manager
         self.params = self.parameter_manager.get_parameters_from_json()
 
+    @st.fragment
     def upload_widget(
         self,
         key: str,
@@ -246,19 +247,15 @@ class StreamlitUI:
                     "This means that the original files will be used instead. "
                 )
 
-        if fallback and not any(Path(files_dir).iterdir()):
+        if fallback and not any([f for f in Path(files_dir).iterdir() if f.name != "external_files.txt"]):
             if isinstance(fallback, str):
                 fallback = [fallback]
             for f in fallback:
                 c1, _ = st.columns(2)
                 if not Path(files_dir, f).exists():
                     shutil.copy(f, Path(files_dir, Path(f).name))
-                    c1.info(f"Adding default file: **{f}**")
-            current_files = [
-                f.name
-                for f in files_dir.iterdir()
-                if f.name not in [Path(f).name for f in fallback]
-            ]
+            current_files = [f.name for f in files_dir.iterdir() if f.name != "external_files.txt"]
+            c1.warning("**No data yet. Using example data file(s).**")
         else:
             if files_dir.exists():
                 current_files = [
@@ -291,12 +288,13 @@ class StreamlitUI:
         if current_files:
             c1.info(f"Current **{name}** files:\n\n" + "\n\n".join(current_files))
             if c1.button(
-                f"🗑️ Remove all **{name}** files.",
+                f"🗑️ Clear **{name}** files.",
                 use_container_width=True,
                 key=f"remove-files-{key}",
             ):
                 shutil.rmtree(files_dir)
-                del self.params[key]
+                if key in self.params:
+                    del self.params[key]
                 with open(
                     self.parameter_manager.params_file, "w", encoding="utf-8"
                 ) as f:
@@ -305,6 +303,7 @@ class StreamlitUI:
         elif not fallback:
             st.warning(f"No **{name}** files!")
 
+    @st.fragment
     def select_input_file(
         self,
         key: str,
@@ -352,6 +351,7 @@ class StreamlitUI:
             display_file_path=display_file_path,
         )
 
+    @st.fragment
     def input_widget(
         self,
         key: str,
@@ -528,6 +528,8 @@ class StreamlitUI:
 
         else:
             st.error(f"Unsupported widget type '{widget_type}'")
+
+        self.parameter_manager.save_parameters()
 
     @st.fragment
     def input_TOPP(
@@ -753,10 +755,17 @@ class StreamlitUI:
                             v.decode() if isinstance(v, bytes) else v
                             for v in p["value"]
                         ]
+                        valid_entries_info = ''
+                        if len(p['valid_strings']) > 0:
+                            valid_entries_info = (
+                                " Valid entries are: "
+                                + ', '.join(sorted(p['valid_strings']))
+                            )
+
                         cols[i].text_area(
                             name,
                             value="\n".join([str(val) for val in p["value"]]),
-                            help=p["description"],
+                            help=p["description"] + " Separate entries using the \"Enter\" key." + valid_entries_info,
                             key=key,
                         )
 
@@ -900,8 +909,9 @@ class StreamlitUI:
 
         n_files = len(files)
 
+        c1, _ = st.columns(2)
         # Initialize Streamlit progress bar
-        my_bar = st.progress(0)
+        my_bar = c1.progress(0)
 
         with zipfile.ZipFile(bytes_io, "w", zipfile.ZIP_DEFLATED) as zip_file:
             for i, file_path in enumerate(files):
@@ -916,7 +926,7 @@ class StreamlitUI:
         bytes_io.seek(0)  # Reset buffer pointer to the beginning
 
         # Display a download button for the zip file in Streamlit
-        st.columns(2)[1].download_button(
+        c1.download_button(
             label="⬇️ Download Now",
             data=bytes_io,
             file_name="input-files.zip",
@@ -927,7 +937,7 @@ class StreamlitUI:
     def file_upload_section(self, custom_upload_function) -> None:
         custom_upload_function()
         c1, _ = st.columns(2)
-        if c1.button("⬇️ Download all uploaded files", use_container_width=True):
+        if c1.button("⬇️ Download files", use_container_width=True):
             self.zip_and_download_files(Path(self.workflow_dir, "input-files"))
 
     def parameter_section(self, custom_parameter_function) -> None:
@@ -1055,8 +1065,6 @@ class StreamlitUI:
 
         for k, v in params.items():
             # skip if v is a file path
-            if Path(str(v)).exists():
-                continue
             if isinstance(v, dict):
                 topp[k] = v
             elif ".py" in k:
