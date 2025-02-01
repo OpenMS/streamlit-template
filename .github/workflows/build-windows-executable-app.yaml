@@ -321,9 +321,7 @@ jobs:
         <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
           <Product Id="*" Name="${{ env.APP_NAME }}" Language="1033" Version="1.0.0.0" Codepage="1252" Manufacturer="OpenMS Developer Team" UpgradeCode="${{ env.APP_UpgradeCode }}">
             <Package Id="*" InstallerVersion="300" Compressed="yes" InstallPrivileges="elevated" Platform="x64" />
-            <Media Id="1" Cabinet="strm1.cab" EmbedCab="yes" />
-            <Media Id="2" Cabinet="strm2.cab" EmbedCab="yes" />
-            <Media Id="3" Cabinet="strm3.cab" EmbedCab="yes" />
+            <MediaTemplate EmbedCab="yes" />
         
             <!-- Folder structure -->
             <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
