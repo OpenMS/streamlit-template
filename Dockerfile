@@ -45,11 +45,12 @@ RUN wget -q \
     && rm -f Miniforge3-Linux-x86_64.sh
 RUN mamba --version
 
-# Activate and configure the mamba environment
-RUN mamba update -n base -c conda-forge mamba && mamba info && mamba create -n streamlit-env python=3.10
-# note: activation of mamba needs to go to bashrc because every RUN command spawns new bash
+# Setup mamba environment.
+COPY environment.yml ./environment.yml
+RUN mamba env create -f environment.yml
+RUN echo "mamba activate streamlit-env" >> ~/.bashrc
+SHELL ["/bin/bash", "--rcfile", "~/.bashrc"]
 SHELL ["mamba", "run", "-n", "streamlit-env", "/bin/bash", "-c"]
-RUN echo "source activate streamlit-env" > ~/.bashrc
 
 #################################### install streamlit
 # install packages
@@ -84,8 +85,9 @@ RUN echo "0 3 * * * /root/miniforge3/envs/streamlit-env/bin/python /app/clean-up
 
 # create entrypoint script to start cron service and launch streamlit app
 RUN echo "#!/bin/bash" > /app/entrypoint.sh
-RUN echo "service cron start" >> /app/entrypoint.sh
-RUN echo "mamba run --no-capture-output -n streamlit-env streamlit run app.py" >> /app/entrypoint.sh
+RUN echo "source /root/miniforge3/bin/activate streamlit-env" >> /app/entrypoint.sh && \
+    echo "service cron start" >> /app/entrypoint.sh && \
+    echo "streamlit run app.py" >> /app/entrypoint.sh
 # make the script executable
 RUN chmod +x /app/entrypoint.sh
 
