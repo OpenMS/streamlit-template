@@ -35,6 +35,10 @@ def get_df(file: Union[str, Path]) -> pd.DataFrame:
         else:
             precs.append(np.nan)
     df_spectra["precursor m/z"] = precs
+
+    # Drop spectra without peaks
+    df_spectra = df_spectra[df_spectra["mzarray"].apply(lambda x: len(x) > 0)]
+
     df_spectra["max intensity m/z"] = df_spectra.apply(
         lambda x: x["mzarray"][x["intarray"].argmax()], axis=1
     )
