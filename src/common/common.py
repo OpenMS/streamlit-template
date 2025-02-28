@@ -43,7 +43,7 @@ def load_params(default: bool = False) -> dict[str, Any]:
     """
     
     # Check if workspace is enabled. If not, load default parameters.
-    if not st.session_state.settings["is_workspace_enabled"] == True:
+    if not st.session_state.settings["is_workspace_enabled"]:
         default = True
     
     # Construct the path to the parameter file
@@ -82,7 +82,7 @@ def save_params(params: dict[str, Any]) -> None:
     """
     
     # Check if the workspace is enabled and if a 'params.json' file exists in the workspace directory
-    if not st.session_state.settings["is_workspace_enabled"] == True:
+    if not st.session_state.settings["is_workspace_enabled"]:
         return
     
     # Update the parameter dictionary with any modified parameters from the current session
@@ -209,8 +209,8 @@ def page_setup(page: str = "") -> dict[str, Any]:
             os.chdir("../streamlit-template")
         # Define the directory where all workspaces will be stored
         workspaces_dir = Path("..", "workspaces-" + st.session_state.settings["repository-name"])
-        # Check if workspace logic exist if it is keep existing logic or set the default workspace but without params
-        if st.session_state.settings["is_workspace_enabled"] == True:
+        # Check if workspace logic is enabled
+        if st.session_state.settings["is_workspace_enabled"]:
             if "workspace" in st.query_params:
                     st.session_state.workspace = Path(workspaces_dir, st.query_params.workspace)
             elif st.session_state.location == "online":
@@ -222,6 +222,7 @@ def page_setup(page: str = "") -> dict[str, Any]:
                 st.query_params.workspace = "default"
                 
         else:
+            # Use default workspace when workspace feature is disabled
             st.session_state.workspace = Path(workspaces_dir, "default")
 
         if st.session_state.location != "online":
@@ -229,7 +230,7 @@ def page_setup(page: str = "") -> dict[str, Any]:
             st.session_state["controllo"] = True
 
     # If no workspace is specified and workspace feature is enabled, set default workspace and query param
-    if "workspace" not in st.query_params and st.session_state.settings["is_workspace_enabled"] == True:
+    if "workspace" not in st.query_params and st.session_state.settings["is_workspace_enabled"]:
         st.query_params.workspace = st.session_state.workspace.name
 
     # Make sure the necessary directories exist
