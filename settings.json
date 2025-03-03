@@ -13,5 +13,6 @@
         }
     },
     "online_deployment": false,
-    "is_workspace_enabled": true
+    "is_workspace_enabled": true,
+    "test": true
 }
