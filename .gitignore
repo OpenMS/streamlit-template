@@ -10,3 +10,4 @@ run_app.bat
 python*
 **/__pycache__/
 gdpr_consent/node_modules/
+*~

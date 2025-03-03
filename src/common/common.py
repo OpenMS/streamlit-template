@@ -225,6 +225,17 @@ def page_setup(page: str = "") -> dict[str, Any]:
     
     captcha_control()  
 
+    # If run in hosted mode, show captcha as long as it has not been solved
+    #if not "local" in sys.argv:
+    #    if "controllo" not in st.session_state:
+    #        # Apply captcha by calling the captcha_control function
+    #        captcha_control()
+    
+    # If run in hosted mode, show captcha as long as it has not been solved
+    if 'controllo' not in st.session_state or ("controllo" in params.keys() and params["controllo"] == False):
+        # Apply captcha by calling the captcha_control function
+        captcha_control()  
+
     return params
 
 
@@ -376,11 +387,16 @@ def display_large_dataframe(
     )
 
     rows = event["selection"]["rows"]
-    if not rows:
+    
+    if st.session_state.settings['test']: # is a test App, return first row as selected
+        return 1
+    elif not rows:
         return None
-    # Calculate the index based on the current page and chunk size
-    base_index = (page - 1) * chunk_size
-    return base_index + rows[0]
+    else:
+        # Calculate the index based on the current page and chunk size
+        base_index = (page - 1) * chunk_size
+        print(base_index)
+        return base_index + rows[0]
 
 
 
