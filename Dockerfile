@@ -156,9 +156,13 @@ RUN LATEST_RELEASE=$(curl -s https://api.github.com/repos/${GITHUB_USER}/${GITHU
 
 
 # Download latest OpenMS App installer from GitHub Releases
-RUN LATEST_RELEASE=$(curl -s https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/releases/latest | jq -r '.tag_name') && \
-    DOWNLOAD_URL=$(curl -s https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/releases/latest | \
-    jq -r '.assets[] | select(.name | endswith("OpenMS-App.zip")) | .browser_download_url') && \
+RUN LATEST_RELEASE=$([ -f /etc/environment ] && source /etc/environment && echo $LATEST_RELEASE || curl -s https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/releases/latest | jq -r '.tag_name') && \
+    RESPONSE=$(curl -s https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/releases/latest) && \
+    DOWNLOAD_URL=$(echo $RESPONSE | jq -r '.assets[] | select(.name | endswith("OpenMS-App.zip")) | .browser_download_url') && \
+    if [ -z "$DOWNLOAD_URL" ]; then \
+        echo "Error: Could not find OpenMS-App.zip in the latest release assets" && \
+        exit 1; \
+    fi && \
     wget -O /app/OpenMS-App.zip $DOWNLOAD_URL && \
     unzip /app/OpenMS-App.zip -d /app/OpenMS-App && \
     rm /app/OpenMS-App.zip
