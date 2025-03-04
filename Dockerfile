@@ -148,24 +148,19 @@ RUN chmod +x /app/entrypoint.sh
 # Patch Analytics
 RUN mamba run -n streamlit-env python hooks/hook-analytics.py
 
+# Set Online Deployment
+RUN jq '.online_deployment = true' settings.json > tmp.json && mv tmp.json settings.json
 
-# Set Online Deployment and Version
-RUN LATEST_RELEASE=$(curl -s https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/releases/latest | jq -r '.tag_name') && \
-    jq --arg version "$LATEST_RELEASE" '.online_deployment = true | .version = $version' settings.json > tmp.json && mv tmp.json settings.json
+# Download latest OpenMS App executable for Windows from GitHub Releases
+RUN if [ -n "$GH_TOKEN" ]; then \
+        echo "GH_TOKEN is set, proceeding to download the release asset..."; \
+        gh release download -R ${GITHUB_USER}/${GITHUB_REPO} -p "OpenMS-App.zip" -D /app; \
+        unzip /app/OpenMS-App.zip -d /app/OpenMS-App && \
+        rm /app/OpenMS-App.zip; \
+    else \
+        echo "GH_TOKEN is not set, skipping the release asset download."; \
+    fi
 
-
-
-# Download latest OpenMS App installer from GitHub Releases
-RUN LATEST_RELEASE=$([ -f /etc/environment ] && source /etc/environment && echo $LATEST_RELEASE || curl -s https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/releases/latest | jq -r '.tag_name') && \
-    RESPONSE=$(curl -s https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/releases/latest) && \
-    DOWNLOAD_URL=$(echo $RESPONSE | jq -r '.assets[] | select(.name | endswith("OpenMS-App.zip")) | .browser_download_url') && \
-    if [ -z "$DOWNLOAD_URL" ]; then \
-        echo "Error: Could not find OpenMS-App.zip in the latest release assets" && \
-        exit 1; \
-    fi && \
-    wget -O /app/OpenMS-App.zip $DOWNLOAD_URL && \
-    unzip /app/OpenMS-App.zip -d /app/OpenMS-App && \
-    rm /app/OpenMS-App.zip
 
 # Run app as container entrypoint.
 EXPOSE $PORT
