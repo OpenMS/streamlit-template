@@ -331,14 +331,18 @@ def render_sidebar(page: str = "") -> None:
                 .version-box {
                     border: 1px solid #a4a5ad; 
                     padding: 10px;
-                    border-radius: 0.5rem; 
+                    border-radius: 0.5rem;
+                    text-align: center;
+                    display: flex;
+                    justify-content: center;
+                    align-items: center; 
                 }
                 </style>
                 """,
                 unsafe_allow_html=True
             )
             version_info = st.session_state.settings["version"]  
-            st.markdown(f'<div class="version-box"><b>OpenMS WebApp:<b/> V{version_info}</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="version-box"><b>OpenMS WebApp: V{version_info}</b></div>', unsafe_allow_html=True)
     return params
 
 
