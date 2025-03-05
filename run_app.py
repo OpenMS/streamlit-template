@@ -1,6 +1,10 @@
 import argparse
 import json
 import subprocess
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.WARNING)
 
 # Default upload size (MB) if settings.json is missing/invalid
 DEFAULT_MAX_SIZE = 200
@@ -21,6 +25,11 @@ if __name__ == "__main__":
     
     # Priority: Command-line > settings.json > default
     size = args.max_upload or get_upload_limit()
+
+    # Validate upload size is positive
+    if size <= 0:
+        logging.warning(f"Invalid upload size {size}MB. Using default of {DEFAULT_MAX_SIZE}MB.")
+        size = DEFAULT_MAX_SIZE
     
     # Run Streamlit with the configured upload size
     subprocess.run([
