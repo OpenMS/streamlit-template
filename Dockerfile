@@ -151,12 +151,10 @@ RUN mamba run -n streamlit-env python hooks/hook-analytics.py
 # Set Online Deployment
 RUN jq '.online_deployment = true' settings.json > tmp.json && mv tmp.json settings.json
 
-# Download latest OpenMS App executable for Windows from GitHub Releases
+# Download latest OpenMS App executable as a ZIP file
 RUN if [ -n "$GH_TOKEN" ]; then \
         echo "GH_TOKEN is set, proceeding to download the release asset..."; \
         gh release download -R ${GITHUB_USER}/${GITHUB_REPO} -p "OpenMS-App.zip" -D /app; \
-        unzip /app/OpenMS-App.zip -d /app/OpenMS-App && \
-        rm /app/OpenMS-App.zip; \
     else \
         echo "GH_TOKEN is not set, skipping the release asset download."; \
     fi

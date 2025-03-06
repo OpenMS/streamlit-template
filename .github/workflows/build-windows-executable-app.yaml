@@ -418,3 +418,11 @@ jobs:
         name: OpenMS-App
         path: |
           OpenMS-App.zip
+
+    - name: Upload Artifact as Release Asset
+      if: github.event_name == 'release'
+      uses: softprops/action-gh-release@v1
+      with:
+        files: OpenMS-App.zip
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
