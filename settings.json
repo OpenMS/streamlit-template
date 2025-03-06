@@ -2,7 +2,6 @@
     "app-name": "OpenMS WebApp Template",
     "github-user": "OpenMS",
     "repository-name": "streamlit-template",
-    "maximum_file_upload_size": 200,
     "analytics": {
         "google-analytics": {
             "enabled": false,
