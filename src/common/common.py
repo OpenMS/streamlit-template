@@ -343,7 +343,7 @@ def render_sidebar(page: str = "") -> None:
             )
             version_info = st.session_state.settings["version"] 
             app_name = st.session_state.settings["app-name"] 
-            st.markdown(f'<div class="version-box">{app_name}<br>Version: V{version_info}</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="version-box">{app_name}<br>Version: {version_info}</div>', unsafe_allow_html=True)
     return params
 
 
