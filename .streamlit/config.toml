@@ -2,7 +2,7 @@
 developmentMode = false
 
 [server]
-maxUploadSize =  500 #MB
+maxUploadSize =  200 #MB
 port = 8501 # should be same as configured in deployment repo
 
 [theme]
