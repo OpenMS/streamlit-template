@@ -1,29 +1,26 @@
-import argparse
-import json
 import subprocess
+import sys
+from streamlit.logger import get_logger
 
-# Default upload size (MB) if settings.json is missing/invalid
-DEFAULT_MAX_SIZE = 200
-
-def get_upload_limit():
-    """Read max upload size from settings.json or use default."""
-    try:
-        with open("settings.json") as f:
-            return json.load(f).get("maximum_file_upload_size", DEFAULT_MAX_SIZE)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return DEFAULT_MAX_SIZE
+# Initialize a logger for this module
+logger = get_logger(__name__)
 
 if __name__ == "__main__":
-    # Parse command-line arguments
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--max-upload', type=int, help='Override upload size (MB)')
-    args, unknown = parser.parse_known_args()
-    
-    # Priority: Command-line > settings.json > default
-    size = args.max_upload or get_upload_limit()
-    
-    # Run Streamlit with the configured upload size
-    subprocess.run([
-        "streamlit", "run", "app.py",
-        "--server.maxUploadSize", str(size)
-    ] + unknown)  # Pass through additional arguments
+    try:
+        # Construct the command to run the Streamlit app, including any additional command-line arguments
+        cmd = ["streamlit", "run", "app.py"] + sys.argv[1:]
+        
+        # Log the constructed command at the debug level
+        logger.debug(f"Running command: {' '.join(cmd)}")
+        
+        # Execute the command and check for errors
+        subprocess.run(cmd, check=True)
+        
+    except subprocess.CalledProcessError as e:
+        # Log an error message if the Streamlit command fails
+        logger.error(f"Streamlit failed to run (error code {e.returncode})")
+        sys.exit(1)
+    except Exception as e:
+        # Log any unexpected errors that occur during execution
+        logger.error(f"Unexpected error: {str(e)}")
+        sys.exit(1)
