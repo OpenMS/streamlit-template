@@ -35,6 +35,10 @@ def get_df(file: Union[str, Path]) -> pd.DataFrame:
         else:
             precs.append(np.nan)
     df_spectra["precursor m/z"] = precs
+
+    # Drop spectra without peaks
+    df_spectra = df_spectra[df_spectra["mzarray"].apply(lambda x: len(x) > 0)]
+
     df_spectra["max intensity m/z"] = df_spectra.apply(
         lambda x: x["mzarray"][x["intarray"].argmax()], axis=1
     )
@@ -75,13 +79,13 @@ def plot_bpc_tic() -> go.Figure:
         fig = df.plot(
             backend="ms_plotly",
             kind="chromatogram",
-            fig=fig,
             x="RT",
             y="inty",
             by="type",
-            line_color="#f24c5c",
+            color="#f24c5c",
             show_plot=False,
             grid=False,
+            aggregate_duplicates=True,
         )
     if st.session_state.view_bpc:
         df = st.session_state.view_ms1.groupby("RT").max().reset_index()
@@ -91,13 +95,13 @@ def plot_bpc_tic() -> go.Figure:
         fig = df.plot(
             backend="ms_plotly",
             kind="chromatogram",
-            fig=fig,
             x="RT",
             y="inty",
             by="type",
-            line_color="#2d3a9d",
+            color="#2d3a9d",
             show_plot=False,
             grid=False,
+            aggregate_duplicates=True,
         )
     if st.session_state.view_eic:
         df = st.session_state.view_ms1
@@ -111,21 +115,21 @@ def plot_bpc_tic() -> go.Figure:
             df_eic = df[
                 (df["mz"] >= target_value - tolerance)
                 & (df["mz"] <= target_value + tolerance)
-            ]
+            ].copy()
             if not df_eic.empty:
-                df_eic["type"] = "XIC"
+                df_eic.loc[:, "type"] = "XIC"
                 if df_eic["inty"].max() > max_int:
                     max_int = df_eic["inty"].max()
                 fig = df_eic.plot(
                     backend="ms_plotly",
                     kind="chromatogram",
-                    fig=fig,
                     x="RT",
                     y="inty",
                     by="type",
-                    line_color="#f6bf26",
+                    color="#f6bf26",
                     show_plot=False,
                     grid=False,
+                    aggregate_duplicates=True,
                 )
         except ValueError:
             st.error("Invalid m/z value for XIC provided. Please enter a valid number.")
@@ -149,12 +153,13 @@ def plot_ms_spectrum(df, title, bin_peaks, num_x_bins):
         backend="ms_plotly",
         x="mz",
         y="intensity",
-        line_color="#2d3a9d",
+        color="#2d3a9d",
         title=title,
         show_plot=False,
         grid=False,
         bin_peaks=bin_peaks,
         num_x_bins=num_x_bins,
+        aggregate_duplicates=True,
     )
     fig.update_layout(
         template="plotly_white", dragmode="select", plot_bgcolor="rgb(255,255,255)"
@@ -183,6 +188,7 @@ def view_peak_map():
         show_plot=False,
         bin_peaks=True,
         backend="ms_plotly",
+        aggregate_duplicates=True,
     )
     peak_map.update_layout(template="simple_white", dragmode="select")
     c1, c2 = st.columns(2)
@@ -212,6 +218,7 @@ def view_peak_map():
                 num_x_bins=st.session_state.spectrum_num_bins,
                 height=650,
                 width=900,
+                aggregate_duplicates=True,
             )
             st.plotly_chart(peak_map_3D, use_container_width=True)
 
