@@ -1,6 +1,7 @@
 {
     "app-name": "OpenMS WebApp Template",
     "github-user": "OpenMS",
+    "version": "1.0.2",
     "repository-name": "streamlit-template",
     "analytics": {
         "google-analytics": {
