@@ -37,6 +37,7 @@ jobs:
         git fetch origin develop
         git checkout origin/develop -- tools/ci/cibuild.cmake
         git checkout origin/develop -- tools/ci/citest.cmake
+        git checkout origin/develop -- tools/ci/cipackage.cmake
 
     - name: Install Qt
       uses: jurplel/install-qt-action@v4
