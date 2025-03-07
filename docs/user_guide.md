@@ -15,15 +15,24 @@ In the OpenMS web application, workspaces are designed to keep your analysis org
 - **Workspace Specific Parameters and Files**: Each workspace stores parameters and files (uploaded input files and results from workflows).
 - **Persistence**: Your workspaces and parameters are saved, so you can return to your analysis anytime and pick up where you left off. Simply bookmark the page!
 
-## Online and Local Mode Differences
+### File Uploads
+- **Online Mode**: You can upload only one file at a time. This helps manage server load and optimizes performance.
 
-There are a few key differences between operating in online and local modes:
-- **File Uploads**:
-  - *Online Mode*: You can upload only one file at a time. This helps manage server load and optimizes performance.
-  - *Local Mode*: Multiple file uploads are supported, giving you flexibility when working with large datasets.
-- **Workspace Access**:
-  - In online mode, workspaces are stored temporarily and will be cleared after seven days of inactivity.
-  - In local mode, workspaces are saved on your local machine, allowing for persistent storage.
+- **Local Mode**: Multiple file uploads are supported, giving you flexibility when working with large datasets. Additionally, the file size upload limit can be adjusted in the following ways:
+  1. **Using `.streamlit/config.toml`**:
+     - You can modify the `.streamlit/config.toml` file and set the `maxUploadSize` parameter to your desired value. By default, this is set to 200MB.
+     - Example:
+       ```toml
+       [server]
+       maxUploadSize = 500  # Set the upload limit to 500MB
+       ```
+  2. **Using CLI Command**:
+     - You can customize the file size upload limit directly when running the application using the `--server.maxUploadSize` argument.
+     - Example:
+       ```bash
+       python run_app.py --server.maxUploadSize 500
+       ```
+     - This sets the upload limit to 500MB for the current session.
 
 ## Downloading Results
 
