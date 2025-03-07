@@ -25,8 +25,8 @@ jobs:
         git config user.name "GitHub Actions"
         git config user.email "actions@github.com"
         git fetch origin develop
-        git checkout develop -- tools/ci/cibuild.cmake
-        git checkout develop -- tools/ci/citest.cmake
+        git checkout origin/develop -- tools/ci/cibuild.cmake
+        git checkout origin/develop -- tools/ci/citest.cmake
 
     - name: Install Qt
       uses: jurplel/install-qt-action@v3
