@@ -15,5 +15,5 @@
     "online_deployment": false,
     "enable_workspaces": true,
     "test": true,
-    "workspaces_dir": false
+    "workspaces_dir": ".."
 }

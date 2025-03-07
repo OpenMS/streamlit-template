@@ -209,9 +209,8 @@ def page_setup(page: str = "") -> dict[str, Any]:
             os.chdir("../streamlit-template")
         # Define the directory where all workspaces will be stored
         if st.session_state.settings["workspaces_dir"] and st.session_state.location == "local":
-            workspaces_dir = Path(st.session_state.settings["workspaces_dir"])
-        else:
-            workspaces_dir = Path("..", "workspaces-" + st.session_state.settings["repository-name"])
+            workspaces_dir = Path(st.session_state.settings["workspaces_dir"], "workspaces-" + st.session_state.settings["repository-name"])
+            
         # Check if workspace logic is enabled
         if st.session_state.settings["enable_workspaces"]:
             if "workspace" in st.query_params:
@@ -282,11 +281,9 @@ def render_sidebar(page: str = "") -> None:
         # Display workspace switcher if workspace is enabled in local mode
         if st.session_state.settings["enable_workspaces"]:
             with st.expander("🖥️ **Workspaces**"):
-                # Define workspaces directory outside of repository
+                # Workspaces directory specified in the settings.json
                 if st.session_state.settings["workspaces_dir"] and st.session_state.location == "local":
-                    workspaces_dir = Path(st.session_state.settings["workspaces_dir"])
-                else:
-                    workspaces_dir = Path("..", "workspaces-" + st.session_state.settings["repository-name"])
+                    workspaces_dir = Path(st.session_state.settings["workspaces_dir"], "workspaces-" + st.session_state.settings["repository-name"])
                 # Online: show current workspace name in info text and option to change to other existing workspace
                 if st.session_state.location == "local":
                     # Define callback function to change workspace
