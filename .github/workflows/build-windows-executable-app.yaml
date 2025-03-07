@@ -27,6 +27,15 @@ jobs:
         repository: OpenMS/OpenMS
         ref: release/${{ env.OPENMS_VERSION }}
         path: 'OpenMS'
+    
+    # Temporary fix - until seqan is back online or new OpenMS release (3.4)
+    - name: Cherry-pick commit
+      working-directory: OpenMS
+      run: |
+        git config user.name "GitHub Actions"
+        git config user.email "actions@github.com"
+        git fetch origin
+        git cherry-pick ccb989e
 
     - name: Install Qt
       uses: jurplel/install-qt-action@v4
