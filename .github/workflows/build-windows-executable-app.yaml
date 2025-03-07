@@ -29,13 +29,14 @@ jobs:
         path: 'OpenMS'
     
     # Temporary fix - until seqan is back online or new OpenMS release (3.4)
-    - name: Cherry-pick commit
+    - name: Get latest cibuild.cmake
       working-directory: OpenMS
       run: |
         git config user.name "GitHub Actions"
         git config user.email "actions@github.com"
-        git fetch origin
-        git cherry-pick ccb989e
+        git fetch develop
+        git checkout develop -- tools/ci/cibuild.cmake
+        git checkout develop -- tools/ci/citest.cmake
 
     - name: Install Qt
       uses: jurplel/install-qt-action@v4
