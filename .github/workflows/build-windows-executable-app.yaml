@@ -323,13 +323,13 @@ jobs:
               <?xml version="1.0"?>
               <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
                 <Product Id="*" Name="${{ env.APP_NAME }}" Language="1033" Version="${{ env.APP_VERSION }}.0" Codepage="1252" Manufacturer="OpenMS Developer Team" UpgradeCode="${{ env.APP_UpgradeCode }}">
+                  <Package Id="*" InstallerVersion="300" Compressed="yes" InstallPrivileges="elevated" Platform="x64" />
+                  <Media Id="1" Cabinet="streamlit.cab" EmbedCab="yes" />
+
                   <MajorUpgrade 
                     DowngradeErrorMessage="A newer version of [ProductName] is already installed. Please uninstall it first."
                     Schedule="afterInstallInitialize"
                     AllowSameVersionUpgrades="no" />
-
-                  <Package Id="*" InstallerVersion="300" Compressed="yes" InstallPrivileges="elevated" Platform="x64" />
-                  <Media Id="1" Cabinet="streamlit.cab" EmbedCab="yes" />
 
                   <!-- Folder structure -->
                   <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
