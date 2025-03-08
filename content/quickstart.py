@@ -21,9 +21,17 @@ Returns:
 from pathlib import Path
 import streamlit as st
 
-from src.common.common import page_setup, v_space
+from src.common.common import page_setup, v_space, check_version
 
 page_setup(page="main")
+
+# Check for updates
+update_available, latest_version = check_version()
+if update_available:
+    st.warning(
+        f"⚠️ A new version ({latest_version}) is available! Please download the latest version from the Windows download section below or visit our [GitHub repository](https://github.com/{st.session_state.settings['github-user']}/{st.session_state.settings['repository-name']}).",
+        icon="⚠️",
+    )
 
 st.markdown("# 👋 Quick Start")
 st.markdown("## Template for OpenMS web apps using the **streamlit** framework")
@@ -117,7 +125,9 @@ st.page_link(
     icon="➡️",
 )
 st.page_link(
-    "content/topp_workflow_file_upload.py", label="Play around with the example workflow.", icon="➡️"
+    "content/topp_workflow_file_upload.py",
+    label="Play around with the example workflow.",
+    icon="➡️",
 )
 st.markdown(
     """

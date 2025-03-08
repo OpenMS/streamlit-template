@@ -119,7 +119,11 @@ jobs:
               <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
                 <Product Id="*" Name="${{ env.APP_NAME }}" Language="1033" Version="${{ env.APP_VERSION }}.0" Codepage="1252" Manufacturer="OpenMS Developer Team" UpgradeCode="${{ env.APP_UpgradeCode }}">
                   <MajorUpgrade 
+<<<<<<< Updated upstream
                     DowngradeErrorMessage="A newer version of [ProductName] is already installed. Please uninstall it first."
+=======
+                    DowngradeErrorMessage="A newer version of [ProductName] is already installed. Setup will now exit."
+>>>>>>> Stashed changes
                     Schedule="afterInstallInitialize"
                     AllowSameVersionUpgrades="no" />
                   <Package Id="*" InstallerVersion="300" Compressed="yes" InstallPrivileges="elevated" Platform="x64" />

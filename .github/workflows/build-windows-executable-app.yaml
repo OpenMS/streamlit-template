@@ -11,7 +11,11 @@ env:
    PYTHON_VERSION: 3.11.0
    # Name of the installer
    APP_NAME: OpenMS-StreamlitTemplateApp
+<<<<<<< Updated upstream
    # Version of the app (Major.Minor.Patch)
+=======
+   # App version for MSI installer
+>>>>>>> Stashed changes
    APP_VERSION: 1.0.0
    # Define unique GUID for UpgradeCode
    APP_UpgradeCode: "8d28e8c7-45dc-446c-b889-99a6aea2f1a5"
@@ -323,10 +327,16 @@ jobs:
               <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
                 <Product Id="*" Name="${{ env.APP_NAME }}" Language="1033" Version="${{ env.APP_VERSION }}.0" Codepage="1252" Manufacturer="OpenMS Developer Team" UpgradeCode="${{ env.APP_UpgradeCode }}">
                   <MajorUpgrade 
+<<<<<<< Updated upstream
                     DowngradeErrorMessage="A newer version of [ProductName] is already installed. Please uninstall it first."
                     Schedule="afterInstallInitialize"
                     AllowSameVersionUpgrades="no" />
 
+=======
+                    DowngradeErrorMessage="A newer version of [ProductName] is already installed. Setup will now exit."
+                    Schedule="afterInstallInitialize"
+                    AllowSameVersionUpgrades="no" />
+>>>>>>> Stashed changes
                   <Package Id="*" InstallerVersion="300" Compressed="yes" InstallPrivileges="elevated" Platform="x64" />
                   <Media Id="1" Cabinet="streamlit.cab" EmbedCab="yes" />
 
