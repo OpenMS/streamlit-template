@@ -4,6 +4,8 @@ on:
       branches: ["main"]
    pull_request:
       branches: ["main"]
+   release:
+      types: [created]
    workflow_dispatch:
 
 env:
@@ -30,17 +32,27 @@ jobs:
               ref: release/${{ env.OPENMS_VERSION }}
               path: "OpenMS"
 
+         # Temporary fix - until seqan is back online or new OpenMS release (3.4)
+         - name: Get latest cibuild.cmake
+           working-directory: OpenMS
+           run: |
+              git config user.name "GitHub Actions"
+              git config user.email "actions@github.com"
+              git fetch origin develop
+              git checkout origin/develop -- tools/ci/cibuild.cmake
+              git checkout origin/develop -- tools/ci/citest.cmake
+              git checkout origin/develop -- tools/ci/cipackage.cmake
+
          - name: Install Qt
            uses: jurplel/install-qt-action@v4
            with:
-              version: "5.15.2" # 5.12.7 is broken https://bugreports.qt.io/browse/QTBUG-81715, > 5.15.2 is not available on official archives (https://github.com/miurahr/aqtinstall/issues/636)
-              host: "windows" # default: win64_msvc2017_64
+              version: "5.15.2"
+              host: "windows"
               target: "desktop"
               install-deps: "true"
               cache: "false"
               aqtversion: "==3.1.*"
 
-         # https://github.com/marketplace/actions/visual-studio-shell
          - name: Set up Visual Studio shell
            uses: egor-tensin/vs-shell@v2
            with:
@@ -51,8 +63,6 @@ jobs:
            run: |
               choco install ccache ninja -y --no-progress
               choco install cmake --version=3.31.1 -y --no-progress --force
-              ## GH CLI "SHOULD BE" installed. Sometimes I had to manually install nonetheless. Super weird.
-              # https://github.com/actions/runner-images/blob/main/images/win/scripts/Installers/Install-GitHub-CLI.ps1
               echo "C:/Program Files (x86)/GitHub CLI" >> $GITHUB_PATH
 
          - name: Extract branch/PR infos
@@ -79,9 +89,7 @@ jobs:
               GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
            run: |
               cd OpenMS/contrib
-              # Download the file using the URL fetched from GitHub
               gh release download -R OpenMS/contrib --pattern 'contrib_build-Windows.tar.gz'
-              # Extract the archive
               7z x -so contrib_build-Windows.tar.gz | 7z x -si -ttar
               rm contrib_build-Windows.tar.gz
               ls
@@ -91,7 +99,6 @@ jobs:
            with:
               path: .ccache
               key: ${{ runner.os }}-ccache-${{ env.RUN_NAME }}-${{ github.run_number }}
-              # Restoring: From current branch, otherwise from base branch, otherwise from any branch.
               restore-keys: |
                  ${{ runner.os }}-ccache-${{ env.RUN_NAME }}
                  ${{ runner.os }}-ccache-${{ env.BASE_REF }}
@@ -100,16 +107,12 @@ jobs:
          - name: Add THIRDPARTY
            shell: bash
            run: |
-              # initialize THIRDPARTY
               cd OpenMS
               git submodule update --init THIRDPARTY
               cd ..
-              # add third-party binaries to PATH
-              # use flat THIRDPARTY structure
               mkdir -p _thirdparty
               cp -R OpenMS/THIRDPARTY/Windows/64bit/* _thirdparty/
               cp -R OpenMS/THIRDPARTY/All/* _thirdparty/
-              # add third-party binaries to PATH
               for thirdpartytool in ${{ github.workspace }}/_thirdparty/*
               do
                 echo $thirdpartytool >> $GITHUB_PATH
@@ -121,7 +124,6 @@ jobs:
               mkdir $GITHUB_WORKSPACE/OpenMS/bld/
               ctest --output-on-failure -V -S $GITHUB_WORKSPACE/OpenMS/tools/ci/cibuild.cmake
            env:
-              #OS_PREFIX_PATH: "${{ env.Qt5_DIR }}/lib/cmake;${{ env.Qt5_DIR }}"
               OPENMS_CONTRIB_LIBS: "${{ github.workspace }}/OpenMS/contrib"
               CI_PROVIDER: "GitHub-Actions"
               CMAKE_GENERATOR: "Ninja"
@@ -135,8 +137,7 @@ jobs:
               BUILD_TYPE: "Release"
               OPENMP: "Off"
               USE_STATIC_BOOST: "On"
-              #  BUILD_FLAGS: "-p:CL_MPCount=2" # For VS Generator and MSBuild
-              BUILD_FLAGS: "-j2" # Ninja will otherwise use all cores (doesn't go well in GHA)
+              BUILD_FLAGS: "-j2"
               CMAKE_CCACHE_EXE: "ccache"
               CCACHE_BASEDIR: ${{ github.workspace }}
               CCACHE_DIR: ${{ github.workspace }}/.ccache
@@ -177,6 +178,13 @@ jobs:
          - name: Checkout
            uses: actions/checkout@v4
 
+         - name: Set Version in settings.json
+           run: |
+              $VERSION="${{ github.event.release.tag_name }}"
+              $content = Get-Content -Raw settings.json | ConvertFrom-Json
+              $content.version = $VERSION
+              $content | ConvertTo-Json -Depth 100 | Set-Content settings.json
+
          - name: Download package as artifact
            uses: actions/download-artifact@v4
            with:
@@ -193,26 +201,21 @@ jobs:
          - name: Set up Python (regular distribution)
            uses: actions/setup-python@v4
            with:
-              python-version: ${{ env.PYTHON_VERSION }} # Use the same version as the embeddable version
+              python-version: ${{ env.PYTHON_VERSION }}
 
          - name: Setup python embeddable version
            run: |
-              # Create a directory for the embeddable Python version
               mkdir python-${{ env.PYTHON_VERSION }}
-
-              # Download and unzip the embeddable Python version
               curl -O https://www.python.org/ftp/python/${{ env.PYTHON_VERSION }}/python-${{ env.PYTHON_VERSION }}-embed-amd64.zip
               unzip python-${{ env.PYTHON_VERSION }}-embed-amd64.zip -d python-${{ env.PYTHON_VERSION }}
               rm python-${{ env.PYTHON_VERSION }}-embed-amd64.zip
 
-              # Define paths for the regular Python distribution and the embeddable distribution
-              $PYTHON_DIR="${{ runner.tool_cache }}/Python/${{ env.PYTHON_VERSION }}/x64" # Path from actions/setup-python
+              $PYTHON_DIR="${{ runner.tool_cache }}/Python/${{ env.PYTHON_VERSION }}/x64"
               $EMBED_DIR="python-${{ env.PYTHON_VERSION }}"
 
               mkdir -p $EMBED_DIR/Lib/site-packages/tkinter
               mkdir -p $EMBED_DIR/tcl
 
-              # Copy necessary Tkinter files from the regular Python distribution
               cp -r $PYTHON_DIR/Lib/tkinter/* $EMBED_DIR/Lib/site-packages/tkinter/
               cp -r $PYTHON_DIR/tcl/* $EMBED_DIR/tcl/
               cp $PYTHON_DIR/DLLs/_tkinter.pyd $EMBED_DIR/
@@ -245,7 +248,6 @@ jobs:
          - name: Create All-in-one executable folder
            run: |
               mkdir streamlit_exe
-
               mv python-${{ env.PYTHON_VERSION }} streamlit_exe
               cp -r src streamlit_exe
               cp -r content streamlit_exe
@@ -312,7 +314,6 @@ jobs:
               mv streamlit_exe/* SourceDir
               cp ShowSuccessMessage.vbs SourceDir
               cp assets/openms_license.rtf SourceDir
-              # Logo of app
               cp assets/openms.ico SourceDir
 
          - name: Generate WiX XML file
@@ -369,10 +370,6 @@ jobs:
                   <!-- Provide icon here; it should exist in the SourceDir folder -->
                   <Icon Id="AppIcon" SourceFile="SourceDir/openms.ico" />
 
-                  <!-- Run app directly after installation -->
-                  <!-- <CustomAction Id="RunApp" Directory="AppSubFolder" Execute="deferred" Return="asyncNoWait" Impersonate="no"
-                                ExeCommand="cmd.exe /c &quot;[AppSubFolder]${{ env.APP_NAME }}.bat&quot;" /> -->
-                  
                   <!-- Custom Action to Show Success Message -->
                   <Binary Id="ShowMessageScript" SourceFile="SourceDir/ShowSuccessMessage.vbs" />
                   <CustomAction Id="ShowSuccessMessage" BinaryKey="ShowMessageScript" VBScriptCall="" Execute="immediate" Return="check" />
@@ -381,14 +378,12 @@ jobs:
                   <InstallExecuteSequence>
                     <!-- Custom action display success message -->
                     <Custom Action="ShowSuccessMessage" After="InstallFinalize">NOT Installed</Custom>
-                    <!-- Run app directly after installation -->
-                    <!-- <Custom Action="RunApp" Before="InstallFinalize">NOT REMOVE</Custom> -->
                   </InstallExecuteSequence>
 
                   <!-- Interface options -->
                   <UI>
-                        <UIRef Id="WixUI_InstallDir" />
-                        <UIRef Id="WixUI_ErrorProgressText" />
+                    <UIRef Id="WixUI_InstallDir" />
+                    <UIRef Id="WixUI_ErrorProgressText" />
                   </UI> 
 
                   <!-- Provide license; it should exist in the SourceDir folder -->
@@ -415,3 +410,11 @@ jobs:
               name: OpenMS-App
               path: |
                  OpenMS-App.zip
+
+         - name: Upload Artifact as Release Asset
+           if: github.event_name == 'release'
+           uses: softprops/action-gh-release@v2
+           with:
+              files: OpenMS-App.zip
+           env:
+              GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

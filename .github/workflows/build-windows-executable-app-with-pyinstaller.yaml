@@ -18,6 +18,17 @@ jobs:
         ref: release/${{ env.OPENMS_VERSION }}
         path: 'OpenMS'
 
+    # Temporary fix - until seqan is back online or new OpenMS release (3.4)
+    - name: Get latest cibuild.cmake
+      working-directory: OpenMS
+      run: |
+        git config user.name "GitHub Actions"
+        git config user.email "actions@github.com"
+        git fetch origin develop
+        git checkout origin/develop -- tools/ci/cibuild.cmake
+        git checkout origin/develop -- tools/ci/citest.cmake
+        git checkout origin/develop -- tools/ci/cipackage.cmake
+
     - name: Install Qt
       uses: jurplel/install-qt-action@v3
       with:
@@ -270,3 +281,11 @@ jobs:
       with:
         name: OpenMS-App
         path: dist
+  
+    - name: Upload Artifact as Release Asset
+      if: github.event_name == 'release'
+      uses: softprops/action-gh-release@v2
+      with:
+        files: OpenMS-App.zip
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
