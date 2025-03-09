@@ -6,7 +6,7 @@ import time
 from datetime import datetime
 from src.common.common import reset_directory, show_fig, show_table
 import plotly.express as px
-from src.workflow.mzmlfileworkflowstatus import log_mzml_workflow_progress
+from src.workflow.mzmlfileworkflowstatus import log_mzml_workflow_progress, log_mzml_workflow_status
 
 def mzML_file_get_num_spectra(filepath):
     """
@@ -37,7 +37,7 @@ def run_workflow(params, result_dir, workspace_path):
     # collect spectra numbers
     num_spectra = []
 
-    log_mzml_workflow_progress("Loading mzML files and getting number of spectra...")
+    log_mzml_workflow_status("Loading mzML files and getting number of spectra...")
     for file in params["example-workflow-selected-mzML-files"]:
         # reading mzML file, getting num spectra and adding some extra time
         log_mzml_workflow_progress(f"Reading mzML file: {file} ...")
