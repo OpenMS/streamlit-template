@@ -461,6 +461,7 @@ def show_table(df: pd.DataFrame, download_name: str = "") -> None:
             "Download Table",
             df.to_csv(sep="\t").encode("utf-8"),
             download_name.replace(" ", "-") + ".tsv",
+            key=f"download_{st.session_state['mzml_workflow_job_id']}" 
         )
     return df
 

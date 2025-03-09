@@ -3,7 +3,7 @@ from rq import get_current_job, Queue
 from streamlit.delta_generator import DeltaGenerator
 from streamlit.elements.lib.mutable_status_container import StatusContainer
 import streamlit as st
-from typing import Union
+from src import mzmlfileworkflow
 
 # retrieve last written log for the progress of workflow job from redis
 # delete the message from the cache
@@ -24,7 +24,7 @@ def log_mzml_workflow_progress(log):
 
 # retrieve last written status for the workflow job from redis
 # delete the message from the cache
-def read_mzml_workflow_status_log(job_id) -> str:
+def read_mzml_workflow_status_log(job_id):
     r = Redis()
     log_key = f"mzml_workflow_status_log_{job_id}"
     log = r.get(log_key)
@@ -39,8 +39,13 @@ def log_mzml_workflow_status(log):
     log_key = f"mzml_workflow_status_log_{job.id}"
     r.set(log_key, log)
 
+def reset_workflow_state(result_dir: str):
+    # display the result section and clear job id
+    mzmlfileworkflow.result_section(result_dir)
+    st.session_state['mzml_workflow_job_id'] = None
+
 # monitor and notify status for workflow job
-def monitor_mzml_workflow_job_status(streamlit_status_placeholder: DeltaGenerator, workflow_status: "StatusContainer"):
+def monitor_mzml_workflow_job_status(streamlit_status_placeholder: DeltaGenerator, workflow_status: StatusContainer, results_section_placholder: DeltaGenerator, result_dir: str):
     if st.session_state['mzml_workflow_job_id'] == None:
         return
     queue = Queue('mzml_workflow_run', connection=Redis())
@@ -57,9 +62,10 @@ def monitor_mzml_workflow_job_status(streamlit_status_placeholder: DeltaGenerato
 
         if job.is_finished:
             workflow_status.update(label="Complete!", expanded=False, state='complete')
-            st.session_state['mzml_workflow_job_id'] = None
-            st.session_state['mzml_workflow_last_read_log'] = 0
-        elif job.is_stopped or job.is_canceled or job.is_canceled:
+            with results_section_placholder:
+                reset_workflow_state(result_dir)
+        elif job.is_stopped or job.is_canceled or job.is_failed:
             workflow_status.update(label="Stopped!", expanded=False, state='error')
-            st.session_state['mzml_workflow_job_id'] = None
-            st.session_state['mzml_workflow_last_read_log'] = 0
+            with results_section_placholder:
+                reset_workflow_state(result_dir)
+
