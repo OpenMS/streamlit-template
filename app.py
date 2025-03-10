@@ -1,12 +1,116 @@
 import streamlit as st
+import streamlit.components.v1 as components
 from pathlib import Path
 import json
-# For some reason the windows version only works if this is imported here
-import pyopenms
+import os
+import time
+import threading
+import signal
+import tornado.web
+import tornado.ioloop
+import pyopenms  # required import for Windows
 
+# Keep settings at the very top
 if "settings" not in st.session_state:
-        with open("settings.json", "r") as f:
-            st.session_state.settings = json.load(f)
+    with open("settings.json", "r") as f:
+        st.session_state.settings = json.load(f)
+
+# --- Global Session Counter ---
+global_active_sessions = 0
+last_heartbeat = 0   # Global heartbeat timestamp
+lock = threading.Lock()  # Protects modifications to globals
+
+# Add a flag to ensure Tornado starts only once.
+if "tornado_server_started" not in globals():
+    globals()["tornado_server_started"] = False
+
+
+def increment_active_sessions():
+    global global_active_sessions
+    with lock:
+        global_active_sessions += 1
+    print(f"Session connected, total active sessions: {global_active_sessions}")
+
+def decrement_active_sessions():
+    global global_active_sessions
+    with lock:
+        global_active_sessions -= 1
+    print(f"Session disconnected, total active sessions: {global_active_sessions}")
+    if global_active_sessions <= 0:
+        shutdown()
+
+def shutdown():
+    print("🚨 No active users. Shutting down Streamlit server...")
+    os.kill(os.getpid(), signal.SIGTERM)
+
+# Register this session only once.
+if "registered" not in st.session_state:
+    st.session_state.registered = True
+    increment_active_sessions()
+
+# --- Tornado Endpoints ---
+
+# This handler is called on browser unload (if it fires)
+class CloseAppHandler(tornado.web.RequestHandler):
+    def post(self):
+        time.sleep(1)
+        decrement_active_sessions()
+        self.write("OK")
+
+# This handler receives heartbeat pings
+class HeartbeatHandler(tornado.web.RequestHandler):
+    def post(self):
+        global last_heartbeat
+        with lock:
+            last_heartbeat = time.time()
+        self.write("OK")
+
+def start_tornado_server():
+    routes = [
+        (r"/_closeapp", CloseAppHandler),
+        (r"/heartbeat", HeartbeatHandler)
+    ]
+    app = tornado.web.Application(routes)
+    app.listen(port=8502)  # Adjust if needed; matches Streamlit port.
+    tornado.ioloop.IOLoop.current().start()
+
+threading.Thread(target=start_tornado_server, daemon=True).start()
+
+# Monitor for lost heartbeat and shutdown if no activity.
+def heartbeat_monitor():
+    global last_heartbeat
+    # Initialize heartbeat time
+    with lock:
+        last_heartbeat = time.time()
+    while True:
+        time.sleep(5)
+        # If no heartbeat received in 15 seconds and no sessions are active, shutdown
+        current_time = time.time()
+        with lock:
+            elapsed = current_time - last_heartbeat
+            active = global_active_sessions
+        if elapsed > 15:
+            shutdown()
+
+threading.Thread(target=heartbeat_monitor, daemon=True).start()
+
+# --- Client-side JavaScript injections ---
+def insert_heartbeat_script():
+    # Sends a heartbeat every 3 seconds.
+    components.html(
+        """
+        <script>
+        function sendHeartbeat() {
+            fetch('http://localhost:8502/heartbeat', {method: 'POST'});
+        }
+        // Send an immediate heartbeat on load
+        sendHeartbeat();
+        // Then every 3 seconds
+        setInterval(sendHeartbeat, 3000);
+        </script>
+        """,
+        height=0,
+    )
 
 if __name__ == '__main__':
     pages = {
@@ -34,3 +138,7 @@ if __name__ == '__main__':
 
     pg = st.navigation(pages)
     pg.run()
+
+    if os.getenv("LOCAL_RUN", "true").lower() == "true":
+        # Inject the heartbeat script first so the server sees regular pings.
+        insert_heartbeat_script()
