@@ -18,6 +18,7 @@ if "settings" not in st.session_state:
 # --- Global Session Counter ---
 global_active_sessions = 0
 last_heartbeat = 0   # Global heartbeat timestamp
+lock = threading.Lock()  # Protects modifications to globals
 
 # Add a flag to ensure Tornado starts only once.
 if "tornado_server_started" not in globals():
@@ -26,12 +27,14 @@ if "tornado_server_started" not in globals():
 
 def increment_active_sessions():
     global global_active_sessions
-    global_active_sessions += 1
+    with lock:
+        global_active_sessions += 1
     print(f"Session connected, total active sessions: {global_active_sessions}")
 
 def decrement_active_sessions():
     global global_active_sessions
-    global_active_sessions -= 1
+    with lock:
+        global_active_sessions -= 1
     print(f"Session disconnected, total active sessions: {global_active_sessions}")
     if global_active_sessions <= 0:
         shutdown()
@@ -58,7 +61,8 @@ class CloseAppHandler(tornado.web.RequestHandler):
 class HeartbeatHandler(tornado.web.RequestHandler):
     def post(self):
         global last_heartbeat
-        last_heartbeat = time.time()
+        with lock:
+            last_heartbeat = time.time()
         self.write("OK")
 
 def start_tornado_server():
@@ -76,11 +80,16 @@ threading.Thread(target=start_tornado_server, daemon=True).start()
 def heartbeat_monitor():
     global last_heartbeat
     # Initialize heartbeat time
-    last_heartbeat = time.time()
+    with lock:
+        last_heartbeat = time.time()
     while True:
         time.sleep(5)
         # If no heartbeat received in 15 seconds and no sessions are active, shutdown
-        if time.time() - last_heartbeat > 15:
+        current_time = time.time()
+        with lock:
+            elapsed = current_time - last_heartbeat
+            active = global_active_sessions
+        if elapsed > 15:
             shutdown()
 
 threading.Thread(target=heartbeat_monitor, daemon=True).start()
