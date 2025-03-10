@@ -457,12 +457,19 @@ def show_table(df: pd.DataFrame, download_name: str = "") -> None:
     st.dataframe(df, use_container_width=True)
     # Show download button with the given download name for the table if name is given
     if download_name:
-        st.download_button(
-            "Download Table",
-            df.to_csv(sep="\t").encode("utf-8"),
-            download_name.replace(" ", "-") + ".tsv",
-            key=f"download_{st.session_state['mzml_workflow_job_id']}" 
-        )
+        if "mzml_workflow_job_id" in st.session_state:
+            st.download_button(
+                "Download Table",
+                df.to_csv(sep="\t").encode("utf-8"),
+                download_name.replace(" ", "-") + ".tsv",
+                key=f"download_{st.session_state['mzml_workflow_job_id']}" 
+            )
+        else:
+            st.download_button(
+                "Download Table",
+                df.to_csv(sep="\t").encode("utf-8"),
+                download_name.replace(" ", "-") + ".tsv"
+            )
     return df
 
 

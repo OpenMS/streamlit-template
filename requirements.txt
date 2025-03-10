@@ -10,3 +10,4 @@ pyopenms_viz==1.0.0
 streamlit-js-eval
 redis==5.2.1
 rq==2.1.0
+psutil==7.0.0
