@@ -1,20 +1,49 @@
-import unittest
-from src.simpleworkflow import generate_random_table
+import pytest
+from streamlit.testing.v1 import AppTest
 
-class TestSimpleWorkflow(unittest.TestCase):
-    def test_generate_random_table(self):
-        """Test if generate_random_table creates a table with correct dimensions."""
-        rows, cols = 3, 4  
-        df = generate_random_table(rows, cols)  
+@pytest.fixture
+def launch():
+    """Launch the Simple Workflow page for testing."""
+    app = AppTest.from_file("content/simple_workflow.py")
+    return app  
 
-        self.assertEqual(df.shape, (rows, cols), f"Expected ({rows},{cols}), but got {df.shape}")
+def test_number_inputs(launch):
+    """Ensure x and y dimension inputs exist and update correctly."""
+    launch.run()  
 
-    def test_generate_random_table_values(self):
-        """Ensure generated table contains numerical values."""
-        df = generate_random_table(2, 3)  
+    assert len(launch.number_input) >= 2, f"Expected at least 2 number inputs, found {len(launch.number_input)}"
 
-        self.assertTrue(df.map(lambda x: isinstance(x, (int, float))).all().all(), "Table contains non-numeric values")
+    # Set x and y dimensions
+    launch.number_input[0].set_value(5)  
+    launch.number_input[1].set_value(4)  
+    launch.run()
+
+    assert launch.session_state["example-x-dimension"] == 5, "X-dimension not updated in session state!"
+    assert launch.session_state["example-y-dimension"] == 4, "Y-dimension not updated in session state!"
+
+    assert len(launch.dataframe) > 0, "Table not generated!"
+    
+    df = launch.dataframe[0].value
+    assert df.shape == (5, 4), f"Expected table size (5,4) but got {df.shape}"
 
 
-if __name__ == '__main__':
-    unittest.main()
+def test_download_button(launch):
+    """Ensure the 'Download Table' button appears after table generation."""
+    launch.run()  
+
+    # Set x and y dimensions
+    launch.number_input[0].set_value(3)  
+    launch.number_input[1].set_value(2) 
+    launch.run()
+
+    # Ensure a table is generated
+    assert len(launch.dataframe) > 0, "Table not generated!"
+    
+    df = launch.dataframe[0].value
+    assert df.shape == (3, 2), f"Expected table size (3,2) but got {df.shape}"
+
+    print("Available buttons:", [btn.label for btn in launch.button])
+    print("Available markdown elements:", [md.value for md in launch.markdown])
+
+    # Check for "Download Table" text in markdown
+    assert any("Download Table" in md.value for md in launch.markdown), "Download Table button is missing!"
