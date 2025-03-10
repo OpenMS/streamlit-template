@@ -4,8 +4,10 @@ developmentMode = false
 [server]
 port = 8501 # should be same as configured in deployment repo
 
-[theme]
+[browser]
+gatherUsageStats = false  # This disables the email prompt
 
+[theme]
 # The preset Streamlit theme that your custom theme inherits from. One of "light" or "dark".
 # base =
 
