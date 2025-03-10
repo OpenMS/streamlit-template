@@ -19,6 +19,11 @@ if "settings" not in st.session_state:
 global_active_sessions = 0
 last_heartbeat = 0   # Global heartbeat timestamp
 
+# Add a flag to ensure Tornado starts only once.
+if "tornado_server_started" not in globals():
+    globals()["tornado_server_started"] = False
+
+
 def increment_active_sessions():
     global global_active_sessions
     global_active_sessions += 1
@@ -62,7 +67,7 @@ def start_tornado_server():
         (r"/heartbeat", HeartbeatHandler)
     ]
     app = tornado.web.Application(routes)
-    app.listen(port=8501)  # Adjust if needed; matches Streamlit port.
+    app.listen(port=8502)  # Adjust if needed; matches Streamlit port.
     tornado.ioloop.IOLoop.current().start()
 
 threading.Thread(target=start_tornado_server, daemon=True).start()
@@ -74,8 +79,8 @@ def heartbeat_monitor():
     last_heartbeat = time.time()
     while True:
         time.sleep(5)
-        # If no heartbeat received in 10 seconds and no sessions are active, shutdown
-        if time.time() - last_heartbeat > 10 and global_active_sessions <= 0:
+        # If no heartbeat received in 15 seconds and no sessions are active, shutdown
+        if time.time() - last_heartbeat > 15:
             shutdown()
 
 threading.Thread(target=heartbeat_monitor, daemon=True).start()
@@ -87,25 +92,12 @@ def insert_heartbeat_script():
         """
         <script>
         function sendHeartbeat() {
-            fetch('/heartbeat', {method: 'POST'});
+            fetch('http://localhost:8502/heartbeat', {method: 'POST'});
         }
         // Send an immediate heartbeat on load
         sendHeartbeat();
         // Then every 3 seconds
         setInterval(sendHeartbeat, 3000);
-        </script>
-        """,
-        height=0,
-    )
-
-def insert_close_tab_script():
-    # Fallback request on tab unload (may not always fire reliably)
-    components.html(
-        """
-        <script>
-        window.addEventListener('beforeunload', function(e) {
-          navigator.sendBeacon('/_closeapp');
-        });
         </script>
         """,
         height=0,
@@ -138,7 +130,6 @@ if __name__ == '__main__':
     pg = st.navigation(pages)
     pg.run()
 
-    # Inject the heartbeat script first so the server sees regular pings.
-    insert_heartbeat_script()
-    # Also inject the close-tab script (as a fallback)
-    insert_close_tab_script()
+    if os.getenv("LOCAL_RUN", "true").lower() == "true":
+        # Inject the heartbeat script first so the server sees regular pings.
+        insert_heartbeat_script()
