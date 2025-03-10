@@ -7,6 +7,7 @@ import time
 from typing import Any
 from pathlib import Path
 from streamlit.components.v1 import html
+import requests
 
 import streamlit as st
 import pandas as pd
@@ -41,11 +42,11 @@ def load_params(default: bool = False) -> dict[str, Any]:
     Returns:
         dict[str, Any]: A dictionary containing the parameters.
     """
-    
+
     # Check if workspace is enabled. If not, load default parameters.
     if not st.session_state.settings["enable_workspaces"]:
         default = True
-    
+
     # Construct the path to the parameter file
     path = Path(st.session_state.workspace, "params.json")
 
@@ -80,11 +81,11 @@ def save_params(params: dict[str, Any]) -> None:
     Returns:
         dict[str, Any]: Updated parameters.
     """
-    
+
     # Check if the workspace is enabled and if a 'params.json' file exists in the workspace directory
     if not st.session_state.settings["enable_workspaces"]:
         return
-    
+
     # Update the parameter dictionary with any modified parameters from the current session
     for key, value in st.session_state.items():
         if key in params.keys():
@@ -141,9 +142,9 @@ def page_setup(page: str = "") -> dict[str, Any]:
 
     # Create google analytics if consent was given
     if (
-        ("tracking_consent" not in st.session_state) 
+        ("tracking_consent" not in st.session_state)
         or (st.session_state.tracking_consent is None)
-        or (not st.session_state.settings['online_deployment'])
+        or (not st.session_state.settings["online_deployment"])
     ):
         st.session_state.tracking_consent = None
     else:
@@ -208,19 +209,23 @@ def page_setup(page: str = "") -> dict[str, Any]:
         if "windows" in sys.argv:
             os.chdir("../streamlit-template")
         # Define the directory where all workspaces will be stored
-        workspaces_dir = Path("..", "workspaces-" + st.session_state.settings["repository-name"])
+        workspaces_dir = Path(
+            "..", "workspaces-" + st.session_state.settings["repository-name"]
+        )
         # Check if workspace logic is enabled
         if st.session_state.settings["enable_workspaces"]:
             if "workspace" in st.query_params:
-                    st.session_state.workspace = Path(workspaces_dir, st.query_params.workspace)
+                st.session_state.workspace = Path(
+                    workspaces_dir, st.query_params.workspace
+                )
             elif st.session_state.location == "online":
-                    workspace_id = str(uuid.uuid1())
-                    st.session_state.workspace = Path(workspaces_dir, workspace_id)
-                    st.query_params.workspace = workspace_id
+                workspace_id = str(uuid.uuid1())
+                st.session_state.workspace = Path(workspaces_dir, workspace_id)
+                st.query_params.workspace = workspace_id
             else:
                 st.session_state.workspace = Path(workspaces_dir, "default")
                 st.query_params.workspace = "default"
-                
+
         else:
             # Use default workspace when workspace feature is disabled
             st.session_state.workspace = Path(workspaces_dir, "default")
@@ -230,7 +235,10 @@ def page_setup(page: str = "") -> dict[str, Any]:
             st.session_state["controllo"] = True
 
     # If no workspace is specified and workspace feature is enabled, set default workspace and query param
-    if "workspace" not in st.query_params and st.session_state.settings["enable_workspaces"]:
+    if (
+        "workspace" not in st.query_params
+        and st.session_state.settings["enable_workspaces"]
+    ):
         st.query_params.workspace = st.session_state.workspace.name
 
     # Make sure the necessary directories exist
@@ -239,19 +247,21 @@ def page_setup(page: str = "") -> dict[str, Any]:
 
     # Render the sidebar
     params = render_sidebar(page)
-    
-    captcha_control()  
+
+    captcha_control()
 
     # If run in hosted mode, show captcha as long as it has not been solved
-    #if not "local" in sys.argv:
+    # if not "local" in sys.argv:
     #    if "controllo" not in st.session_state:
     #        # Apply captcha by calling the captcha_control function
     #        captcha_control()
-    
+
     # If run in hosted mode, show captcha as long as it has not been solved
-    if 'controllo' not in st.session_state or ("controllo" in params.keys() and params["controllo"] == False):
+    if "controllo" not in st.session_state or (
+        "controllo" in params.keys() and params["controllo"] == False
+    ):
         # Apply captcha by calling the captcha_control function
-        captcha_control()  
+        captcha_control()
 
     return params
 
@@ -280,7 +290,9 @@ def render_sidebar(page: str = "") -> None:
         if st.session_state.settings["enable_workspaces"]:
             with st.expander("🖥️ **Workspaces**"):
                 # Define workspaces directory outside of repository
-                workspaces_dir = Path("..", "workspaces-" + st.session_state.settings["repository-name"])
+                workspaces_dir = Path(
+                    "..", "workspaces-" + st.session_state.settings["repository-name"]
+                )
                 # Online: show current workspace name in info text and option to change to other existing workspace
                 if st.session_state.location == "local":
                     # Define callback function to change workspace
@@ -341,8 +353,8 @@ def render_sidebar(page: str = "") -> None:
                 )
             else:
                 st.session_state["spectrum_num_bins"] = 50
-        
-        # Display OpenMS WebApp Template Version from settings.json 
+
+        # Display OpenMS WebApp Template Version from settings.json
         with st.container():
             st.markdown(
                 """
@@ -358,11 +370,14 @@ def render_sidebar(page: str = "") -> None:
                 }
                 </style>
                 """,
-                unsafe_allow_html=True
+                unsafe_allow_html=True,
             )
-            version_info = st.session_state.settings["version"] 
-            app_name = st.session_state.settings["app-name"] 
-            st.markdown(f'<div class="version-box">{app_name}<br>Version: {version_info}</div>', unsafe_allow_html=True)
+            version_info = st.session_state.settings["version"]
+            app_name = st.session_state.settings["app-name"]
+            st.markdown(
+                f'<div class="version-box">{app_name}<br>Version: {version_info}</div>',
+                unsafe_allow_html=True,
+            )
     return params
 
 
@@ -428,8 +443,8 @@ def display_large_dataframe(
     )
 
     rows = event["selection"]["rows"]
-    
-    if st.session_state.settings['test']: # is a test App, return first row as selected
+
+    if st.session_state.settings["test"]:  # is a test App, return first row as selected
         return 1
     elif not rows:
         return None
@@ -438,7 +453,6 @@ def display_large_dataframe(
         base_index = (page - 1) * chunk_size
         print(base_index)
         return base_index + rows[0]
-
 
 
 def show_table(df: pd.DataFrame, download_name: str = "") -> None:
@@ -629,3 +643,54 @@ ERRORS = {
     "workflow": "Something went wrong during workflow execution.",
     "visualization": "Something went wrong during visualization of results.",
 }
+
+
+def check_version() -> tuple[bool, str]:
+    """
+    Check if a newer version of the app is available by comparing the local version
+    with the version in the remote repository's settings.json.
+
+    Returns:
+        tuple[bool, str]: A tuple containing:
+            - bool: True if an update is available, False otherwise
+            - str: The latest version number available
+    """
+    try:
+        # Get the current version from settings.json
+        with open("settings.json", "r") as f:
+            current_settings = json.load(f)
+        current_version = current_settings.get("version", "0.0.0")
+
+        # Get the latest version from the repository
+        repo_owner = current_settings.get("github-user", "OpenMS")
+        repo_name = current_settings.get("repository-name", "streamlit-template")
+        api_url = f"https://raw.githubusercontent.com/{repo_owner}/{repo_name}/main/settings.json"
+
+        response = requests.get(api_url, timeout=5)
+        if response.status_code == 200:
+            remote_settings = response.json()
+            latest_version = remote_settings.get("version", "0.0.0")
+
+            # Compare versions
+            current_parts = [int(x) for x in current_version.split(".")]
+            latest_parts = [int(x) for x in latest_version.split(".")]
+
+            # Pad with zeros if necessary
+            while len(current_parts) < 3:
+                current_parts.append(0)
+            while len(latest_parts) < 3:
+                latest_parts.append(0)
+
+            # Compare version numbers
+            for current, latest in zip(current_parts, latest_parts):
+                if latest > current:
+                    return True, latest_version
+                elif current > latest:
+                    return False, latest_version
+
+            return False, latest_version
+    except Exception as e:
+        st.debug(f"Error checking for updates: {str(e)}")
+        return False, current_version
+
+    return False, current_version
