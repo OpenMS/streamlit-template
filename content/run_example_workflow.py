@@ -4,6 +4,10 @@ from pathlib import Path
 
 from src.common.common import page_setup, save_params
 from src import mzmlfileworkflow
+from rq import Queue
+from redis import Redis
+from src.workflow.mzmlfileworkflowstatus import monitor_mzml_workflow_job_status
+from src.cpustats import monitor_cpu_ram_stats
 
 # Page name "workflow" will show mzML file selector in sidebar
 params = page_setup()
@@ -47,13 +51,38 @@ with st.form("workflow-with-mzML-form"):
 
 result_dir = Path(st.session_state["workspace"], "mzML-workflow-results")
 
+# placeholder to display workflow status and run progress
+mzml_workflow_status_placeholder = st.empty()
+st.session_state['mzml_workflow_job_id'] = None
+workflow_status = None
+
 if run_workflow_button:
     params = save_params(params)
     if params["example-workflow-selected-mzML-files"]:
-        mzmlfileworkflow.run_workflow(params, result_dir)
+        queue = Queue('mzml_workflow_run', connection=Redis())
+        job = queue.enqueue(mzmlfileworkflow.run_workflow, params, result_dir, st.session_state["workspace"])
+        st.session_state['mzml_workflow_job_id'] = job.id
     else:
         st.warning("Select some mzML files.")
 
+if st.session_state['mzml_workflow_job_id'] != None:
+    # start showing the status when a job is found
+    workflow_status = st.status("Workflow in progress ...", expanded=True)
 
+results_section_placholder = st.empty()
+with results_section_placholder:
+    # don't show table if workflow is in running state as it'll be shown once the workflow ends
+    if st.session_state['mzml_workflow_job_id'] == None:
+        mzmlfileworkflow.result_section(result_dir)
 
-mzmlfileworkflow.result_section(result_dir)
+st.write("## Hardware utilization")
+cpu_ram_stats_placeholder = st.empty()
+
+# in this continuous loop we measure CPU/RAM metrics and
+# monitor the state of the active workflow job
+while True:
+    # monitor if active job exists
+    if st.session_state['mzml_workflow_job_id'] != None:
+        monitor_mzml_workflow_job_status(mzml_workflow_status_placeholder, workflow_status, results_section_placholder, result_dir)
+    monitor_cpu_ram_stats(cpu_ram_stats_placeholder)
+    

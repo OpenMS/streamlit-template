@@ -141,6 +141,8 @@ RUN echo "0 3 * * * /root/miniforge3/envs/streamlit-env/bin/python /app/clean-up
 RUN echo "#!/bin/bash" > /app/entrypoint.sh && \
     echo "source /root/miniforge3/bin/activate streamlit-env" >> /app/entrypoint.sh && \
     echo "service cron start" >> /app/entrypoint.sh && \
+    echo "redis-server" >> /app/entrypoint.sh && \
+    echo "rq worker --with-scheduler -q mzml_workflow_run" >> /app/entrypoint.sh && \
     echo "streamlit run app.py" >> /app/entrypoint.sh
 # make the script executable
 RUN chmod +x /app/entrypoint.sh
