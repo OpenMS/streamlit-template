@@ -36,8 +36,5 @@ def test_extract_ids_button(launch):
     launch.button[0].click()
     launch.run()
 
-    print("TEXT OUTPUT:", launch.text)
-    print("SESSION STATE:", launch.session_state)
-
     assert "result_dict" in launch.session_state, f"Subprocess result_dict missing! Current session state: {launch.session_state}"
     assert launch.session_state["result_dict"]["success"], "Subprocess did not complete successfully!"

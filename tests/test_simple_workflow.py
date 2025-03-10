@@ -4,8 +4,7 @@ from streamlit.testing.v1 import AppTest
 @pytest.fixture
 def launch():
     """Launch the Simple Workflow page for testing."""
-    app = AppTest.from_file("content/simple_workflow.py")
-    return app  
+    return AppTest.from_file("content/simple_workflow.py") 
 
 def test_number_inputs(launch):
     """Ensure x and y dimension inputs exist and update correctly."""
@@ -42,8 +41,5 @@ def test_download_button(launch):
     df = launch.dataframe[0].value
     assert df.shape == (3, 2), f"Expected table size (3,2) but got {df.shape}"
 
-    print("Available buttons:", [btn.label for btn in launch.button])
-    print("Available markdown elements:", [md.value for md in launch.markdown])
-
     # Check for "Download Table" text in markdown
-    assert any("Download Table" in md.value for md in launch.markdown), "Download Table button is missing!"
+    assert any(btn.label == "Download Table" for btn in launch.button), "Download Table button is missing!"
