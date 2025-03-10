@@ -20,9 +20,7 @@ def launch():
 
 def test_number_inputs(launch):
     """Ensure x and y dimension inputs exist and update correctly."""
-    launch.run(timeout=10)  
 
-    # Ensure at least 2 number input widgets exist
     assert len(launch.number_input) >= 2, f"Expected at least 2 number inputs, found {len(launch.number_input)}"
 
     # Set x and y dimensions
@@ -57,7 +55,6 @@ def test_invalid_inputs(launch):
 
 def test_download_button(launch):
     """Ensure the 'Download Table' button appears after table generation."""
-    launch.run(timeout=10)
 
     # Set x and y dimensions
     launch.number_input[0].set_value(3)
@@ -69,8 +66,6 @@ def test_download_button(launch):
 
     df = launch.dataframe[0].value
     assert df.shape == (3, 2), f"Expected table size (3,2) but got {df.shape}"
-
-    print("Available downloads:", [dl.label for dl in launch.download])
 
     # Check if "Download Table" is found inside `launch.download`
     download_button = next((dl for dl in launch.download if dl.label == "Download Table"), None)
