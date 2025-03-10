@@ -41,6 +41,20 @@ def test_number_inputs(launch):
     df = launch.dataframe[0].value
     assert df.shape == (5, 4), f"Expected table size (5,4) but got {df.shape}"
 
+def test_invalid_inputs(launch):
+    """Test behavior with invalid inputs."""
+    launch.run()
+    
+    launch.number_input[0].set_value(-1)
+    launch.number_input[1].set_value(-2)
+    launch.run()
+    
+    assert any("invalid" in warn.value.lower() for warn in launch.warning), "Expected warning for negative values"
+    
+    # Verify table is not generated with invalid inputs
+    assert len(launch.dataframe) == 0, "Table should not be generated with invalid inputs"
+
+
 def test_download_button(launch):
     """Ensure the 'Download Table' button appears after table generation."""
     launch.run(timeout=10)
