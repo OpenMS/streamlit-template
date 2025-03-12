@@ -31,10 +31,10 @@ def monitor_hardware():
     st.text(f"Ram ({ram_progress * 100:.2f}%)")
     st.progress(ram_progress)
 
-    st.write(f"CPU ({cpu_progress * 100:.2f}%)")
+    st.text(f"CPU ({cpu_progress * 100:.2f}%)")
     st.progress(cpu_progress)
 
-    st.text(f"Last fetched at: {time.strftime('%H:%M:%S')}")
+    st.caption(f"Last fetched at: {time.strftime('%H:%M:%S')}")
 
 def load_params(default: bool = False) -> dict[str, Any]:
     """
