@@ -16,7 +16,7 @@ These tests verify:
 def launch():
     """Launch the Simple Workflow page for testing."""
     app = AppTest.from_file("content/simple_workflow.py")
-    app.run(timeout=10)  
+    app.run(timeout=15)  
     return app
 
 def test_number_inputs(launch):
@@ -43,14 +43,27 @@ def test_number_inputs(launch):
 def test_invalid_inputs(launch):
     """Ensure invalid inputs are handled properly."""
 
-    launch.run(timeout=10)
-    time.sleep(2) 
-
+    launch.run(timeout=15)
+    time.sleep(5)
+    
     x_input = next((ni for ni in launch.number_input if ni.key == "example-x-dimension"), None)
     y_input = next((ni for ni in launch.number_input if ni.key == "example-y-dimension"), None)
 
     assert x_input is not None, "X-dimension input not found!"
     assert y_input is not None, "Y-dimension input not found!"
+
+    # Test value exceeding maximum allowed (max is 20)
+    x_input.set_value(25)  
+    y_input.set_value(10)
+    launch.run(timeout=10)
+    time.sleep(5)
+
+    # Verify the value was clamped to the maximum allowed
+    assert launch.session_state["example-x-dimension"] == 20, "X-dimension not clamped to maximum!"
+    
+    assert len(launch.dataframe) > 0, "Table not generated!"
+    df = launch.dataframe[0].value
+    assert df.shape == (20, 10), f"Expected table size (20,10) but got {df.shape}"
 
 
 def test_download_button(launch):
@@ -75,5 +88,4 @@ def test_download_button(launch):
     download_button = next((btn for btn in launch.button if hasattr(btn, "label") and "Download" in btn.label), None)
     download_component = next((comp for comp in launch.main if hasattr(comp, "label") and "Download" in comp.label), None)
 
-    # Final assertion
     assert download_button or download_component, "Download Table button is missing!"
