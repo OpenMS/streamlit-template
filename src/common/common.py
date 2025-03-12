@@ -291,9 +291,6 @@ def render_sidebar(page: str = "") -> None:
     """
     params = load_params()
     with st.sidebar:
-        with st.expander("📊 **CPU Visualisation**"):
-            monitor_hardware()
-        
         # The main page has workspace switcher
         # Display workspace switcher if workspace is enabled in local mode
         if st.session_state.settings["enable_workspaces"]:
@@ -362,7 +359,10 @@ def render_sidebar(page: str = "") -> None:
                     "Number of Bins (m/z)", 1, 10000, 50, key="spectrum_num_bins"
                 )
             else:
-                st.session_state["spectrum_num_bins"] = 50            
+                st.session_state["spectrum_num_bins"] = 50
+
+        with st.expander("📊 **Resource Utilization**"):
+            monitor_hardware()      
         
         # Display OpenMS WebApp Template Version from settings.json 
         with st.container():
