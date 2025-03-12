@@ -432,7 +432,10 @@ class StreamlitUI:
             )
 
         elif widget_type == "checkbox":
-            st.checkbox(name, value=value, key=key, help=help)
+            self.params[key] = st.checkbox(name, value=value if value is not None else False, key=key, help=help)
+            self.parameter_manager.save_parameters()  # Save immediately
+
+
 
         elif widget_type == "selectbox":
             if options is not None:
@@ -488,8 +491,9 @@ class StreamlitUI:
 
         elif widget_type == "auto":
             # Auto-determine widget type based on value
-            if isinstance(value, bool):
-                st.checkbox(name, value=value, key=key, help=help)
+            if isinstance(value, bool) or value is None:
+                st.checkbox(name, value=value if value is not None else False, key=key, help=help)
+
             elif isinstance(value, (int, float)):
                 self.input_widget(
                     key,
