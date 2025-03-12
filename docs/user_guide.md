@@ -23,7 +23,7 @@ There are a few key differences between operating in online and local modes:
   - *Local Mode*: Multiple file uploads are supported, giving you flexibility when working with large datasets.
 - **Workspace Access**:
   - In online mode, workspaces are stored temporarily and will be cleared after seven days of inactivity.
-  - In local mode, workspaces are saved on your local machine, allowing for persistent storage.
+  - In local mode, workspaces are saved on your local machine, allowing for persistent storage. Workspace directory can be specified in the `settings.json`. Defaults to `..` (parent directory).
 
 ## Downloading Results
 

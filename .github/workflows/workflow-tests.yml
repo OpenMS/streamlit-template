@@ -23,3 +23,6 @@ jobs:
     - name: Running test cases
       run: |
         pytest test.py
+    - name: Running GUI tests
+      run: |
+        pytest test_gui.py

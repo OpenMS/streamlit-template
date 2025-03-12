@@ -29,3 +29,4 @@ jobs:
     - name: Test
       run: |
         python -m pytest test_gui.py tests/
+
