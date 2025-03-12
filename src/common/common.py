@@ -10,7 +10,7 @@ from streamlit.components.v1 import html
 
 import streamlit as st
 import pandas as pd
-
+import psutil
 try:
     from tkinter import Tk, filedialog
 
@@ -23,6 +23,18 @@ from src.common.captcha_ import captcha_control
 # Detect system platform
 OS_PLATFORM = sys.platform
 
+@st.fragment(run_every=5)
+def monitor_hardware():
+    cpu_progress = psutil.cpu_percent(interval=None) / 100
+    ram_progress = 1 - psutil.virtual_memory().available / psutil.virtual_memory().total
+
+    st.text(f"Ram ({ram_progress * 100:.2f}%)")
+    st.progress(ram_progress)
+
+    st.write(f"CPU ({cpu_progress * 100:.2f}%)")
+    st.progress(cpu_progress)
+
+    st.text(f"Last fetched at: {time.strftime('%H:%M:%S')}")
 
 def load_params(default: bool = False) -> dict[str, Any]:
     """
@@ -279,6 +291,9 @@ def render_sidebar(page: str = "") -> None:
     """
     params = load_params()
     with st.sidebar:
+        with st.expander("📊 **CPU Visualisation**"):
+            monitor_hardware()
+        
         # The main page has workspace switcher
         # Display workspace switcher if workspace is enabled in local mode
         if st.session_state.settings["enable_workspaces"]:
@@ -347,7 +362,7 @@ def render_sidebar(page: str = "") -> None:
                     "Number of Bins (m/z)", 1, 10000, 50, key="spectrum_num_bins"
                 )
             else:
-                st.session_state["spectrum_num_bins"] = 50
+                st.session_state["spectrum_num_bins"] = 50            
         
         # Display OpenMS WebApp Template Version from settings.json 
         with st.container():
