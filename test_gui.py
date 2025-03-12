@@ -66,7 +66,7 @@ def test_file_upload_load_example(launch):
                                             ("content/raw_data_viewer.py", 'Pool.mzML'),
                                             ("content/raw_data_viewer.py", 'Control.mzML')], indirect=['launch'])
 def test_view_raw_ms_data(launch, example):
-    launch.run()
+    launch.run(timeout=10)
 
     ## Load Example file, based on implementation of fileupload.load_example_mzML_files() ###
     mzML_dir = Path(launch.session_state.workspace, "mzML-files")

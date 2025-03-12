@@ -344,6 +344,28 @@ def render_sidebar(page: str = "") -> None:
                 )
             else:
                 st.session_state["spectrum_num_bins"] = 50
+        
+        # Display OpenMS WebApp Template Version from settings.json 
+        with st.container():
+            st.markdown(
+                """
+                <style>
+                .version-box {
+                    border: 1px solid #a4a5ad; 
+                    padding: 10px;
+                    border-radius: 0.5rem;
+                    text-align: center;
+                    display: flex;
+                    justify-content: center;
+                    align-items: center; 
+                }
+                </style>
+                """,
+                unsafe_allow_html=True
+            )
+            version_info = st.session_state.settings["version"] 
+            app_name = st.session_state.settings["app-name"] 
+            st.markdown(f'<div class="version-box">{app_name}<br>Version: {version_info}</div>', unsafe_allow_html=True)
     return params
 
 
