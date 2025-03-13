@@ -11,7 +11,6 @@ dependencies:
    - pandas==2.2.1 # Adding pandas with specific version for better compatibility
    - pytest==8.0.0 # Adding pytest for running tests
    - bokeh==3.3.4 # Moving bokeh to main dependencies for better CI compatibility
-   - mono==6.12.0.90
 
    - pip:
         # dependencies only available through pip
