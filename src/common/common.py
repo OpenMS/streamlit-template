@@ -211,7 +211,7 @@ def page_setup(page: str = "") -> dict[str, Any]:
         if st.session_state.settings["workspaces_dir"] and st.session_state.location == "local":
             workspaces_dir = Path(st.session_state.settings["workspaces_dir"], "workspaces-" + st.session_state.settings["repository-name"])
         else:
-            workspace_dir = '..'
+            workspaces_dir = '..'
             
         # Check if workspace logic is enabled
         if st.session_state.settings["enable_workspaces"]:
@@ -313,16 +313,19 @@ def render_sidebar(page: str = "") -> None:
                         key="chosen-workspace",
                     )
                     # Create or Remove workspaces
-                    create_remove = st.text_input("create/remove workspace", "")
+                    create_remove = st.text_input("create/remove workspace", "").strip()
                     path = Path(workspaces_dir, create_remove)
                     # Create new workspace
                     if st.button("**Create Workspace**"):
-                        path.mkdir(parents=True, exist_ok=True)
-                        st.session_state.workspace = path
-                        st.query_params.workspace = create_remove
-                        # Temporary as the query update takes a short amount of time
-                        time.sleep(1)
-                        st.rerun()
+                        if create_remove:
+                            path.mkdir(parents=True, exist_ok=True)
+                            st.session_state.workspace = path
+                            st.query_params.workspace = create_remove
+                            # Temporary as the query update takes a short amount of time
+                            time.sleep(1)
+                            st.rerun()
+                        else:
+                            st.warning("Please enter a valid workspace name.")
                     # Remove existing workspace and fall back to default
                     if st.button("⚠️ Delete Workspace"):
                         if path.exists():
