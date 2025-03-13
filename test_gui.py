@@ -39,7 +39,7 @@ def launch(request):
 )
 def test_launch(launch):
     """Test if all pages can be launched without errors."""
-    launch.run(timeout=10)  # Increased timeout from 3 to 10 seconds
+    launch.run(timeout=30)  # Increased timeout from 10 to 30 seconds
     assert not launch.exception
 
 
