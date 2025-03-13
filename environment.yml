@@ -10,7 +10,7 @@ dependencies:
    - numpy==1.26.4 # pandas and numpy are dependencies of pyopenms, however, pyopenms needs numpy<=1.26.4
    - pandas==2.2.1 # Adding pandas with specific version for better compatibility
    - pytest==8.0.0 # Adding pytest for running tests
-   - bokeh==3.3.4 # Moving bokeh to main dependencies for better CI compatibility
+   - bokeh==3.3.4 # Required for visualization components
 
    - pip:
         # dependencies only available through pip
@@ -21,3 +21,4 @@ dependencies:
         - pyopenms_viz==1.0.0
         - streamlit-js-eval
         - psutil==7.0.0
+        - bokeh==3.3.4 # Ensuring bokeh is also installed via pip for CI compatibility
