@@ -45,10 +45,11 @@ class CommandExecutor:
 
         # Initialize a list to keep track of threads
         threads = []
+        stop_event = threading.Event()
 
         # Start a new thread for each command
         for cmd in commands:
-            thread = threading.Thread(target=self.run_command, args=(cmd,))
+            thread = threading.Thread(target=self.run_command, args=(cmd, stop_event))
             thread.start()
             threads.append(thread)
 
@@ -60,16 +61,20 @@ class CommandExecutor:
         end_time = time.time()
         self.logger.log(f"Total time to run {len(commands)} commands: {end_time - start_time:.2f} seconds", 1)
 
-    def run_command(self, command: list[str]) -> None:
+    def run_command(self, command: list[str], stop_event: threading.Event) -> None:
         """
         Executes a specified shell command and logs its execution details.
 
         Args:
             command (list[str]): The shell command to execute, provided as a list of strings.
+            stop_event (threading.Event): Event to signal all threads to stop.
 
         Raises:
             Exception: If the command execution results in any errors.
         """
+        if stop_event.is_set():
+            return
+        
         # Ensure all command parts are strings
         command = [str(c) for c in command]
 
@@ -82,7 +87,6 @@ class CommandExecutor:
         child_pid = process.pid
         
         # Record the PID to keep track of running processes associated with this workspace/workflow
-        # User can close the Streamlit app and return to a running workflow later
         pid_file_path = self.pid_dir / str(child_pid)
         pid_file_path.touch()
         
@@ -101,11 +105,15 @@ class CommandExecutor:
         if stdout:
             self.logger.log(stdout.decode(), 2)
         
-        # Log stderr and raise an exception if errors occurred
+        # Log stderr and raise an exception if critical errors occurred
         if stderr or process.returncode != 0:
             error_message = stderr.decode().strip()
-            self.logger.log(f"ERRORS OCCURRED:\n{error_message}", 2)
-            raise RuntimeError(f"Process failed: {error_message}")
+            if "UserWarning" in error_message:
+                self.logger.log(f"WARNING:\n{error_message}", 2)
+            else:
+                self.logger.log(f"ERRORS OCCURRED:\n{error_message}", 2)
+                stop_event.set()
+                raise RuntimeError(f"Process failed: {error_message}")
 
     def run_topp(self, tool: str, input_output: dict, custom_params: dict = {}) -> None:
         """
@@ -188,8 +196,9 @@ class CommandExecutor:
                 command += ["-ini", str(ini_path)]
 
         # Run command(s)
+        stop_event = threading.Event()
         if len(commands) == 1:
-            self.run_command(commands[0])
+            self.run_command(commands[0], stop_event)
         elif len(commands) > 1:
             self.run_multiple_commands(commands)
         else:
@@ -249,7 +258,7 @@ class CommandExecutor:
         if defaults is None:
             self.logger.log(f"WARNING: No DEFAULTS found in {path.name}")
             # run command without params
-            self.run_command(["python", str(path)])
+            self.run_command(["python", str(path)], threading.Event())
         elif isinstance(defaults, list):
             defaults = {entry["key"]: entry["value"] for entry in defaults}
             # load paramters from JSON file
@@ -264,6 +273,6 @@ class CommandExecutor:
             with open(tmp_params_file, "w", encoding="utf-8") as f:
                 json.dump(defaults, f, indent=4)
             # run command
-            self.run_command(["python", str(path), str(tmp_params_file)])
+            self.run_command(["python", str(path), str(tmp_params_file)], threading.Event())
             # remove tmp params file
             tmp_params_file.unlink()

@@ -50,7 +50,7 @@ class WorkflowManager:
             self.execution()
             self.logger.log("WORKFLOW FINISHED")
         except Exception as e:
-            self.logger.log(f"ERROR: {str(e).splitlines()[0].strip()}")
+            self.logger.log(f"ERROR: {e}")
         # Delete pid dir path to indicate workflow is done
         shutil.rmtree(self.executor.pid_dir, ignore_errors=True)
 
