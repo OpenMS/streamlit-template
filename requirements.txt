@@ -9,3 +9,4 @@ captcha==0.5.0
 pyopenms_viz==1.0.0
 streamlit-js-eval
 psutil==7.0.0
+pyautogui==0.9.54

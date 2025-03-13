@@ -3,10 +3,15 @@ from pathlib import Path
 import json
 # For some reason the windows version only works if this is imported here
 import pyopenms
+import os
+import time
+import pyautogui
+import psutil
+import platform
 
 if "settings" not in st.session_state:
-        with open("settings.json", "r") as f:
-            st.session_state.settings = json.load(f)
+    with open("settings.json", "r") as f:
+        st.session_state.settings = json.load(f)
 
 if __name__ == '__main__':
     pages = {
@@ -34,3 +39,38 @@ if __name__ == '__main__':
 
     pg = st.navigation(pages)
     pg.run()
+
+def close_app():
+    """
+    Closes the Streamlit app by terminating the Python process and
+    attempting to close the browser tab with keystrokes.
+    """
+    with st.spinner("Shutting down..."):
+        time.sleep(3)  # give the user a small window to see the spinner
+
+        # Attempt to close the current browser tab (keystroke-based)
+        try:
+            if platform.system() == "Darwin":
+                # macOS typically uses 'command + w'
+                pyautogui.hotkey('command', 'w')
+            else:
+                # Windows/Linux typically use 'ctrl + w'
+                pyautogui.hotkey('ctrl', 'w')
+        except Exception as error:
+            st.warning(
+                "We tried closing the browser window, but failed. "
+                "You may need to close it manually. For macOS, ensure that:"
+                " System Preferences → Security & Privacy → Accessibility → Terminal is checked."
+            )
+
+        # Terminate the Streamlit python process
+        pid = os.getpid()
+        p = psutil.Process(pid)
+        p.terminate()
+
+    # Place the “Stop/Close” button in the sidebar
+with st.sidebar:
+    st.write("")  # just an empty line for spacing
+    if st.button("Stop/Close"):
+        st.write("Terminating the app... please wait.")
+        close_app()
