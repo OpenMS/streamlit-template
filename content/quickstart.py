@@ -42,7 +42,7 @@ c1.markdown(
 """
 )
 v_space(1, c2)
-c2.image("assets/pyopenms_transparent_background.png", width=300)
+c2.image("assets/openms_transparent_bg_logo.svg", width=300)
 if Path("OpenMS-App.zip").exists():
     st.subheader(
         """
@@ -117,7 +117,9 @@ st.page_link(
     icon="➡️",
 )
 st.page_link(
-    "content/topp_workflow_file_upload.py", label="Play around with the example workflow.", icon="➡️"
+    "content/topp_workflow_file_upload.py",
+    label="Play around with the example workflow.",
+    icon="➡️",
 )
 st.markdown(
     """
