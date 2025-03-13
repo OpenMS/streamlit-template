@@ -7,6 +7,10 @@ import time
 from typing import Any
 from pathlib import Path
 from streamlit.components.v1 import html
+import plotly.io as pio
+import matplotlib.pyplot as plt
+from bokeh.themes import Theme
+from bokeh.io import curdoc
 
 import streamlit as st
 import pandas as pd
@@ -41,11 +45,11 @@ def load_params(default: bool = False) -> dict[str, Any]:
     Returns:
         dict[str, Any]: A dictionary containing the parameters.
     """
-    
+
     # Check if workspace is enabled. If not, load default parameters.
     if not st.session_state.settings["enable_workspaces"]:
         default = True
-    
+
     # Construct the path to the parameter file
     path = Path(st.session_state.workspace, "params.json")
 
@@ -80,11 +84,11 @@ def save_params(params: dict[str, Any]) -> None:
     Returns:
         dict[str, Any]: Updated parameters.
     """
-    
+
     # Check if the workspace is enabled and if a 'params.json' file exists in the workspace directory
     if not st.session_state.settings["enable_workspaces"]:
         return
-    
+
     # Update the parameter dictionary with any modified parameters from the current session
     for key, value in st.session_state.items():
         if key in params.keys():
@@ -141,9 +145,9 @@ def page_setup(page: str = "") -> dict[str, Any]:
 
     # Create google analytics if consent was given
     if (
-        ("tracking_consent" not in st.session_state) 
+        ("tracking_consent" not in st.session_state)
         or (st.session_state.tracking_consent is None)
-        or (not st.session_state.settings['online_deployment'])
+        or (not st.session_state.settings["online_deployment"])
     ):
         st.session_state.tracking_consent = None
     else:
@@ -208,19 +212,23 @@ def page_setup(page: str = "") -> dict[str, Any]:
         if "windows" in sys.argv:
             os.chdir("../streamlit-template")
         # Define the directory where all workspaces will be stored
-        workspaces_dir = Path("..", "workspaces-" + st.session_state.settings["repository-name"])
+        workspaces_dir = Path(
+            "..", "workspaces-" + st.session_state.settings["repository-name"]
+        )
         # Check if workspace logic is enabled
         if st.session_state.settings["enable_workspaces"]:
             if "workspace" in st.query_params:
-                    st.session_state.workspace = Path(workspaces_dir, st.query_params.workspace)
+                st.session_state.workspace = Path(
+                    workspaces_dir, st.query_params.workspace
+                )
             elif st.session_state.location == "online":
-                    workspace_id = str(uuid.uuid1())
-                    st.session_state.workspace = Path(workspaces_dir, workspace_id)
-                    st.query_params.workspace = workspace_id
+                workspace_id = str(uuid.uuid1())
+                st.session_state.workspace = Path(workspaces_dir, workspace_id)
+                st.query_params.workspace = workspace_id
             else:
                 st.session_state.workspace = Path(workspaces_dir, "default")
                 st.query_params.workspace = "default"
-                
+
         else:
             # Use default workspace when workspace feature is disabled
             st.session_state.workspace = Path(workspaces_dir, "default")
@@ -230,7 +238,10 @@ def page_setup(page: str = "") -> dict[str, Any]:
             st.session_state["controllo"] = True
 
     # If no workspace is specified and workspace feature is enabled, set default workspace and query param
-    if "workspace" not in st.query_params and st.session_state.settings["enable_workspaces"]:
+    if (
+        "workspace" not in st.query_params
+        and st.session_state.settings["enable_workspaces"]
+    ):
         st.query_params.workspace = st.session_state.workspace.name
 
     # Make sure the necessary directories exist
@@ -239,19 +250,21 @@ def page_setup(page: str = "") -> dict[str, Any]:
 
     # Render the sidebar
     params = render_sidebar(page)
-    
-    captcha_control()  
+
+    captcha_control()
 
     # If run in hosted mode, show captcha as long as it has not been solved
-    #if not "local" in sys.argv:
+    # if not "local" in sys.argv:
     #    if "controllo" not in st.session_state:
     #        # Apply captcha by calling the captcha_control function
     #        captcha_control()
-    
+
     # If run in hosted mode, show captcha as long as it has not been solved
-    if 'controllo' not in st.session_state or ("controllo" in params.keys() and params["controllo"] == False):
+    if "controllo" not in st.session_state or (
+        "controllo" in params.keys() and params["controllo"] == False
+    ):
         # Apply captcha by calling the captcha_control function
-        captcha_control()  
+        captcha_control()
 
     return params
 
@@ -280,7 +293,9 @@ def render_sidebar(page: str = "") -> None:
         if st.session_state.settings["enable_workspaces"]:
             with st.expander("🖥️ **Workspaces**"):
                 # Define workspaces directory outside of repository
-                workspaces_dir = Path("..", "workspaces-" + st.session_state.settings["repository-name"])
+                workspaces_dir = Path(
+                    "..", "workspaces-" + st.session_state.settings["repository-name"]
+                )
                 # Online: show current workspace name in info text and option to change to other existing workspace
                 if st.session_state.location == "local":
                     # Define callback function to change workspace
@@ -326,6 +341,21 @@ def render_sidebar(page: str = "") -> None:
 
         # All pages have settings, workflow indicator and logo
         with st.expander("⚙️ **Settings**"):
+            # Theme settings
+            st.markdown("## Theme Settings")
+            if "plot_theme" not in st.session_state:
+                st.session_state.plot_theme = "system"
+            theme_options = ["system", "light", "dark"]
+            st.selectbox(
+                "Plot Theme",
+                theme_options,
+                index=theme_options.index(st.session_state.plot_theme),
+                key="plot_theme",
+                help="Choose plot theme: 'system' follows Streamlit's theme, 'light' or 'dark' forces that theme",
+            )
+
+            # Image format settings
+            st.markdown("## Export Settings")
             img_formats = ["svg", "png", "jpeg", "webp"]
             st.selectbox(
                 "image export format",
@@ -333,6 +363,8 @@ def render_sidebar(page: str = "") -> None:
                 img_formats.index(params["image-format"]),
                 key="image-format",
             )
+
+            # Spectrum plotting settings
             st.markdown("## Spectrum Plotting")
             st.selectbox("Bin Peaks", ["auto", True, False], key="spectrum_bin_peaks")
             if st.session_state["spectrum_bin_peaks"] == True:
@@ -341,8 +373,8 @@ def render_sidebar(page: str = "") -> None:
                 )
             else:
                 st.session_state["spectrum_num_bins"] = 50
-        
-        # Display OpenMS WebApp Template Version from settings.json 
+
+        # Display OpenMS WebApp Template Version from settings.json
         with st.container():
             st.markdown(
                 """
@@ -358,11 +390,14 @@ def render_sidebar(page: str = "") -> None:
                 }
                 </style>
                 """,
-                unsafe_allow_html=True
+                unsafe_allow_html=True,
             )
-            version_info = st.session_state.settings["version"] 
-            app_name = st.session_state.settings["app-name"] 
-            st.markdown(f'<div class="version-box">{app_name}<br>Version: {version_info}</div>', unsafe_allow_html=True)
+            version_info = st.session_state.settings["version"]
+            app_name = st.session_state.settings["app-name"]
+            st.markdown(
+                f'<div class="version-box">{app_name}<br>Version: {version_info}</div>',
+                unsafe_allow_html=True,
+            )
     return params
 
 
@@ -428,8 +463,8 @@ def display_large_dataframe(
     )
 
     rows = event["selection"]["rows"]
-    
-    if st.session_state.settings['test']: # is a test App, return first row as selected
+
+    if st.session_state.settings["test"]:  # is a test App, return first row as selected
         return 1
     elif not rows:
         return None
@@ -438,7 +473,6 @@ def display_large_dataframe(
         base_index = (page - 1) * chunk_size
         print(base_index)
         return base_index + rows[0]
-
 
 
 def show_table(df: pd.DataFrame, download_name: str = "") -> None:
@@ -465,6 +499,146 @@ def show_table(df: pd.DataFrame, download_name: str = "") -> None:
     return df
 
 
+def configure_plot_theme():
+    """Configure plot themes based on Streamlit's theme."""
+    # Get the current theme based on user preference or system setting
+    if st.session_state.plot_theme == "system":
+        theme_mode = "light" if st.get_option("theme.base") == "light" else "dark"
+    else:
+        theme_mode = st.session_state.plot_theme
+
+    if theme_mode == "light":
+        # Light theme settings
+        plt.style.use("default")  # Reset to default style
+        plt.rcParams.update(
+            {
+                # Figure
+                "figure.facecolor": "white",
+                "figure.edgecolor": "white",
+                # Axes
+                "axes.facecolor": "white",
+                "axes.edgecolor": "black",
+                "axes.labelcolor": "black",
+                "axes.prop_cycle": plt.cycler(
+                    "color",
+                    [
+                        "#1f77b4",
+                        "#ff7f0e",
+                        "#2ca02c",
+                        "#d62728",
+                        "#9467bd",
+                        "#8c564b",
+                        "#e377c2",
+                        "#7f7f7f",
+                        "#bcbd22",
+                        "#17becf",
+                    ],
+                ),
+                # Grid
+                "grid.color": "lightgray",
+                "grid.linestyle": "--",
+                "grid.alpha": 0.5,
+                # Ticks
+                "xtick.color": "black",
+                "ytick.color": "black",
+                # Text
+                "text.color": "black",
+            }
+        )
+        # Configure plotly with light theme
+        pio.templates.default = "plotly_white"
+        # Configure bokeh with light theme
+        bokeh_theme = {
+            "attrs": {
+                "Figure": {
+                    "background_fill_color": "#ffffff",
+                    "border_fill_color": "#ffffff",
+                    "outline_line_color": "#000000",
+                },
+                "Axis": {
+                    "axis_line_color": "#000000",
+                    "axis_label_text_color": "#000000",
+                    "major_label_text_color": "#000000",
+                    "major_tick_line_color": "#000000",
+                    "minor_tick_line_color": "#000000",
+                },
+                "Grid": {
+                    "grid_line_color": "#e0e0e0",
+                    "grid_line_dash": [6, 4],
+                    "grid_line_alpha": 0.3,
+                },
+                "Title": {"text_color": "#000000"},
+            }
+        }
+    else:
+        # Dark theme settings
+        plt.style.use("dark_background")
+        plt.rcParams.update(
+            {
+                # Figure
+                "figure.facecolor": "#0E1117",
+                "figure.edgecolor": "#0E1117",
+                # Axes
+                "axes.facecolor": "#0E1117",
+                "axes.edgecolor": "#FFFFFF",  # Brighter white for better contrast
+                "axes.labelcolor": "#FFFFFF",  # Brighter white for better contrast
+                "axes.prop_cycle": plt.cycler(
+                    "color",
+                    [
+                        "#00B5F7",  # Brighter blue
+                        "#FF9E44",  # Brighter orange
+                        "#4DFA6F",  # Brighter green
+                        "#FF4B4B",  # Brighter red
+                        "#C78FFF",  # Brighter purple
+                        "#FF8F8F",  # Brighter brown
+                        "#FF70D2",  # Brighter pink
+                        "#E0E0E0",  # Brighter gray
+                        "#EBEF53",  # Brighter yellow
+                        "#24E7E7",  # Brighter cyan
+                    ],
+                ),
+                # Grid
+                "grid.color": "#555555",  # Slightly brighter grid for better visibility
+                "grid.linestyle": "--",
+                "grid.alpha": 0.6,  # Increased alpha for better visibility
+                # Ticks
+                "xtick.color": "#FFFFFF",  # Brighter white for better contrast
+                "ytick.color": "#FFFFFF",  # Brighter white for better contrast
+                # Text
+                "text.color": "#FFFFFF",  # Brighter white for better contrast
+            }
+        )
+        # Configure plotly with dark theme
+        pio.templates.default = "plotly_dark"
+        # Configure bokeh with dark theme
+        bokeh_theme = {
+            "attrs": {
+                "Figure": {
+                    "background_fill_color": "#0E1117",
+                    "border_fill_color": "#0E1117",
+                    "outline_line_color": "#FFFFFF",  # Brighter white for better contrast
+                },
+                "Axis": {
+                    "axis_line_color": "#FFFFFF",  # Brighter white for better contrast
+                    "axis_label_text_color": "#FFFFFF",  # Brighter white for better contrast
+                    "major_label_text_color": "#FFFFFF",  # Brighter white for better contrast
+                    "major_tick_line_color": "#FFFFFF",  # Brighter white for better contrast
+                    "minor_tick_line_color": "#FFFFFF",  # Brighter white for better contrast
+                },
+                "Grid": {
+                    "grid_line_color": "#555555",  # Slightly brighter grid
+                    "grid_line_dash": [6, 4],
+                    "grid_line_alpha": 0.4,  # Increased alpha for better visibility
+                },
+                "Title": {
+                    "text_color": "#FFFFFF"  # Brighter white for better contrast
+                },
+            }
+        }
+
+    curdoc().theme = Theme(json=bokeh_theme)
+
+
 def show_fig(
     fig,
     download_name: str,
@@ -483,6 +657,70 @@ def show_fig(
     Returns:
         None
     """
+    # Configure plot theme before displaying
+    configure_plot_theme()
+
+    # Get current theme based on user preference or system setting
+    if st.session_state.plot_theme == "system":
+        theme_mode = "light" if st.get_option("theme.base") == "light" else "dark"
+    else:
+        theme_mode = st.session_state.plot_theme
+
+    # Update Plotly figure layout based on theme
+    if hasattr(fig, "update_layout"):
+        if theme_mode == "light":
+            fig.update_layout(
+                paper_bgcolor="white",
+                plot_bgcolor="white",
+                font_color="black",
+                xaxis=dict(
+                    gridcolor="lightgray",
+                    gridwidth=1,
+                    griddash="dash",
+                    linecolor="black",
+                    linewidth=1,
+                    ticks="outside",
+                    tickfont=dict(color="black"),
+                ),
+                yaxis=dict(
+                    gridcolor="lightgray",
+                    gridwidth=1,
+                    griddash="dash",
+                    linecolor="black",
+                    linewidth=1,
+                    ticks="outside",
+                    tickfont=dict(color="black"),
+                ),
+            )
+        else:
+            fig.update_layout(
+                paper_bgcolor="#0E1117",
+                plot_bgcolor="#0E1117",
+                font_color="#FFFFFF",  # Brighter white for better contrast
+                xaxis=dict(
+                    gridcolor="#555555",  # Slightly brighter grid
+                    gridwidth=1,
+                    griddash="dash",
+                    linecolor="#FFFFFF",  # Brighter white for better contrast
+                    linewidth=1,
+                    ticks="outside",
+                    tickfont=dict(
+                        color="#FFFFFF"
+                    ),  # Brighter white for better contrast
+                ),
+                yaxis=dict(
+                    gridcolor="#555555",  # Slightly brighter grid
+                    gridwidth=1,
+                    griddash="dash",
+                    linecolor="#FFFFFF",  # Brighter white for better contrast
+                    linewidth=1,
+                    ticks="outside",
+                    tickfont=dict(
+                        color="#FFFFFF"
+                    ),  # Brighter white for better contrast
+                ),
+            )
+
     if not selection_session_state_key:
         st.plotly_chart(
             fig,
