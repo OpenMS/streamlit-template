@@ -586,7 +586,7 @@ def configure_plot_theme():
         # Configure bokeh with light theme
         bokeh_theme = {
             "attrs": {
-                "Figure": {
+                "figure": {
                     "background_fill_color": "#ffffff",
                     "border_fill_color": "#ffffff",
                     "outline_line_color": "#000000",
@@ -649,7 +649,7 @@ def configure_plot_theme():
         # Configure bokeh with dark theme
         bokeh_theme = {
             "attrs": {
-                "Figure": {
+                "figure": {
                     "background_fill_color": "#0E1117",
                     "border_fill_color": "#0E1117",
                     "outline_line_color": "#FFFFFF",  # Brighter white for better contrast
