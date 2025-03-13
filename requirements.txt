@@ -8,3 +8,4 @@ plotly==5.22.0
 captcha==0.5.0
 pyopenms_viz==1.0.0
 streamlit-js-eval
+psutil==7.0.0
