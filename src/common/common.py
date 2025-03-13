@@ -211,7 +211,7 @@ def page_setup(page: str = "") -> dict[str, Any]:
         if st.session_state.settings["workspaces_dir"] and st.session_state.location == "local":
             workspaces_dir = Path(st.session_state.settings["workspaces_dir"], "workspaces-" + st.session_state.settings["repository-name"])
         else:
-            workspace_dir = '..'
+            workspaces_dir = '..'
             
         # Check if workspace logic is enabled
         if st.session_state.settings["enable_workspaces"]:
