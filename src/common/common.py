@@ -14,6 +14,7 @@ from bokeh.io import curdoc
 
 import streamlit as st
 import pandas as pd
+import psutil
 
 try:
     from tkinter import Tk, filedialog
@@ -26,6 +27,20 @@ from src.common.captcha_ import captcha_control
 
 # Detect system platform
 OS_PLATFORM = sys.platform
+
+
+@st.fragment(run_every=5)
+def monitor_hardware():
+    cpu_progress = psutil.cpu_percent(interval=None) / 100
+    ram_progress = 1 - psutil.virtual_memory().available / psutil.virtual_memory().total
+
+    st.text(f"Ram ({ram_progress * 100:.2f}%)")
+    st.progress(ram_progress)
+
+    st.text(f"CPU ({cpu_progress * 100:.2f}%)")
+    st.progress(cpu_progress)
+
+    st.caption(f"Last fetched at: {time.strftime('%H:%M:%S')}")
 
 
 def load_params(default: bool = False) -> dict[str, Any]:
@@ -121,7 +136,7 @@ def page_setup(page: str = "") -> dict[str, Any]:
     # Set Streamlit page configurations
     st.set_page_config(
         page_title=st.session_state.settings["app-name"],
-        page_icon="assets/OpenMS.png",
+        page_icon="assets/openms_transparent_bg_logo.svg",
         layout="wide",
         initial_sidebar_state="auto",
         menu_items=None,
@@ -141,7 +156,7 @@ def page_setup(page: str = "") -> dict[str, Any]:
         unsafe_allow_html=True,
     )
 
-    st.logo("assets/pyopenms_transparent_background.png")
+    st.logo("assets/openms_transparent_bg_logo.svg")
 
     # Create google analytics if consent was given
     if (
@@ -212,9 +227,17 @@ def page_setup(page: str = "") -> dict[str, Any]:
         if "windows" in sys.argv:
             os.chdir("../streamlit-template")
         # Define the directory where all workspaces will be stored
-        workspaces_dir = Path(
-            "..", "workspaces-" + st.session_state.settings["repository-name"]
-        )
+        if (
+            st.session_state.settings["workspaces_dir"]
+            and st.session_state.location == "local"
+        ):
+            workspaces_dir = Path(
+                st.session_state.settings["workspaces_dir"],
+                "workspaces-" + st.session_state.settings["repository-name"],
+            )
+        else:
+            workspaces_dir = ".."
+
         # Check if workspace logic is enabled
         if st.session_state.settings["enable_workspaces"]:
             if "workspace" in st.query_params:
@@ -292,10 +315,17 @@ def render_sidebar(page: str = "") -> None:
         # Display workspace switcher if workspace is enabled in local mode
         if st.session_state.settings["enable_workspaces"]:
             with st.expander("🖥️ **Workspaces**"):
-                # Define workspaces directory outside of repository
-                workspaces_dir = Path(
-                    "..", "workspaces-" + st.session_state.settings["repository-name"]
-                )
+                # Workspaces directory specified in the settings.json
+                if (
+                    st.session_state.settings["workspaces_dir"]
+                    and st.session_state.location == "local"
+                ):
+                    workspaces_dir = Path(
+                        st.session_state.settings["workspaces_dir"],
+                        "workspaces-" + st.session_state.settings["repository-name"],
+                    )
+                else:
+                    workspaces_dir = ".."
                 # Online: show current workspace name in info text and option to change to other existing workspace
                 if st.session_state.location == "local":
                     # Define callback function to change workspace
@@ -321,16 +351,19 @@ def render_sidebar(page: str = "") -> None:
                         key="chosen-workspace",
                     )
                     # Create or Remove workspaces
-                    create_remove = st.text_input("create/remove workspace", "")
+                    create_remove = st.text_input("create/remove workspace", "").strip()
                     path = Path(workspaces_dir, create_remove)
                     # Create new workspace
                     if st.button("**Create Workspace**"):
-                        path.mkdir(parents=True, exist_ok=True)
-                        st.session_state.workspace = path
-                        st.query_params.workspace = create_remove
-                        # Temporary as the query update takes a short amount of time
-                        time.sleep(1)
-                        st.rerun()
+                        if create_remove:
+                            path.mkdir(parents=True, exist_ok=True)
+                            st.session_state.workspace = path
+                            st.query_params.workspace = create_remove
+                            # Temporary as the query update takes a short amount of time
+                            time.sleep(1)
+                            st.rerun()
+                        else:
+                            st.warning("Please enter a valid workspace name.")
                     # Remove existing workspace and fall back to default
                     if st.button("⚠️ Delete Workspace"):
                         if path.exists():
@@ -373,6 +406,9 @@ def render_sidebar(page: str = "") -> None:
                 )
             else:
                 st.session_state["spectrum_num_bins"] = 50
+
+        with st.expander("📊 **Resource Utilization**"):
+            monitor_hardware()
 
         # Display OpenMS WebApp Template Version from settings.json
         with st.container():
