@@ -1,6 +1,8 @@
-from streamlit.web.cli import main
+from streamlit.web import cli
 import sys
 
 if __name__ == "__main__":
-    sys.argv = ["streamlit", "run", "app.py"]
-    main()
+    cli._main_run_clExplicit(
+        file="app.py", 
+        command_line="streamlit run"
+    )
