@@ -15,6 +15,7 @@ In the OpenMS web application, workspaces are designed to keep your analysis org
 - **Workspace Specific Parameters and Files**: Each workspace stores parameters and files (uploaded input files and results from workflows).
 - **Persistence**: Your workspaces and parameters are saved, so you can return to your analysis anytime and pick up where you left off. Simply bookmark the page!
 
+
 ### File Uploads
 - **Online Mode**: You can upload only one file at a time. This helps manage server load and optimizes performance.
 
@@ -33,6 +34,10 @@ In the OpenMS web application, workspaces are designed to keep your analysis org
        python run_app.py --server.maxUploadSize 500
        ```
      - This sets the upload limit to 500MB for the current session.
+     
+- **Workspace Access**:
+  - In online mode, workspaces are stored temporarily and will be cleared after seven days of inactivity.
+  - In local mode, workspaces are saved on your local machine, allowing for persistent storage. Workspace directory can be specified in the `settings.json`. Defaults to `..` (parent directory).
 
 ## Downloading Results
 
