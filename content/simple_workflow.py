@@ -17,7 +17,7 @@ xdimension = st.number_input(
     label="x dimension",
     min_value=1,
     max_value=20,
-    value=params["example-x-dimension"],
+    value=min(20, params["example-x-dimension"]),
     step=1,
     key="example-x-dimension",
 )
@@ -26,7 +26,7 @@ st.number_input(
     label="y dimension",
     min_value=1,
     max_value=20,
-    value=params["example-y-dimension"],
+    value=min(20, params["example-y-dimension"]),
     step=1,
     key="example-y-dimension",
 )
