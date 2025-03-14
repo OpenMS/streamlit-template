@@ -9,7 +9,7 @@
 
 FROM ubuntu:22.04 AS setup-build-system
 ARG OPENMS_REPO=https://github.com/OpenMS/OpenMS.git
-ARG OPENMS_BRANCH=release/3.2.0
+ARG OPENMS_BRANCH=release/3.3.0
 ARG PORT=8501
 # GitHub token to download latest OpenMS executable for Windows from Github action artifact.
 ARG GITHUB_TOKEN
@@ -31,7 +31,21 @@ RUN apt-get install -y --no-install-recommends --no-install-suggests libboost-da
                                                                      libboost-regex1.74-dev \
                                                                      libboost-math1.74-dev \
                                                                      libboost-random1.74-dev
-RUN apt-get install -y --no-install-recommends --no-install-suggests qtbase5-dev libqt5svg5-dev libqt5opengl5-dev
+# Replace Qt5 with Qt6
+RUN apt-get remove -y qt5-default qtbase5-dev qttools5-dev-tools libqt5svg5-dev libqt5opengl5-dev || true
+
+RUN apt-get install -y --no-install-recommends --no-install-suggests \
+    qt6-base-dev qt6-base-dev-tools libqt6svg6-dev libqt6opengl6-dev qt6-l10n-tools qt6-tools-dev
+
+ENV Qt6_DIR="/usr/lib/x86_64-linux-gnu/cmake/Qt6"
+ENV CMAKE_PREFIX_PATH="/usr/lib/x86_64-linux-gnu/cmake/Qt6:/usr/lib/qt6"
+
+# **🔹 Step 4: Ensure `qmake` Uses Qt6**
+RUN ln -sf /usr/lib/qt6/bin/qmake /usr/bin/qmake
+
+# **🔹 Step 5: Verify Qt6 Installation**
+RUN qmake --version
+RUN ls /usr/lib/x86_64-linux-gnu/cmake/Qt6
 
 # Install Github CLI
 RUN (type -p wget >/dev/null || (apt-get update && apt-get install wget -y)) \
@@ -81,8 +95,8 @@ WORKDIR /
 RUN mkdir /openms-build
 WORKDIR /openms-build
 
-# Configure.
-RUN /bin/bash -c "cmake -DCMAKE_BUILD_TYPE='Release' -DCMAKE_PREFIX_PATH='/OpenMS/contrib-build/;/usr/;/usr/local' -DHAS_XSERVER=OFF -DBOOST_USE_STATIC=OFF -DPYOPENMS=ON ../OpenMS -DPY_MEMLEAK_DISABLE=On"
+# Configure with Qt6 path
+RUN /bin/bash -c "cmake -DCMAKE_BUILD_TYPE='Release' -DCMAKE_PREFIX_PATH='/OpenMS/contrib-build/;/usr/;/usr/local;/usr/lib/qt6' -DHAS_XSERVER=OFF -DBOOST_USE_STATIC=OFF -DPYOPENMS=ON ../OpenMS -DPY_MEMLEAK_DISABLE=On"
 
 # Build TOPP tools and clean up.
 RUN make -j4 TOPP
@@ -92,7 +106,6 @@ RUN rm -rf src doc CMakeFiles
 RUN make -j4 pyopenms
 WORKDIR /openms-build/pyOpenMS
 RUN pip install dist/*.whl
-
 
 WORKDIR /
 RUN mkdir openms
