@@ -10,6 +10,7 @@ from streamlit.components.v1 import html
 
 import streamlit as st
 import pandas as pd
+import psutil
 
 try:
     from tkinter import Tk, filedialog
@@ -22,6 +23,20 @@ from src.common.captcha_ import captcha_control
 
 # Detect system platform
 OS_PLATFORM = sys.platform
+
+
+@st.fragment(run_every=5)
+def monitor_hardware():
+    cpu_progress = psutil.cpu_percent(interval=None) / 100
+    ram_progress = 1 - psutil.virtual_memory().available / psutil.virtual_memory().total
+
+    st.text(f"Ram ({ram_progress * 100:.2f}%)")
+    st.progress(ram_progress)
+
+    st.text(f"CPU ({cpu_progress * 100:.2f}%)")
+    st.progress(cpu_progress)
+
+    st.caption(f"Last fetched at: {time.strftime('%H:%M:%S')}")
 
 
 def load_params(default: bool = False) -> dict[str, Any]:
@@ -41,11 +56,11 @@ def load_params(default: bool = False) -> dict[str, Any]:
     Returns:
         dict[str, Any]: A dictionary containing the parameters.
     """
-    
+
     # Check if workspace is enabled. If not, load default parameters.
     if not st.session_state.settings["enable_workspaces"]:
         default = True
-    
+
     # Construct the path to the parameter file
     path = Path(st.session_state.workspace, "params.json")
 
@@ -80,11 +95,11 @@ def save_params(params: dict[str, Any]) -> None:
     Returns:
         dict[str, Any]: Updated parameters.
     """
-    
+
     # Check if the workspace is enabled and if a 'params.json' file exists in the workspace directory
     if not st.session_state.settings["enable_workspaces"]:
         return
-    
+
     # Update the parameter dictionary with any modified parameters from the current session
     for key, value in st.session_state.items():
         if key in params.keys():
@@ -117,7 +132,7 @@ def page_setup(page: str = "") -> dict[str, Any]:
     # Set Streamlit page configurations
     st.set_page_config(
         page_title=st.session_state.settings["app-name"],
-        page_icon="assets/OpenMS.png",
+        page_icon="assets/openms_transparent_bg_logo.svg",
         layout="wide",
         initial_sidebar_state="auto",
         menu_items=None,
@@ -137,13 +152,13 @@ def page_setup(page: str = "") -> dict[str, Any]:
         unsafe_allow_html=True,
     )
 
-    st.logo("assets/pyopenms_transparent_background.png")
+    st.logo("assets/openms_transparent_bg_logo.svg")
 
     # Create google analytics if consent was given
     if (
-        ("tracking_consent" not in st.session_state) 
+        ("tracking_consent" not in st.session_state)
         or (st.session_state.tracking_consent is None)
-        or (not st.session_state.settings['online_deployment'])
+        or (not st.session_state.settings["online_deployment"])
     ):
         st.session_state.tracking_consent = None
     else:
@@ -208,23 +223,31 @@ def page_setup(page: str = "") -> dict[str, Any]:
         if "windows" in sys.argv:
             os.chdir("../streamlit-template")
         # Define the directory where all workspaces will be stored
-        if st.session_state.settings["workspaces_dir"] and st.session_state.location == "local":
-            workspaces_dir = Path(st.session_state.settings["workspaces_dir"], "workspaces-" + st.session_state.settings["repository-name"])
+        if (
+            st.session_state.settings["workspaces_dir"]
+            and st.session_state.location == "local"
+        ):
+            workspaces_dir = Path(
+                st.session_state.settings["workspaces_dir"],
+                "workspaces-" + st.session_state.settings["repository-name"],
+            )
         else:
-            workspace_dir = '..'
-            
+            workspaces_dir = ".."
+
         # Check if workspace logic is enabled
         if st.session_state.settings["enable_workspaces"]:
             if "workspace" in st.query_params:
-                    st.session_state.workspace = Path(workspaces_dir, st.query_params.workspace)
+                st.session_state.workspace = Path(
+                    workspaces_dir, st.query_params.workspace
+                )
             elif st.session_state.location == "online":
-                    workspace_id = str(uuid.uuid1())
-                    st.session_state.workspace = Path(workspaces_dir, workspace_id)
-                    st.query_params.workspace = workspace_id
+                workspace_id = str(uuid.uuid1())
+                st.session_state.workspace = Path(workspaces_dir, workspace_id)
+                st.query_params.workspace = workspace_id
             else:
                 st.session_state.workspace = Path(workspaces_dir, "default")
                 st.query_params.workspace = "default"
-                
+
         else:
             # Use default workspace when workspace feature is disabled
             st.session_state.workspace = Path(workspaces_dir, "default")
@@ -234,7 +257,10 @@ def page_setup(page: str = "") -> dict[str, Any]:
             st.session_state["controllo"] = True
 
     # If no workspace is specified and workspace feature is enabled, set default workspace and query param
-    if "workspace" not in st.query_params and st.session_state.settings["enable_workspaces"]:
+    if (
+        "workspace" not in st.query_params
+        and st.session_state.settings["enable_workspaces"]
+    ):
         st.query_params.workspace = st.session_state.workspace.name
 
     # Make sure the necessary directories exist
@@ -243,19 +269,21 @@ def page_setup(page: str = "") -> dict[str, Any]:
 
     # Render the sidebar
     params = render_sidebar(page)
-    
-    captcha_control()  
+
+    captcha_control()
 
     # If run in hosted mode, show captcha as long as it has not been solved
-    #if not "local" in sys.argv:
+    # if not "local" in sys.argv:
     #    if "controllo" not in st.session_state:
     #        # Apply captcha by calling the captcha_control function
     #        captcha_control()
-    
+
     # If run in hosted mode, show captcha as long as it has not been solved
-    if 'controllo' not in st.session_state or ("controllo" in params.keys() and params["controllo"] == False):
+    if "controllo" not in st.session_state or (
+        "controllo" in params.keys() and params["controllo"] == False
+    ):
         # Apply captcha by calling the captcha_control function
-        captcha_control()  
+        captcha_control()
 
     return params
 
@@ -284,10 +312,16 @@ def render_sidebar(page: str = "") -> None:
         if st.session_state.settings["enable_workspaces"]:
             with st.expander("🖥️ **Workspaces**"):
                 # Workspaces directory specified in the settings.json
-                if st.session_state.settings["workspaces_dir"] and st.session_state.location == "local":
-                    workspaces_dir = Path(st.session_state.settings["workspaces_dir"], "workspaces-" + st.session_state.settings["repository-name"])
+                if (
+                    st.session_state.settings["workspaces_dir"]
+                    and st.session_state.location == "local"
+                ):
+                    workspaces_dir = Path(
+                        st.session_state.settings["workspaces_dir"],
+                        "workspaces-" + st.session_state.settings["repository-name"],
+                    )
                 else:
-                    workspaces_dir = '..'
+                    workspaces_dir = ".."
                 # Online: show current workspace name in info text and option to change to other existing workspace
                 if st.session_state.location == "local":
                     # Define callback function to change workspace
@@ -313,16 +347,19 @@ def render_sidebar(page: str = "") -> None:
                         key="chosen-workspace",
                     )
                     # Create or Remove workspaces
-                    create_remove = st.text_input("create/remove workspace", "")
+                    create_remove = st.text_input("create/remove workspace", "").strip()
                     path = Path(workspaces_dir, create_remove)
                     # Create new workspace
                     if st.button("**Create Workspace**"):
-                        path.mkdir(parents=True, exist_ok=True)
-                        st.session_state.workspace = path
-                        st.query_params.workspace = create_remove
-                        # Temporary as the query update takes a short amount of time
-                        time.sleep(1)
-                        st.rerun()
+                        if create_remove:
+                            path.mkdir(parents=True, exist_ok=True)
+                            st.session_state.workspace = path
+                            st.query_params.workspace = create_remove
+                            # Temporary as the query update takes a short amount of time
+                            time.sleep(1)
+                            st.rerun()
+                        else:
+                            st.warning("Please enter a valid workspace name.")
                     # Remove existing workspace and fall back to default
                     if st.button("⚠️ Delete Workspace"):
                         if path.exists():
@@ -348,8 +385,11 @@ def render_sidebar(page: str = "") -> None:
                 )
             else:
                 st.session_state["spectrum_num_bins"] = 50
-        
-        # Display OpenMS WebApp Template Version from settings.json 
+
+        with st.expander("📊 **Resource Utilization**"):
+            monitor_hardware()
+
+        # Display OpenMS WebApp Template Version from settings.json
         with st.container():
             st.markdown(
                 """
@@ -365,11 +405,14 @@ def render_sidebar(page: str = "") -> None:
                 }
                 </style>
                 """,
-                unsafe_allow_html=True
+                unsafe_allow_html=True,
             )
-            version_info = st.session_state.settings["version"] 
-            app_name = st.session_state.settings["app-name"] 
-            st.markdown(f'<div class="version-box">{app_name}<br>Version: {version_info}</div>', unsafe_allow_html=True)
+            version_info = st.session_state.settings["version"]
+            app_name = st.session_state.settings["app-name"]
+            st.markdown(
+                f'<div class="version-box">{app_name}<br>Version: {version_info}</div>',
+                unsafe_allow_html=True,
+            )
     return params
 
 
@@ -435,8 +478,8 @@ def display_large_dataframe(
     )
 
     rows = event["selection"]["rows"]
-    
-    if st.session_state.settings['test']: # is a test App, return first row as selected
+
+    if st.session_state.settings["test"]:  # is a test App, return first row as selected
         return 1
     elif not rows:
         return None
@@ -445,7 +488,6 @@ def display_large_dataframe(
         base_index = (page - 1) * chunk_size
         print(base_index)
         return base_index + rows[0]
-
 
 
 def show_table(df: pd.DataFrame, download_name: str = "") -> None:
