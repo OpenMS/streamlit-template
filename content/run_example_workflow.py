@@ -4,6 +4,10 @@ from pathlib import Path
 
 from src.common.common import page_setup, save_params
 from src import mzmlfileworkflow
+from rq import Queue
+from redis import Redis
+from src.workflow.mzmlfileworkflowstatus import monitor_mzml_workflow_job_status
+import threading
 
 # Page name "workflow" will show mzML file selector in sidebar
 params = page_setup()
@@ -47,13 +51,17 @@ with st.form("workflow-with-mzML-form"):
 
 result_dir = Path(st.session_state["workspace"], "mzML-workflow-results")
 
+# placeholder to display workflow run progress
+mzml_workflow_status_placeholder = st.empty()
+
 if run_workflow_button:
     params = save_params(params)
     if params["example-workflow-selected-mzML-files"]:
-        mzmlfileworkflow.run_workflow(params, result_dir)
+        queue = Queue('mzml_workflow_run', connection=Redis())
+        job = queue.enqueue(mzmlfileworkflow.run_workflow, params, result_dir, st.session_state["workspace"])
+        monitor_mzml_workflow_job_status(job, mzml_workflow_status_placeholder)
     else:
         st.warning("Select some mzML files.")
-
 
 
 mzmlfileworkflow.result_section(result_dir)

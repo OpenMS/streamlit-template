@@ -259,7 +259,9 @@ jobs:
 
     - name: Create .bat file
       run: |
-          echo " start /min .\python-${{ env.PYTHON_VERSION }}\python -m streamlit run app.py local" > ${{ env.APP_NAME }}.bat
+          echo "start /min .\python-${{ env.PYTHON_VERSION }}\python -m redis-server" > ${{ env.APP_NAME }}.bat
+          echo "start /min .\python-${{ env.PYTHON_VERSION }}\python -m rq worker --with-scheduler -q mzml_workflow_run" >> ${{ env.APP_NAME }}.bat
+          echo " start /min .\python-${{ env.PYTHON_VERSION }}\python -m streamlit run app.py local" >> ${{ env.APP_NAME }}.bat
 
     - name: Create All-in-one executable folder
       run: |

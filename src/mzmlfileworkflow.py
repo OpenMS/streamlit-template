@@ -6,7 +6,7 @@ import time
 from datetime import datetime
 from src.common.common import reset_directory, show_fig, show_table
 import plotly.express as px
-
+from src.workflow.mzmlfileworkflowstatus import log_mzml_workflow_progress
 
 def mzML_file_get_num_spectra(filepath):
     """
@@ -27,8 +27,7 @@ def mzML_file_get_num_spectra(filepath):
     time.sleep(2)
     return exp.size()
 
-
-def run_workflow(params, result_dir):
+def run_workflow(params, result_dir, workspace_path):
     """Load each mzML file into pyOpenMS Experiment and get the number of spectra."""
 
     result_dir = Path(result_dir, datetime.now().strftime("%Y-%m-%d %H_%M_%S"))
@@ -38,29 +37,19 @@ def run_workflow(params, result_dir):
     # collect spectra numbers
     num_spectra = []
 
-    # use st.status to print info while running the workflow
-    with st.status(
-        "Loading mzML files and getting number of spectra...", expanded=True
-    ) as status:
-        # get selected mzML files from parameters
-        for file in params["example-workflow-selected-mzML-files"]:
-            # logging file name in status
-            st.write(f"Reading mzML file: {file} ...")
-
-            # reading mzML file, getting num spectra and adding some extra time
-            num_spectra.append(
-                mzML_file_get_num_spectra(
-                    str(
-                        Path(
-                            st.session_state["workspace"], "mzML-files", file + ".mzML"
-                        )
+    log_mzml_workflow_progress("Loading mzML files and getting number of spectra...")
+    for file in params["example-workflow-selected-mzML-files"]:
+        # reading mzML file, getting num spectra and adding some extra time
+        log_mzml_workflow_progress(f"Reading mzML file: {file} ...")
+        num_spectra.append(
+            mzML_file_get_num_spectra(
+                str(
+                    Path(
+                        workspace_path, "mzML-files", file + ".mzML"
                     )
                 )
             )
-
-        # set status as complete and collapse box
-        status.update(label="Complete!", expanded=False)
-
+        )
     # create and save result dataframe
     df = pd.DataFrame(
         {
