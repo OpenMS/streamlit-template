@@ -1,22 +1,28 @@
 # -*- mode: python ; coding: utf-8 -*-
+from PyInstaller.utils.hooks import collect_submodules, collect_data_files
 
 
 block_cipher = None
 
+hiddenimports = collect_submodules('streamlit') + collect_submodules('PIL') + collect_submodules('captcha') + ["pyexpat"]
+datas = collect_data_files('streamlit') + collect_data_files('captcha')
+datas += [("settings.json", ".")]
+
+datas += [
+    ("./myenv/Lib/site-packages/altair/vegalite/v5/schema/vega-lite-schema.json", "./altair/vegalite/v5/schema/"),
+    ("./myenv/Lib/site-packages/streamlit/static", "./streamlit/static"),
+    ("./myenv/Lib/site-packages/streamlit/runtime", "./streamlit/runtime"),
+    ("./myenv/Lib/site-packages/pyopenms", "./pyopenms/"),
+    ("./myenv/Lib/site-packages/captcha", "./captcha/"),
+    ("./myenv/Lib/site-packages/pyarrow", "./pyarrow/"),
+]
 
 a = Analysis(
     ['run_app.py'],
-    pathex=[],
+    pathex=['.'],
     binaries=[],
-    datas=[
-        ("./myenv/Lib/site-packages/altair/vegalite/v5/schema/vega-lite-schema.json","./altair/vegalite/v5/schema/"),
-        ("./myenv/Lib/site-packages/streamlit/static", "./streamlit/static"),
-        ("./myenv/Lib/site-packages/streamlit/runtime", "./streamlit/runtime"),
-	    ("./myenv/Lib/site-packages/pyopenms", "./pyopenms/"),
-        ("./myenv/Lib/site-packages/captcha", "./captcha/"),
-        ("./myenv/Lib/site-packages/pyarrow", "./pyarrow/"),
-    ],
-    hiddenimports=[],
+    datas=datas,
+    hiddenimports=hiddenimports,
     hookspath=['./hooks'],
     hooksconfig={},
     runtime_hooks=[],

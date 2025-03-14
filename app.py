@@ -1,36 +1,72 @@
+import json
+import asyncio
 import streamlit as st
 from pathlib import Path
-import json
-# For some reason the windows version only works if this is imported here
-import pyopenms
+
+def ensure_event_loop():
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+ensure_event_loop()
+
+def load_settings():
+    settings_path = Path(__file__).parent / "settings.json" 
+    if not settings_path.exists():
+        st.error("⚠️ Error: 'settings.json' is missing! Using default settings.")
+        return {
+            "app-name": "Default App",
+            "version": "1.0.0",
+            "analytics": {"google-analytics": {"enabled": False, "tag": ""}},
+        }
+    with open(settings_path, "r") as f:
+        return json.load(f)
 
 if "settings" not in st.session_state:
-        with open("settings.json", "r") as f:
-            st.session_state.settings = json.load(f)
+    st.session_state.settings = load_settings()
+if "current_page" not in st.session_state:
+    st.session_state.current_page = None
 
-if __name__ == '__main__':
+def main():
     pages = {
-        str(st.session_state.settings["app-name"]) : [
-            st.Page(Path("content", "quickstart.py"), title="Quickstart", icon="👋"),
-            st.Page(Path("content", "documentation.py"), title="Documentation", icon="📖"),
+        str(st.session_state.settings.get("app-name", "My App")): [
+            ("content/quickstart.py", "Quickstart", "👋"),
+            ("content/documentation.py", "Documentation", "📖"),
         ],
         "TOPP Workflow Framework": [
-            st.Page(Path("content", "topp_workflow_file_upload.py"), title="File Upload", icon="📁"),
-            st.Page(Path("content", "topp_workflow_parameter.py"), title="Configure", icon="⚙️"),
-            st.Page(Path("content", "topp_workflow_execution.py"), title="Run", icon="🚀"),
-            st.Page(Path("content", "topp_workflow_results.py"), title="Results", icon="📊"),
+            ("content/topp_workflow_file_upload.py", "File Upload", "📁"),
+            ("content/topp_workflow_parameter.py", "Configure", "⚙️"),
+            ("content/topp_workflow_execution.py", "Run", "🚀"),
+            ("content/topp_workflow_results.py", "Results", "📊"),
         ],
-        "pyOpenMS Workflow" : [
-            st.Page(Path("content", "file_upload.py"), title="File Upload", icon="📂"),
-            st.Page(Path("content", "raw_data_viewer.py"), title="View MS data", icon="👀"),
-            st.Page(Path("content", "run_example_workflow.py"), title="Run Workflow", icon="⚙️"),
-            st.Page(Path("content", "download_section.py"), title="Download Results", icon="⬇️"),
+        "pyOpenMS Workflow": [
+            ("content/file_upload.py", "File Upload", "📂"),
+            ("content/raw_data_viewer.py", "View MS data", "👀"),
+            ("content/run_example_workflow.py", "Run Workflow", "⚙️"),
+            ("content/download_section.py", "Download Results", "⬇️"),
         ],
         "Others Topics": [
-            st.Page(Path("content", "simple_workflow.py"), title="Simple Workflow", icon="⚙️"),
-            st.Page(Path("content", "run_subprocess.py"), title="Run Subprocess", icon="🖥️"),
-        ]
+            ("content/simple_workflow.py", "Simple Workflow", "⚙️"),
+            ("content/run_subprocess.py", "Run Subprocess", "🖥️"),
+        ],
     }
 
-    pg = st.navigation(pages)
-    pg.run()
+    st.sidebar.title("Navigation")
+
+    selected_page = None
+    for category, items in pages.items():
+        with st.sidebar.expander(category, expanded=False):
+            for page_path, page_title, icon in items:
+                if st.sidebar.button(f"{icon} {page_title}", key=page_path):
+                    selected_page = page_path
+
+    if selected_page:
+        st.session_state.current_page = selected_page
+
+    if st.session_state.current_page:
+        st.write(f"Loading page: {st.session_state.current_page}")
+
+if __name__ == "__main__":
+    main()
