@@ -346,6 +346,8 @@ jobs:
         
             <!-- Folder structure -->
             <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
+            <!-- Store workspaces path as empty string which will be later updated in custom action -->
+            <Property Id="WORKSPACES_PATH" />
             <Directory Id="TARGETDIR" Name="SourceDir">
               <Directory Id="ProgramFilesFolder"> 
                 <Directory Id="INSTALLFOLDER" Name="${{ env.APP_NAME }}">
@@ -355,6 +357,14 @@ jobs:
                       <Permission User="Everyone" GenericAll="yes" />
                     </CreateFolder>
                   </Component>
+                  <!-- Create workspaces folder inside installation directory -->
+                  <Directory Id="WORKSPACES_FOLDER" Name="workspaces">
+                    <Component Id="CreateWorkspacesFolder" Guid="0068c3ca-f39f-4f70-adee-43ced04296a1">
+                      <CreateFolder>
+                        <Permission User="Everyone" GenericAll="yes" />
+                      </CreateFolder>
+                    </Component>
+                   </Directory>
                 </Directory>
               </Directory>
               <Directory Id="DesktopFolder" />
@@ -364,6 +374,7 @@ jobs:
             <Feature Id="MainFeature" Title="Main Application" Level="1">
               <ComponentGroupRef Id="StreamlitExeFiles" />
               <ComponentRef Id="CreateAppFolder" />
+              <ComponentRef Id="CreateWorkspacesFolder" />
               <ComponentRef Id="DesktopShortcutComponent" />
               <ComponentRef Id="InstallDirShortcutComponent" />
             </Feature>
@@ -391,6 +402,9 @@ jobs:
             <Binary Id="ShowMessageScript" SourceFile="SourceDir/ShowSuccessMessage.vbs" />
             <CustomAction Id="ShowSuccessMessage" BinaryKey="ShowMessageScript" VBScriptCall="" Execute="immediate" Return="check" />
         
+            <!-- Custom Action to set workspaces path in variable after instlaation -->
+            <CustomAction Id="SetWorkspacesFolderPath" Property="WORKSPACES_PATH" Value="[INSTALLFOLDER]\workspaces" Execute="immediate" />
+
             <!-- Add all Custom Actions -->
             <InstallExecuteSequence>
               <!-- Custom action display success message -->
@@ -401,9 +415,71 @@ jobs:
         
             <!-- Interface options -->
             <UI>
-                  <UIRef Id="WixUI_InstallDir" />
-                  <UIRef Id="WixUI_ErrorProgressText" />
-            </UI> 
+              <TextStyle Id="WixUI_Font_Normal" FaceName="Tahoma" Size="8" />
+              <TextStyle Id="WixUI_Font_Bigger" FaceName="Tahoma" Size="12" />
+              <TextStyle Id="WixUI_Font_Title" FaceName="Tahoma" Size="9" Bold="yes" />
+
+              <Property Id="DefaultUIFont" Value="WixUI_Font_Normal" />
+
+              <Property Id="WixUI_Mode" Value="InstallDir" />
+              <Dialog Id="CustomWorkspacesFolderDlg" Width="370" Height="270" Title="Select Workspaces Folder">
+                <Control Id="WorkspacesFolderPathLabel" Type="Text" X="15" Y="10" Width="340" Height="30" Text="Select the folder to store workspaces:" />
+                <Control Id="WorkspacesFolderPathEdit" Type="PathEdit" X="15" Y="50" Width="300" Height="20" Property="WORKSPACE_PATH" />
+                <Control Id="WorkspacesFolderPathBrowseButton" Type="PushButton" X="320" Y="50" Width="30" Height="20" Text="Browse...">
+                  <Publish Event="SpawnDialog" Value="BrowseDlg" />
+                </Control>
+                <Control Id="WorkspacesFolderPathConfirmButton" Type="PushButton" X="200" Y="200" Width="80" Height="30" Default="yes" Text="Next">
+                  <Publish Event="NewDialog" Value="VerifyReadyDlg" />
+                </Control>
+                <Control Id="WorkspacesFolderPathCancelButton" Type="PushButton" X="290" Y="200" Width="80" Height="30" Cancel="yes" Text="Cancel">
+                  <Publish Event="EndDialog" Value="Exit" />
+                </Control>
+              </Dialog>
+
+              <DialogRef Id="BrowseDlg" />
+              <DialogRef Id="DiskCostDlg" />
+              <DialogRef Id="ErrorDlg" />
+              <DialogRef Id="FatalError" />
+              <DialogRef Id="FilesInUse" />
+              <DialogRef Id="MsiRMFilesInUse" />
+              <DialogRef Id="PrepareDlg" />
+              <DialogRef Id="ProgressDlg" />
+              <DialogRef Id="ResumeDlg" />
+              <DialogRef Id="UserExit" />
+              
+              <Publish Dialog="BrowseDlg" Control="OK" Event="DoAction" Value="WixUIValidatePath" Order="3">1</Publish>
+              <Publish Dialog="BrowseDlg" Control="OK" Event="SpawnDialog" Value="InvalidDirDlg" Order="4"><![CDATA[NOT WIXUI_DONTVALIDATEPATH AND WIXUI_INSTALLDIR_VALID<>"1"]]></Publish>
+
+              <Publish Dialog="ExitDialog" Control="Finish" Event="EndDialog" Value="Return" Order="999">1</Publish>
+
+              <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="CustomWorkspacesFolderDlg">NOT Installed</Publish>
+              <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="CustomWorkspacesFolderDlg">Installed AND PATCH</Publish>
+
+              <Publish Dialog="LicenseAgreementDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg">1</Publish>
+              <Publish Dialog="LicenseAgreementDlg" Control="Next" Event="NewDialog" Value="InstallDirDlg">LicenseAccepted = "1"</Publish>
+
+              <Publish Dialog="InstallDirDlg" Control="Back" Event="NewDialog" Value="LicenseAgreementDlg">1</Publish>
+              <Publish Dialog="InstallDirDlg" Control="Next" Event="SetTargetPath" Value="[WIXUI_INSTALLDIR]" Order="1">1</Publish>
+              <Publish Dialog="InstallDirDlg" Control="Next" Event="DoAction" Value="WixUIValidatePath" Order="2">NOT WIXUI_DONTVALIDATEPATH</Publish>
+              <Publish Dialog="InstallDirDlg" Control="Next" Event="SpawnDialog" Value="InvalidDirDlg" Order="3"><![CDATA[NOT WIXUI_DONTVALIDATEPATH AND WIXUI_INSTALLDIR_VALID<>"1"]]></Publish>
+              <Publish Dialog="InstallDirDlg" Control="Next" Event="NewDialog" Value="VerifyReadyDlg" Order="4">WIXUI_DONTVALIDATEPATH OR WIXUI_INSTALLDIR_VALID="1"</Publish>
+              <Publish Dialog="InstallDirDlg" Control="ChangeFolder" Property="_BrowseProperty" Value="[WIXUI_INSTALLDIR]" Order="1">1</Publish>
+              <Publish Dialog="InstallDirDlg" Control="ChangeFolder" Event="SpawnDialog" Value="BrowseDlg" Order="2">1</Publish>
+              
+              <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="InstallDirDlg" Order="1">NOT Installed</Publish>
+              <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="MaintenanceTypeDlg" Order="2">Installed AND NOT PATCH</Publish>
+              <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg" Order="2">Installed AND PATCH</Publish>
+
+              <Publish Dialog="MaintenanceWelcomeDlg" Control="Next" Event="NewDialog" Value="MaintenanceTypeDlg">1</Publish>
+
+              <Publish Dialog="MaintenanceTypeDlg" Control="RepairButton" Event="NewDialog" Value="VerifyReadyDlg">1</Publish>
+              <Publish Dialog="MaintenanceTypeDlg" Control="RemoveButton" Event="NewDialog" Value="VerifyReadyDlg">1</Publish>
+              <Publish Dialog="MaintenanceTypeDlg" Control="Back" Event="NewDialog" Value="MaintenanceWelcomeDlg">1</Publish>
+
+              <Property Id="ARPNOMODIFY" Value="1" />
+            </UI>
+
+            <UIRef Id="WixUI_Common" />
         
             <!-- Provide license; it should exist in the SourceDir folder -->
             <WixVariable Id="WixUILicenseRtf" Value="SourceDir/openms_license.rtf" />
