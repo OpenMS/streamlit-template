@@ -7,14 +7,39 @@ import time
 from typing import Any
 from pathlib import Path
 from streamlit.components.v1 import html
-import plotly.io as pio
-import matplotlib.pyplot as plt
-from bokeh.themes import Theme
-from bokeh.io import curdoc
+
+# Optional plotting package imports
+try:
+    import plotly.io as pio
+
+    PLOTLY_AVAILABLE = True
+except ImportError:
+    PLOTLY_AVAILABLE = False
+
+try:
+    import matplotlib.pyplot as plt
+
+    MPL_AVAILABLE = True
+except ImportError:
+    MPL_AVAILABLE = False
+
+try:
+    from bokeh.themes import Theme
+    from bokeh.io import curdoc
+
+    BOKEH_AVAILABLE = True
+except ImportError:
+    BOKEH_AVAILABLE = False
 
 import streamlit as st
 import pandas as pd
-import psutil
+
+try:
+    import psutil
+
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    PSUTIL_AVAILABLE = False
 
 try:
     from tkinter import Tk, filedialog
@@ -31,6 +56,10 @@ OS_PLATFORM = sys.platform
 
 @st.fragment(run_every=5)
 def monitor_hardware():
+    if not PSUTIL_AVAILABLE:
+        st.warning("psutil package not installed. Resource monitoring is disabled.")
+        return
+
     cpu_progress = psutil.cpu_percent(interval=None) / 100
     ram_progress = 1 - psutil.virtual_memory().available / psutil.virtual_memory().total
 
@@ -543,136 +572,139 @@ def configure_plot_theme():
     else:
         theme_mode = st.session_state.plot_theme
 
-    if theme_mode == "light":
-        # Light theme settings
-        plt.style.use("default")  # Reset to default style
-        plt.rcParams.update(
-            {
-                # Figure
-                "figure.facecolor": "white",
-                "figure.edgecolor": "white",
-                # Axes
-                "axes.facecolor": "white",
-                "axes.edgecolor": "black",
-                "axes.labelcolor": "black",
-                "axes.prop_cycle": plt.cycler(
-                    "color",
-                    [
-                        "#1f77b4",
-                        "#ff7f0e",
-                        "#2ca02c",
-                        "#d62728",
-                        "#9467bd",
-                        "#8c564b",
-                        "#e377c2",
-                        "#7f7f7f",
-                        "#bcbd22",
-                        "#17becf",
-                    ],
-                ),
-                # Grid
-                "grid.color": "lightgray",
-                "grid.linestyle": "--",
-                "grid.alpha": 0.5,
-                # Ticks
-                "xtick.color": "black",
-                "ytick.color": "black",
-                # Text
-                "text.color": "black",
-            }
-        )
-        # Configure plotly with light theme
-        pio.templates.default = "plotly_white"
-        # Configure bokeh with light theme
-        bokeh_theme = {
-            "attrs": {
-                "figure": {
-                    "background_fill_color": "#ffffff",
-                    "border_fill_color": "#ffffff",
-                    "outline_line_color": "#000000",
-                },
-                "Axis": {
-                    "axis_line_color": "#000000",
-                    "axis_label_text_color": "#000000",
-                    "major_label_text_color": "#000000",
-                    "major_tick_line_color": "#000000",
-                    "minor_tick_line_color": "#000000",
-                },
-                "Grid": {
-                    "grid_line_color": "#e0e0e0",
-                    "grid_line_dash": [6, 4],
-                    "grid_line_alpha": 0.3,
-                },
-                "Title": {"text_color": "#000000"},
-            }
-        }
-    else:
-        # Dark theme settings
-        plt.style.use("dark_background")
-        plt.rcParams.update(
-            {
-                # Figure
-                "figure.facecolor": "#0E1117",
-                "figure.edgecolor": "#0E1117",
-                # Axes
-                "axes.facecolor": "#0E1117",
-                "axes.edgecolor": "#FFFFFF",  # Brighter white for better contrast
-                "axes.labelcolor": "#FFFFFF",  # Brighter white for better contrast
-                "axes.prop_cycle": plt.cycler(
-                    "color",
-                    [
-                        "#00B5F7",  # Brighter blue
-                        "#FF9E44",  # Brighter orange
-                        "#4DFA6F",  # Brighter green
-                        "#FF4B4B",  # Brighter red
-                        "#C78FFF",  # Brighter purple
-                        "#FF8F8F",  # Brighter brown
-                        "#FF70D2",  # Brighter pink
-                        "#E0E0E0",  # Brighter gray
-                        "#EBEF53",  # Brighter yellow
-                        "#24E7E7",  # Brighter cyan
-                    ],
-                ),
-                # Grid
-                "grid.color": "#555555",  # Slightly brighter grid for better visibility
-                "grid.linestyle": "--",
-                "grid.alpha": 0.6,  # Increased alpha for better visibility
-                # Ticks
-                "xtick.color": "#FFFFFF",  # Brighter white for better contrast
-                "ytick.color": "#FFFFFF",  # Brighter white for better contrast
-                # Text
-                "text.color": "#FFFFFF",  # Brighter white for better contrast
-            }
-        )
-        # Configure plotly with dark theme
-        pio.templates.default = "plotly_dark"
-        # Configure bokeh with dark theme
-        bokeh_theme = {
-            "attrs": {
-                "figure": {
-                    "background_fill_color": "#0E1117",
-                    "border_fill_color": "#0E1117",
-                    "outline_line_color": "#FFFFFF",  # Brighter white for better contrast
-                },
-                "Axis": {
-                    "axis_line_color": "#FFFFFF",  # Brighter white for better contrast
-                    "axis_label_text_color": "#FFFFFF",  # Brighter white for better contrast
-                    "major_label_text_color": "#FFFFFF",  # Brighter white for better contrast
-                    "major_tick_line_color": "#FFFFFF",  # Brighter white for better contrast
-                    "minor_tick_line_color": "#FFFFFF",  # Brighter white for better contrast
-                },
-                "Grid": {
-                    "grid_line_color": "#555555",  # Slightly brighter grid
-                    "grid_line_dash": [6, 4],
-                    "grid_line_alpha": 0.4,  # Increased alpha for better visibility
-                },
-                "Title": {
-                    "text_color": "#FFFFFF"  # Brighter white for better contrast
-                },
-            }
-        }
+    if MPL_AVAILABLE:
+        if theme_mode == "light":
+            plt.style.use("default")  # Reset to default style
+            plt.rcParams.update(
+                {
+                    # Figure
+                    "figure.facecolor": "white",
+                    "figure.edgecolor": "white",
+                    # Axes
+                    "axes.facecolor": "white",
+                    "axes.edgecolor": "black",
+                    "axes.labelcolor": "black",
+                    "axes.prop_cycle": plt.cycler(
+                        "color",
+                        [
+                            "#1f77b4",
+                            "#ff7f0e",
+                            "#2ca02c",
+                            "#d62728",
+                            "#9467bd",
+                            "#8c564b",
+                            "#e377c2",
+                            "#7f7f7f",
+                            "#bcbd22",
+                            "#17becf",
+                        ],
+                    ),
+                    # Grid
+                    "grid.color": "lightgray",
+                    "grid.linestyle": "--",
+                    "grid.alpha": 0.5,
+                    # Ticks
+                    "xtick.color": "black",
+                    "ytick.color": "black",
+                    # Text
+                    "text.color": "black",
+                }
+            )
+        else:
+            plt.style.use("dark_background")
+            plt.rcParams.update(
+                {
+                    # Figure
+                    "figure.facecolor": "#0E1117",
+                    "figure.edgecolor": "#0E1117",
+                    # Axes
+                    "axes.facecolor": "#0E1117",
+                    "axes.edgecolor": "#FFFFFF",  # Brighter white for better contrast
+                    "axes.labelcolor": "#FFFFFF",  # Brighter white for better contrast
+                    "axes.prop_cycle": plt.cycler(
+                        "color",
+                        [
+                            "#00B5F7",  # Brighter blue
+                            "#FF9E44",  # Brighter orange
+                            "#4DFA6F",  # Brighter green
+                            "#FF4B4B",  # Brighter red
+                            "#C78FFF",  # Brighter purple
+                            "#FF8F8F",  # Brighter brown
+                            "#FF70D2",  # Brighter pink
+                            "#E0E0E0",  # Brighter gray
+                            "#EBEF53",  # Brighter yellow
+                            "#24E7E7",  # Brighter cyan
+                        ],
+                    ),
+                    # Grid
+                    "grid.color": "#555555",  # Slightly brighter grid for better visibility
+                    "grid.linestyle": "--",
+                    "grid.alpha": 0.6,  # Increased alpha for better visibility
+                    # Ticks
+                    "xtick.color": "#FFFFFF",  # Brighter white for better contrast
+                    "ytick.color": "#FFFFFF",  # Brighter white for better contrast
+                    # Text
+                    "text.color": "#FFFFFF",  # Brighter white for better contrast
+                }
+            )
 
-    curdoc().theme = Theme(json=bokeh_theme)
+    if PLOTLY_AVAILABLE:
+        # Configure plotly with theme
+        pio.templates.default = (
+            "plotly_white" if theme_mode == "light" else "plotly_dark"
+        )
+
+    if BOKEH_AVAILABLE:
+        # Configure bokeh with theme
+        if theme_mode == "light":
+            bokeh_theme = {
+                "attrs": {
+                    "figure": {
+                        "background_fill_color": "#ffffff",
+                        "border_fill_color": "#ffffff",
+                        "outline_line_color": "#000000",
+                    },
+                    "Axis": {
+                        "axis_line_color": "#000000",
+                        "axis_label_text_color": "#000000",
+                        "major_label_text_color": "#000000",
+                        "major_tick_line_color": "#000000",
+                        "minor_tick_line_color": "#000000",
+                    },
+                    "Grid": {
+                        "grid_line_color": "#e0e0e0",
+                        "grid_line_dash": [6, 4],
+                        "grid_line_alpha": 0.3,
+                    },
+                    "Title": {"text_color": "#000000"},
+                }
+            }
+        else:
+            bokeh_theme = {
+                "attrs": {
+                    "figure": {
+                        "background_fill_color": "#0E1117",
+                        "border_fill_color": "#0E1117",
+                        "outline_line_color": "#FFFFFF",  # Brighter white for better contrast
+                    },
+                    "Axis": {
+                        "axis_line_color": "#FFFFFF",  # Brighter white for better contrast
+                        "axis_label_text_color": "#FFFFFF",  # Brighter white for better contrast
+                        "major_label_text_color": "#FFFFFF",  # Brighter white for better contrast
+                        "major_tick_line_color": "#FFFFFF",  # Brighter white for better contrast
+                        "minor_tick_line_color": "#FFFFFF",  # Brighter white for better contrast
+                    },
+                    "Grid": {
+                        "grid_line_color": "#555555",  # Slightly brighter grid
+                        "grid_line_dash": [6, 4],
+                        "grid_line_alpha": 0.4,  # Increased alpha for better visibility
+                    },
+                    "Title": {
+                        "text_color": "#FFFFFF"  # Brighter white for better contrast
+                    },
+                }
+            }
+        curdoc().theme = Theme(json=bokeh_theme)
 
 
 def show_fig(
