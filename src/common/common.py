@@ -56,6 +56,7 @@ OS_PLATFORM = sys.platform
 
 @st.fragment(run_every=5)
 def monitor_hardware():
+    """Display system resource utilization."""
     if not PSUTIL_AVAILABLE:
         st.warning("psutil package not installed. Resource monitoring is disabled.")
         return
@@ -162,7 +163,7 @@ def page_setup(page: str = "") -> dict[str, Any]:
         with open("settings.json", "r") as f:
             st.session_state.settings = json.load(f)
 
-    # Set Streamlit page configurations
+    # Set Streamlit page configurations first - must be the first Streamlit command
     st.set_page_config(
         page_title=st.session_state.settings["app-name"],
         page_icon="assets/openms_transparent_bg_logo.svg",
@@ -306,12 +307,6 @@ def page_setup(page: str = "") -> dict[str, Any]:
     captcha_control()
 
     # If run in hosted mode, show captcha as long as it has not been solved
-    # if not "local" in sys.argv:
-    #    if "controllo" not in st.session_state:
-    #        # Apply captcha by calling the captcha_control function
-    #        captcha_control()
-
-    # If run in hosted mode, show captcha as long as it has not been solved
     if "controllo" not in st.session_state or (
         "controllo" in params.keys() and params["controllo"] == False
     ):
@@ -403,17 +398,187 @@ def render_sidebar(page: str = "") -> None:
 
         # All pages have settings, workflow indicator and logo
         with st.expander("⚙️ **Settings**"):
-            # Theme settings
-            st.markdown("## Theme Settings")
+            # Application Theme settings
+            st.markdown("## Application Theme")
+            theme_options = ["light", "dark"]
+
+            # Get current theme from config.toml
+            config_path = ".streamlit/config.toml"
+            with open(config_path, "r") as f:
+                config_content = f.read()
+                current_theme = "light"  # default to light
+                if 'base = "dark"' in config_content:
+                    current_theme = "dark"
+                elif 'base = "light"' in config_content:
+                    current_theme = "light"
+
+            selected_theme = st.selectbox(
+                "Theme Mode",
+                options=theme_options,
+                index=theme_options.index(current_theme),
+                key="app_theme_selector",
+            )
+
+            # Update theme if changed
+            if selected_theme != current_theme:
+                # Show a message that theme is changing
+                with st.spinner(f"Changing theme to {selected_theme}..."):
+                    # Apply immediate visual feedback for the current session
+                    if selected_theme == "dark":
+                        # Apply dark theme CSS immediately
+                        st.markdown(
+                            """
+                            <style>
+                                body {
+                                    color: #FAFAFA !important;
+                                    background-color: #0E1117 !important;
+                                }
+                                .stApp {
+                                    background-color: #0E1117 !important;
+                                }
+                                [data-testid="stSidebar"] {
+                                    background-color: #262730 !important;
+                                }
+                                .stMarkdown, .stText, h1, h2, h3, h4, h5, h6, p {
+                                    color: #FAFAFA !important;
+                                }
+                                button, [data-baseweb="select"] {
+                                    background-color: #262730 !important;
+                                }
+                                .stButton>button {
+                                    color: #FAFAFA !important;
+                                    background-color: #262730 !important;
+                                    border-color: #4F4F4F !important;
+                                }
+                                .stTextInput>div>div>input {
+                                    color: #FAFAFA !important;
+                                    background-color: #262730 !important;
+                                }
+                            </style>
+                            """,
+                            unsafe_allow_html=True,
+                        )
+                    else:
+                        # Apply light theme CSS immediately
+                        st.markdown(
+                            """
+                            <style>
+                                body {
+                                    color: #262730 !important;
+                                    background-color: #FFFFFF !important;
+                                }
+                                .stApp {
+                                    background-color: #FFFFFF !important;
+                                }
+                                [data-testid="stSidebar"] {
+                                    background-color: #F0F2F6 !important;
+                                }
+                                .stMarkdown, .stText, h1, h2, h3, h4, h5, h6, p {
+                                    color: #262730 !important;
+                                }
+                                button, [data-baseweb="select"] {
+                                    background-color: #F0F2F6 !important;
+                                }
+                                .stButton>button {
+                                    color: #262730 !important;
+                                    background-color: #F0F2F6 !important;
+                                    border-color: #CCCCCC !important;
+                                }
+                                .stTextInput>div>div>input {
+                                    color: #262730 !important;
+                                    background-color: #F0F2F6 !important;
+                                }
+                            </style>
+                            """,
+                            unsafe_allow_html=True,
+                        )
+
+                    # Update the config.toml file
+                    with open(config_path, "r") as f:
+                        config_lines = f.readlines()
+
+                    # Update the theme configuration
+                    in_theme_section = False
+                    theme_updated = False
+
+                    # First update the base theme
+                    for i, line in enumerate(config_lines):
+                        if "[theme]" in line:
+                            in_theme_section = True
+                        elif in_theme_section and line.strip().startswith("base"):
+                            config_lines[i] = f'base = "{selected_theme}"\n'
+                            theme_updated = True
+                            break
+
+                    # If theme section not found, add it
+                    if not theme_updated:
+                        config_lines.append("\n[theme]\n")
+                        config_lines.append(f'base = "{selected_theme}"\n')
+
+                    # Now update the theme colors based on the selected theme
+                    if selected_theme == "dark":
+                        # Update colors for dark theme
+                        dark_theme_colors = {
+                            "primaryColor": "#29379b",
+                            "backgroundColor": "#0E1117",
+                            "secondaryBackgroundColor": "#262730",
+                            "textColor": "#FAFAFA",
+                        }
+
+                        # Update each color in the config
+                        for i, line in enumerate(config_lines):
+                            for color_key, color_value in dark_theme_colors.items():
+                                if line.strip().startswith(color_key):
+                                    config_lines[i] = f'{color_key} = "{color_value}"\n'
+                    else:
+                        # Update colors for light theme
+                        light_theme_colors = {
+                            "primaryColor": "#29379b",
+                            "backgroundColor": "#FFFFFF",
+                            "secondaryBackgroundColor": "#F0F2F6",
+                            "textColor": "#262730",
+                        }
+
+                        # Update each color in the config
+                        for i, line in enumerate(config_lines):
+                            for color_key, color_value in light_theme_colors.items():
+                                if line.strip().startswith(color_key):
+                                    config_lines[i] = f'{color_key} = "{color_value}"\n'
+
+                    # Write the updated config
+                    with open(config_path, "w") as f:
+                        f.writelines(config_lines)
+
+                    # Add a small delay to ensure the spinner is visible
+                    time.sleep(0.5)
+
+                # Show a success message
+                st.success(f"Theme changed to {selected_theme}. Refreshing...")
+
+                # Force reload to apply theme change
+                time.sleep(0.5)  # Give user time to see the success message
+                st.rerun()
+
+            # Plot Theme settings
+            st.markdown("## Plot Theme")
             if "plot_theme" not in st.session_state:
-                st.session_state.plot_theme = "system"
-            theme_options = ["system", "light", "dark"]
+                # Get current theme from config.toml for plot theme default
+                with open(config_path, "r") as f:
+                    config_content = f.read()
+                    default_plot_theme = "light"  # default to light
+                    if 'base = "dark"' in config_content:
+                        default_plot_theme = "dark"
+                    elif 'base = "light"' in config_content:
+                        default_plot_theme = "light"
+                st.session_state.plot_theme = default_plot_theme
+
+            theme_options = ["light", "dark"]
             st.selectbox(
                 "Plot Theme",
                 theme_options,
                 index=theme_options.index(st.session_state.plot_theme),
                 key="plot_theme",
-                help="Choose plot theme: 'system' follows Streamlit's theme, 'light' or 'dark' forces that theme",
+                help="Choose between light and dark theme for plots",
             )
 
             # Image format settings
@@ -566,145 +731,66 @@ def show_table(df: pd.DataFrame, download_name: str = "") -> None:
 
 def configure_plot_theme():
     """Configure plot themes based on Streamlit's theme."""
-    # Get the current theme based on user preference or system setting
-    if st.session_state.plot_theme == "system":
-        theme_mode = "light" if st.get_option("theme.base") == "light" else "dark"
-    else:
-        theme_mode = st.session_state.plot_theme
+    # Get the current theme based on user preference
+    theme_mode = st.session_state.plot_theme
 
     if MPL_AVAILABLE:
         if theme_mode == "light":
-            plt.style.use("default")  # Reset to default style
-            plt.rcParams.update(
-                {
-                    # Figure
-                    "figure.facecolor": "white",
-                    "figure.edgecolor": "white",
-                    # Axes
-                    "axes.facecolor": "white",
-                    "axes.edgecolor": "black",
-                    "axes.labelcolor": "black",
-                    "axes.prop_cycle": plt.cycler(
-                        "color",
-                        [
-                            "#1f77b4",
-                            "#ff7f0e",
-                            "#2ca02c",
-                            "#d62728",
-                            "#9467bd",
-                            "#8c564b",
-                            "#e377c2",
-                            "#7f7f7f",
-                            "#bcbd22",
-                            "#17becf",
-                        ],
-                    ),
-                    # Grid
-                    "grid.color": "lightgray",
-                    "grid.linestyle": "--",
-                    "grid.alpha": 0.5,
-                    # Ticks
-                    "xtick.color": "black",
-                    "ytick.color": "black",
-                    # Text
-                    "text.color": "black",
-                }
-            )
+            # Use default style for light theme
+            plt.style.use("default")
         else:
+            # Use dark_background style for dark theme
             plt.style.use("dark_background")
-            plt.rcParams.update(
-                {
-                    # Figure
-                    "figure.facecolor": "#0E1117",
-                    "figure.edgecolor": "#0E1117",
-                    # Axes
-                    "axes.facecolor": "#0E1117",
-                    "axes.edgecolor": "#FFFFFF",  # Brighter white for better contrast
-                    "axes.labelcolor": "#FFFFFF",  # Brighter white for better contrast
-                    "axes.prop_cycle": plt.cycler(
-                        "color",
-                        [
-                            "#00B5F7",  # Brighter blue
-                            "#FF9E44",  # Brighter orange
-                            "#4DFA6F",  # Brighter green
-                            "#FF4B4B",  # Brighter red
-                            "#C78FFF",  # Brighter purple
-                            "#FF8F8F",  # Brighter brown
-                            "#FF70D2",  # Brighter pink
-                            "#E0E0E0",  # Brighter gray
-                            "#EBEF53",  # Brighter yellow
-                            "#24E7E7",  # Brighter cyan
-                        ],
-                    ),
-                    # Grid
-                    "grid.color": "#555555",  # Slightly brighter grid for better visibility
-                    "grid.linestyle": "--",
-                    "grid.alpha": 0.6,  # Increased alpha for better visibility
-                    # Ticks
-                    "xtick.color": "#FFFFFF",  # Brighter white for better contrast
-                    "ytick.color": "#FFFFFF",  # Brighter white for better contrast
-                    # Text
-                    "text.color": "#FFFFFF",  # Brighter white for better contrast
-                }
-            )
 
     if PLOTLY_AVAILABLE:
-        # Configure plotly with theme
-        pio.templates.default = (
-            "plotly_white" if theme_mode == "light" else "plotly_dark"
-        )
+        if theme_mode == "light":
+            # Use Plotly's seaborn theme for light mode
+            pio.templates.default = "seaborn"
+        else:
+            # Use Plotly's dark theme
+            pio.templates.default = "plotly_dark"
 
     if BOKEH_AVAILABLE:
-        # Configure bokeh with theme
         if theme_mode == "light":
-            bokeh_theme = {
+            # Light theme configuration
+            theme_json = {
                 "attrs": {
                     "figure": {
-                        "background_fill_color": "#ffffff",
-                        "border_fill_color": "#ffffff",
-                        "outline_line_color": "#000000",
+                        "background_fill_color": "#FFFFFF",
+                        "border_fill_color": "#FFFFFF",
+                        "outline_line_color": "#E5E5E5",
                     },
+                    "Grid": {"grid_line_color": "#E5E5E5"},
                     "Axis": {
-                        "axis_line_color": "#000000",
-                        "axis_label_text_color": "#000000",
-                        "major_label_text_color": "#000000",
-                        "major_tick_line_color": "#000000",
-                        "minor_tick_line_color": "#000000",
+                        "axis_line_color": "#E5E5E5",
+                        "axis_label_text_color": "#262730",
+                        "major_label_text_color": "#262730",
+                        "major_tick_line_color": "#262730",
                     },
-                    "Grid": {
-                        "grid_line_color": "#e0e0e0",
-                        "grid_line_dash": [6, 4],
-                        "grid_line_alpha": 0.3,
-                    },
-                    "Title": {"text_color": "#000000"},
+                    "Title": {"text_color": "#262730"},
                 }
             }
         else:
-            bokeh_theme = {
+            # Dark theme configuration
+            theme_json = {
                 "attrs": {
                     "figure": {
                         "background_fill_color": "#0E1117",
                         "border_fill_color": "#0E1117",
-                        "outline_line_color": "#FFFFFF",  # Brighter white for better contrast
+                        "outline_line_color": "#2F2F2F",
                     },
+                    "Grid": {"grid_line_color": "#2F2F2F"},
                     "Axis": {
-                        "axis_line_color": "#FFFFFF",  # Brighter white for better contrast
-                        "axis_label_text_color": "#FFFFFF",  # Brighter white for better contrast
-                        "major_label_text_color": "#FFFFFF",  # Brighter white for better contrast
-                        "major_tick_line_color": "#FFFFFF",  # Brighter white for better contrast
-                        "minor_tick_line_color": "#FFFFFF",  # Brighter white for better contrast
+                        "axis_line_color": "#2F2F2F",
+                        "axis_label_text_color": "#FFFFFF",
+                        "major_label_text_color": "#FFFFFF",
+                        "major_tick_line_color": "#FFFFFF",
                     },
-                    "Grid": {
-                        "grid_line_color": "#555555",  # Slightly brighter grid
-                        "grid_line_dash": [6, 4],
-                        "grid_line_alpha": 0.4,  # Increased alpha for better visibility
-                    },
-                    "Title": {
-                        "text_color": "#FFFFFF"  # Brighter white for better contrast
-                    },
+                    "Title": {"text_color": "#FFFFFF"},
                 }
             }
-        curdoc().theme = Theme(json=bokeh_theme)
+        theme = Theme(json=theme_json)
+        curdoc().theme = theme
 
 
 def show_fig(
@@ -728,11 +814,8 @@ def show_fig(
     # Configure plot theme before displaying
     configure_plot_theme()
 
-    # Get current theme based on user preference or system setting
-    if st.session_state.plot_theme == "system":
-        theme_mode = "light" if st.get_option("theme.base") == "light" else "dark"
-    else:
-        theme_mode = st.session_state.plot_theme
+    # Get current theme based on plot theme setting
+    theme_mode = st.session_state.plot_theme
 
     # Update Plotly figure layout based on theme
     if hasattr(fig, "update_layout"):
@@ -772,9 +855,7 @@ def show_fig(
                     linecolor="#FFFFFF",  # Brighter white for better contrast
                     linewidth=1,
                     ticks="outside",
-                    tickfont=dict(
-                        color="#FFFFFF"
-                    ),  # Brighter white for better contrast
+                    tickfont=dict(color="#FFFFFF"),
                 ),
                 yaxis=dict(
                     gridcolor="#555555",  # Slightly brighter grid
@@ -783,9 +864,7 @@ def show_fig(
                     linecolor="#FFFFFF",  # Brighter white for better contrast
                     linewidth=1,
                     ticks="outside",
-                    tickfont=dict(
-                        color="#FFFFFF"
-                    ),  # Brighter white for better contrast
+                    tickfont=dict(color="#FFFFFF"),
                 ),
             )
 

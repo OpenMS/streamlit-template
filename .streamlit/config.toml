@@ -5,9 +5,7 @@ developmentMode = false
 port = 8501 # should be same as configured in deployment repo
 
 [theme]
-# Force light mode and prevent system defaults
 base = "light"
-
 # Primary accent color for interactive elements.
 primaryColor = "#29379b"
 
