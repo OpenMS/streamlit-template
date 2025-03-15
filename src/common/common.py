@@ -307,6 +307,12 @@ def page_setup(page: str = "") -> dict[str, Any]:
     captcha_control()
 
     # If run in hosted mode, show captcha as long as it has not been solved
+    # if not "local" in sys.argv:
+    #    if "controllo" not in st.session_state:
+    #        # Apply captcha by calling the captcha_control function
+    #        captcha_control()
+
+    # If run in hosted mode, show captcha as long as it has not been solved
     if "controllo" not in st.session_state or (
         "controllo" in params.keys() and params["controllo"] == False
     ):
@@ -561,16 +567,16 @@ def render_sidebar(page: str = "") -> None:
 
             # Plot Theme settings
             st.markdown("## Plot Theme")
+
+            # Initialize plot_theme only if it doesn't exist in session state
             if "plot_theme" not in st.session_state:
                 # Get current theme from config.toml for plot theme default
                 with open(config_path, "r") as f:
                     config_content = f.read()
-                    default_plot_theme = "light"  # default to light
                     if 'base = "dark"' in config_content:
-                        default_plot_theme = "dark"
-                    elif 'base = "light"' in config_content:
-                        default_plot_theme = "light"
-                st.session_state.plot_theme = default_plot_theme
+                        st.session_state.plot_theme = "dark"
+                    else:
+                        st.session_state.plot_theme = "light"
 
             theme_options = ["light", "dark"]
             st.selectbox(
@@ -752,45 +758,11 @@ def configure_plot_theme():
 
     if BOKEH_AVAILABLE:
         if theme_mode == "light":
-            # Light theme configuration
-            theme_json = {
-                "attrs": {
-                    "figure": {
-                        "background_fill_color": "#FFFFFF",
-                        "border_fill_color": "#FFFFFF",
-                        "outline_line_color": "#E5E5E5",
-                    },
-                    "Grid": {"grid_line_color": "#E5E5E5"},
-                    "Axis": {
-                        "axis_line_color": "#E5E5E5",
-                        "axis_label_text_color": "#262730",
-                        "major_label_text_color": "#262730",
-                        "major_tick_line_color": "#262730",
-                    },
-                    "Title": {"text_color": "#262730"},
-                }
-            }
+            # Use Bokeh's built-in light_minimal theme
+            curdoc().theme = "light_minimal"
         else:
-            # Dark theme configuration
-            theme_json = {
-                "attrs": {
-                    "figure": {
-                        "background_fill_color": "#0E1117",
-                        "border_fill_color": "#0E1117",
-                        "outline_line_color": "#2F2F2F",
-                    },
-                    "Grid": {"grid_line_color": "#2F2F2F"},
-                    "Axis": {
-                        "axis_line_color": "#2F2F2F",
-                        "axis_label_text_color": "#FFFFFF",
-                        "major_label_text_color": "#FFFFFF",
-                        "major_tick_line_color": "#FFFFFF",
-                    },
-                    "Title": {"text_color": "#FFFFFF"},
-                }
-            }
-        theme = Theme(json=theme_json)
-        curdoc().theme = theme
+            # Use Bokeh's built-in dark_minimal theme
+            curdoc().theme = "dark_minimal"
 
 
 def show_fig(
