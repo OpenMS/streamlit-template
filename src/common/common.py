@@ -32,7 +32,35 @@ except ImportError:
     BOKEH_AVAILABLE = False
 
 import streamlit as st
-import pandas as pd
+
+# Optional pandas import
+try:
+    import pandas as pd
+
+    PANDAS_AVAILABLE = True
+except ImportError:
+    PANDAS_AVAILABLE = False
+
+    # Create a minimal DataFrame substitute if pandas is not available
+    class DataFrameSubstitute:
+        def __init__(self, data=None):
+            self.data = data if data is not None else []
+
+        def to_csv(self, *args, **kwargs):
+            return ""
+
+        def __len__(self):
+            return len(self.data)
+
+        def iloc(self, *args, **kwargs):
+            return self
+
+    # Create a minimal pandas substitute
+    class PandasSubstitute:
+        def DataFrame(self, *args, **kwargs):
+            return DataFrameSubstitute()
+
+    pd = PandasSubstitute()
 
 try:
     import psutil
@@ -61,16 +89,22 @@ def monitor_hardware():
         st.warning("psutil package not installed. Resource monitoring is disabled.")
         return
 
-    cpu_progress = psutil.cpu_percent(interval=None) / 100
-    ram_progress = 1 - psutil.virtual_memory().available / psutil.virtual_memory().total
+    try:
+        cpu_progress = psutil.cpu_percent(interval=None) / 100
+        ram_progress = (
+            1 - psutil.virtual_memory().available / psutil.virtual_memory().total
+        )
 
-    st.text(f"Ram ({ram_progress * 100:.2f}%)")
-    st.progress(ram_progress)
+        st.text(f"Ram ({ram_progress * 100:.2f}%)")
+        st.progress(ram_progress)
 
-    st.text(f"CPU ({cpu_progress * 100:.2f}%)")
-    st.progress(cpu_progress)
+        st.text(f"CPU ({cpu_progress * 100:.2f}%)")
+        st.progress(cpu_progress)
 
-    st.caption(f"Last fetched at: {time.strftime('%H:%M:%S')}")
+        st.caption(f"Last fetched at: {time.strftime('%H:%M:%S')}")
+    except Exception as e:
+        st.warning(f"Error monitoring hardware: {e}")
+        return
 
 
 def load_params(default: bool = False) -> dict[str, Any]:
@@ -678,6 +712,10 @@ def display_large_dataframe(
     Returns:
         Index of selected row.
     """
+    if not PANDAS_AVAILABLE:
+        st.warning("pandas package not installed. DataFrame display is limited.")
+        st.write(df)
+        return None
 
     # Dropdown for selecting chunk size
     chunk_size = st.selectbox("Select Number of Rows to Display", chunk_sizes)
@@ -699,25 +737,34 @@ def display_large_dataframe(
         return df.iloc[start:end], start, end
 
     # Display the current chunk
-    current_chunk_df, start_row, end_row = get_current_chunk(df, chunk_size, page - 1)
+    try:
+        current_chunk_df, start_row, end_row = get_current_chunk(
+            df, chunk_size, page - 1
+        )
 
-    event = st.dataframe(current_chunk_df, **kwargs)
+        event = st.dataframe(current_chunk_df, **kwargs)
 
-    st.write(
-        f"Showing rows {start_row + 1} to {end_row} of {len(df)} ({get_dataframe_mem_useage(current_chunk_df):.2f} MB)"
-    )
+        st.write(
+            f"Showing rows {start_row + 1} to {end_row} of {len(df)} ({get_dataframe_mem_useage(current_chunk_df):.2f} MB)"
+        )
 
-    rows = event["selection"]["rows"]
+        rows = event["selection"]["rows"]
 
-    if st.session_state.settings["test"]:  # is a test App, return first row as selected
-        return 1
-    elif not rows:
+        if st.session_state.settings[
+            "test"
+        ]:  # is a test App, return first row as selected
+            return 1
+        elif not rows:
+            return None
+        else:
+            # Calculate the index based on the current page and chunk size
+            base_index = (page - 1) * chunk_size
+            print(base_index)
+            return base_index + rows[0]
+    except Exception as e:
+        st.warning(f"Error displaying DataFrame: {e}")
+        st.write(df)
         return None
-    else:
-        # Calculate the index based on the current page and chunk size
-        base_index = (page - 1) * chunk_size
-        print(base_index)
-        return base_index + rows[0]
 
 
 def show_table(df: pd.DataFrame, download_name: str = "") -> None:
@@ -732,46 +779,74 @@ def show_table(df: pd.DataFrame, download_name: str = "") -> None:
     Returns:
         df (pd.DataFrame): The possibly edited dataframe.
     """
-    # Show dataframe using container width
-    st.dataframe(df, use_container_width=True)
-    # Show download button with the given download name for the table if name is given
-    if download_name:
-        st.download_button(
-            "Download Table",
-            df.to_csv(sep="\t").encode("utf-8"),
-            download_name.replace(" ", "-") + ".tsv",
-        )
-    return df
+    if not PANDAS_AVAILABLE:
+        st.warning("pandas package not installed. Table display is limited.")
+        st.write(df)
+        return df
+
+    try:
+        # Show dataframe using container width
+        st.dataframe(df, use_container_width=True)
+        # Show download button with the given download name for the table if name is given
+        if download_name:
+            st.download_button(
+                "Download Table",
+                df.to_csv(sep="\t").encode("utf-8"),
+                download_name.replace(" ", "-") + ".tsv",
+            )
+        return df
+    except Exception as e:
+        st.warning(f"Error displaying table: {e}")
+        st.write(df)
+        return df
 
 
 def configure_plot_theme():
     """Configure plot themes based on Streamlit's theme."""
-    # Get the current theme based on user preference
-    theme_mode = st.session_state["plot_theme"]  # Use dictionary syntax
+    # Get the current app theme
+    app_theme = "light" if st.get_option("theme.base") == "light" else "dark"
 
+    # Initialize plot_theme if not set
+    if "plot_theme" not in st.session_state:
+        st.session_state.plot_theme = "system"
+
+    # Determine which theme to use
+    theme_to_use = st.session_state.plot_theme
+
+    # If system theme is selected, use the app theme
+    if theme_to_use == "system":
+        theme_to_use = app_theme
+
+    # Configure matplotlib if available
     if MPL_AVAILABLE:
-        if theme_mode == "light":
-            # Use default style for light theme
-            plt.style.use("default")
-        else:
-            # Use dark_background style for dark theme
-            plt.style.use("dark_background")
+        try:
+            if theme_to_use == "light":
+                plt.style.use("default")  # Default Matplotlib style for light theme
+            else:
+                plt.style.use("dark_background")  # Built-in dark theme
+        except Exception as e:
+            print(f"Error configuring matplotlib theme: {e}")
 
+    # Configure plotly if available
     if PLOTLY_AVAILABLE:
-        if theme_mode == "light":
-            # Use Plotly's seaborn theme for light mode
-            pio.templates.default = "seaborn"
-        else:
-            # Use Plotly's dark theme
-            pio.templates.default = "plotly_dark"
+        try:
+            if theme_to_use == "light":
+                pio.templates.default = "plotly_white"  # Clean, light theme
+            else:
+                pio.templates.default = "plotly_dark"  # Built-in dark theme
+        except Exception as e:
+            print(f"Error configuring plotly theme: {e}")
 
+    # Configure bokeh if available
     if BOKEH_AVAILABLE:
-        if theme_mode == "light":
-            # Use Bokeh's built-in light_minimal theme
-            curdoc().theme = "light_minimal"
-        else:
-            # Use Bokeh's built-in dark_minimal theme
-            curdoc().theme = "dark_minimal"
+        try:
+            if theme_to_use == "light":
+                theme = Theme("caliber")  # Clean, modern light theme
+            else:
+                theme = Theme("dark_minimal")  # Minimalist dark theme
+            curdoc().theme = theme
+        except Exception as e:
+            print(f"Error configuring bokeh theme: {e}")
 
 
 def show_fig(
@@ -792,110 +867,124 @@ def show_fig(
     Returns:
         None
     """
-    # Configure plot theme before displaying
-    configure_plot_theme()
+    if not PLOTLY_AVAILABLE:
+        st.warning("Plotly package not installed. Figure display is limited.")
+        st.write("Figure cannot be displayed without Plotly.")
+        return
 
-    # Get current theme based on plot theme setting
-    theme_mode = st.session_state["plot_theme"]  # Use dictionary syntax
+    try:
+        # Configure plot theme before displaying
+        configure_plot_theme()
 
-    # Update Plotly figure layout based on theme
-    if hasattr(fig, "update_layout"):
-        if theme_mode == "light":
-            fig.update_layout(
-                paper_bgcolor="white",
-                plot_bgcolor="white",
-                font_color="black",
-                xaxis=dict(
-                    gridcolor="lightgray",
-                    gridwidth=1,
-                    griddash="dash",
-                    linecolor="black",
-                    linewidth=1,
-                    ticks="outside",
-                    tickfont=dict(color="black"),
-                ),
-                yaxis=dict(
-                    gridcolor="lightgray",
-                    gridwidth=1,
-                    griddash="dash",
-                    linecolor="black",
-                    linewidth=1,
-                    ticks="outside",
-                    tickfont=dict(color="black"),
-                ),
+        # Get current app theme
+        app_theme = "light" if st.get_option("theme.base") == "light" else "dark"
+
+        # Determine which theme to use
+        theme_to_use = st.session_state.get("plot_theme", "system")
+        if theme_to_use == "system":
+            theme_to_use = app_theme
+
+        # Update Plotly figure layout based on theme
+        if hasattr(fig, "update_layout"):
+            if theme_to_use == "light":
+                fig.update_layout(
+                    paper_bgcolor="white",
+                    plot_bgcolor="white",
+                    font_color="black",
+                    xaxis=dict(
+                        gridcolor="lightgray",
+                        gridwidth=1,
+                        griddash="dash",
+                        linecolor="black",
+                        linewidth=1,
+                        ticks="outside",
+                        tickfont=dict(color="black"),
+                    ),
+                    yaxis=dict(
+                        gridcolor="lightgray",
+                        gridwidth=1,
+                        griddash="dash",
+                        linecolor="black",
+                        linewidth=1,
+                        ticks="outside",
+                        tickfont=dict(color="black"),
+                    ),
+                )
+            else:
+                fig.update_layout(
+                    paper_bgcolor="#0E1117",
+                    plot_bgcolor="#0E1117",
+                    font_color="#FFFFFF",
+                    xaxis=dict(
+                        gridcolor="#555555",
+                        gridwidth=1,
+                        griddash="dash",
+                        linecolor="#FFFFFF",
+                        linewidth=1,
+                        ticks="outside",
+                        tickfont=dict(color="#FFFFFF"),
+                    ),
+                    yaxis=dict(
+                        gridcolor="#555555",
+                        gridwidth=1,
+                        griddash="dash",
+                        linecolor="#FFFFFF",
+                        linewidth=1,
+                        ticks="outside",
+                        tickfont=dict(color="#FFFFFF"),
+                    ),
+                )
+
+        if not selection_session_state_key:
+            st.plotly_chart(
+                fig,
+                use_container_width=container_width,
+                config={
+                    "displaylogo": False,
+                    "modeBarButtonsToRemove": [
+                        "zoom",
+                        "pan",
+                        "select",
+                        "lasso",
+                        "zoomin",
+                        "autoscale",
+                        "zoomout",
+                        "resetscale",
+                    ],
+                    "toImageButtonOptions": {
+                        "filename": download_name,
+                        "format": st.session_state["image-format"],
+                    },
+                },
             )
         else:
-            fig.update_layout(
-                paper_bgcolor="#0E1117",
-                plot_bgcolor="#0E1117",
-                font_color="#FFFFFF",  # Brighter white for better contrast
-                xaxis=dict(
-                    gridcolor="#555555",  # Slightly brighter grid
-                    gridwidth=1,
-                    griddash="dash",
-                    linecolor="#FFFFFF",  # Brighter white for better contrast
-                    linewidth=1,
-                    ticks="outside",
-                    tickfont=dict(color="#FFFFFF"),
-                ),
-                yaxis=dict(
-                    gridcolor="#555555",  # Slightly brighter grid
-                    gridwidth=1,
-                    griddash="dash",
-                    linecolor="#FFFFFF",  # Brighter white for better contrast
-                    linewidth=1,
-                    ticks="outside",
-                    tickfont=dict(color="#FFFFFF"),
-                ),
+            st.plotly_chart(
+                fig,
+                key=selection_session_state_key,
+                selection_mode=["points", "box"],
+                on_select="rerun",
+                config={
+                    "displaylogo": False,
+                    "modeBarButtonsToRemove": [
+                        "zoom",
+                        "pan",
+                        "lasso",
+                        "zoomin",
+                        "autoscale",
+                        "zoomout",
+                        "resetscale",
+                        "select",
+                    ],
+                    "toImageButtonOptions": {
+                        "filename": download_name,
+                        "format": st.session_state["image-format"],
+                    },
+                },
+                use_container_width=True,
             )
-
-    if not selection_session_state_key:
-        st.plotly_chart(
-            fig,
-            use_container_width=container_width,
-            config={
-                "displaylogo": False,
-                "modeBarButtonsToRemove": [
-                    "zoom",
-                    "pan",
-                    "select",
-                    "lasso",
-                    "zoomin",
-                    "autoscale",
-                    "zoomout",
-                    "resetscale",
-                ],
-                "toImageButtonOptions": {
-                    "filename": download_name,
-                    "format": st.session_state["image-format"],
-                },
-            },
-        )
-    else:
-        st.plotly_chart(
-            fig,
-            key=selection_session_state_key,
-            selection_mode=["points", "box"],
-            on_select="rerun",
-            config={
-                "displaylogo": False,
-                "modeBarButtonsToRemove": [
-                    "zoom",
-                    "pan",
-                    "lasso",
-                    "zoomin",
-                    "autoscale",
-                    "zoomout",
-                    "resetscale",
-                    "select",
-                ],
-                "toImageButtonOptions": {
-                    "filename": download_name,
-                    "format": st.session_state["image-format"],
-                },
-            },
-            use_container_width=True,
-        )
+    except Exception as e:
+        st.warning(f"Error displaying figure: {e}")
+        st.write("Figure could not be displayed properly.")
 
 
 def reset_directory(path: Path) -> None:
@@ -924,11 +1013,17 @@ def get_dataframe_mem_useage(df):
     Returns:
         float: The memory usage of the DataFrame in megabytes.
     """
-    # Calculate the memory usage of the DataFrame in bytes
-    memory_usage_bytes = df.memory_usage(deep=True).sum()
-    # Convert bytes to megabytes
-    memory_usage_mb = memory_usage_bytes / (1024**2)
-    return memory_usage_mb
+    if not PANDAS_AVAILABLE:
+        return 0.0
+
+    try:
+        # Calculate the memory usage of the DataFrame in bytes
+        memory_usage_bytes = df.memory_usage(deep=True).sum()
+        # Convert bytes to megabytes
+        memory_usage_mb = memory_usage_bytes / (1024**2)
+        return memory_usage_mb
+    except Exception:
+        return 0.0
 
 
 def tk_directory_dialog(title: str = "Select Directory", parent_dir: str = os.getcwd()):
