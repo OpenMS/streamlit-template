@@ -568,24 +568,33 @@ def render_sidebar(page: str = "") -> None:
             # Plot Theme settings
             st.markdown("## Plot Theme")
 
-            # Initialize plot_theme only if it doesn't exist in session state
+            # Get current theme from config.toml for plot theme default
             if "plot_theme" not in st.session_state:
-                # Get current theme from config.toml for plot theme default
                 with open(config_path, "r") as f:
                     config_content = f.read()
+                    default_plot_theme = "light"  # default to light
                     if 'base = "dark"' in config_content:
-                        st.session_state.plot_theme = "dark"
-                    else:
-                        st.session_state.plot_theme = "light"
+                        default_plot_theme = "dark"
+                    elif 'base = "light"' in config_content:
+                        default_plot_theme = "light"
+                st.session_state["plot_theme"] = (
+                    default_plot_theme  # Use dictionary syntax instead of attribute
+                )
 
             theme_options = ["light", "dark"]
-            st.selectbox(
+            selected_plot_theme = st.selectbox(
                 "Plot Theme",
                 theme_options,
-                index=theme_options.index(st.session_state.plot_theme),
-                key="plot_theme",
+                index=theme_options.index(
+                    st.session_state["plot_theme"]
+                ),  # Use dictionary syntax
+                key="plot_theme_selector",  # Use a different key
                 help="Choose between light and dark theme for plots",
             )
+
+            # Update the session state if the selection changes
+            if "plot_theme_selector" in st.session_state:
+                st.session_state["plot_theme"] = st.session_state["plot_theme_selector"]
 
             # Image format settings
             st.markdown("## Export Settings")
@@ -738,7 +747,7 @@ def show_table(df: pd.DataFrame, download_name: str = "") -> None:
 def configure_plot_theme():
     """Configure plot themes based on Streamlit's theme."""
     # Get the current theme based on user preference
-    theme_mode = st.session_state.plot_theme
+    theme_mode = st.session_state["plot_theme"]  # Use dictionary syntax
 
     if MPL_AVAILABLE:
         if theme_mode == "light":
@@ -787,7 +796,7 @@ def show_fig(
     configure_plot_theme()
 
     # Get current theme based on plot theme setting
-    theme_mode = st.session_state.plot_theme
+    theme_mode = st.session_state["plot_theme"]  # Use dictionary syntax
 
     # Update Plotly figure layout based on theme
     if hasattr(fig, "update_layout"):
