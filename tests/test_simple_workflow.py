@@ -25,8 +25,14 @@ def test_number_inputs(launch):
     assert len(launch.number_input) >= 2, f"Expected at least 2 number inputs, found {len(launch.number_input)}"
 
     # Set x and y dimensions
-    launch.number_input[0].set_value(5)  
-    launch.number_input[1].set_value(4)  
+    x_input = next((ni for ni in launch.number_input if ni.key == "example-x-dimension"), None)
+    y_input = next((ni for ni in launch.number_input if ni.key == "example-y-dimension"), None)
+    
+    assert x_input is not None, "X-dimension input not found!"
+    assert y_input is not None, "Y-dimension input not found!"
+    
+    x_input.set_value(5)
+    y_input.set_value(4) 
     launch.run(timeout=10)
 
     # Validate session state updates
@@ -59,7 +65,5 @@ def test_download_button(launch):
     assert len(launch.dataframe) > 0, "Table not generated!"
 
     # Find the "Download Table" button correctly
-    download_button = next((btn for btn in launch.button if hasattr(btn, "label") and "Download" in btn.label), None)
-    download_component = next((comp for comp in launch.main if hasattr(comp, "label") and "Download" in comp.label), None)
-
-    assert download_button or download_component, "Download Table button is missing!"
+    download_elements = [comp for comp in launch.main if hasattr(comp, "label") and "Download" in comp.label]    
+    assert len(download_elements) > 0, "Download Table button is missing!"
