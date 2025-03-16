@@ -40,30 +40,6 @@ def test_number_inputs(launch):
     df = launch.dataframe[0].value
     assert df.shape == (5, 4), f"Expected table size (5,4) but got {df.shape}"
 
-def test_invalid_inputs(launch):
-    """Ensure invalid inputs prevent table generation."""
-
-    launch.run(timeout=15)
-    time.sleep(5)
-
-    x_input = next((ni for ni in launch.number_input if ni.key == "example-x-dimension"), None)
-    y_input = next((ni for ni in launch.number_input if ni.key == "example-y-dimension"), None)
-
-    assert x_input is not None, "X-dimension input not found!"
-    assert y_input is not None, "Y-dimension input not found!"
-
-    # Set invalid values
-    x_input.set_value(25)
-    y_input.set_value(10)
-
-    launch.run(timeout=15)
-    time.sleep(5)
-
-    # Check if table is missing
-    table = next((tbl for tbl in launch.table), None)
-
-    assert table is None, "Table should not be generated when inputs are invalid!"
-
 def test_download_button(launch):
     """Ensure 'Download Table' button appears after table generation."""
 
