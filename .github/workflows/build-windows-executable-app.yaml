@@ -406,24 +406,24 @@ jobs:
                   <UIRef Id="WixUI_ErrorProgressText" />
 
                   <!-- New Dialog to select workspaces -->
-                  <Dialog Id="ChooseWorkspacesDlg" Width="370" Height="300" Title="!(loc.InstallDirDlg_Title)">
-                    <Control Id="MessageText" Type="Text" X="15" Y="10" Width="340" Height="40" Text="Please select a workspace location before continuing installation." />
-
-                    <!-- Browse for location -->
-                    <Control Id="WorkspacePath" Type="Edit" X="15" Y="60" Width="240" Height="17" Property="WORKSPACES_FOLDER" Text="{80}" />
-                    <Control Id="BrowseButton" Type="PushButton" X="260" Y="60" Width="80" Height="17" Text="Change">
-                      <Publish Event="SpawnDialog" Value="BrowseDlg">1</Publish>
-                    </Control>
-
+                  <Dialog Id="ChooseWorkspacesDlg" Width="370" Height="270" Title="!(loc.InstallDirDlg_Title)">
                     <Control Id="Description" Type="Text" X="25" Y="23" Width="280" Height="15" Transparent="yes" NoPrefix="yes" Text="Click Next to choose default workspaces location or click Change to choose another folder" />
                     <Control Id="Title" Type="Text" X="15" Y="6" Width="200" Height="15" Transparent="yes" NoPrefix="yes" Text="Workspaces Folder" />
                     <Control Id="BannerBitmap" Type="Bitmap" X="0" Y="0" Width="370" Height="44" TabSkip="no" Text="!(loc.InstallDirDlgBannerBitmap)" />
                     <Control Id="BannerLine" Type="Line" X="0" Y="44" Width="370" Height="0" />
                     <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
 
+                    <!-- Browse for workspaces folder location -->
+                    <Control Id="FolderLabel" Type="Text" X="20" Y="60" Width="290" Height="30" NoPrefix="yes" Text="Please select a workspace location before continuing installation." />
+                    <Control Id="Folder" Type="PathEdit" X="20" Y="100" Width="320" Height="18" Property="WORKSPACES_FOLDER" Indirect="yes" />
+                    <Control Id="ChangeFolder" Type="PushButton" X="20" Y="120" Width="56" Height="17" Text="Change" />
+
                     <!-- Navigation Buttons -->
-                    <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="30" Cancel="yes" Text="Back" />
-                    <Control Id="Next" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Text="Next" />
+                    <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Cancel="yes" Text="!(loc.WixUIBack)" />
+                    <Control Id="Next" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Text="!(loc.WixUINext)" />
+                    <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Cancel="yes" Text="!(loc.WixUICancel)">
+                      <Publish Event="SpawnDialog" Value="CancelDlg">1</Publish>
+                    </Control>
                   </Dialog>
 
                   <Publish Dialog="LicenseAgreementDlg" Control="Next" Event="NewDialog" Value="ChooseWorkspacesDlg" Order="2">LicenseAccepted = "1"</Publish>
