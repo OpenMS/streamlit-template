@@ -26,7 +26,7 @@ There are a few key differences between operating in online and local modes:
 - **Workspace Access**:
   - *Online Mode (Not Enabled in This Deployment)*: If enabled, workspaces would be temporarily stored and cleared after seven days of inactivity.
   - *Local Mode*: Workspaces are saved on your local machine, allowing for persistent storage.  
-    - The workspace directory can be specified in `settings.json` under `"workspaces_dir"`.  
+    - The workspace directory can be specified in `settings.json`.  
     - Defaults to `..` (parent directory).
 
 ## Downloading Results
