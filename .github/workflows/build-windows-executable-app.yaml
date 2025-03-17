@@ -346,6 +346,7 @@ jobs:
         
             <!-- Folder structure -->
             <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
+            <Property Id="WORKSPACES_FOLDER" Value="INSTALLFOLDER" />
             <Directory Id="TARGETDIR" Name="SourceDir">
               <Directory Id="ProgramFilesFolder"> 
                 <Directory Id="INSTALLFOLDER" Name="${{ env.APP_NAME }}">
@@ -405,12 +406,21 @@ jobs:
                   <UIRef Id="WixUI_ErrorProgressText" />
 
                   <!-- New Message Dialog -->
-                  <Dialog Id="CustomMessageDlg" Width="370" Height="270" Title="Important Information">
-                    <Control Id="MessageText" Type="Text" X="15" Y="10" Width="340" Height="100" 
-                            Text="Please review this message before continuing installation." />
-                    
-                    <Control Id="Next" Type="PushButton" X="200" Y="200" Width="80" Height="30" Default="yes" Text="Next" />
-                    <Control Id="Back" Type="PushButton" X="290" Y="200" Width="80" Height="30" Cancel="yes" Text="Back" />
+                  <Dialog Id="CustomMessageDlg" Width="370" Height="300" Title="Important Information">
+                    <Control Id="MessageText" Type="Text" X="15" Y="10" Width="340" Height="40"
+                            Text="Please select a workspace location before continuing installation." />
+
+                    <!-- Textbox to Display Selected Path -->
+                    <Control Id="WorkspacePath" Type="Edit" X="15" Y="60" Width="240" Height="17" Property="WORKSPACES_FOLDER" Text="{80}" />
+
+                    <!-- Browse Button -->
+                    <Control Id="BrowseButton" Type="PushButton" X="260" Y="60" Width="80" Height="17" Text="Browse">
+                      <Publish Event="SpawnDialog" Value="BrowseDlg">1</Publish>
+                    </Control>
+
+                    <!-- Navigation Buttons -->
+                    <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="30" Cancel="yes" Text="Back" />
+                    <Control Id="Next" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Text="Next" />
                   </Dialog>
 
                   <!-- Skip license dialog -->
