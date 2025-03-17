@@ -16,3 +16,4 @@ dependencies:
         - pyopenms_viz==1.0.0
         - streamlit-js-eval
         - psutil==7.0.0
+        - pyautogui==0.9.54
