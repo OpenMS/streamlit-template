@@ -404,23 +404,52 @@ jobs:
                   <UIRef Id="WixUI_InstallDir" />
                   <UIRef Id="WixUI_ErrorProgressText" />
 
+                  <!-- New Message Dialog -->
+                  <Dialog Id="CustomMessageDlg" Width="370" Height="270" Title="Important Information">
+                    <Control Id="MessageText" Type="Text" X="15" Y="10" Width="340" Height="100" 
+                            Text="Please review this message before continuing installation." />
+                    
+                    <Control Id="Next" Type="PushButton" X="200" Y="200" Width="80" Height="30" Default="yes" Text="Next">
+                      <Publish Event="NewDialog" Value="VerifyReadyDlg">1</Publish>
+                    </Control>
+                    
+                    <Control Id="Back" Type="PushButton" X="290" Y="200" Width="80" Height="30" Cancel="yes" Text="Back">
+                      <Publish Event="NewDialog" Value="WelcomeDlg">1</Publish>
+                    </Control>
+                  </Dialog>
+
                   <!-- Skip license dialog -->
                   <Publish Dialog="WelcomeDlg"
                     Control="Next"
                     Event="NewDialog"
-                    Value="InstallDirDlg"
+                    Value="CustomMessageDlg"
                     Order="2">
                     1
                   </Publish>
                   <Publish Dialog="InstallDirDlg"
                     Control="Back"
                     Event="NewDialog"
-                    Value="WelcomeDlg"
+                    Value="CustomMessageDlg"
+                    Order="2">
+                    1
+                  </Publish>
+                  <Publish 
+                    Dialog="CustomMessageDlg" 
+                    Control="Next" 
+                    Event="NewDialog" 
+                    Value="InstallDirDlg" 
+                    Order="2">
+                    1
+                  </Publish>
+                  <Publish 
+                    Dialog="CustomMessageDlg" 
+                    Control="Back" 
+                    Event="NewDialog" 
+                    Value="WelcomeDlg" 
                     Order="2">
                     1
                   </Publish>
             </UI> 
-        
             <!-- Provide license; it should exist in the SourceDir folder -->
             <WixVariable Id="WixUILicenseRtf" Value="SourceDir/openms_license.rtf" />
           </Product>
