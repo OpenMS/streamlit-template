@@ -403,6 +403,22 @@ jobs:
             <UI>
                   <UIRef Id="WixUI_InstallDir" />
                   <UIRef Id="WixUI_ErrorProgressText" />
+
+                  <!-- Skip license dialog -->
+                  <Publish Dialog="WelcomeDlg"
+                    Control="Next"
+                    Event="NewDialog"
+                    Value="InstallDirDlg"
+                    Order="2">
+                    1
+                  </Publish>
+                  <Publish Dialog="InstallDirDlg"
+                    Control="Back"
+                    Event="NewDialog"
+                    Value="WelcomeDlg"
+                    Order="2">
+                    1
+                  </Publish>
             </UI> 
         
             <!-- Provide license; it should exist in the SourceDir folder -->
