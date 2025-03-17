@@ -12,7 +12,10 @@ import time
 from io import BytesIO
 import zipfile
 from datetime import datetime
-from streamlit_js_eval import streamlit_js_eval
+try:
+    from streamlit_js_eval import streamlit_js_eval
+except ImportError:
+    raise ImportError("The 'streamlit_js_eval' module is not installed. Install it using 'pip install streamlit-js-eval'.")
 
 
 from src.common.common import (
