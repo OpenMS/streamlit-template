@@ -430,6 +430,8 @@ jobs:
                   <Publish Dialog="InstallDirDlg" Control="Back" Event="NewDialog" Value="ChooseWorkspacesDlg" Order="2">1</Publish>
                   <Publish Dialog="ChooseWorkspacesDlg" Control="Next" Event="NewDialog" Value="InstallDirDlg" Order="2">1</Publish>
                   <Publish Dialog="ChooseWorkspacesDlg" Control="Back" Event="NewDialog" Value="LicenseAgreementDlg" Order="2">1</Publish>
+                  <Publish Dialog="ChooseWorkspacesDlg" Control="ChangeFolder" Property="_BrowseProperty" Value="[WORKSPACES_FOLDER]" Order="2">1</Publish>
+                  <Publish Dialog="ChooseWorkspacesDlg" Control="ChangeFolder" Event="SpawnDialog" Value="BrowseDlg" Order="2">1</Publish>
             </UI> 
             <!-- Provide license; it should exist in the SourceDir folder -->
             <WixVariable Id="WixUILicenseRtf" Value="SourceDir/openms_license.rtf" />
