@@ -409,13 +409,8 @@ jobs:
                     <Control Id="MessageText" Type="Text" X="15" Y="10" Width="340" Height="100" 
                             Text="Please review this message before continuing installation." />
                     
-                    <Control Id="Next" Type="PushButton" X="200" Y="200" Width="80" Height="30" Default="yes" Text="Next">
-                      <Publish Event="NewDialog" Value="VerifyReadyDlg">1</Publish>
-                    </Control>
-                    
-                    <Control Id="Back" Type="PushButton" X="290" Y="200" Width="80" Height="30" Cancel="yes" Text="Back">
-                      <Publish Event="NewDialog" Value="WelcomeDlg">1</Publish>
-                    </Control>
+                    <Control Id="Next" Type="PushButton" X="200" Y="200" Width="80" Height="30" Default="yes" Text="Next" />
+                    <Control Id="Back" Type="PushButton" X="290" Y="200" Width="80" Height="30" Cancel="yes" Text="Back" />
                   </Dialog>
 
                   <!-- Skip license dialog -->
