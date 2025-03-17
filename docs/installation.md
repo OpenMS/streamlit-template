@@ -17,6 +17,14 @@ To install all required depdencies via pip in an already existing Python environ
 
 `pip install -r requirements.txt`
 
+Note: In Linux, if you get the error : externally managed environment, follow this:
+Create a virtual environment
+`python3 -m venv <myenvpath>`
+Activate the virtual environment
+`source .venv/bin/activate`
+Run the command (make sure you are in the directory where requirements.txt is):
+`pip install -r requirements.txt`
+
 ### create new environment via conda/mamba
 
 Create and activate the conda environment:
