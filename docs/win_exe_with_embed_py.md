@@ -119,10 +119,10 @@ Set these variables for consistent naming throughout the process:
 
 ```batch
 APP_NAME=OpenMS-StreamlitTemplateApp
-APP_UpgradeCode=4abc2e23-3ba5-40e4-95c9-09e6cb8ecaeb
+APP_UpgradeCode= generate-new
 ```
 
-To create a new GUID for your application's UpgradeCode, you can use:
+To generate a new GUID for your application's UpgradeCode, you can use:
 
 -  PowerShell: `[guid]::NewGuid().ToString()`
 -  Online GUID generator: https://www.guidgen.com/
