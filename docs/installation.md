@@ -21,7 +21,7 @@ Activate the virtual environment
 
 `source .venv/bin/activate`
 
-To install all required depdencies via pip in an already existing Python environment, run the following command in the terminal:
+To install all required depdencies via pip in the new Python environment, run the following command in the terminal:
 
 `pip install -r requirements.txt`
 
