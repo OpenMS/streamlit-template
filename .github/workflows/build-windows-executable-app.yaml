@@ -359,7 +359,7 @@ jobs:
               </Directory>
               <Directory Id="DesktopFolder" />
             </Directory>
-            <Property Id="WORKSPACES_FOLDER" Value="[INSTALLFOLDER]" />
+            <Property Id="WORKSPACES_FOLDER" Value="AppSubFolder" />
         
             <!-- Add components -->
             <Feature Id="MainFeature" Title="Main Application" Level="1">
