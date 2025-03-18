@@ -346,7 +346,6 @@ jobs:
         
             <!-- Folder structure -->
             <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
-            <Property Id="WORKSPACES_FOLDER" Value="INSTALLFOLDER" />
             <Directory Id="TARGETDIR" Name="SourceDir">
               <Directory Id="ProgramFilesFolder"> 
                 <Directory Id="INSTALLFOLDER" Name="${{ env.APP_NAME }}">
@@ -360,6 +359,7 @@ jobs:
               </Directory>
               <Directory Id="DesktopFolder" />
             </Directory>
+            <Property Id="WORKSPACES_FOLDER" Value="[INSTALLFOLDER][AppSubFolder]" />
         
             <!-- Add components -->
             <Feature Id="MainFeature" Title="Main Application" Level="1">
