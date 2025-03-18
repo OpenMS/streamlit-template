@@ -11,13 +11,7 @@ Select the latest successfull run and download the zip file from the artifacts s
 
 Clone the [streamlit-template repository](https://github.com/OpenMS/streamlit-template). It includes files to install dependencies via pip or conda.
 
-### via pip in an existing Python environment
-
-To install all required depdencies via pip in an already existing Python environment, run the following command in the terminal:
-
-`pip install -r requirements.txt`
-
-*Note*: In Linux, if you get the error : externally managed environment, follow this:
+### via pip in a new Python environment
 
 Create a virtual environment
 `python3 -m venv <myenvpath>`
@@ -26,6 +20,12 @@ Activate the virtual environment
 `source .venv/bin/activate`
 
 Run the command (make sure you are in the directory where requirements.txt is):
+`pip install -r requirements.txt`
+
+### via pip in an existing Python environment
+
+To install all required depdencies via pip in an already existing Python environment, run the following command in the terminal:
+
 `pip install -r requirements.txt`
 
 ### create new environment via conda/mamba
