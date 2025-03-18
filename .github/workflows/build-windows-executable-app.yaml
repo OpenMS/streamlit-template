@@ -385,7 +385,7 @@ jobs:
             <Icon Id="AppIcon" SourceFile="SourceDir/openms.ico" />
         
             <!-- Custom Action: Write WORKSPACES_FOLDER to a text file -->
-            <CustomAction Id="WriteWorkspacePath" Directory="INSTALLFOLDER" Execute="deferred" Impersonate="no" ExeCommand="cmd.exe /c echo [WORKSPACES_FOLDER] > [INSTALLFOLDER]\workspace_path.txt" Return="ignore" />
+            <CustomAction Id="WriteWorkspacePath" Directory="INSTALLFOLDER" Execute="deferred" Impersonate="no" ExeCommand="cmd.exe /c echo [WORKSPACES_FOLDER] > [INSTALLFOLDER]workspace_path.txt" Return="ignore" />
 
             <InstallExecuteSequence>
               <Custom Action="WriteWorkspacePath" Before="InstallFinalize">NOT Installed</Custom>
@@ -405,9 +405,9 @@ jobs:
                     <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
 
                     <!-- Browse for workspaces folder location -->
-                    <Control Id="FolderLabel" Type="Text" X="20" Y="60" Width="290" Height="30" NoPrefix="yes" Text="Please select a workspace location before continuing installation." />
-                    <Control Id="Folder" Type="PathEdit" X="20" Y="100" Width="320" Height="18" Property="WORKSPACES_FOLDER" Indirect="yes" />
-                    <Control Id="ChangeFolder" Type="PushButton" X="20" Y="120" Width="56" Height="17" Text="Change" />
+                    <Control Id="WorkspacesFolderLabel" Type="Text" X="20" Y="60" Width="290" Height="30" NoPrefix="yes" Text="Please select a workspace location before continuing installation." />
+                    <Control Id="WorkspacesFolder" Type="PathEdit" X="20" Y="100" Width="320" Height="18" Property="WORKSPACES_FOLDER" Indirect="yes" />
+                    <Control Id="ChangeWorkspacesFolder" Type="PushButton" X="20" Y="120" Width="56" Height="17" Text="Change" />
 
                     <!-- Navigation Buttons -->
                     <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Cancel="yes" Text="!(loc.WixUIBack)" />
@@ -421,8 +421,8 @@ jobs:
                   <Publish Dialog="InstallDirDlg" Control="Back" Event="NewDialog" Value="ChooseWorkspacesDlg" Order="2">1</Publish>
                   <Publish Dialog="ChooseWorkspacesDlg" Control="Next" Event="NewDialog" Value="InstallDirDlg" Order="2">1</Publish>
                   <Publish Dialog="ChooseWorkspacesDlg" Control="Back" Event="NewDialog" Value="LicenseAgreementDlg" Order="2">1</Publish>
-                  <Publish Dialog="ChooseWorkspacesDlg" Control="ChangeFolder" Property="_BrowseProperty" Value="[WORKSPACES_FOLDER]" Order="2">1</Publish>
-                  <Publish Dialog="ChooseWorkspacesDlg" Control="ChangeFolder" Event="SpawnDialog" Value="BrowseDlg" Order="2">1</Publish>
+                  <Publish Dialog="ChooseWorkspacesDlg" Control="ChangeWorkspacesFolder" Property="_BrowseProperty" Value="[WORKSPACES_FOLDER]" Order="2">1</Publish>
+                  <Publish Dialog="ChooseWorkspacesDlg" Control="ChangeWorkspacesFolder" Event="SpawnDialog" Value="BrowseDlg" Order="2">1</Publish>
             </UI> 
             <!-- Provide license; it should exist in the SourceDir folder -->
             <WixVariable Id="WixUILicenseRtf" Value="SourceDir/openms_license.rtf" />
