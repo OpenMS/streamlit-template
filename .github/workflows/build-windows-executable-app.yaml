@@ -388,7 +388,7 @@ jobs:
             <CustomAction Id="WriteWorkspacePath" Directory="INSTALLFOLDER" Execute="deferred" Impersonate="no" ExeCommand="cmd.exe /c echo [WORKSPACES_FOLDER] > [INSTALLFOLDER]\workspace_path.txt" Return="ignore" />
 
             <InstallExecuteSequence>
-              <Custom Action="WriteWorkspacePath" After="InstallFinalize">NOT Installed</Custom>
+              <Custom Action="WriteWorkspacePath" Before="InstallFinalize">NOT Installed</Custom>
             </InstallExecuteSequence>
 
             <!-- Interface options -->
