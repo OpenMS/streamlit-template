@@ -359,7 +359,7 @@ jobs:
               </Directory>
               <Directory Id="DesktopFolder" />
             </Directory>
-            <Property Id="WORKSPACES_FOLDER" Value="[INSTALLFOLDER]\[AppSubFolder]" />
+            <Property Id="WORKSPACES_FOLDER" Value="[AppSubFolder]" />
         
             <!-- Add components -->
             <Feature Id="MainFeature" Title="Main Application" Level="1">
@@ -384,10 +384,23 @@ jobs:
             <!-- Provide icon here; it should exist in the SourceDir folder -->
             <Icon Id="AppIcon" SourceFile="SourceDir/openms.ico" />
         
+            <!-- Run app directly after installation -->
+            <!-- <CustomAction Id="RunApp" Directory="AppSubFolder" Execute="deferred" Return="asyncNoWait" Impersonate="no"
+                          ExeCommand="cmd.exe /c &quot;[AppSubFolder]${{ env.APP_NAME }}.bat&quot;" /> -->
+            
+            <!-- Custom Action to Show Success Message -->
+            <Binary Id="ShowMessageScript" SourceFile="SourceDir/ShowSuccessMessage.vbs" />
+            <CustomAction Id="ShowSuccessMessage" BinaryKey="ShowMessageScript" VBScriptCall="" Execute="immediate" Return="check" />
+        
             <!-- Custom Action: Write WORKSPACES_FOLDER to a text file -->
-            <CustomAction Id="WriteWorkspacePath" Directory="INSTALLFOLDER" Execute="deferred" Impersonate="no" ExeCommand="cmd.exe /c echo [WORKSPACES_FOLDER] > [INSTALLFOLDER]workspace_path.txt" Return="ignore" />
+            <CustomAction Id="WriteWorkspacePath" Directory="INSTALLFOLDER" Execute="deferred" Impersonate="no" ExeCommand="cmd.exe /c echo [WORKSPACES_FOLDER] > [AppSubFolder]workspace_path.txt" Return="ignore" />
 
+            <!-- Add all Custom Actions -->
             <InstallExecuteSequence>
+              <!-- Custom action display success message -->
+              <Custom Action="ShowSuccessMessage" After="InstallFinalize">NOT Installed</Custom>
+              <!-- Run app directly after installation -->
+              <!-- <Custom Action="RunApp" Before="InstallFinalize">NOT REMOVE</Custom> -->
               <Custom Action="WriteWorkspacePath" Before="InstallFinalize">NOT Installed</Custom>
             </InstallExecuteSequence>
 
