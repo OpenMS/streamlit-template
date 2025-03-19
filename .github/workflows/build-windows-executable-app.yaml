@@ -1,476 +1,476 @@
 name: Build executable for Windows
 on:
-   push:
-      branches: ["main"]
-   pull_request:
-      branches: ["main"]
-   release:
-      types: [created]
-   workflow_dispatch:
-
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  release:
+    types: [created]
+  workflow_dispatch:
+  
 env:
-   OPENMS_VERSION: 3.2.0
-   PYTHON_VERSION: 3.11.0
-   # Name of the installer
-   APP_NAME: OpenMS-StreamlitTemplateApp
-   # Define unique GUID for UpgradeCode
-   APP_UpgradeCode: "8d28e8c7-45dc-446c-b889-99a6aea2f1a5"
-   # Define needed TOPP tools here
-   TOPP_TOOLS: "FeatureFinderMetabo FeatureLinkerUnlabeledKD SiriusExport"
+  OPENMS_VERSION: 3.2.0 
+  PYTHON_VERSION: 3.11.0
+  # Name of the installer
+  APP_NAME: OpenMS-StreamlitTemplateApp
+  # Define unique GUID for UpgradeCode
+  APP_UpgradeCode: "8d28e8c7-45dc-446c-b889-99a6aea2f1a5"
+  # Define needed TOPP tools here
+  TOPP_TOOLS: "FeatureFinderMetabo FeatureLinkerUnlabeledKD SiriusExport"
 
 jobs:
-   build-openms:
-      runs-on: windows-latest
+  build-openms:
+    runs-on: windows-latest
 
-      steps:
-         - name: Checkout
-           uses: actions/checkout@v4
-           with:
-              repository: OpenMS/OpenMS
-              ref: release/${{ env.OPENMS_VERSION }}
-              path: "OpenMS"
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        repository: OpenMS/OpenMS
+        ref: release/${{ env.OPENMS_VERSION }}
+        path: 'OpenMS'
+    
+    # Temporary fix - until seqan is back online or new OpenMS release (3.4)
+    - name: Get latest cibuild.cmake
+      working-directory: OpenMS
+      run: |
+        git config user.name "GitHub Actions"
+        git config user.email "actions@github.com"
+        git fetch origin develop
+        git checkout origin/develop -- tools/ci/cibuild.cmake
+        git checkout origin/develop -- tools/ci/citest.cmake
+        git checkout origin/develop -- tools/ci/cipackage.cmake
 
-         # Temporary fix - until seqan is back online or new OpenMS release (3.4)
-         - name: Get latest cibuild.cmake
-           working-directory: OpenMS
-           run: |
-              git config user.name "GitHub Actions"
-              git config user.email "actions@github.com"
-              git fetch origin develop
-              git checkout origin/develop -- tools/ci/cibuild.cmake
-              git checkout origin/develop -- tools/ci/citest.cmake
-              git checkout origin/develop -- tools/ci/cipackage.cmake
+    - name: Install Qt
+      uses: jurplel/install-qt-action@v4
+      with:
+        version: '5.15.2' # 5.12.7 is broken https://bugreports.qt.io/browse/QTBUG-81715, > 5.15.2 is not available on official archives (https://github.com/miurahr/aqtinstall/issues/636)
+        host: 'windows' # default: win64_msvc2017_64
+        target: 'desktop'
+        install-deps: 'true'
+        cache: 'false'
+        aqtversion: '==3.1.*'
 
-         - name: Install Qt
-           uses: jurplel/install-qt-action@v4
-           with:
-              version: "5.15.2" # 5.12.7 is broken https://bugreports.qt.io/browse/QTBUG-81715, > 5.15.2 is not available on official archives (https://github.com/miurahr/aqtinstall/issues/636)
-              host: "windows" # default: win64_msvc2017_64
-              target: "desktop"
-              install-deps: "true"
-              cache: "false"
-              aqtversion: "==3.1.*"
+    # https://github.com/marketplace/actions/visual-studio-shell
+    - name: Set up Visual Studio shell
+      uses: egor-tensin/vs-shell@v2
+      with:
+        arch: x64
 
-         # https://github.com/marketplace/actions/visual-studio-shell
-         - name: Set up Visual Studio shell
-           uses: egor-tensin/vs-shell@v2
-           with:
-              arch: x64
+    - name: Setup build tools
+      shell: bash
+      run: |
+        choco install ccache ninja -y --no-progress
+        choco install cmake --version=3.31.1 -y --no-progress --force
+        ## GH CLI "SHOULD BE" installed. Sometimes I had to manually install nonetheless. Super weird.
+        # https://github.com/actions/runner-images/blob/main/images/win/scripts/Installers/Install-GitHub-CLI.ps1
+        echo "C:/Program Files (x86)/GitHub CLI" >> $GITHUB_PATH
 
-         - name: Setup build tools
-           shell: bash
-           run: |
-              choco install ccache ninja -y --no-progress
-              choco install cmake --version=3.31.1 -y --no-progress --force
-              ## GH CLI "SHOULD BE" installed. Sometimes I had to manually install nonetheless. Super weird.
-              # https://github.com/actions/runner-images/blob/main/images/win/scripts/Installers/Install-GitHub-CLI.ps1
-              echo "C:/Program Files (x86)/GitHub CLI" >> $GITHUB_PATH
+    - name: Extract branch/PR infos
+      shell: bash
+      run: |
+        cd OpenMS
+        RUN_NAME_LOCAL=$(echo ${GITHUB_REF#refs/heads/} | tr / -)
+        echo "RUN_NAME=${RUN_NAME_LOCAL}" >> $GITHUB_ENV
+        echo "BASE_REF=$(gh pr view --json baseRefName -q .baseRefName || echo ${RUN_NAME_LOCAL})" >> $GITHUB_ENV
+      id: extract_branch
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-         - name: Extract branch/PR infos
-           shell: bash
-           run: |
-              cd OpenMS
-              RUN_NAME_LOCAL=$(echo ${GITHUB_REF#refs/heads/} | tr / -)
-              echo "RUN_NAME=${RUN_NAME_LOCAL}" >> $GITHUB_ENV
-              echo "BASE_REF=$(gh pr view --json baseRefName -q .baseRefName || echo ${RUN_NAME_LOCAL})" >> $GITHUB_ENV
-           id: extract_branch
-           env:
-              GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: Cache contrib
+      id: cache-contrib-win
+      uses: actions/cache@v4
+      with:
+        path: ${{ github.workspace }}/OpenMS/contrib
+        key: ${{ runner.os }}-contrib3
 
-         - name: Cache contrib
-           id: cache-contrib-win
-           uses: actions/cache@v4
-           with:
-              path: ${{ github.workspace }}/OpenMS/contrib
-              key: ${{ runner.os }}-contrib3
+    - name: Load contrib build
+      if: steps.cache-contrib-win.outputs.cache-hit != 'true'
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        cd OpenMS/contrib
+        # Download the file using the URL fetched from GitHub
+        gh release download -R OpenMS/contrib --pattern 'contrib_build-Windows.tar.gz'
+        # Extract the archive
+        7z x -so contrib_build-Windows.tar.gz | 7z x -si -ttar
+        rm contrib_build-Windows.tar.gz
+        ls
 
-         - name: Load contrib build
-           if: steps.cache-contrib-win.outputs.cache-hit != 'true'
-           env:
-              GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-           run: |
-              cd OpenMS/contrib
-              # Download the file using the URL fetched from GitHub
-              gh release download -R OpenMS/contrib --pattern 'contrib_build-Windows.tar.gz'
-              # Extract the archive
-              7z x -so contrib_build-Windows.tar.gz | 7z x -si -ttar
-              rm contrib_build-Windows.tar.gz
-              ls
+    - name: Setup ccache cache
+      uses: actions/cache@v4
+      with:
+        path: .ccache
+        key: ${{ runner.os }}-ccache-${{ env.RUN_NAME }}-${{ github.run_number }}
+        # Restoring: From current branch, otherwise from base branch, otherwise from any branch.
+        restore-keys: |
+          ${{ runner.os }}-ccache-${{ env.RUN_NAME }}
+          ${{ runner.os }}-ccache-${{ env.BASE_REF }}
+          ${{ runner.os }}-ccache-
 
-         - name: Setup ccache cache
-           uses: actions/cache@v4
-           with:
-              path: .ccache
-              key: ${{ runner.os }}-ccache-${{ env.RUN_NAME }}-${{ github.run_number }}
-              # Restoring: From current branch, otherwise from base branch, otherwise from any branch.
-              restore-keys: |
-                 ${{ runner.os }}-ccache-${{ env.RUN_NAME }}
-                 ${{ runner.os }}-ccache-${{ env.BASE_REF }}
-                 ${{ runner.os }}-ccache-
+    - name: Add THIRDPARTY
+      shell: bash
+      run: |
+          # initialize THIRDPARTY
+          cd OpenMS
+          git submodule update --init THIRDPARTY
+          cd ..
+          # add third-party binaries to PATH
+          # use flat THIRDPARTY structure
+          mkdir -p _thirdparty
+          cp -R OpenMS/THIRDPARTY/Windows/64bit/* _thirdparty/
+          cp -R OpenMS/THIRDPARTY/All/* _thirdparty/
+          # add third-party binaries to PATH
+          for thirdpartytool in ${{ github.workspace }}/_thirdparty/*
+          do
+            echo $thirdpartytool >> $GITHUB_PATH
+          done
 
-         - name: Add THIRDPARTY
-           shell: bash
-           run: |
-              # initialize THIRDPARTY
-              cd OpenMS
-              git submodule update --init THIRDPARTY
-              cd ..
-              # add third-party binaries to PATH
-              # use flat THIRDPARTY structure
-              mkdir -p _thirdparty
-              cp -R OpenMS/THIRDPARTY/Windows/64bit/* _thirdparty/
-              cp -R OpenMS/THIRDPARTY/All/* _thirdparty/
-              # add third-party binaries to PATH
-              for thirdpartytool in ${{ github.workspace }}/_thirdparty/*
-              do
-                echo $thirdpartytool >> $GITHUB_PATH
-              done
+    - name: Build Windows
+      shell: bash
+      run: |
+          mkdir $GITHUB_WORKSPACE/OpenMS/bld/
+          ctest --output-on-failure -V -S $GITHUB_WORKSPACE/OpenMS/tools/ci/cibuild.cmake
+      env:
+          #OS_PREFIX_PATH: "${{ env.Qt5_DIR }}/lib/cmake;${{ env.Qt5_DIR }}"
+          OPENMS_CONTRIB_LIBS: "${{ github.workspace }}/OpenMS/contrib"
+          CI_PROVIDER: "GitHub-Actions"
+          CMAKE_GENERATOR: "Ninja"
+          SOURCE_DIRECTORY: "${{ github.workspace }}/OpenMS"
+          BUILD_NAME: "${{ env.RUN_NAME }}-Win64-class-topp-${{ github.run_number }}"
+          ENABLE_STYLE_TESTING: "OFF"
+          ENABLE_TOPP_TESTING: "ON"
+          ENABLE_CLASS_TESTING: "ON"
+          WITH_GUI: "OFF"
+          ADDRESS_SANITIZER: "Off"
+          BUILD_TYPE: "Release"
+          OPENMP: "Off"
+          USE_STATIC_BOOST: "On"
+          #  BUILD_FLAGS: "-p:CL_MPCount=2" # For VS Generator and MSBuild
+          BUILD_FLAGS: "-j2" # Ninja will otherwise use all cores (doesn't go well in GHA)
+          CMAKE_CCACHE_EXE: "ccache"
+          CCACHE_BASEDIR: ${{ github.workspace }}
+          CCACHE_DIR: ${{ github.workspace }}/.ccache
+          CCACHE_COMPRESS: true
+          CCACHE_COMPRESSLEVEL: 12
+          CCACHE_MAXSIZE: 400M
 
-         - name: Build Windows
-           shell: bash
-           run: |
-              mkdir $GITHUB_WORKSPACE/OpenMS/bld/
-              ctest --output-on-failure -V -S $GITHUB_WORKSPACE/OpenMS/tools/ci/cibuild.cmake
-           env:
-              #OS_PREFIX_PATH: "${{ env.Qt5_DIR }}/lib/cmake;${{ env.Qt5_DIR }}"
-              OPENMS_CONTRIB_LIBS: "${{ github.workspace }}/OpenMS/contrib"
-              CI_PROVIDER: "GitHub-Actions"
-              CMAKE_GENERATOR: "Ninja"
-              SOURCE_DIRECTORY: "${{ github.workspace }}/OpenMS"
-              BUILD_NAME: "${{ env.RUN_NAME }}-Win64-class-topp-${{ github.run_number }}"
-              ENABLE_STYLE_TESTING: "OFF"
-              ENABLE_TOPP_TESTING: "ON"
-              ENABLE_CLASS_TESTING: "ON"
-              WITH_GUI: "OFF"
-              ADDRESS_SANITIZER: "Off"
-              BUILD_TYPE: "Release"
-              OPENMP: "Off"
-              USE_STATIC_BOOST: "On"
-              #  BUILD_FLAGS: "-p:CL_MPCount=2" # For VS Generator and MSBuild
-              BUILD_FLAGS: "-j2" # Ninja will otherwise use all cores (doesn't go well in GHA)
-              CMAKE_CCACHE_EXE: "ccache"
-              CCACHE_BASEDIR: ${{ github.workspace }}
-              CCACHE_DIR: ${{ github.workspace }}/.ccache
-              CCACHE_COMPRESS: true
-              CCACHE_COMPRESSLEVEL: 12
-              CCACHE_MAXSIZE: 400M
+    - name: Test Windows
+      shell: bash
+      run: ctest --output-on-failure -V -S $GITHUB_WORKSPACE/OpenMS/tools/ci/citest.cmake
+      env:
+          SOURCE_DIRECTORY: "${{ github.workspace }}/OpenMS"
+          CI_PROVIDER: "GitHub-Actions"
+          BUILD_NAME: "${{ env.RUN_NAME }}-Win64-class-topp-${{ github.run_number }}"
 
-         - name: Test Windows
-           shell: bash
-           run: ctest --output-on-failure -V -S $GITHUB_WORKSPACE/OpenMS/tools/ci/citest.cmake
-           env:
-              SOURCE_DIRECTORY: "${{ github.workspace }}/OpenMS"
-              CI_PROVIDER: "GitHub-Actions"
-              BUILD_NAME: "${{ env.RUN_NAME }}-Win64-class-topp-${{ github.run_number }}"
+    - name: Package
+      shell: bash
+      run: |
+          ctest --output-on-failure -V -S $GITHUB_WORKSPACE/OpenMS/tools/ci/cipackage.cmake
+      env:
+          SOURCE_DIRECTORY: "${{ github.workspace }}/OpenMS"
+          PACKAGE_TYPE: zip
+          SEARCH_ENGINES_DIRECTORY: "${{ github.workspace }}/_thirdparty"
+          CI_PROVIDER: "GitHub-Actions"
+          CPACK_PACKAGE_FILE_NAME: "openms-package"
 
-         - name: Package
-           shell: bash
-           run: |
-              ctest --output-on-failure -V -S $GITHUB_WORKSPACE/OpenMS/tools/ci/cipackage.cmake
-           env:
-              SOURCE_DIRECTORY: "${{ github.workspace }}/OpenMS"
-              PACKAGE_TYPE: zip
-              SEARCH_ENGINES_DIRECTORY: "${{ github.workspace }}/_thirdparty"
-              CI_PROVIDER: "GitHub-Actions"
-              CPACK_PACKAGE_FILE_NAME: "openms-package"
+    - name: Upload package as artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: openms-package
+        path: ${{ github.workspace }}/OpenMS/bld/*.zip
 
-         - name: Upload package as artifact
-           uses: actions/upload-artifact@v4
-           with:
-              name: openms-package
-              path: ${{ github.workspace }}/OpenMS/bld/*.zip
+  build-executable:
+    runs-on: windows-latest
+    needs: build-openms  
 
-   build-executable:
-      runs-on: windows-latest
-      needs: build-openms
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
 
-      steps:
-         - name: Checkout
-           uses: actions/checkout@v4
+    - name: Set Version in settings.json
+      run: |
+        $VERSION="${{ github.event.release.tag_name }}"
+        $content = Get-Content -Raw settings.json | ConvertFrom-Json
+        $content.version = $VERSION
+        $content | ConvertTo-Json -Depth 100 | Set-Content settings.json
 
-         - name: Set Version in settings.json
-           run: |
-              $VERSION="${{ github.event.release.tag_name }}"
-              $content = Get-Content -Raw settings.json | ConvertFrom-Json
-              $content.version = $VERSION
-              $content | ConvertTo-Json -Depth 100 | Set-Content settings.json
+    - name: Download package as artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: openms-package
+        path: openms-package
 
-         - name: Download package as artifact
-           uses: actions/download-artifact@v4
-           with:
-              name: openms-package
-              path: openms-package
+    - name: Extract bin and share from package
+      run: |
+        cd openms-package
+        unzip "*.zip" -d .
+        cp -r openms-package/bin ../openms-bin
+        cp -r openms-package/share ../share
 
-         - name: Extract bin and share from package
-           run: |
-              cd openms-package
-              unzip "*.zip" -d .
-              cp -r openms-package/bin ../openms-bin
-              cp -r openms-package/share ../share
+    - name: Set up Python (regular distribution)
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ env.PYTHON_VERSION }} # Use the same version as the embeddable version
+    
+    - name: Setup python embeddable version
+      run: |
+        # Create a directory for the embeddable Python version
+        mkdir python-${{ env.PYTHON_VERSION }}
+        
+        # Download and unzip the embeddable Python version
+        curl -O https://www.python.org/ftp/python/${{ env.PYTHON_VERSION }}/python-${{ env.PYTHON_VERSION }}-embed-amd64.zip
+        unzip python-${{ env.PYTHON_VERSION }}-embed-amd64.zip -d python-${{ env.PYTHON_VERSION }}
+        rm python-${{ env.PYTHON_VERSION }}-embed-amd64.zip
 
-         - name: Set up Python (regular distribution)
-           uses: actions/setup-python@v5
-           with:
-              python-version: ${{ env.PYTHON_VERSION }} # Use the same version as the embeddable version
+        # Define paths for the regular Python distribution and the embeddable distribution
+        $PYTHON_DIR="${{ runner.tool_cache }}/Python/${{ env.PYTHON_VERSION }}/x64" # Path from actions/setup-python
+        $EMBED_DIR="python-${{ env.PYTHON_VERSION }}"
+        
+        mkdir -p $EMBED_DIR/Lib/site-packages/tkinter
+        mkdir -p $EMBED_DIR/tcl
 
-         - name: Setup python embeddable version
-           run: |
-              # Create a directory for the embeddable Python version
-              mkdir python-${{ env.PYTHON_VERSION }}
+        # Copy necessary Tkinter files from the regular Python distribution
+        cp -r $PYTHON_DIR/Lib/tkinter/* $EMBED_DIR/Lib/site-packages/tkinter/
+        cp -r $PYTHON_DIR/tcl/* $EMBED_DIR/tcl/
+        cp $PYTHON_DIR/DLLs/_tkinter.pyd $EMBED_DIR/
+        cp $PYTHON_DIR/DLLs/tcl86t.dll $EMBED_DIR/
+        cp $PYTHON_DIR/DLLs/tk86t.dll $EMBED_DIR/
 
-              # Download and unzip the embeddable Python version
-              curl -O https://www.python.org/ftp/python/${{ env.PYTHON_VERSION }}/python-${{ env.PYTHON_VERSION }}-embed-amd64.zip
-              unzip python-${{ env.PYTHON_VERSION }}-embed-amd64.zip -d python-${{ env.PYTHON_VERSION }}
-              rm python-${{ env.PYTHON_VERSION }}-embed-amd64.zip
+    - name: Install pip
+      run: |
+        curl -O https://bootstrap.pypa.io/get-pip.py
+        ./python-${{ env.PYTHON_VERSION }}/python get-pip.py --no-warn-script-location
+        rm get-pip.py
 
-              # Define paths for the regular Python distribution and the embeddable distribution
-              $PYTHON_DIR="${{ runner.tool_cache }}/Python/${{ env.PYTHON_VERSION }}/x64" # Path from actions/setup-python
-              $EMBED_DIR="python-${{ env.PYTHON_VERSION }}"
+    - name: Uncomment 'import site' in python311._pth file
+      run: |
+        sed -i 's/#import site/import site/' python-${{ env.PYTHON_VERSION }}/python311._pth
 
-              mkdir -p $EMBED_DIR/Lib/site-packages/tkinter
-              mkdir -p $EMBED_DIR/tcl
+    - name: Install Required Packages
+      run: .\python-${{ env.PYTHON_VERSION }}\python -m pip install --force-reinstall -r requirements.txt --no-warn-script-location
 
-              # Copy necessary Tkinter files from the regular Python distribution
-              cp -r $PYTHON_DIR/Lib/tkinter/* $EMBED_DIR/Lib/site-packages/tkinter/
-              cp -r $PYTHON_DIR/tcl/* $EMBED_DIR/tcl/
-              cp $PYTHON_DIR/DLLs/_tkinter.pyd $EMBED_DIR/
-              cp $PYTHON_DIR/DLLs/tcl86t.dll $EMBED_DIR/
-              cp $PYTHON_DIR/DLLs/tk86t.dll $EMBED_DIR/
+    - name: Set to offline deployment
+      run: |
+        $content = Get-Content -Raw settings.json | ConvertFrom-Json
+        $content.online_deployment = $false
+        $content | ConvertTo-Json -Depth 100 | Set-Content settings.json
 
-         - name: Install pip
-           run: |
-              curl -O https://bootstrap.pypa.io/get-pip.py
-              ./python-${{ env.PYTHON_VERSION }}/python get-pip.py --no-warn-script-location
-              rm get-pip.py
+    - name: Create Streamlit config content
+      run: |
+        # Define the config content in a single place to avoid duplication
+        $configContent = @"
+        [browser]
+        gatherUsageStats = false
 
-         - name: Uncomment 'import site' in python311._pth file
-           run: |
-              sed -i 's/#import site/import site/' python-${{ env.PYTHON_VERSION }}/python311._pth
+        [global]
+        developmentMode = false
 
-         - name: Install Required Packages
-           run: .\python-${{ env.PYTHON_VERSION }}\python -m pip install --force-reinstall -r requirements.txt --no-warn-script-location
+        [server]
+        port = 8501
+        "@
 
-         - name: Set to offline deployment
-           run: |
-              $content = Get-Content -Raw settings.json | ConvertFrom-Json
-              $content.online_deployment = $false
-              $content | ConvertTo-Json -Depth 100 | Set-Content settings.json
+        # Save the content to a temporary file for later use
+        $configContent | Out-File -FilePath "streamlit_config_template.txt" -Encoding utf8
 
-         - name: Create Streamlit config content
-           run: |
-              # Define the config content in a single place to avoid duplication
-              $configContent = @"
-              [browser]
-              gatherUsageStats = false
+    - name: Create .bat file
+      run: |
+        echo '@echo off' > ${{ env.APP_NAME }}.bat
+        echo '' >> ${{ env.APP_NAME }}.bat
+        echo 'REM Create .streamlit directory in user''s home if it doesn''t exist' >> ${{ env.APP_NAME }}.bat
+        echo 'if not exist "%%USERPROFILE%%\.streamlit" mkdir "%%USERPROFILE%%\.streamlit"' >> ${{ env.APP_NAME }}.bat
+        echo '' >> ${{ env.APP_NAME }}.bat
+        echo 'REM Create config.toml with required settings to disable email prompt' >> ${{ env.APP_NAME }}.bat
+        echo 'copy /Y ".streamlit\config.toml" "%%USERPROFILE%%\.streamlit\config.toml" > nul' >> ${{ env.APP_NAME }}.bat
+        echo '' >> ${{ env.APP_NAME }}.bat
+        echo 'start /min .\python-${{ env.PYTHON_VERSION }}\python -m streamlit run app.py local' >> ${{ env.APP_NAME }}.bat
 
-              [global]
-              developmentMode = false
+    - name: Create All-in-one executable folder
+      run: |
+        mkdir streamlit_exe
 
-              [server]
-              port = 8501
-              "@
+        mv python-${{ env.PYTHON_VERSION }} streamlit_exe
+        cp -r src streamlit_exe
+        cp -r content streamlit_exe
+        cp -r docs streamlit_exe
+        cp -r assets streamlit_exe
+        cp -r example-data streamlit_exe
+        cp openms-bin/*.dll streamlit_exe
 
-              # Save the content to a temporary file for later use
-              $configContent | Out-File -FilePath "streamlit_config_template.txt" -Encoding utf8
+        # Ensure .streamlit directory exists
+        mkdir -Force streamlit_exe/.streamlit
 
-         - name: Create .bat file
-           run: |
-              echo '@echo off' > ${{ env.APP_NAME }}.bat
-              echo '' >> ${{ env.APP_NAME }}.bat
-              echo 'REM Create .streamlit directory in user''s home if it doesn''t exist' >> ${{ env.APP_NAME }}.bat
-              echo 'if not exist "%%USERPROFILE%%\.streamlit" mkdir "%%USERPROFILE%%\.streamlit"' >> ${{ env.APP_NAME }}.bat
-              echo '' >> ${{ env.APP_NAME }}.bat
-              echo 'REM Create config.toml with required settings to disable email prompt' >> ${{ env.APP_NAME }}.bat
-              echo 'copy /Y ".streamlit\config.toml" "%%USERPROFILE%%\.streamlit\config.toml" > nul' >> ${{ env.APP_NAME }}.bat
-              echo '' >> ${{ env.APP_NAME }}.bat
-              echo 'start /min .\python-${{ env.PYTHON_VERSION }}\python -m streamlit run app.py local' >> ${{ env.APP_NAME }}.bat
+        # Copy the config template to the .streamlit directory
+        Get-Content streamlit_config_template.txt | Out-File -FilePath "streamlit_exe/.streamlit/config.toml" -Encoding utf8
 
-         - name: Create All-in-one executable folder
-           run: |
-              mkdir streamlit_exe
+        cp -r share streamlit_exe/share
+        cp app.py streamlit_exe
+        cp settings.json streamlit_exe
+        cp default-parameters.json streamlit_exe
+        cp ${{ env.APP_NAME }}.bat streamlit_exe
 
-              mv python-${{ env.PYTHON_VERSION }} streamlit_exe
-              cp -r src streamlit_exe
-              cp -r content streamlit_exe
-              cp -r docs streamlit_exe
-              cp -r assets streamlit_exe
-              cp -r example-data streamlit_exe
-              cp openms-bin/*.dll streamlit_exe
+        $files = $env:TOPP_TOOLS -split ' '
+        foreach ($file in $files) {
+          Copy-Item "openms-bin/${file}.exe" -Destination "streamlit_exe/${file}.exe"
+        }
 
-              # Ensure .streamlit directory exists
-              mkdir -Force streamlit_exe/.streamlit
+        # Setup Streamlit config in the embedded Python environment
+        $streamlitConfigDir = "streamlit_exe/python-${{ env.PYTHON_VERSION }}/Lib/site-packages/streamlit/.streamlit"
+        mkdir -Force $streamlitConfigDir
 
-              # Copy the config template to the .streamlit directory
-              Get-Content streamlit_config_template.txt | Out-File -FilePath "streamlit_exe/.streamlit/config.toml" -Encoding utf8
+        # Copy the same config file to the embedded Python environment
+        Copy-Item "streamlit_exe/.streamlit/config.toml" -Destination "$streamlitConfigDir/config.toml"
 
-              cp -r share streamlit_exe/share
-              cp app.py streamlit_exe
-              cp settings.json streamlit_exe
-              cp default-parameters.json streamlit_exe
-              cp ${{ env.APP_NAME }}.bat streamlit_exe
+    - name: Generate Readme.txt
+      shell: bash
+      run: |
+        cat <<EOF > streamlit_exe/Readme.txt
+        Welcome to ${{ env.APP_NAME }} app!
 
-              $files = $env:TOPP_TOOLS -split ' '
-              foreach ($file in $files) {
-                Copy-Item "openms-bin/${file}.exe" -Destination "streamlit_exe/${file}.exe"
-              }
+        To launch the application:
+        1. Navigate to the installation directory.
+        2. Double-click on the file: ${{ env.APP_NAME }}.bat or ${{ env.APP_NAME }} shortcut.
 
-              # Setup Streamlit config in the embedded Python environment
-              $streamlitConfigDir = "streamlit_exe/python-${{ env.PYTHON_VERSION }}/Lib/site-packages/streamlit/.streamlit"
-              mkdir -Force $streamlitConfigDir
+        Additional Information:
+        - If multiple Streamlit apps are running, you can change the port in the .streamlit/config.toml file.
+          Example:
+            [server]
+            port = 8502
 
-              # Copy the same config file to the embedded Python environment
-              Copy-Item "streamlit_exe/.streamlit/config.toml" -Destination "$streamlitConfigDir/config.toml"
+        Reach out to us:
+        - Join our Discord server for support and community discussions: https://discord.com/invite/4TAGhqJ7s5
+        - Contribute or stay updated with the latest OpenMS web app developments on GitHub: https://github.com/OpenMS/streamlit-template
+        - Visit our website for more information: https://openms.de/
+        
+        Thank you for using ${{ env.APP_NAME }}!
+        EOF
+        
+    - name: Install WiX Toolset
+      run: |
+        curl -LO https://github.com/wixtoolset/wix3/releases/download/wix3111rtm/wix311-binaries.zip
+        unzip wix311-binaries.zip -d wix
+        rm wix311-binaries.zip
+    
+    - name: Build .wxs for streamlit_exe folder
+      run: |
+        ./wix/heat.exe dir streamlit_exe -gg -sfrag -sreg -srd -template component -cg StreamlitExeFiles -dr AppSubFolder -out streamlit_exe_files.wxs
+    
+    - name: Generate VBScript file
+      shell: bash
+      run: |
+        cat <<EOF > ShowSuccessMessage.vbs
+        MsgBox "The ${{ env.APP_NAME }} application is successfully installed.", vbInformation, "Installation Complete"
+        EOF
 
-         - name: Generate Readme.txt
-           shell: bash
-           run: |
-              cat <<EOF > streamlit_exe/Readme.txt
-              Welcome to ${{ env.APP_NAME }} app!
-
-              To launch the application:
-              1. Navigate to the installation directory.
-              2. Double-click on the file: ${{ env.APP_NAME }}.bat or ${{ env.APP_NAME }} shortcut.
-
-              Additional Information:
-              - If multiple Streamlit apps are running, you can change the port in the .streamlit/config.toml file.
-                Example:
-                  [server]
-                  port = 8502
-
-              Reach out to us:
-              - Join our Discord server for support and community discussions: https://discord.com/invite/4TAGhqJ7s5
-              - Contribute or stay updated with the latest OpenMS web app developments on GitHub: https://github.com/OpenMS/streamlit-template
-              - Visit our website for more information: https://openms.de/
-
-              Thank you for using ${{ env.APP_NAME }}!
-              EOF
-
-         - name: Install WiX Toolset
-           run: |
-              curl -LO https://github.com/wixtoolset/wix3/releases/download/wix3111rtm/wix311-binaries.zip
-              unzip wix311-binaries.zip -d wix
-              rm wix311-binaries.zip
-
-         - name: Build .wxs for streamlit_exe folder
-           run: |
-              ./wix/heat.exe dir streamlit_exe -gg -sfrag -sreg -srd -template component -cg StreamlitExeFiles -dr AppSubFolder -out streamlit_exe_files.wxs
-
-         - name: Generate VBScript file
-           shell: bash
-           run: |
-              cat <<EOF > ShowSuccessMessage.vbs
-              MsgBox "The ${{ env.APP_NAME }} application is successfully installed.", vbInformation, "Installation Complete"
-              EOF
-
-         - name: Prepare SourceDir
-           run: |
-              mkdir SourceDir
-              mv streamlit_exe/* SourceDir
-              cp ShowSuccessMessage.vbs SourceDir
-              cp assets/openms_license.rtf SourceDir
-              # Logo of app
-              cp assets/openms.ico SourceDir
-
-         - name: Generate WiX XML file
-           shell: bash
-           run: |
-              cat <<EOF > streamlit_exe.wxs
-              <?xml version="1.0"?>
-              <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
-                <Product Id="*" Name="${{ env.APP_NAME }}" Language="1033" Version="1.0.0.0" Codepage="1252" Manufacturer="OpenMS Developer Team" UpgradeCode="${{ env.APP_UpgradeCode }}">
-                  <Package Id="*" InstallerVersion="300" Compressed="yes" InstallPrivileges="elevated" Platform="x64" />
-                  <Media Id="1" Cabinet="streamlit.cab" EmbedCab="yes" />
-
-                  <!-- Folder structure -->
-                  <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
-                  <Directory Id="TARGETDIR" Name="SourceDir">
-                    <Directory Id="ProgramFilesFolder"> 
-                      <Directory Id="INSTALLFOLDER" Name="${{ env.APP_NAME }}">
-                        <Directory Id="AppSubFolder" Name="${{ env.APP_NAME }}" /> 
-                        <Component Id="CreateAppFolder" Guid="95dbfa06-d36a-427f-995c-e87769ac2e59">
-                          <CreateFolder>
-                            <Permission User="Everyone" GenericAll="yes" />
-                          </CreateFolder>
-                        </Component>
-                      </Directory>
-                    </Directory>
-                    <Directory Id="DesktopFolder" />
-                  </Directory>
-
-                  <!-- Add components -->
-                  <Feature Id="MainFeature" Title="Main Application" Level="1">
-                    <ComponentGroupRef Id="StreamlitExeFiles" />
-                    <ComponentRef Id="CreateAppFolder" />
-                    <ComponentRef Id="DesktopShortcutComponent" />
-                    <ComponentRef Id="InstallDirShortcutComponent" />
-                  </Feature>
-
-                  <!-- Create shortcut for running app on desktop -->
-                  <Component Id="DesktopShortcutComponent" Guid="3597b243-9180-4d0b-b105-30d8b0d1a334" Directory="DesktopFolder">
-                    <Shortcut Id="DesktopShortcut" Name="${{ env.APP_NAME }}" Description="Launch ${{ env.APP_NAME }}" Target="[AppSubFolder]${{ env.APP_NAME }}.bat" WorkingDirectory="AppSubFolder" Icon="AppIcon" />
-                    <RegistryValue Root="HKCU" Key="Software\\OpenMS\\${{ env.APP_NAME }}" Name="DesktopShortcut" Type="integer" Value="1" KeyPath="yes" />
+    - name: Prepare SourceDir
+      run: |
+        mkdir SourceDir
+        mv streamlit_exe/* SourceDir
+        cp ShowSuccessMessage.vbs SourceDir
+        cp assets/openms_license.rtf SourceDir
+        # Logo of app
+        cp assets/openms.ico SourceDir
+        
+    - name: Generate WiX XML file
+      shell: bash
+      run: |
+        cat <<EOF > streamlit_exe.wxs
+        <?xml version="1.0"?>
+        <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+          <Product Id="*" Name="${{ env.APP_NAME }}" Language="1033" Version="1.0.0.0" Codepage="1252" Manufacturer="OpenMS Developer Team" UpgradeCode="${{ env.APP_UpgradeCode }}">
+            <Package Id="*" InstallerVersion="300" Compressed="yes" InstallPrivileges="elevated" Platform="x64" />
+            <Media Id="1" Cabinet="streamlit.cab" EmbedCab="yes" />
+        
+            <!-- Folder structure -->
+            <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
+            <Directory Id="TARGETDIR" Name="SourceDir">
+              <Directory Id="ProgramFilesFolder"> 
+                <Directory Id="INSTALLFOLDER" Name="${{ env.APP_NAME }}">
+                  <Directory Id="AppSubFolder" Name="${{ env.APP_NAME }}" /> 
+                  <Component Id="CreateAppFolder" Guid="95dbfa06-d36a-427f-995c-e87769ac2e59">
+                    <CreateFolder>
+                      <Permission User="Everyone" GenericAll="yes" />
+                    </CreateFolder>
                   </Component>
+                </Directory>
+              </Directory>
+              <Directory Id="DesktopFolder" />
+            </Directory>
+        
+            <!-- Add components -->
+            <Feature Id="MainFeature" Title="Main Application" Level="1">
+              <ComponentGroupRef Id="StreamlitExeFiles" />
+              <ComponentRef Id="CreateAppFolder" />
+              <ComponentRef Id="DesktopShortcutComponent" />
+              <ComponentRef Id="InstallDirShortcutComponent" />
+            </Feature>
+        
+            <!-- Create shortcut for running app on desktop -->
+            <Component Id="DesktopShortcutComponent" Guid="3597b243-9180-4d0b-b105-30d8b0d1a334" Directory="DesktopFolder">
+              <Shortcut Id="DesktopShortcut" Name="${{ env.APP_NAME }}" Description="Launch ${{ env.APP_NAME }}" Target="[AppSubFolder]${{ env.APP_NAME }}.bat" WorkingDirectory="AppSubFolder" Icon="AppIcon" />
+              <RegistryValue Root="HKCU" Key="Software\\OpenMS\\${{ env.APP_NAME }}" Name="DesktopShortcut" Type="integer" Value="1" KeyPath="yes" />
+            </Component>
+        
+            <!-- Create shortcut for running app in installer folder -->
+            <Component Id="InstallDirShortcutComponent" Guid="c2df9472-3b45-4558-a56d-6034cf7c8b72" Directory="AppSubFolder">
+              <Shortcut Id="InstallDirShortcut" Name="${{ env.APP_NAME }}" Description="Launch ${{ env.APP_NAME }}" Target="[AppSubFolder]${{ env.APP_NAME }}.bat" WorkingDirectory="AppSubFolder" Icon="AppIcon" />
+              <RegistryValue Root="HKCU" Key="Software\\OpenMS\\${{ env.APP_NAME }}" Name="InstallFolderShortcut" Type="integer" Value="1" KeyPath="yes" />
+            </Component>
+        
+            <!-- Provide icon here; it should exist in the SourceDir folder -->
+            <Icon Id="AppIcon" SourceFile="SourceDir/openms.ico" />
+        
+            <!-- Run app directly after installation -->
+            <!-- <CustomAction Id="RunApp" Directory="AppSubFolder" Execute="deferred" Return="asyncNoWait" Impersonate="no"
+                          ExeCommand="cmd.exe /c &quot;[AppSubFolder]${{ env.APP_NAME }}.bat&quot;" /> -->
+            
+            <!-- Custom Action to Show Success Message -->
+            <Binary Id="ShowMessageScript" SourceFile="SourceDir/ShowSuccessMessage.vbs" />
+            <CustomAction Id="ShowSuccessMessage" BinaryKey="ShowMessageScript" VBScriptCall="" Execute="immediate" Return="check" />
+        
+            <!-- Add all Custom Actions -->
+            <InstallExecuteSequence>
+              <!-- Custom action display success message -->
+              <Custom Action="ShowSuccessMessage" After="InstallFinalize">NOT Installed</Custom>
+              <!-- Run app directly after installation -->
+              <!-- <Custom Action="RunApp" Before="InstallFinalize">NOT REMOVE</Custom> -->
+            </InstallExecuteSequence>
+        
+            <!-- Interface options -->
+            <UI>
+                  <UIRef Id="WixUI_InstallDir" />
+                  <UIRef Id="WixUI_ErrorProgressText" />
+            </UI> 
+        
+            <!-- Provide license; it should exist in the SourceDir folder -->
+            <WixVariable Id="WixUILicenseRtf" Value="SourceDir/openms_license.rtf" />
+          </Product>
+        </Wix>
+        EOF
 
-                  <!-- Create shortcut for running app in installer folder -->
-                  <Component Id="InstallDirShortcutComponent" Guid="c2df9472-3b45-4558-a56d-6034cf7c8b72" Directory="AppSubFolder">
-                    <Shortcut Id="InstallDirShortcut" Name="${{ env.APP_NAME }}" Description="Launch ${{ env.APP_NAME }}" Target="[AppSubFolder]${{ env.APP_NAME }}.bat" WorkingDirectory="AppSubFolder" Icon="AppIcon" />
-                    <RegistryValue Root="HKCU" Key="Software\\OpenMS\\${{ env.APP_NAME }}" Name="InstallFolderShortcut" Type="integer" Value="1" KeyPath="yes" />
-                  </Component>
+    - name: Build .wixobj file with candle.exe
+      run: |
+        ./wix/candle.exe streamlit_exe.wxs streamlit_exe_files.wxs
+        
+    - name: Link .wixobj file into .msi with light.exe
+      run: |
+        ./wix/light.exe -ext WixUIExtension -sice:ICE60 -o ${{ env.APP_NAME }}.msi streamlit_exe_files.wixobj streamlit_exe.wixobj
 
-                  <!-- Provide icon here; it should exist in the SourceDir folder -->
-                  <Icon Id="AppIcon" SourceFile="SourceDir/openms.ico" />
+    - name: Compress Installer
+      run: |
+        7z a OpenMS-App.zip ${{ env.APP_NAME }}.msi
 
-                  <!-- Run app directly after installation -->
-                  <!-- <CustomAction Id="RunApp" Directory="AppSubFolder" Execute="deferred" Return="asyncNoWait" Impersonate="no"
-                                ExeCommand="cmd.exe /c &quot;[AppSubFolder]${{ env.APP_NAME }}.bat&quot;" /> -->
-                  
-                  <!-- Custom Action to Show Success Message -->
-                  <Binary Id="ShowMessageScript" SourceFile="SourceDir/ShowSuccessMessage.vbs" />
-                  <CustomAction Id="ShowSuccessMessage" BinaryKey="ShowMessageScript" VBScriptCall="" Execute="immediate" Return="check" />
+    - name: Archive build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: OpenMS-App
+        path: |
+          OpenMS-App.zip
 
-                  <!-- Add all Custom Actions -->
-                  <InstallExecuteSequence>
-                    <!-- Custom action display success message -->
-                    <Custom Action="ShowSuccessMessage" After="InstallFinalize">NOT Installed</Custom>
-                    <!-- Run app directly after installation -->
-                    <!-- <Custom Action="RunApp" Before="InstallFinalize">NOT REMOVE</Custom> -->
-                  </InstallExecuteSequence>
-
-                  <!-- Interface options -->
-                  <UI>
-                        <UIRef Id="WixUI_InstallDir" />
-                        <UIRef Id="WixUI_ErrorProgressText" />
-                  </UI> 
-
-                  <!-- Provide license; it should exist in the SourceDir folder -->
-                  <WixVariable Id="WixUILicenseRtf" Value="SourceDir/openms_license.rtf" />
-                </Product>
-              </Wix>
-              EOF
-
-         - name: Build .wixobj file with candle.exe
-           run: |
-              ./wix/candle.exe streamlit_exe.wxs streamlit_exe_files.wxs
-
-         - name: Link .wixobj file into .msi with light.exe
-           run: |
-              ./wix/light.exe -ext WixUIExtension -sice:ICE60 -o ${{ env.APP_NAME }}.msi streamlit_exe_files.wixobj streamlit_exe.wixobj
-
-         - name: Compress Installer
-           run: |
-              7z a OpenMS-App.zip ${{ env.APP_NAME }}.msi
-
-         - name: Archive build artifacts
-           uses: actions/upload-artifact@v4
-           with:
-              name: OpenMS-App
-              path: |
-                 OpenMS-App.zip
-
-         - name: Upload Artifact as Release Asset
-           if: github.event_name == 'release'
-           uses: softprops/action-gh-release@v2
-           with:
-              files: OpenMS-App.zip
-           env:
-              GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: Upload Artifact as Release Asset
+      if: github.event_name == 'release'
+      uses: softprops/action-gh-release@v2
+      with:
+        files: OpenMS-App.zip
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
