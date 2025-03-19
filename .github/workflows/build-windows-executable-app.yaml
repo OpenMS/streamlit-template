@@ -209,7 +209,7 @@ jobs:
               cp -r openms-package/share ../share
 
          - name: Set up Python (regular distribution)
-           uses: actions/setup-python@v4
+           uses: actions/setup-python@v5
            with:
               python-version: ${{ env.PYTHON_VERSION }} # Use the same version as the embeddable version
 
