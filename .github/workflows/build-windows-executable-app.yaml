@@ -392,7 +392,7 @@ jobs:
             <Binary Id="ShowMessageScript" SourceFile="SourceDir/ShowSuccessMessage.vbs" />
             <CustomAction Id="ShowSuccessMessage" BinaryKey="ShowMessageScript" VBScriptCall="" Execute="immediate" Return="check" />
         
-            <!-- Custom Action: Write WORKSPACES_FOLDER to a text file -->
+            <!-- Custom Action: Write WORKSPACES_FOLDER to settings file -->
             <CustomAction Id="WriteWorkspacePath" Directory="INSTALLFOLDER" Execute="deferred" Impersonate="no" 
               ExeCommand="powershell.exe -NoProfile -ExecutionPolicy Bypass -Command &quot;&amp;{&dollar;settingsPath='[AppSubFolder]settings.json'; &dollar;settings = Get-Content -Raw &dollar;settingsPath | ConvertFrom-Json; &dollar;settings.workspaces_dir = '[WORKSPACES_FOLDER]'; &dollar;settings | ConvertTo-Json -Depth 100 | Set-Content &dollar;settingsPath}&quot;" 
               Return="check" />
