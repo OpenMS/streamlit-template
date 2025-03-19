@@ -394,7 +394,7 @@ jobs:
         
             <!-- Custom Action: Write WORKSPACES_FOLDER to settings file -->
             <CustomAction Id="WriteWorkspacePath" Directory="INSTALLFOLDER" Execute="deferred" Impersonate="no" 
-              ExeCommand="powershell.exe -NoProfile -ExecutionPolicy Bypass -Command &quot;&amp;{&dollar;settingsPath='[AppSubFolder]settings.json'; &dollar;settings = Get-Content -Raw &dollar;settingsPath | ConvertFrom-Json; &dollar;settings.workspaces_dir = '[WORKSPACES_FOLDER]'; &dollar;settings | ConvertTo-Json -Depth 100 | Set-Content &dollar;settingsPath}&quot;" 
+              ExeCommand="powershell.exe -NoProfile -ExecutionPolicy Bypass -Command &quot;`$settingsPath='[AppSubFolder]settings.json'; `$settings = Get-Content -Raw `$settingsPath | ConvertFrom-Json; `$settings.workspaces_dir = '[WORKSPACES_FOLDER]'; `$settings | ConvertTo-Json -Depth 100 | Set-Content `$settingsPath&quot;" 
               Return="check" />
             <!-- Add all Custom Actions -->
             <InstallExecuteSequence>
