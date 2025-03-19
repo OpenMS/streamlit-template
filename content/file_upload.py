@@ -23,7 +23,7 @@ if not any(Path(mzML_dir).iterdir()):
     # No files present, load example data
     fileupload.load_example_mzML_files()
 
-tabs = ["File Upload", "Example Data"]
+tabs = ["File Upload"]
 if st.session_state.location == "local":
     tabs.append("Files from local folder")
 
@@ -41,16 +41,9 @@ with tabs[0]:
             else:
                 st.warning("Select files first.")
 
-# Example mzML files
-with tabs[1]:
-    st.markdown("Short information text on example data.")
-    cols = st.columns(3)
-    if cols[1].button("Load Example Data", type="primary"):
-        fileupload.load_example_mzML_files()
-
 # Local file upload option: via directory path
 if st.session_state.location == "local":
-    with tabs[2]:
+    with tabs[1]:
         st_cols = st.columns([0.05, 0.95], gap="small")
         with st_cols[0]:
             st.write("\n")
