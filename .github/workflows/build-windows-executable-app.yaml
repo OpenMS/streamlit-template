@@ -393,7 +393,7 @@ jobs:
             <CustomAction Id="ShowSuccessMessage" BinaryKey="ShowMessageScript" VBScriptCall="" Execute="immediate" Return="check" />
         
             <!-- Custom Action: Write WORKSPACES_FOLDER to a text file -->
-            <CustomAction Id="WriteWorkspacePath" Directory="INSTALLFOLDER" Execute="deferred" Impersonate="no" ExeCommand="cmd.exe /c echo [WORKSPACES_FOLDER] > &quot;[AppSubFolder]workspace_path.txt&quot;" Return="ignore" />
+            <CustomAction Id="WriteWorkspacePath" Directory="INSTALLFOLDER" Execute="deferred" Impersonate="no" ExeCommand="cmd.exe /c echo &quot;[WORKSPACES_FOLDER]&quot; > &quot;[AppSubFolder]workspace_path.txt&quot;" Return="ignore" />
 
             <!-- Add all Custom Actions -->
             <InstallExecuteSequence>
