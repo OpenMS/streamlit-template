@@ -22,6 +22,11 @@ pip install -r requirements.txt
 
 #install pyinstaller
 pip install pyinstaller
+
+#Verify the correct Python environment is activated 
+echo "Python Executable: $(which python)"
+#⚠ If the output does not show the virtual environment path, activate it first.
+
 ```
 
 ### streamlit files

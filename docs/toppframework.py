@@ -36,7 +36,7 @@ To build your own workflow edit the file `src/TOPPWorkflow.py`. Use any streamli
 
 The file `content/6_TOPP-Workflow.py` displays the workflow content and can, but does not have to be modified.
 
-The `Workflow` class contains four important members, which you can use to build your own workflow:
+The `Workflow` class contains five important members, which you can use to build your own workflow:
 
 > **`self.params`:** dictionary of parameters stored in a JSON file in the workflow directory. Parameter handling is done automatically. Default values are defined in input widgets and non-default values are stored in the JSON file.
 
