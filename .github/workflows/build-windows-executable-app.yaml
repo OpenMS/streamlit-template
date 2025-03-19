@@ -393,8 +393,8 @@ jobs:
             <CustomAction Id="ShowSuccessMessage" BinaryKey="ShowMessageScript" VBScriptCall="" Execute="immediate" Return="check" />
         
             <!-- Custom Action: Write WORKSPACES_FOLDER to a text file -->
-            <CustomAction Id="WriteWorkspacePath" Directory="INSTALLFOLDER" Execute="deferred" Impersonate="no" 
-              ExeCommand="powershell.exe -NoProfile -ExecutionPolicy Bypass -Command &quot;$settingsPath='[AppSubFolder]settings.json'; $settings = Get-Content -Raw $settingsPath | ConvertFrom-Json; $settings.workspaces_dir = '[WORKSPACES_FOLDER]'; $settings | ConvertTo-Json -Depth 100 | Set-Content $settingsPath&quot;" 
+           <CustomAction Id="WriteWorkspacePath" Directory="INSTALLFOLDER" Execute="deferred" Impersonate="no" 
+              ExeCommand="powershell.exe -NoProfile -ExecutionPolicy Bypass -Command &quot;&amp;{$settingsPath='[AppSubFolder]settings.json'; $settings = Get-Content -Raw $settingsPath | ConvertFrom-Json; $settings.workspaces_dir = '[WORKSPACES_FOLDER]'; $settings | ConvertTo-Json -Depth 100 | Set-Content $settingsPath}&quot;" 
               Return="check" />
             <!-- Add all Custom Actions -->
             <InstallExecuteSequence>
