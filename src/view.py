@@ -316,4 +316,27 @@ def view_bpc_tic():
         key="view_eic_ppm",
     )
     fig = plot_bpc_tic()
-    show_fig(fig, f"BPC-TIC-{st.session_state.view_selected_file}")
+    
+    fig.update_layout(
+        xaxis=dict(
+            rangeslider=dict(visible=True),         # Range slider for x-axis zoom
+            rangeselector=dict(                     # Zoom buttons
+                buttons=list([
+                    dict(count=1, label="1s", step="second", stepmode="backward"),
+                    dict(count=10, label="10s", step="second", stepmode="backward"),
+                    dict(count=1, label="1m", step="minute", stepmode="backward"),
+                    dict(step="all")
+                ])
+            )
+        ),
+        margin=dict(l=0, r=0, t=0, b=0),           # Remove margins for full-width display
+        height=700,                                # Increase height for better visualization
+        hovermode="x unified",                     # Unified hover tooltip
+        modebar=dict(
+            orientation='h',                       # Horizontal toolbar
+            bgcolor='rgba(255,255,255,0.7)',       # Toolbar background color
+        )
+    )
+
+    # Display full-width chromatogram
+    st.plotly_chart(fig, use_container_width=True)
