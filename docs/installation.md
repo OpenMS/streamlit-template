@@ -43,7 +43,9 @@ Create and activate the conda environment:
 
 Run the app via streamlit command in the terminal. *local* and *online* mode can be toggled in the settings.json. Learn more about *local* and *online* mode in the documentation page 📖 **OpenMS Template App**.
 
-`streamlit run app.py`
+1. Open a new terminal and run `redis-server` 
+2. On another terminal run `rq worker --with-scheduler` (multiple workers can be spawned)
+3. Finally start the application `streamlit run app.py`
 
 ## Docker
 
