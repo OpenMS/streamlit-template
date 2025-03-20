@@ -16,3 +16,5 @@ dependencies:
         - pyopenms_viz==1.0.0
         - streamlit-js-eval
         - psutil==7.0.0
+        - redis==5.2.1
+        - rq==2.1.0

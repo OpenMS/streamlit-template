@@ -5,7 +5,6 @@ import json
 from pathlib import Path
 import shutil
 
-
 @pytest.fixture
 def launch(request):
     test = AppTest.from_file(request.param)
