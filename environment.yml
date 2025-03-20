@@ -8,12 +8,13 @@ dependencies:
    - plotly==5.22.0
    - pip==24.0
    - numpy==1.26.4 # pandas and numpy are dependencies of pyopenms, however, pyopenms needs numpy<=1.26.4
+   - mono==6.12.0.90
 
    - pip:
         # dependencies only available through pip
         # streamlit dependencies
         - streamlit>=1.38.0
         - captcha==0.5.0
-        - pyopenms==3.2.0
         - pyopenms_viz==1.0.0
         - streamlit-js-eval
+        - psutil==7.0.0

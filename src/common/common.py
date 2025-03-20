@@ -90,14 +90,25 @@ def monitor_hardware():
         return
 
     try:
+        # Get CPU usage
         cpu_progress = psutil.cpu_percent(interval=None) / 100
-        ram_progress = (
-            1 - psutil.virtual_memory().available / psutil.virtual_memory().total
-        )
 
-        st.text(f"Ram ({ram_progress * 100:.2f}%)")
-        st.progress(ram_progress)
+        # Get RAM usage with better error handling
+        try:
+            ram_progress = (
+                1 - psutil.virtual_memory().available / psutil.virtual_memory().total
+            )
+        except (AttributeError, TypeError):
+            # If memory info is not available, show a warning
+            st.warning("Memory usage information is not available on this platform.")
+            ram_progress = 0
 
+        # Display RAM usage if available
+        if ram_progress > 0:
+            st.text(f"Ram ({ram_progress * 100:.2f}%)")
+            st.progress(ram_progress)
+
+        # Display CPU usage
         st.text(f"CPU ({cpu_progress * 100:.2f}%)")
         st.progress(cpu_progress)
 
@@ -440,18 +451,14 @@ def render_sidebar(page: str = "") -> None:
         with st.expander("⚙️ **Settings**"):
             # Application Theme settings
             st.markdown("## Application Theme")
-            theme_options = ["light", "dark"]
 
-            # Get current theme from config.toml
-            config_path = ".streamlit/config.toml"
-            with open(config_path, "r") as f:
-                config_content = f.read()
-                current_theme = "light"  # default to light
-                if 'base = "dark"' in config_content:
-                    current_theme = "dark"
-                elif 'base = "light"' in config_content:
-                    current_theme = "light"
+            # Get current theme from Streamlit's global theme
+            current_theme = (
+                "light" if st.get_option("theme.base") == "light" else "dark"
+            )
 
+            # Add system theme option
+            theme_options = ["system", "light", "dark"]
             selected_theme = st.selectbox(
                 "Theme Mode",
                 options=theme_options,
@@ -534,6 +541,7 @@ def render_sidebar(page: str = "") -> None:
                         )
 
                     # Update the config.toml file
+                    config_path = ".streamlit/config.toml"
                     with open(config_path, "r") as f:
                         config_lines = f.readlines()
 
@@ -598,37 +606,6 @@ def render_sidebar(page: str = "") -> None:
                 # Force reload to apply theme change
                 time.sleep(0.5)  # Give user time to see the success message
                 st.rerun()
-
-            # Plot Theme settings
-            st.markdown("## Plot Theme")
-
-            # Get current theme from config.toml for plot theme default
-            if "plot_theme" not in st.session_state:
-                with open(config_path, "r") as f:
-                    config_content = f.read()
-                    default_plot_theme = "light"  # default to light
-                    if 'base = "dark"' in config_content:
-                        default_plot_theme = "dark"
-                    elif 'base = "light"' in config_content:
-                        default_plot_theme = "light"
-                st.session_state["plot_theme"] = (
-                    default_plot_theme  # Use dictionary syntax instead of attribute
-                )
-
-            theme_options = ["light", "dark"]
-            selected_plot_theme = st.selectbox(
-                "Plot Theme",
-                theme_options,
-                index=theme_options.index(
-                    st.session_state["plot_theme"]
-                ),  # Use dictionary syntax
-                key="plot_theme_selector",  # Use a different key
-                help="Choose between light and dark theme for plots",
-            )
-
-            # Update the session state if the selection changes
-            if "plot_theme_selector" in st.session_state:
-                st.session_state["plot_theme"] = st.session_state["plot_theme_selector"]
 
             # Image format settings
             st.markdown("## Export Settings")
@@ -803,24 +780,13 @@ def show_table(df: pd.DataFrame, download_name: str = "") -> None:
 
 def configure_plot_theme():
     """Configure plot themes based on Streamlit's theme."""
-    # Get the current app theme
+    # Get the current app theme from Streamlit's global theme
     app_theme = "light" if st.get_option("theme.base") == "light" else "dark"
-
-    # Initialize plot_theme if not set
-    if "plot_theme" not in st.session_state:
-        st.session_state.plot_theme = "system"
-
-    # Determine which theme to use
-    theme_to_use = st.session_state.plot_theme
-
-    # If system theme is selected, use the app theme
-    if theme_to_use == "system":
-        theme_to_use = app_theme
 
     # Configure matplotlib if available
     if MPL_AVAILABLE:
         try:
-            if theme_to_use == "light":
+            if app_theme == "light":
                 plt.style.use("default")  # Default Matplotlib style for light theme
             else:
                 plt.style.use("dark_background")  # Built-in dark theme
@@ -830,7 +796,7 @@ def configure_plot_theme():
     # Configure plotly if available
     if PLOTLY_AVAILABLE:
         try:
-            if theme_to_use == "light":
+            if app_theme == "light":
                 pio.templates.default = "plotly_white"  # Clean, light theme
             else:
                 pio.templates.default = "plotly_dark"  # Built-in dark theme
@@ -840,11 +806,10 @@ def configure_plot_theme():
     # Configure bokeh if available
     if BOKEH_AVAILABLE:
         try:
-            if theme_to_use == "light":
-                theme = Theme("caliber")  # Clean, modern light theme
+            if app_theme == "light":
+                curdoc().theme = "light_minimal"  # Built-in light theme
             else:
-                theme = Theme("dark_minimal")  # Minimalist dark theme
-            curdoc().theme = theme
+                curdoc().theme = "dark_minimal"  # Built-in dark theme
         except Exception as e:
             print(f"Error configuring bokeh theme: {e}")
 
@@ -876,17 +841,12 @@ def show_fig(
         # Configure plot theme before displaying
         configure_plot_theme()
 
-        # Get current app theme
+        # Get current app theme from Streamlit's global theme
         app_theme = "light" if st.get_option("theme.base") == "light" else "dark"
-
-        # Determine which theme to use
-        theme_to_use = st.session_state.get("plot_theme", "system")
-        if theme_to_use == "system":
-            theme_to_use = app_theme
 
         # Update Plotly figure layout based on theme
         if hasattr(fig, "update_layout"):
-            if theme_to_use == "light":
+            if app_theme == "light":
                 fig.update_layout(
                     paper_bgcolor="white",
                     plot_bgcolor="white",
