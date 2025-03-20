@@ -290,15 +290,7 @@ jobs:
         cp -r assets streamlit_exe
         cp -r example-data streamlit_exe
         cp openms-bin/*.dll streamlit_exe
-
         cp -r .streamlit streamlit_exe
-
-        # Ensure .streamlit directory exists
-        mkdir -Force streamlit_exe/.streamlit
-
-        # Copy the credentials template to the .streamlit directory
-        Get-Content streamlit_credentials_template.txt | Out-File -FilePath "streamlit_exe/.streamlit/credentials.toml" -Encoding utf8
-
         cp -r share streamlit_exe/share
         cp app.py streamlit_exe
         cp settings.json streamlit_exe
