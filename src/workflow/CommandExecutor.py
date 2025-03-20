@@ -90,7 +90,8 @@ class CommandExecutor:
         stdout, stderr = process.communicate()
         
         # Cleanup PID file
-        pid_file_path.unlink()
+        if pid_file_path.exists():
+            pid_file_path.unlink()
 
         end_time = time.time()
         execution_time = end_time - start_time
