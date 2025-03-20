@@ -24,7 +24,6 @@ except ImportError:
     MPL_AVAILABLE = False
 
 try:
-    from bokeh.themes import Theme
     from bokeh.io import curdoc
 
     BOKEH_AVAILABLE = True
