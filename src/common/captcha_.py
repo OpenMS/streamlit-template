@@ -234,6 +234,7 @@ def captcha_control():
             data = image.generate(st.session_state["Captcha"])
             st.image(data)
             c1, c2 = st.columns([70, 30])
+            capta2_text = st.empty()
             capta2_text = c1.text_input("Enter captcha text", max_chars=5)
             c2.markdown("##")
             if c2.form_submit_button("Verify the code", type="primary"):
