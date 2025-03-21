@@ -256,17 +256,6 @@ jobs:
         $content.online_deployment = $false
         $content | ConvertTo-Json -Depth 100 | Set-Content settings.json
 
-    - name: Create Streamlit credentials content
-      run: |
-        # Define the credentials content with empty email
-        $credentialsContent = @"
-        [general]
-        email = ""
-        "@
-
-        # Save the content to a temporary file for later use
-        $credentialsContent | Out-File -FilePath "streamlit_credentials_template.txt" -Encoding utf8
-
     - name: Create .bat file
       run: |
         echo '@echo off' > ${{ env.APP_NAME }}.bat
