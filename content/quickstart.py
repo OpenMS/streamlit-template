@@ -42,7 +42,45 @@ c1.markdown(
 """
 )
 v_space(1, c2)
-c2.image("assets/openms_transparent.png", width=300)
+#  Disable the fullscreen button and any image interaction
+c2.markdown(
+    """
+    <style>
+    /* Completely hide all fullscreen buttons on the page with multiple selectors */
+    button[title="View fullscreen"],
+    [data-testid="StyledFullScreenButton"],
+    .overlayBtn,
+    .css-1j77gtx,
+    div[class*="fullscreen"],
+    div[class*="stImage"] button,
+    div[class*="stImage"] svg,
+    button svg[viewBox],
+    div[data-testid="column"]:nth-of-type(2) button {
+        display: none !important;
+        visibility: hidden !important;
+        opacity: 0 !important;
+        height: 0 !important;
+        width: 0 !important;
+        position: absolute !important;
+        pointer-events: none !important;
+        top: -9999px !important;
+        left: -9999px !important;
+    }
+    
+    /* Make the entire image container non-interactive */
+    [data-testid="stImage"],
+    [data-testid="stImage"] > div,
+    [data-testid="stImage"] img {
+        pointer-events: none !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+# Load the image with standard component
+c2.image("assets/openms_transparent_bg_logo.svg", width=300)
+
 if Path("OpenMS-App.zip").exists():
     st.subheader(
         """
