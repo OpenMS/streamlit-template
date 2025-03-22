@@ -25,6 +25,62 @@ from src.common.common import page_setup, v_space
 
 page_setup(page="main")
 
+def add_sidebar_toggle():
+    st.markdown("""
+    <style>
+        /* Hide the default Streamlit menu button */
+        .css-1rs6os {
+            visibility: hidden;
+        }
+        
+        /* Add custom toggle button */
+        .sidebar-toggle {
+            position: fixed;
+            top: 0.5rem;
+            left: 0.5rem;
+            z-index: 9999;
+            cursor: pointer;
+            background: #f0f2f6;
+            border: none;
+            border-radius: 4px;
+            padding: 0.5rem;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        
+        /* Add transition effect to sidebar */
+        [data-testid="stSidebar"] {
+            transition: transform 0.3s ease-in-out;
+        }
+        
+        /* Hide sidebar when collapsed */
+        [data-testid="stSidebar"].collapsed {
+            transform: translateX(-100%);
+        }
+    </style>
+    
+    <button class="sidebar-toggle" id="sidebar-toggle">☰</button>
+    
+    <script>
+        // Get the button and sidebar elements
+        const toggleButton = document.getElementById('sidebar-toggle');
+        const sidebar = parent.document.querySelector('[data-testid="stSidebar"]');
+        
+        // Toggle the collapsed class on button click
+        toggleButton.addEventListener('click', function() {
+            sidebar.classList.toggle('collapsed');
+            
+            // Update button text based on sidebar state
+            if (sidebar.classList.contains('collapsed')) {
+                toggleButton.innerHTML = '☰';
+                toggleButton.style.left = '0.5rem';
+            } else {
+                toggleButton.innerHTML = '×';
+                toggleButton.style.left = sidebar.offsetWidth + 'px';
+            }
+        });
+    </script>
+    """, unsafe_allow_html=True)
+
 st.markdown("# 👋 Quick Start")
 st.markdown("## Template for OpenMS web apps using the **streamlit** framework")
 c1, c2 = st.columns(2)
