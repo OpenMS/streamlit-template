@@ -4,6 +4,30 @@ import json
 # For some reason the windows version only works if this is imported here
 import pyopenms
 
+# Import the theme configuration from config.py
+from config import THEME_CONFIG
+
+# Inject custom CSS using the theme configuration
+custom_css = f"""
+<style>
+/* Container styling */
+.reportview-container {{
+    background-color: {THEME_CONFIG['backgroundColor']};
+    color: {THEME_CONFIG['textColor']};
+    font-family: {THEME_CONFIG['font']};
+}}
+
+/* Sidebar styling */
+.sidebar .sidebar-content {{
+    background: {THEME_CONFIG['secondaryBackgroundColor']};
+}}
+</style>
+"""
+
+# Render the custom CSS on the page
+st.markdown(custom_css, unsafe_allow_html=True)
+
+
 if "settings" not in st.session_state:
         with open("settings.json", "r") as f:
             st.session_state.settings = json.load(f)
