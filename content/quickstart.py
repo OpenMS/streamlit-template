@@ -42,7 +42,7 @@ c1.markdown(
 """
 )
 v_space(1, c2)
-c2.image("assets/openms_transparent_bg_logo.svg", width=300)
+c2.image("assets/openms_transparent.png", width=300)
 if Path("OpenMS-App.zip").exists():
     st.subheader(
         """
