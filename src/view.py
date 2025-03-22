@@ -7,6 +7,7 @@ import streamlit as st
 import pyopenms as poms
 from src.common.common import show_fig, display_large_dataframe
 from typing import Union
+from plotly.subplots import make_subplots
 
 
 def get_df(file: Union[str, Path]) -> pd.DataFrame:
@@ -170,6 +171,8 @@ def plot_ms_spectrum(df, title, bin_peaks, num_x_bins):
 @st.fragment
 def view_peak_map():
     df = st.session_state.view_ms1
+
+    # ✅ Apply Box Selection Filtering
     if "view_peak_map_selection" in st.session_state:
         box = st.session_state.view_peak_map_selection.selection.box
         if box:
@@ -178,29 +181,111 @@ def view_peak_map():
             df = df[df["mz"] > box[0]["y"][1]]
             df = df[df["mz"] < box[0]["y"][0]]
             df = df[df["RT"] < box[0]["x"][1]]
+
+    # ✅ Main 2D Peak Map Plot with Correct Y-Axis Label
     peak_map = df.plot(
         kind="peakmap",
         x="RT",
         y="mz",
         z="inty",
-        title=st.session_state.view_selected_file,
+        xlabel="Retention Time (s)",    # ✅ X-axis label
+        ylabel="m/z",                   # ✅ Y-axis label for main plot
         grid=False,
         show_plot=False,
         bin_peaks=True,
         backend="ms_plotly",
         aggregate_duplicates=True,
     )
-    peak_map.update_layout(template="simple_white", dragmode="select")
+
+    # ✅ Marginal TIC Plot with Correct Y-Axis Label
+    df_tic = df.groupby("RT").sum().reset_index()
+
+    marginal_tic = go.Figure()
+    marginal_tic.add_trace(
+        go.Scatter(
+            x=df_tic["RT"],
+            y=df_tic["inty"],
+            mode="lines",
+            line=dict(color="#f24c5c", width=2),
+            name="TIC",
+        )
+    )
+
+    marginal_tic.update_layout(
+        height=200,
+        margin=dict(l=0, r=0, t=0, b=0),
+        plot_bgcolor="rgb(255,255,255)",
+        xaxis=dict(title="Retention Time (s)"),     # ✅ X-axis label
+        yaxis=dict(title="TIC")                     # ✅ Y-axis label for TIC plot
+    )
+
+    # ✅ Create subplots with peak map on top and TIC at the bottom
+    combined_fig = make_subplots(
+        rows=2,
+        cols=1,
+        shared_xaxes=True,
+        row_heights=[0.7, 0.3],                      # Peak map gets 70%, TIC gets 30%
+        vertical_spacing=0.05
+    )
+
+    # ✅ Add main peak map to subplot (first row)
+    for trace in peak_map.data:
+        combined_fig.add_trace(trace, row=1, col=1)
+
+    # ✅ Add marginal TIC plot (second row)
+    for trace in marginal_tic.data:
+        combined_fig.add_trace(trace, row=2, col=1)
+
+    # ✅ Update layout with range slider only on the bottom x-axis
+    combined_fig.update_layout(
+        template="simple_white",
+        dragmode="zoom",
+        
+        # ✅ Top x-axis (no range slider)
+        xaxis=dict(
+            showgrid=False,
+            domain=[0, 1]
+        ),
+        
+        # ✅ Bottom x-axis with range slider
+        xaxis2=dict(
+            title="Retention Time (s)",
+            rangeslider=dict(visible=True),
+            showgrid=False
+        ),
+        
+        # ✅ Configure Y-axes
+        yaxis=dict(title="m/z"),                      # Y-axis for peak map
+        yaxis2=dict(title="TIC"),                     # Y-axis for TIC
+        
+        # ✅ Styling
+        height=850,
+        margin=dict(t=100, b=100),
+        title=dict(
+            text=st.session_state.view_selected_file,
+            x=0.5,
+            y=0.99,
+            xanchor="center",
+            yanchor="top",
+            font=dict(size=18, family="Arial, sans-serif")
+        )
+    )
+
+    # ✅ Display the Combined Plot
     c1, c2 = st.columns(2)
+
     with c1:
         st.info(
-            "💡 Zoom in via rectangular selection for more details and 3D plot. Double click plot to zoom back out."
+            "💡 Zoom in via rectangular selection for more details and 3D plot. "
+            "Double click plot to zoom back out."
         )
         show_fig(
-            peak_map,
+            combined_fig,
             f"peak_map_{st.session_state.view_selected_file}",
             selection_session_state_key="view_peak_map_selection",
         )
+
+    # ✅ 3D Peak Map (without range slider)
     with c2:
         if df.shape[0] < 2500:
             peak_map_3D = df.plot(
@@ -211,6 +296,8 @@ def view_peak_map():
                 y="mz",
                 z="inty",
                 zlabel="Intensity",
+                xlabel="Retention Time (s)",
+                ylabel="m/z",
                 title="",
                 show_plot=False,
                 grid=False,
@@ -220,9 +307,18 @@ def view_peak_map():
                 width=900,
                 aggregate_duplicates=True,
             )
-            st.plotly_chart(peak_map_3D, use_container_width=True)
 
+            # ✅ Update 3D plot layout (without range slider)
+            peak_map_3D.update_layout(
+                scene=dict(
+                    xaxis=dict(title="Retention Time (s)"),
+                    yaxis=dict(title="m/z"),
+                    zaxis=dict(title="Intensity"),
+                    dragmode="orbit"
+                )
+            )
 
+            st.plotly_chart(peak_map_3D, use_container_width=True)            
 @st.fragment
 def view_spectrum():
     cols = st.columns([0.34, 0.66])
