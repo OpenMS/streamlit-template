@@ -172,7 +172,7 @@ def plot_ms_spectrum(df, title, bin_peaks, num_x_bins):
 def view_peak_map():
     df = st.session_state.view_ms1
 
-    # ✅ Apply Box Selection Filtering
+    #Apply Box Selection Filtering
     if "view_peak_map_selection" in st.session_state:
         box = st.session_state.view_peak_map_selection.selection.box
         if box:
@@ -182,14 +182,13 @@ def view_peak_map():
             df = df[df["mz"] < box[0]["y"][0]]
             df = df[df["RT"] < box[0]["x"][1]]
 
-    # ✅ Main 2D Peak Map Plot with Correct Y-Axis Label
     peak_map = df.plot(
         kind="peakmap",
         x="RT",
         y="mz",
         z="inty",
-        xlabel="Retention Time (s)",    # ✅ X-axis label
-        ylabel="m/z",                   # ✅ Y-axis label for main plot
+        xlabel="Retention Time (s)",    
+        ylabel="m/z",                   
         grid=False,
         show_plot=False,
         bin_peaks=True,
@@ -197,7 +196,6 @@ def view_peak_map():
         aggregate_duplicates=True,
     )
 
-    # ✅ Marginal TIC Plot with Correct Y-Axis Label
     df_tic = df.groupby("RT").sum().reset_index()
 
     marginal_tic = go.Figure()
@@ -215,11 +213,10 @@ def view_peak_map():
         height=200,
         margin=dict(l=0, r=0, t=0, b=0),
         plot_bgcolor="rgb(255,255,255)",
-        xaxis=dict(title="Retention Time (s)"),     # ✅ X-axis label
-        yaxis=dict(title="TIC")                     # ✅ Y-axis label for TIC plot
+        xaxis=dict(title="Retention Time (s)"),     
+        yaxis=dict(title="TIC")                     
     )
 
-    # ✅ Create subplots with peak map on top and TIC at the bottom
     combined_fig = make_subplots(
         rows=2,
         cols=1,
@@ -228,37 +225,30 @@ def view_peak_map():
         vertical_spacing=0.05
     )
 
-    # ✅ Add main peak map to subplot (first row)
     for trace in peak_map.data:
         combined_fig.add_trace(trace, row=1, col=1)
 
-    # ✅ Add marginal TIC plot (second row)
     for trace in marginal_tic.data:
         combined_fig.add_trace(trace, row=2, col=1)
 
-    # ✅ Update layout with range slider only on the bottom x-axis
     combined_fig.update_layout(
         template="simple_white",
         dragmode="zoom",
         
-        # ✅ Top x-axis (no range slider)
         xaxis=dict(
             showgrid=False,
             domain=[0, 1]
         ),
         
-        # ✅ Bottom x-axis with range slider
         xaxis2=dict(
             title="Retention Time (s)",
             rangeslider=dict(visible=True),
             showgrid=False
         ),
         
-        # ✅ Configure Y-axes
         yaxis=dict(title="m/z"),                      # Y-axis for peak map
         yaxis2=dict(title="TIC"),                     # Y-axis for TIC
         
-        # ✅ Styling
         height=850,
         margin=dict(t=100, b=100),
         title=dict(
@@ -271,7 +261,6 @@ def view_peak_map():
         )
     )
 
-    # ✅ Display the Combined Plot
     c1, c2 = st.columns(2)
 
     with c1:
@@ -285,7 +274,6 @@ def view_peak_map():
             selection_session_state_key="view_peak_map_selection",
         )
 
-    # ✅ 3D Peak Map (without range slider)
     with c2:
         if df.shape[0] < 2500:
             peak_map_3D = df.plot(
@@ -308,7 +296,6 @@ def view_peak_map():
                 aggregate_duplicates=True,
             )
 
-            # ✅ Update 3D plot layout (without range slider)
             peak_map_3D.update_layout(
                 scene=dict(
                     xaxis=dict(title="Retention Time (s)"),
