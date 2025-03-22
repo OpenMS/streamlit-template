@@ -167,12 +167,11 @@ def plot_ms_spectrum(df, title, bin_peaks, num_x_bins):
     )
     return fig
 
-
 @st.fragment
 def view_peak_map():
     df = st.session_state.view_ms1
 
-    #Apply Box Selection Filtering
+    # Apply Box Selection Filtering
     if "view_peak_map_selection" in st.session_state:
         box = st.session_state.view_peak_map_selection.selection.box
         if box:
@@ -182,13 +181,14 @@ def view_peak_map():
             df = df[df["mz"] < box[0]["y"][0]]
             df = df[df["RT"] < box[0]["x"][1]]
 
+    # ✅ Main Peak Map
     peak_map = df.plot(
         kind="peakmap",
         x="RT",
         y="mz",
         z="inty",
-        xlabel="Retention Time (s)",    
-        ylabel="m/z",                   
+        xlabel="Retention Time (s)",
+        ylabel="m/z",
         grid=False,
         show_plot=False,
         bin_peaks=True,
@@ -196,10 +196,11 @@ def view_peak_map():
         aggregate_duplicates=True,
     )
 
+    # ✅ TIC Plot with Selection Mode (Inverted y-axis)
     df_tic = df.groupby("RT").sum().reset_index()
-
-    marginal_tic = go.Figure()
-    marginal_tic.add_trace(
+    
+    tic_fig = go.Figure()
+    tic_fig.add_trace(
         go.Scatter(
             x=df_tic["RT"],
             y=df_tic["inty"],
@@ -209,14 +210,24 @@ def view_peak_map():
         )
     )
 
-    marginal_tic.update_layout(
+    tic_fig.update_layout(
         height=200,
         margin=dict(l=0, r=0, t=0, b=0),
         plot_bgcolor="rgb(255,255,255)",
-        xaxis=dict(title="Retention Time (s)"),     
-        yaxis=dict(title="TIC")                     
+        xaxis=dict(
+            title="Retention Time (s)",
+            rangeslider=dict(visible=False),
+            showgrid=False
+        ),
+        yaxis=dict(
+            title="TIC",
+            autorange="reversed"  # ✅ Invert the y-axis
+        ),
+        dragmode="select",  # ✅ Horizontal selection mode
+        selectdirection = "h"
     )
 
+    # ✅ Combined Figure
     combined_fig = make_subplots(
         rows=2,
         cols=1,
@@ -228,27 +239,18 @@ def view_peak_map():
     for trace in peak_map.data:
         combined_fig.add_trace(trace, row=1, col=1)
 
-    for trace in marginal_tic.data:
+    for trace in tic_fig.data:
         combined_fig.add_trace(trace, row=2, col=1)
 
     combined_fig.update_layout(
         template="simple_white",
-        dragmode="zoom",
-        
-        xaxis=dict(
-            showgrid=False,
-            domain=[0, 1]
-        ),
-        
-        xaxis2=dict(
-            title="Retention Time (s)",
-            rangeslider=dict(visible=True),
-            showgrid=False
-        ),
-        
+        dragmode="zoom",  # Enable zooming and panning
+        xaxis=dict(title="Retention Time (s)", showgrid=False),
         yaxis=dict(title="m/z"),                      # Y-axis for peak map
-        yaxis2=dict(title="TIC"),                     # Y-axis for TIC
-        
+        yaxis2=dict(
+            title="TIC",
+            autorange="reversed"  # ✅ Inverted y-axis for TIC
+        ),
         height=850,
         margin=dict(t=100, b=100),
         title=dict(
@@ -261,12 +263,13 @@ def view_peak_map():
         )
     )
 
+    # ✅ Display the Plot
     c1, c2 = st.columns(2)
 
     with c1:
         st.info(
-            "💡 Zoom in via rectangular selection for more details and 3D plot. "
-            "Double click plot to zoom back out."
+            "💡 Select ranges on the TIC plot below for more details. "
+            "Double click to reset the selection."
         )
         show_fig(
             combined_fig,
@@ -305,7 +308,7 @@ def view_peak_map():
                 )
             )
 
-            st.plotly_chart(peak_map_3D, use_container_width=True)            
+            st.plotly_chart(peak_map_3D, use_container_width=True)
 @st.fragment
 def view_spectrum():
     cols = st.columns([0.34, 0.66])
