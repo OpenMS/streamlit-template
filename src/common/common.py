@@ -307,6 +307,16 @@ def render_sidebar(page: str = "") -> None:
     """
     params = load_params()
     with st.sidebar:
+        # Add a welcome message and user guide at the top of the sidebar
+        st.markdown(
+            """
+        <div style="border-radius: 5px; padding: 10px; background-color: #f0f2f6; margin-bottom: 20px;">
+            <h3 style="margin: 0px; font-size: 1.2em;">Welcome to OpenMS</h3>
+            <p style="margin: 5px 0 0 0; font-size: 0.9em;">Select options below to configure your analysis</p>
+        </div>
+        """,
+            unsafe_allow_html=True,
+        )
         # The main page has workspace switcher
         # Display workspace switcher if workspace is enabled in local mode
         if st.session_state.settings["enable_workspaces"]:

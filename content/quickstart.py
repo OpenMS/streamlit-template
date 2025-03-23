@@ -25,6 +25,25 @@ from src.common.common import page_setup, v_space
 
 page_setup(page="main")
 
+if "show_welcome" not in st.session_state:
+    st.session_state.show_welcome = True
+
+if st.session_state.show_welcome:
+    with st.container():
+        st.markdown(
+            """
+        <div style="padding: 20px; border-radius: 10px; border: 1px solid #ddd; background-color: #f9f9f9;">
+            <h2>Welcome to OpenMS Web Application</h2>
+            <p>This application provides powerful mass spectrometry data analysis tools.</p>
+            <p>Get started by exploring the features or uploading your data.</p>
+        </div>
+        """,
+            unsafe_allow_html=True,
+        )
+        if st.button("Don't show again"):
+            st.session_state.show_welcome = False
+            st.rerun()
+
 st.markdown("# 👋 Quick Start")
 st.markdown("## Template for OpenMS web apps using the **streamlit** framework")
 c1, c2 = st.columns(2)
