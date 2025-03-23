@@ -195,7 +195,6 @@ jobs:
         $content.version = $VERSION
         $content | ConvertTo-Json -Depth 100 | Set-Content settings.json
 
-
     - name: Download package as artifact
       uses: actions/download-artifact@v4
       with:
@@ -210,7 +209,7 @@ jobs:
         cp -r openms-package/share ../share
 
     - name: Set up Python (regular distribution)
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: ${{ env.PYTHON_VERSION }} # Use the same version as the embeddable version
     
@@ -259,9 +258,18 @@ jobs:
 
     - name: Create .bat file
       run: |
-          echo "start /min .\python-${{ env.PYTHON_VERSION }}\python -m redis-server" > ${{ env.APP_NAME }}.bat
-          echo "start /min .\python-${{ env.PYTHON_VERSION }}\python -m rq worker --with-scheduler" >> ${{ env.APP_NAME }}.bat
-          echo "start /min .\python-${{ env.PYTHON_VERSION }}\python -m streamlit run app.py local" >> ${{ env.APP_NAME }}.bat
+          
+        echo '@echo off' > ${{ env.APP_NAME }}.bat
+        echo '' >> ${{ env.APP_NAME }}.bat
+        echo 'REM Create .streamlit directory in user''s home if it doesn''t exist' >> ${{ env.APP_NAME }}.bat
+        echo 'if not exist "%USERPROFILE%\.streamlit" mkdir "%USERPROFILE%\.streamlit"' >> ${{ env.APP_NAME }}.bat
+        echo '' >> ${{ env.APP_NAME }}.bat
+        echo 'REM Create credentials.toml with empty email to disable email prompt' >> ${{ env.APP_NAME }}.bat
+        echo 'copy /Y ".streamlit\credentials.toml" "%USERPROFILE%\.streamlit\credentials.toml" > nul' >> ${{ env.APP_NAME }}.bat
+        echo '' >> ${{ env.APP_NAME }}.bat
+        echo 'start /min .\python-${{ env.PYTHON_VERSION }}\python -m redis-server' > ${{ env.APP_NAME }}.bat 
+        echo 'start /min .\python-${{ env.PYTHON_VERSION }}\python -m rq worker --with-scheduler' >> ${{ env.APP_NAME }}.bat
+        echo 'start /min .\python-${{ env.PYTHON_VERSION }}\python -m streamlit run app.py local' >> ${{ env.APP_NAME }}.bat
 
     - name: Create All-in-one executable folder
       run: |
