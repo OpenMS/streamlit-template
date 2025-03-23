@@ -90,7 +90,8 @@ class CommandExecutor:
         stdout, stderr = process.communicate()
         
         # Cleanup PID file
-        pid_file_path.unlink()
+        if pid_file_path.exists():
+            pid_file_path.unlink()
 
         end_time = time.time()
         execution_time = end_time - start_time
@@ -209,6 +210,12 @@ class CommandExecutor:
         
         shutil.rmtree(self.pid_dir, ignore_errors=True)
         self.logger.log("Workflow stopped.")
+
+    def end_run(self) -> None:
+        """
+        Cleans up the PID directory by removing all PID files.
+        """
+        shutil.rmtree(self.pid_dir, ignore_errors=True)
 
     def run_python(self, script_file: str, input_output: dict = {}) -> None:
         """

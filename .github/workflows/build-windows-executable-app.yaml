@@ -258,6 +258,7 @@ jobs:
 
     - name: Create .bat file
       run: |
+          
         echo '@echo off' > ${{ env.APP_NAME }}.bat
         echo '' >> ${{ env.APP_NAME }}.bat
         echo 'REM Create .streamlit directory in user''s home if it doesn''t exist' >> ${{ env.APP_NAME }}.bat
@@ -266,6 +267,8 @@ jobs:
         echo 'REM Create credentials.toml with empty email to disable email prompt' >> ${{ env.APP_NAME }}.bat
         echo 'copy /Y ".streamlit\credentials.toml" "%USERPROFILE%\.streamlit\credentials.toml" > nul' >> ${{ env.APP_NAME }}.bat
         echo '' >> ${{ env.APP_NAME }}.bat
+        echo 'start /min .\python-${{ env.PYTHON_VERSION }}\python -m redis-server' > ${{ env.APP_NAME }}.bat 
+        echo 'start /min .\python-${{ env.PYTHON_VERSION }}\python -m rq worker --with-scheduler' >> ${{ env.APP_NAME }}.bat
         echo 'start /min .\python-${{ env.PYTHON_VERSION }}\python -m streamlit run app.py local' >> ${{ env.APP_NAME }}.bat
 
     - name: Create All-in-one executable folder

@@ -8,11 +8,14 @@ import multiprocessing
 import streamlit as st
 import shutil
 import time
+from rq import Queue
+from redis import Redis
 
 class WorkflowManager:
     # Core workflow logic using the above classes
     def __init__(self, name: str, workspace: str):
         self.name = name
+        self.queue = Queue(connection=Redis())
         self.workflow_dir = Path(workspace, name.replace(" ", "-").lower())
         self.file_manager = FileManager(self.workflow_dir)
         self.logger = Logger(self.workflow_dir)
@@ -51,8 +54,6 @@ class WorkflowManager:
             self.logger.log("WORKFLOW FINISHED")
         except Exception as e:
             self.logger.log(f"ERROR: {e}")
-        # Delete pid dir path to indicate workflow is done
-        shutil.rmtree(self.executor.pid_dir, ignore_errors=True)
 
     def show_file_upload_section(self) -> None:
         """

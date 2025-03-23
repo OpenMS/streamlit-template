@@ -7,7 +7,6 @@ import pandas as pd
 import plotly.express as px
 from src.common.common import show_fig
 
-
 class Workflow(WorkflowManager):
     # Setup pages for upload, parameter, execution and results.
     # For layout use any streamlit components such as tabs (as shown in example), columns, or even expanders.
@@ -70,8 +69,10 @@ class Workflow(WorkflowManager):
 
         # Run FeatureFinderMetabo tool with input and output files.
         self.logger.log("Detecting features...")
-        self.executor.run_topp(
-            "FeatureFinderMetabo", input_output={"in": in_mzML, "out": out_ffm}
+        featureFinderMetaboJob = self.queue.enqueue(
+            self.executor.run_topp,
+            "FeatureFinderMetabo",
+            input_output={"in": in_mzML, "out": out_ffm}
         )
 
         # Prepare input and output files for feature linking
@@ -82,17 +83,28 @@ class Workflow(WorkflowManager):
 
         # Run FeatureLinkerUnlabaeledKD with all feature maps passed at once
         self.logger.log("Linking features...")
-        self.executor.run_topp(
-            "FeatureLinkerUnlabeledKD", input_output={"in": in_fl, "out": out_fl}
+        featureLinkerUnlabeledKDJob = self.queue.enqueue(
+            self.executor.run_topp,
+            "FeatureLinkerUnlabeledKD",
+            input_output={"in": in_fl, "out": out_fl},
+            depends_on=featureFinderMetaboJob
         )
         self.logger.log("Exporting consensus features to pandas DataFrame...")
-        self.executor.run_python(
-            "export_consensus_feature_df", input_output={"in": out_fl[0]}
+        exportConsensusFeatureJob = self.queue.enqueue(
+            self.executor.run_python,
+            "export_consensus_feature_df",
+            input_output={"in": out_fl[0]},
+            depends_on=featureLinkerUnlabeledKDJob
+        )
+        # Delete pid dir path to indicate workflow is done
+        self.queue.enqueue(
+            self.executor.end_run,
+            depends_on=exportConsensusFeatureJob
         )
         # Check if adduct detection should be run.
         if self.params["run-python-script"]:
             # Example for a custom Python tool, which is located in src/python-tools.
-            self.executor.run_python("example", {"in": in_mzML})
+            self.queue.enqueue(self.executor.run_python, "example", {"in": in_mzML})
 
     @st.fragment
     def results(self) -> None:
