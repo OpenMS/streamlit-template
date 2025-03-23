@@ -176,10 +176,10 @@ def view_peak_map():
         box = st.session_state.view_peak_map_selection.selection.box
         if box:
             df = st.session_state.view_ms1.copy()
-            df = df[df["RT"] > box[0]["x"][0]]
+            df = df[df["RT"] > max(box[0]["x"][0], 0)]
             df = df[df["mz"] > box[0]["y"][1]]
             df = df[df["mz"] < box[0]["y"][0]]
-            df = df[df["RT"] < box[0]["x"][1]]
+            df = df[df["RT"] < min(box[0]["x"][1], 1500)]
 
     # ✅ Main Peak Map
     peak_map = df.plot(
@@ -221,7 +221,8 @@ def view_peak_map():
         ),
         yaxis=dict(
             title="TIC",
-            autorange="reversed"  # ✅ Invert the y-axis
+            autorange="reversed",  # ✅ Invert the y-axis
+            fixedrange=True
         ),
         dragmode="select",  # ✅ Horizontal selection mode
         selectdirection = "h"
@@ -246,10 +247,11 @@ def view_peak_map():
         template="simple_white",
         dragmode="zoom",  # Enable zooming and panning
         xaxis=dict(title="Retention Time (s)", showgrid=False),
-        yaxis=dict(title="m/z"),                      # Y-axis for peak map
+        yaxis=dict(title="m/z",fixedrange=True),                      # Y-axis for peak map
         yaxis2=dict(
             title="TIC",
-            autorange="reversed"  # ✅ Inverted y-axis for TIC
+            autorange="reversed",  # ✅ Inverted y-axis for TIC
+            fixedrange=True
         ),
         height=850,
         margin=dict(t=100, b=100),
@@ -302,7 +304,7 @@ def view_peak_map():
             peak_map_3D.update_layout(
                 scene=dict(
                     xaxis=dict(title="Retention Time (s)"),
-                    yaxis=dict(title="m/z"),
+                    yaxis=dict(title="m/z",fixedrange=True),
                     zaxis=dict(title="Intensity"),
                     dragmode="orbit"
                 )
