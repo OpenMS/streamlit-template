@@ -171,7 +171,6 @@ def plot_ms_spectrum(df, title, bin_peaks, num_x_bins):
 def view_peak_map():
     df = st.session_state.view_ms1
 
-    # Apply Box Selection Filtering
     if "view_peak_map_selection" in st.session_state:
         box = st.session_state.view_peak_map_selection.selection.box
         if box:
@@ -181,7 +180,6 @@ def view_peak_map():
             df = df[df["mz"] < box[0]["y"][0]]
             df = df[df["RT"] < min(box[0]["x"][1], 1500)]
 
-    # ✅ Main Peak Map
     peak_map = df.plot(
         kind="peakmap",
         x="RT",
@@ -196,7 +194,6 @@ def view_peak_map():
         aggregate_duplicates=True,
     )
 
-    # ✅ TIC Plot with Selection Mode (Inverted y-axis)
     df_tic = df.groupby("RT").sum().reset_index()
     
     tic_fig = go.Figure()
@@ -217,23 +214,22 @@ def view_peak_map():
         xaxis=dict(
             title="Retention Time (s)",
             rangeslider=dict(visible=False),
-            showgrid=False
+            showgrid=False,
+            fixedrange=True,
         ),
         yaxis=dict(
             title="TIC",
-            autorange="reversed",  # ✅ Invert the y-axis
+            autorange="reversed",
             fixedrange=True
         ),
-        dragmode="select",  # ✅ Horizontal selection mode
-        selectdirection = "h"
+        dragmode=False  # ❌ Disabled brushing
     )
 
-    # ✅ Combined Figure
     combined_fig = make_subplots(
         rows=2,
         cols=1,
         shared_xaxes=True,
-        row_heights=[0.7, 0.3],                      # Peak map gets 70%, TIC gets 30%
+        row_heights=[0.7, 0.3],
         vertical_spacing=0.05
     )
 
@@ -245,14 +241,10 @@ def view_peak_map():
 
     combined_fig.update_layout(
         template="simple_white",
-        dragmode="zoom",  # Enable zooming and panning
-        xaxis=dict(title="Retention Time (s)", showgrid=False),
-        yaxis=dict(title="m/z",fixedrange=True),                      # Y-axis for peak map
-        yaxis2=dict(
-            title="TIC",
-            autorange="reversed",  # ✅ Inverted y-axis for TIC
-            fixedrange=True
-        ),
+        dragmode="zoom",
+        xaxis=dict(title="Retention Time (s)", showgrid=False, minallowed="0", maxallowed="1000"),
+        yaxis=dict(title="m/z", fixedrange=True),
+        yaxis2=dict(title="TIC", autorange="reversed", fixedrange=True),
         height=850,
         margin=dict(t=100, b=100),
         title=dict(
@@ -265,7 +257,6 @@ def view_peak_map():
         )
     )
 
-    # ✅ Display the Plot
     c1, c2 = st.columns(2)
 
     with c1:
@@ -291,7 +282,6 @@ def view_peak_map():
                 zlabel="Intensity",
                 xlabel="Retention Time (s)",
                 ylabel="m/z",
-                title="",
                 show_plot=False,
                 grid=False,
                 bin_peaks=st.session_state.spectrum_bin_peaks,
@@ -303,8 +293,8 @@ def view_peak_map():
 
             peak_map_3D.update_layout(
                 scene=dict(
-                    xaxis=dict(title="Retention Time (s)"),
-                    yaxis=dict(title="m/z",fixedrange=True),
+                    xaxis=dict(title="Retention Time (s)", minallowed="0", maxallowed="1000"),
+                    yaxis=dict(title="m/z", fixedrange=True),
                     zaxis=dict(title="Intensity"),
                     dragmode="orbit"
                 )
