@@ -55,7 +55,7 @@ c2.markdown(
     div[class*="stImage"] button,
     div[class*="stImage"] svg,
     button svg[viewBox],
-    div[data-testid="column"]:nth-of-type(2) button {
+    div[data-testid="column"]:nth-of-type(2) button:not([aria-label="Open sidebar"]):not([aria-label="Close sidebar"]) {
         display: none !important;
         visibility: hidden !important;
         opacity: 0 !important;
@@ -72,6 +72,22 @@ c2.markdown(
     [data-testid="stImage"] > div,
     [data-testid="stImage"] img {
         pointer-events: none !important;
+    }
+    
+    /* Explicitly ensure the sidebar toggle is visible */
+    button[aria-label="Open sidebar"],
+    button[aria-label="Close sidebar"],
+    [data-testid="collapsedControl"],
+    header button svg,
+    .main-menu-button {
+        display: inline-flex !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+        position: static !important;
+        height: auto !important;
+        width: auto !important;
+        pointer-events: auto !important;
+        z-index: 999 !important;
     }
     </style>
     """,
