@@ -29,17 +29,29 @@ if "show_welcome" not in st.session_state:
     st.session_state.show_welcome = True
 
 if st.session_state.show_welcome:
-    with st.container():
+    # Create the welcome message with a clean UI approach
+    welcome_container = st.container()
+    with welcome_container:
+        # Use a colored container for the welcome message
         st.markdown(
             """
-        <div style="padding: 20px; border-radius: 10px; border: 1px solid #ddd; background-color: #f9f9f9;">
-            <h2>Welcome to OpenMS Web Application</h2>
-            <p>This application provides powerful mass spectrometry data analysis tools.</p>
-            <p>Get started by exploring the features or uploading your data.</p>
-        </div>
-        """,
+            <div style="
+                background-color: #f9f9f9;
+                border-radius: 10px;
+                border: 1px solid #ddd;
+                padding: 20px;
+                margin-bottom: 20px;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            ">
+                <h2 style="margin-top: 0;">Welcome to OpenMS Web Application</h2>
+                <p>This application provides powerful mass spectrometry data analysis tools.</p>
+                <p>Get started by exploring the features or uploading your data.</p>
+            </div>
+            """,
             unsafe_allow_html=True,
         )
+
+        # Use Streamlit's native button without custom HTML
         if st.button("Don't show again"):
             st.session_state.show_welcome = False
             st.rerun()
