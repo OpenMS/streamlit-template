@@ -211,6 +211,12 @@ class CommandExecutor:
         shutil.rmtree(self.pid_dir, ignore_errors=True)
         self.logger.log("Workflow stopped.")
 
+    def end_run(self) -> None:
+        """
+        Cleans up the PID directory by removing all PID files.
+        """
+        shutil.rmtree(self.pid_dir, ignore_errors=True)
+
     def run_python(self, script_file: str, input_output: dict = {}) -> None:
         """
         Executes a specified Python script with dynamic input and output parameters,

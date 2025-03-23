@@ -90,11 +90,16 @@ class Workflow(WorkflowManager):
             depends_on=featureFinderMetaboJob
         )
         self.logger.log("Exporting consensus features to pandas DataFrame...")
-        self.queue.enqueue(
+        exportConsensusFeatureJob = self.queue.enqueue(
             self.executor.run_python,
             "export_consensus_feature_df",
             input_output={"in": out_fl[0]},
             depends_on=featureLinkerUnlabeledKDJob
+        )
+        # Delete pid dir path to indicate workflow is done
+        self.queue.enqueue(
+            self.executor.end_run,
+            depends_on=exportConsensusFeatureJob
         )
         # Check if adduct detection should be run.
         if self.params["run-python-script"]:

@@ -54,9 +54,6 @@ class WorkflowManager:
             self.logger.log("WORKFLOW FINISHED")
         except Exception as e:
             self.logger.log(f"ERROR: {e}")
-        # Delete pid dir path to indicate workflow is done
-        # TODO: since jobs are in queue, deleting pids directory causes issue, need to find a workaround to delete once all three jobs are over
-        # shutil.rmtree(self.executor.pid_dir, ignore_errors=True)
 
     def show_file_upload_section(self) -> None:
         """
