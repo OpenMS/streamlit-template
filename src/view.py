@@ -216,20 +216,22 @@ def view_peak_map():
             rangeslider=dict(visible=False),
             showgrid=False,
             fixedrange=True,
+            minallowed="0",
+            maxallowed="1000"
         ),
         yaxis=dict(
             title="TIC",
             autorange="reversed",
             fixedrange=True
         ),
-        dragmode=False  # ❌ Disabled brushing
+        dragmode=False
     )
 
     combined_fig = make_subplots(
         rows=2,
         cols=1,
         shared_xaxes=True,
-        row_heights=[0.7, 0.3],
+        row_heights=[0.8, 0.2],
         vertical_spacing=0.05
     )
 
