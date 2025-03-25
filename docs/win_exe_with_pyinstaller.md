@@ -12,7 +12,7 @@ Here's a step-by-step guide:
 
 ``` 
 # create an environment
-python -m venv <myenv>
+python -m venv myenv
 
 # activate an environment
 .\myenv\Scripts\Activate.bat 
@@ -22,20 +22,6 @@ pip install -r requirements.txt
 
 #install pyinstaller
 pip install pyinstaller
-```
-
-### streamlit files
-
-create a run_app.py and add this lines of codes
-```
-from streamlit.web import cli
-
-if __name__=='__main__':
-    cli._main_run_clExplicit(
-        file="app.py", command_line="streamlit run"
-    )
-    # we will create this function inside our streamlit framework
-
 ```
 
 ### write function in cli.py
@@ -56,19 +42,6 @@ def _main_run_clExplicit(file, command_line, args=[], flag_options=[]):
     bootstrap.run(file, command_line, args, flag_options)
 ```
 
-### Hook folder
-Now, need to hook to get streamlit metadata
-organized as folder, where the pycache infos will save
-like: \hooks\hook-streamlit.py
-
-```
-from PyInstaller.utils.hooks import copy_metadata
-datas = []
-datas += copy_metadata('streamlit')
-datas += copy_metadata('pyopenms')
-# can add new package e-g
-datas += copy_metadata('captcha')
-```
 
 ### compile the app 
 Now, ready for compilation
@@ -97,28 +70,14 @@ port = 8502
 
 ### copy necessary files to dist folder
 ```
-cp -r .streamlit dist/.streamlit
-cp -r pages dist/pages
-cp -r src dist/src
-cp -r assets dist/assets
-cp app.py dist/
-
+mkdir artifacts
+cp -r dist artifacts/
+cp -r build artifacts/
+cp run_app.spec artifacts/ 
+cp D:/a/streamlit-template/streamlit-template/myenv/Lib/site-packages/streamlit/web/cli.py artifacts/ 
 ``` 
 
-
-### add datas in run_app.spec (.spec file)
-Add DATAS to the run_app.spec just created by compilation
-
-```
-datas=[
-        ("myenv/Lib/site-packages/altair/vegalite/v4/schema/vega-lite-schema.json","./altair/vegalite/v4/schema/"),
-        ("myenv/Lib/site-packages/streamlit/static", "./streamlit/static"),
-        ("myenv/Lib/site-packages/streamlit/runtime", "./streamlit/runtime"),
-        ("myenv/Lib/site-packages/pyopenms", "./pyopenms/"),
-        # Add new datas e-g we add in hook captcha
-        ("myenv/Lib/site-packages/captcha", "./captcha/")
-    ]
-```    
+   
 ### run final step to make executable
 All the modifications in datas should be loaded with
 ```
