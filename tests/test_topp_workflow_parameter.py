@@ -11,8 +11,9 @@ import pytest
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
-# Add project root to path for imports
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Add project root to path for imports using a named constant
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(PROJECT_ROOT)
 
 # Create mock for pyopenms to avoid dependency on actual OpenMS installation
 mock_pyopenms = MagicMock()
@@ -104,12 +105,15 @@ def test_parameter_types():
     # Test parameter objects with different types
     param = MagicMock()
     
+    
     type_params = {
         "float_param": 10.5,
         "int_param": 42,
         "bool_param": True,
         "string_param": "test",
-        "list_param": ["item1", "item2"]
+        "list_param": ["item1", "item2"],
+        "dict_param": {"key1": "value1", "key2": 123},
+        "nested_param": [{"name": "nested1"}, {"name": "nested2"}]
     }
     
     # Configure mock
@@ -141,6 +145,17 @@ def test_parameter_types():
         assert displayed_values[param_name] == expected_value
         # Use 'is' for more precise type comparison
         assert type(displayed_values[param_name]) is type(expected_value)
+        
+        # For complex structures, verify deep equality
+        if isinstance(expected_value, (dict, list)):
+            # Check that nested structures match exactly
+            if isinstance(expected_value, dict):
+                for key, val in expected_value.items():
+                    assert displayed_values[param_name][key] == val
+            elif isinstance(expected_value, list) and expected_value and isinstance(expected_value[0], dict):
+                # For lists of dictionaries, check each item
+                for i, item in enumerate(expected_value):
+                    assert displayed_values[param_name][i] == item
 
 
 def test_parameter_sections():
