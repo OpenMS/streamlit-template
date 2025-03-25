@@ -1,3 +1,10 @@
+"""
+Tests for the TOPP workflow parameter page.
+
+This module verifies that the TOPP workflow parameter page correctly 
+displays parameter values, handles different parameter types,
+organizes parameters into sections, and properly toggles advanced parameters.
+"""
 import os
 import sys
 import pytest
@@ -7,9 +14,9 @@ from unittest.mock import patch, MagicMock
 # Add project root to path for imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Create mock for pyopenms
+# Create mock for pyopenms to avoid dependency on actual OpenMS installation
 mock_pyopenms = MagicMock()
-mock_pyopenms.__version__ = "2.9.1"  # Mocked version
+mock_pyopenms.__version__ = "2.9.1"  # Mock version for testing
 sys.modules['pyopenms'] = mock_pyopenms
 
 @pytest.fixture
@@ -39,13 +46,13 @@ def mock_streamlit():
             'markdown': mock_markdown
         }
 
-# Test to verify the mock pyopenms is working
+
 def test_mock_pyopenms():
-    """Verify the pyopenms mock is working."""
+    """Verify that pyopenms mock is working correctly."""
     import pyopenms
     assert hasattr(pyopenms, '__version__')
 
-# Direct test for parameter display correctness
+
 def test_topp_parameter_correctness():
     """Test that TOPP parameters are displayed with correct values."""
     # Define expected parameters with values
@@ -68,7 +75,7 @@ def test_topp_parameter_correctness():
     # Setup parameter functions
     param.getValue = mock_get_value
     param.getNames = MagicMock(return_value=[f"FeatureFinderMetabo:{name}".encode() 
-                                           for name in expected_params.keys()])
+                                           for name in expected_params])
     
     # Mock display function to capture values
     displayed_values = {}
@@ -91,6 +98,7 @@ def test_topp_parameter_correctness():
         assert displayed_values[param_name] == expected_value, \
             f"Parameter {param_name} showed value {displayed_values[param_name]} instead of {expected_value}"
 
+
 def test_parameter_types():
     """Test that parameters of different types are handled correctly."""
     # Test parameter objects with different types
@@ -105,7 +113,7 @@ def test_parameter_types():
     }
     
     # Configure mock
-    param.getNames = MagicMock(return_value=[f"Tool:{name}".encode() for name in type_params.keys()])
+    param.getNames = MagicMock(return_value=[f"Tool:{name}".encode() for name in type_params])
     
     def mock_get_value(param_name):
         param_key = param_name.decode().split(':')[-1]
@@ -131,7 +139,9 @@ def test_parameter_types():
     # Verify both values and types are preserved
     for param_name, expected_value in type_params.items():
         assert displayed_values[param_name] == expected_value
-        assert displayed_types[param_name] == type(expected_value)
+        # Use 'is' for more precise type comparison
+        assert type(displayed_values[param_name]) is type(expected_value)
+
 
 def test_parameter_sections():
     """Test that parameters are properly organized into sections."""
@@ -146,7 +156,7 @@ def test_parameter_sections():
     }
     
     # Configure mock
-    param.getNames = MagicMock(return_value=[k.encode() for k in section_params.keys()])
+    param.getNames = MagicMock(return_value=[k.encode() for k in section_params])
     
     def get_section_description(section):
         if "algorithm:common" in section:
@@ -184,7 +194,6 @@ def test_parameter_sections():
     assert "param2" in section_params_map["algorithm:common"]
     assert "param3" in section_params_map["algorithm:centroided"]
     assert "param4" in section_params_map["preprocessing"]
-
 
 
 def test_advanced_parameter_toggle(mock_streamlit):
