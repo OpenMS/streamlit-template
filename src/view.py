@@ -195,17 +195,18 @@ def view_peak_map():
     )
 
     df_tic = df.groupby("RT").sum().reset_index()
-    
-    tic_fig = go.Figure()
-    tic_fig.add_trace(
-        go.Scatter(
-            x=df_tic["RT"],
-            y=df_tic["inty"],
-            mode="lines",
-            line=dict(color="#f24c5c", width=2),
-            name="TIC",
-        )
+
+    tic_fig = df_tic.plot(
+        kind="chromatogram",
+        x="RT",
+        y="inty",
+        xlabel="Retention Time (s)",
+        ylabel="TIC",
+        grid=False,
+        show_plot=False,
+        backend="ms_plotly",
     )
+
 
     tic_fig.update_layout(
         height=200,
