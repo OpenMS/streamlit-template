@@ -392,17 +392,33 @@ jobs:
             <Binary Id="ShowMessageScript" SourceFile="SourceDir/ShowSuccessMessage.vbs" />
             <CustomAction Id="ShowSuccessMessage" BinaryKey="ShowMessageScript" VBScriptCall="" Execute="immediate" Return="check" />
         
-            <!-- Custom Action: Write WORKSPACES_FOLDER to settings file -->
-            <CustomAction Id="WriteWorkspacePath" Directory="INSTALLFOLDER" Execute="deferred" Impersonate="no" 
-              ExeCommand="powershell.exe -NoProfile -ExecutionPolicy Bypass -Command &quot;`$settingsPath='[AppSubFolder]settings.json'; `$settings = Get-Content -Raw `$settingsPath | ConvertFrom-Json; `$settings.workspaces_dir = '[WORKSPACES_FOLDER]'; `$settings | ConvertTo-Json -Depth 100 | Set-Content `$settingsPath&quot;" 
-              Return="check" />
+            <!-- Step 1: Pass variables to CustomActionData -->
+            <CustomAction Id="SetWriteWorkspacePathData"
+                          Property="WriteWorkspacePath"
+                          Value="AppSubFolder=[AppSubFolder];WORKSPACES_FOLDER=[WORKSPACES_FOLDER]" />
+
+            <!-- Step 2: Actual PowerShell inline script -->
+            <CustomAction Id="WriteWorkspacePath"
+                Directory="INSTALLFOLDER"
+                Execute="deferred"
+                Impersonate="no"
+                Return="check"
+                ExeCommand="powershell.exe -NoProfile -ExecutionPolicy Bypass -Command &quot;
+                  $props = @{}; ('[CustomActionData]' -split ';') | 
+                  ForEach-Object { $k,$v = $_ -split '=',2; $props[$k]=$v }; 
+                  $settingsPath = Join-Path $props.AppSubFolder 'settings.json'; 
+                  $settings = Get-Content -Raw -Path $settingsPath | ConvertFrom-Json; 
+                  $settings.workspaces_dir = $props.WORKSPACES_FOLDER; 
+                  $settings | ConvertTo-Json -Depth 100 | Set-Content -Path $settingsPath&quot;" />
+
             <!-- Add all Custom Actions -->
             <InstallExecuteSequence>
               <!-- Custom action display success message -->
               <Custom Action="ShowSuccessMessage" After="InstallFinalize">NOT Installed</Custom>
               <!-- Run app directly after installation -->
               <!-- <Custom Action="RunApp" Before="InstallFinalize">NOT REMOVE</Custom> -->
-              <Custom Action="WriteWorkspacePath" Before="InstallFinalize">NOT Installed</Custom>
+              <Custom Action="SetWriteWorkspacePathData" Before="WriteWorkspacePath">NOT Installed</Custom>
+              <Custom Action="WriteWorkspacePath"Before="InstallFinalize"">NOT Installed</Custom>
             </InstallExecuteSequence>
 
             <!-- Interface options -->
