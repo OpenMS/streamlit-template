@@ -418,7 +418,7 @@ jobs:
               <!-- Run app directly after installation -->
               <!-- <Custom Action="RunApp" Before="InstallFinalize">NOT REMOVE</Custom> -->
               <Custom Action="SetWriteWorkspacePathData" Before="WriteWorkspacePath">NOT Installed</Custom>
-              <Custom Action="WriteWorkspacePath"Before="InstallFinalize"">NOT Installed</Custom>
+              <Custom Action="WriteWorkspacePath" Before="InstallFinalize"">NOT Installed</Custom>
             </InstallExecuteSequence>
 
             <!-- Interface options -->
