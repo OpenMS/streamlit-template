@@ -11,6 +11,12 @@ class ParameterManager:
     loading parameters from the file, and resetting parameters to defaults. This class
     specifically handles parameters related to TOPP tools in a pyOpenMS context and
     general parameters stored in Streamlit's session state.
+    
+    Attributes:
+        ini_dir (Path): Directory path where .ini files for TOPP tools are stored.
+        params_file (Path): Path to the JSON file where parameters are saved.
+        param_prefix (str): Prefix for general parameter keys in Streamlit's session state.
+        topp_param_prefix (str): Prefix for TOPP tool parameter keys in Streamlit's session state.
     """
 
     def __init__(self, workflow_dir: Path):
