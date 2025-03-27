@@ -89,7 +89,7 @@ class ParameterManager:
                 and values are parameter values.
         """
         if not self.params_file.exists():
-            return {}  # ✅ Fixed return value
+            return {}  
         try:
             with open(self.params_file, "r", encoding="utf-8") as f:
                 return json.load(f)
@@ -104,9 +104,9 @@ class ParameterManager:
         """
         if self.params_file.exists():  # Prevents errors if the file does not exist
             self.params_file.unlink()
-    def save_parameters_direct(self, params):#fucntion for testing purposes
-      """
-      Saves parameters directly to JSON without relying on Streamlit session state.
-      """
-      with open(self.params_file, "w", encoding="utf-8") as f:
-         json.dump(params, f, indent=4)
+    # def save_parameters_direct(self, params):#fucntion for testing purposes
+    #   """
+    #   Saves parameters directly to JSON without relying on Streamlit session state.
+    #   """
+    #   with open(self.params_file, "w", encoding="utf-8") as f:
+    #      json.dump(params, f, indent=4)
