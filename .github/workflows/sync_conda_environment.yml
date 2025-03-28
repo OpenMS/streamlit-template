@@ -18,13 +18,10 @@ jobs:
           activate-environment: openms
           environment-file: environment.yml
           auto-activate-base: false
-          channels: 
-            - conda-forge
-            - bioconda
-            - defaults
+          channels: conda-forge,bioconda,defaults
 
       - name: Export Conda environment to requirements.txt
-        run: pip freeze > requirements.txt
+        run: pip freeze > requirements.txt  # <-- This must be correctly indented
 
       - name: Commit and push changes
         uses: stefanzweifel/git-auto-commit-action@v5
