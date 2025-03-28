@@ -30,7 +30,7 @@ save_params()
 
 ## Modify the template to build your own app
 
-1. In `src/common.py`, update the name of your app and the repository name
+1. In `src/common/common.py`, update the name of your app and the repository name
     ```python
     APP_NAME = "OpenMS Streamlit App"
     REPOSITORY_NAME = "streamlit-template"
