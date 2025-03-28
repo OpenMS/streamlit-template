@@ -20,11 +20,11 @@ In the OpenMS web application, workspaces are designed to keep your analysis org
 There are a few key differences between operating in online and local modes:
 
 - **File Uploads**:
-  - *Online Mode (Not Enabled in Default)*: When enabled, you can upload only one file at a time. This helps manage server load and optimizes performance.
+  - *Online Mode*: You can upload only one file at a time. This helps manage server load and optimizes performance.
   - *Local Mode*: Multiple file uploads are supported, giving you flexibility when working with large datasets.
 
 - **Workspace Access**:
-  - *Online Mode (Not Enabled in This Default)*: If enabled, workspaces would be temporarily stored and cleared after seven days of inactivity.
+  - *Online Mode*: Workspaces would be temporarily stored and cleared after seven days of inactivity.
   - *Local Mode*: Workspaces are saved on your local machine, allowing for persistent storage.  
     - The workspace directory can be specified in `settings.json`.  
     - Defaults to `..` (parent directory).
