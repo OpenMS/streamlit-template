@@ -10,13 +10,15 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
-      - name: Update requirements.txt from environment.yml
+        uses: conda-incubator/setup-miniconda@v3
+      with:
+        activate-environment: openms
+        python-version: ${{ matrix.python-version }}
+        channels: defaults,bioconda,conda-forge
         run: |
           conda env create -n env -f environment.yml 
           conda activate env
           pip freeze > requirements.txt
-
       - name: Commit and push changes
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
