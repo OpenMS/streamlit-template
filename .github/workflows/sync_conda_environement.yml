@@ -21,20 +21,6 @@ jobs:
           auto-activate-base: false
           channels: conda-forge,bioconda,defaults
           run: pip freeze > requirements.txt
-
-      - name: Cache Conda environment
-        uses: actions/cache@v3
-        with:
-          path: ~/.conda/envs
-          key: conda-${{ runner.os }}-python-3.10-${{ hashFiles('environment.yml') }}
-          restore-keys: conda-${{ runner.os }}-python-3.10-
-
-      - name: Create Conda environment from YAML
-        run: |
-          conda env update -n openms -f environment.yml --prune
-          conda activate openms
-          pip freeze > requirements.txt  # Save dependencies for reference
-
       - name: Commit and push changes
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
