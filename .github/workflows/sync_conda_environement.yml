@@ -1,8 +1,9 @@
 name: Sync Conda Environment
+
 on:
-  workflow_dispatch:
+  workflow_dispatch:  # Allows manual trigger
   schedule:
-    - cron: '0 0 * * 1'  # Runs weekly
+    - cron: '0 0 * * 1'  # Runs weekly on Monday at midnight UTC
 
 jobs:
   update-requirements:
@@ -10,16 +11,32 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Export conda environemnt to requirements.txt
         uses: conda-incubator/setup-miniconda@v3
-      with:
-        activate-environment: openms
-        python-version: ${{ matrix.python-version }}
-        channels: defaults,bioconda,conda-forge
+        with:
+          activate-environment: openms
+          python-version: "3.10"  # Adjust if needed
+          environment-file: environment.yml
+          auto-activate-base: false
+          channels: conda-forge,bioconda,defaults
+          run: pip freeze > requirements.txt
+
+      - name: Cache Conda environment
+        uses: actions/cache@v3
+        with:
+          path: ~/.conda/envs
+          key: conda-${{ runner.os }}-python-3.10-${{ hashFiles('environment.yml') }}
+          restore-keys: conda-${{ runner.os }}-python-3.10-
+
+      - name: Create Conda environment from YAML
         run: |
-          conda env create -n env -f environment.yml 
-          conda activate env
-          pip freeze > requirements.txt
+          conda env update -n openms -f environment.yml --prune
+          conda activate openms
+          pip freeze > requirements.txt  # Save dependencies for reference
+
       - name: Commit and push changes
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "Update requirements.txt from environment.yml"
+          file_pattern: "requirements.txt"
