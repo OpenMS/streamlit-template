@@ -1,0 +1,23 @@
+name: Sync Conda Environment
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * 1'  # Runs weekly
+
+jobs:
+  update-requirements:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Update requirements.txt from environment.yml
+        run: |
+          conda env create --file environment.yml --prefix ./env --force
+          conda activate ./env
+          pip freeze > requirements.txt
+
+      - name: Commit and push changes
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "Update requirements.txt from environment.yml"
