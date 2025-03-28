@@ -3,7 +3,6 @@ import json
 import shutil
 import streamlit as st
 from pathlib import Path
-import xml.etree.ElementTree as ET
 
 class ParameterManager:
     """
@@ -11,49 +10,46 @@ class ParameterManager:
     loading parameters from the file, and resetting parameters to defaults. This class
     specifically handles parameters related to TOPP tools in a pyOpenMS context and
     general parameters stored in Streamlit's session state.
-    
+
     Attributes:
         ini_dir (Path): Directory path where .ini files for TOPP tools are stored.
         params_file (Path): Path to the JSON file where parameters are saved.
         param_prefix (str): Prefix for general parameter keys in Streamlit's session state.
         topp_param_prefix (str): Prefix for TOPP tool parameter keys in Streamlit's session state.
     """
-
+    # Methods related to parameter handling
     def __init__(self, workflow_dir: Path):
         self.ini_dir = Path(workflow_dir, "ini")
         self.ini_dir.mkdir(parents=True, exist_ok=True)
         self.params_file = Path(workflow_dir, "params.json")
         self.param_prefix = f"{workflow_dir.stem}-param-"
         self.topp_param_prefix = f"{workflow_dir.stem}-TOPP-"
+        
+        
+    
+    def get_boolean_params(self, tool: str) -> list:
+        ini_file = Path(self.ini_dir, f"{tool}.ini")
+        if not ini_file.exists():
+            return []
 
-    def load_parameters_from_ini(self, ini_file):
-        """Parse the .ini file and correctly handle boolean and string parameters."""
-        ini_path = Path(ini_file)
-        if not ini_path.exists():
-            return {}  # Return empty dictionary if the file doesn't exist
+        param = poms.Param()
+        poms.ParamXMLFile().load(str(ini_file), param)
 
-        try:
-            tree = ET.parse(ini_file)
-            root = tree.getroot()
-        except ET.ParseError:
-            st.error(f"ERROR: Failed to parse {ini_file}. Invalid XML format.")
-            return {}
+        boolean_params = []
 
-        parameters = {}
+        for key in param.keys():
+            try:
+                entry = param.getEntry(key)
+                # pyopenms 3.3.0 uses valueType == 3 for boolean
+                if hasattr(entry, 'valueType') and entry.valueType == 3:
+                    param_name = key.decode().split(":1:")[1]
+                    boolean_params.append(param_name)
+            except Exception as e:
+                print(f"Warning: Could not process key {key}: {e}")
 
-        for item in root.findall(".//ITEM"):
-            name = item.get("name")
-            value = item.get("value")
-            param_type = item.get("type")  # Get parameter type
+        return boolean_params
 
-            if param_type == "bool":
-                parameters[name] = value.lower() == "true"  # Store as True/False
-            elif param_type == "string":
-                parameters[name] = value  # Store as a string
-            else:
-                parameters[name] = value  # Default case
 
-        return parameters
 
     def save_parameters(self) -> None:
         """
@@ -61,25 +57,53 @@ class ParameterManager:
         It handles both general parameters and parameters specific to TOPP tools,
         ensuring that only non-default values are stored.
         """
+        # Everything in session state which begins with self.param_prefix is saved to a json file
         json_params = {
-            k.replace(self.param_prefix, ""): v if not isinstance(v, bool) else bool(v)
+            k.replace(self.param_prefix, ""): v
             for k, v in st.session_state.items()
             if k.startswith(self.param_prefix)
         }
 
-        json_params = self.get_parameters_from_json() | json_params  # Merge with existing
+        # Merge with parameters from json
+        # Advanced parameters are only in session state if the view is active
+        json_params = self.get_parameters_from_json() | json_params
 
-        # Ensure TOPP tool boolean parameters are stored as actual booleans
-        for tool, params in json_params.items():
-            if isinstance(params, dict):  # Ensure we're dealing with a tool's parameters
-                for key, value in params.items():
-                    if isinstance(value, str) and value.lower() in ["true", "false"]:
-                        json_params[tool][key] = value.lower() == "true"
-
+        # get a list of TOPP tools which are in session state
+        current_topp_tools = list(
+            set(
+                [
+                    k.replace(self.topp_param_prefix, "").split(":1:")[0]
+                    for k in st.session_state.keys()
+                    if k.startswith(f"{self.topp_param_prefix}")
+                ]
+            )
+        )
+        # for each TOPP tool, open the ini file
+        for tool in current_topp_tools:
+            if tool not in json_params:
+                json_params[tool] = {}
+            # load the param object
+            param = poms.Param()
+            poms.ParamXMLFile().load(str(Path(self.ini_dir, f"{tool}.ini")), param)
+            # get all session state param keys and values for this tool
+            for key, value in st.session_state.items():
+                if key.startswith(f"{self.topp_param_prefix}{tool}:1:"):
+                    # get ini_key
+                    ini_key = key.replace(self.topp_param_prefix, "").encode()
+                    # get ini (default) value by ini_key
+                    ini_value = param.getValue(ini_key)
+                    # check if value is different from default
+                    if (
+                        (ini_value != value) 
+                        or (key.split(":1:")[1] in json_params[tool])
+                    ):
+                        # store non-default value
+                        json_params[tool][key.split(":1:")[1]] = value
+        # Save to json file
         with open(self.params_file, "w", encoding="utf-8") as f:
             json.dump(json_params, f, indent=4)
 
-    def get_parameters_from_json(self):
+    def get_parameters_from_json(self) -> dict:
         """
         Loads parameters from the JSON file if it exists and returns them as a dictionary.
         If the file does not exist, it returns an empty dictionary.
@@ -88,25 +112,22 @@ class ParameterManager:
             dict: A dictionary containing the loaded parameters. Keys are parameter names,
                 and values are parameter values.
         """
-        if not self.params_file.exists():
-            return {}  
-        try:
-            with open(self.params_file, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except json.JSONDecodeError:
-            st.error("**ERROR**: Attempting to load an invalid JSON parameter file. Reset to defaults.")
+        # Check if parameter file exists
+        if not Path(self.params_file).exists():
             return {}
-
+        else:
+            # Load parameters from json file
+            try:
+                with open(self.params_file, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except:
+                st.error("**ERROR**: Attempting to load an invalid JSON parameter file. Reset to defaults.")
+                return {}
+    
     def reset_to_default_parameters(self) -> None:
         """
-         Resets the parameters to their default values by deleting the custom parameters
+        Resets the parameters to their default values by deleting the custom parameters
         JSON file.
         """
-        if self.params_file.exists():  # Prevents errors if the file does not exist
-            self.params_file.unlink()
-    # def save_parameters_direct(self, params):#fucntion for testing purposes
-    #   """
-    #   Saves parameters directly to JSON without relying on Streamlit session state.
-    #   """
-    #   with open(self.params_file, "w", encoding="utf-8") as f:
-    #      json.dump(params, f, indent=4)
+        # Delete custom params json file
+        self.params_file.unlink(missing_ok=True)
