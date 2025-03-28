@@ -11,8 +11,8 @@ dependencies:
    - pip:
         # dependencies only available through pip
         # streamlit dependencies
-        - streamlit>=1.38.0
+        - streamlit==1.38.0
         - captcha==0.5.0
         - pyopenms_viz==1.0.0
-        - streamlit-js-eval
+        - streamlit-js-eval==0.1.7
         - psutil==7.0.0
