@@ -28,25 +28,33 @@ def content():
 
 This repository contains a module in `src/workflow` that provides a framework for building and running analysis workflows.
 
-The `WorkflowManager` class provides the core workflow logic. It uses the `Logger`, `FileManager`, `ParameterManager`, and `CommandExecutor` classes to setup a complete workflow logic.
+The `WorkflowManager` class provides the core workflow logic. It uses the `Logger`, `FileManager`, `ParameterManager`, and `CommandExecutor` classes to set up a complete workflow logic.
 
-To build your own workflow edit the file `src/TOPPWorkflow.py`. Use any streamlit components such as tabs (as shown in example), columns, or even expanders to organize the helper functions for displaying file upload and parameter widgets.
+To build your own workflow, edit or extend one of the files in the `src/workflow` directory such as `simpleworkflow.py` or `mzmlfileworkflow.py`. These files contain example workflows and follow a common pattern based on the `Workflow` base class.
 
-> 💡 Simply set a name for the workflow and overwrite the **`upload`**, **`configure`**, **`execution`** and **`results`** methods in your **`Workflow`** class.
+You can use Streamlit components such as tabs, columns, or even expanders to organize the helper functions for displaying file upload and parameter widgets.
 
-The file `content/6_TOPP-Workflow.py` displays the workflow content and can, but does not have to be modified.
+> 💡 Simply set a name for the workflow and override the **`upload`**, **`configure`**, **`execution`**, and **`results`** methods in your **`Workflow`** class.
+
+There is no longer a single `content/6_TOPP-Workflow.py` file. Workflow logic has been modularized across files like:
+- `simpleworkflow.py`
+- `mzmlfileworkflow.py`
+- `view.py`
+
+Each of these defines a specific workflow and can be customized or extended to build new ones.
 
 The `Workflow` class contains five important members, which you can use to build your own workflow:
 
-> **`self.params`:** dictionary of parameters stored in a JSON file in the workflow directory. Parameter handling is done automatically. Default values are defined in input widgets and non-default values are stored in the JSON file.
+> **`self.params`:** Dictionary of parameters stored in a JSON file in the workflow directory. Parameter handling is done automatically. Default values are defined in input widgets and non-default values are stored in the JSON file.
 
-> **`self.ui`:** object of type `StreamlitUI` contains helper functions for building the parameter and file upload widgets.
+> **`self.ui`:** Object of type `StreamlitUI` contains helper functions for building the parameter and file upload widgets.
 
-> **`self.executor`:** object of type `CommandExecutor` can be used to run any command line tool alone or in parallel and includes a convenient method for running TOPP tools.
+> **`self.executor`:** Object of type `CommandExecutor` can be used to run any command line tool alone or in parallel and includes a convenient method for running TOPP tools.
 
-> **`self.logger`:** object of type `Logger` to write any output to a log file during workflow execution.
+> **`self.logger`:** Object of type `Logger` to write any output to a log file during workflow execution.
 
-> **`self.file_manager`:** object of type `FileManager` to handle file types and creation of output directories.
+> **`self.file_manager`:** Object of type `FileManager` to handle file types and creation of output directories.
+
 """
     )
 
