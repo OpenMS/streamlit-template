@@ -21,7 +21,8 @@ jobs:
           channels: conda-forge,bioconda,defaults
 
       - name: Export Conda environment to requirements.txt
-        run: pip freeze > requirements.txt  # <-- This must be correctly indented
+        run: |
+          pip freeze > requirements.txt  # <-- This must be correctly indented
 
       - name: Commit and push changes
         uses: stefanzweifel/git-auto-commit-action@v5
