@@ -13,8 +13,8 @@ jobs:
 
       - name: Update requirements.txt from environment.yml
         run: |
-          conda env create --file environment.yml --prefix ./env --force
-          conda activate ./env
+          conda env create -n env -f environment.yml 
+          conda activate env
           pip freeze > requirements.txt
 
       - name: Commit and push changes
