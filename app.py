@@ -1,7 +1,5 @@
 import streamlit as st
 from pathlib import Path
-from src.common.common import captcha_control  # 🔥 Import Captcha
-
 import json
 # For some reason the windows version only works if this is imported here
 import pyopenms
