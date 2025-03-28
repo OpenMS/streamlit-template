@@ -1,0 +1,32 @@
+name: Sync Conda Environment
+
+on:
+  workflow_dispatch:  # Allows manual trigger
+  schedule:
+    - cron: '0 0 * * 1'  # Runs weekly on Monday at midnight UTC
+
+jobs:
+  update-requirements:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Conda
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          activate-environment: openms
+          environment-file: environment.yml
+          auto-activate-base: false
+          channels: conda-forge,bioconda,defaults
+
+      - name: Export Conda environment to requirements.txt
+        run: |
+          pip freeze > requirements.txt  # <-- This must be correctly indented
+
+      - name: Commit and push changes
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with: 
+          commit_message: "Update requirements.txt from environment.yml"
+          file_pattern: "requirements.txt"
+
