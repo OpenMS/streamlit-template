@@ -8,6 +8,10 @@ on:
     types: [created]
   workflow_dispatch:
   
+# Add permissions block to allow upload to releases
+permissions:
+  contents: write
+
 env:
   OPENMS_VERSION: 3.2.0 
   PYTHON_VERSION: 3.11.0
@@ -442,5 +446,4 @@ jobs:
       uses: softprops/action-gh-release@v2
       with:
         files: OpenMS-App.zip
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        token: ${{ github.token }}
