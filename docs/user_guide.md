@@ -36,8 +36,10 @@ In the OpenMS web application, workspaces are designed to keep your analysis org
      - This sets the upload limit to 500MB for the current session.
      
 - **Workspace Access**:
-  - In online mode, workspaces are stored temporarily and will be cleared after seven days of inactivity.
-  - In local mode, workspaces are saved on your local machine, allowing for persistent storage. Workspace directory can be specified in the `settings.json`. Defaults to `..` (parent directory).
+  - *Online Mode*: Workspaces would be temporarily stored and cleared after seven days of inactivity.
+  - *Local Mode*: Workspaces are saved on your local machine, allowing for persistent storage.  
+    - The workspace directory can be specified in `settings.json`.  
+    - Defaults to `..` (parent directory).
 
 ## Downloading Results
 
