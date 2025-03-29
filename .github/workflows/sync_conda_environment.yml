@@ -30,7 +30,7 @@ jobs:
               ]
 
           with open(output_file, "w") as f:
-              f.write("name: my_env\n")
+              f.write("name: streamlit-template\n")
               f.write("dependencies:\n")
               f.write(f"  - python={python_version}\n")  # Adjust Python version if needed
               f.write("  - pip\n")
