@@ -50,7 +50,7 @@ matplotlib==3.10.1
     # via pyopenms
 narwhals==1.32.0
     # via altair
-numpy==1.26.4
+numpy==2.0.2
     # via
     #   contourpy
     #   matplotlib
