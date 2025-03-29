@@ -28,25 +28,33 @@ def content():
 
 This repository contains a module in `src/workflow` that provides a framework for building and running analysis workflows.
 
-The `WorkflowManager` class provides the core workflow logic. It uses the `Logger`, `FileManager`, `ParameterManager`, and `CommandExecutor` classes to setup a complete workflow logic.
+The `WorkflowManager` class provides the core workflow logic. It uses the `Logger`, `FileManager`, `ParameterManager`, and `CommandExecutor` classes to set up a complete workflow logic.
 
-To build your own workflow edit the file `src/TOPPWorkflow.py`. Use any streamlit components such as tabs (as shown in example), columns, or even expanders to organize the helper functions for displaying file upload and parameter widgets.
+To build your own workflow, edit or extend one of the files in the `src/workflow` directory such as `simpleworkflow.py` or `mzmlfileworkflow.py`. These files contain example workflows and follow a common pattern based on the `Workflow` base class.
 
-> 💡 Simply set a name for the workflow and overwrite the **`upload`**, **`configure`**, **`execution`** and **`results`** methods in your **`Workflow`** class.
+You can use Streamlit components such as tabs, columns, or even expanders to organize the helper functions for displaying file upload and parameter widgets.
 
-The file `content/6_TOPP-Workflow.py` displays the workflow content and can, but does not have to be modified.
+> 💡 Simply set a name for the workflow and override the **`upload`**, **`configure`**, **`execution`**, and **`results`** methods in your **`Workflow`** class.
 
-The `Workflow` class contains four important members, which you can use to build your own workflow:
+There is no longer a single `content/6_TOPP-Workflow.py` file. Workflow logic has been modularized across files like:
+- `simpleworkflow.py`
+- `mzmlfileworkflow.py`
+- `view.py`
 
-> **`self.params`:** dictionary of parameters stored in a JSON file in the workflow directory. Parameter handling is done automatically. Default values are defined in input widgets and non-default values are stored in the JSON file.
+Each of these defines a specific workflow and can be customized or extended to build new ones.
 
-> **`self.ui`:** object of type `StreamlitUI` contains helper functions for building the parameter and file upload widgets.
+The `Workflow` class contains five important members, which you can use to build your own workflow:
 
-> **`self.executor`:** object of type `CommandExecutor` can be used to run any command line tool alone or in parallel and includes a convenient method for running TOPP tools.
+> **`self.params`:** Dictionary of parameters stored in a JSON file in the workflow directory. Parameter handling is done automatically. Default values are defined in input widgets and non-default values are stored in the JSON file.
 
-> **`self.logger`:** object of type `Logger` to write any output to a log file during workflow execution.
+> **`self.ui`:** Object of type `StreamlitUI` contains helper functions for building the parameter and file upload widgets.
 
-> **`self.file_manager`:** object of type `FileManager` to handle file types and creation of output directories.
+> **`self.executor`:** Object of type `CommandExecutor` can be used to run any command line tool alone or in parallel and includes a convenient method for running TOPP tools.
+
+> **`self.logger`:** Object of type `Logger` to write any output to a log file during workflow execution.
+
+> **`self.file_manager`:** Object of type `FileManager` to handle file types and creation of output directories.
+
 """
     )
 
@@ -57,15 +65,16 @@ The `Workflow` class contains four important members, which you can use to build
         """
 ## File Upload
 
-All input files for the workflow will be stored within the workflow directory in the subdirectory `input-files` within it's own subdirectory for the file type.
+All input files for the workflow will be stored within the **active workspace directory**, in a subdirectory named after the file type key (e.g., `mzML-files`).
 
-The subdirectory name will be determined by a **key** that is defined in the `self.ui.upload_widget` method. The uploaded files are available by the specific key for parameter input widgets and accessible while building the workflow.
+The subdirectory name is determined by the **key** passed to the `self.ui.upload_widget` method. The uploaded files are available via this key for parameter input widgets and are accessible while building the workflow.
 
 Calling this method will create a complete file upload page with the following components:
 
-- file uploader
-- list of currently uploaded files with this key (or a warning if there are none)
-- button to delete all files
+- file uploader  
+- list of currently uploaded files with this key (or a warning if there are none)  
+- button to delete all files  
+
 
 Fallback files(s) can be specified, which will be used if the user doesn't upload any files. This can be useful for example for database files where a default is provided.
 """
