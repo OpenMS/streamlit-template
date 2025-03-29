@@ -12,7 +12,7 @@ jobs:
       - name: Setup Conda
         uses: conda-incubator/setup-miniconda@v3
         with:
-          activate-environment: template
+          activate-environment: streamlit-env
           python-version: "3.10"
           auto-activate-base: false
           channels: conda-forge,bioconda,defaults
@@ -23,7 +23,7 @@ jobs:
           pip install -r requirements.txt
       - name: Export to environment.yml
         run: |
-          conda env export -n template > environment.yml
+          conda env export -n streamlit-env > environment.yml
       - name: Commit and push changes
         uses: stefanzweifel/git-auto-commit-action@v5
         with: 
