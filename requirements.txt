@@ -85,7 +85,7 @@ pyarrow==19.0.1
     # via streamlit
 pydeck==0.9.1
     # via streamlit
-pyopenms==3.2.0
+pyopenms==3.3.0
     # via src (pyproject.toml)
 pyopenms-viz==1.0.0
     # via src (pyproject.toml)
