@@ -65,15 +65,16 @@ The `Workflow` class contains five important members, which you can use to build
         """
 ## File Upload
 
-All input files for the workflow will be stored within the workflow directory in the subdirectory `input-files` within it's own subdirectory for the file type.
+All input files for the workflow will be stored within the **active workspace directory**, in a subdirectory named after the file type key (e.g., `mzML-files`).
 
-The subdirectory name will be determined by a **key** that is defined in the `self.ui.upload_widget` method. The uploaded files are available by the specific key for parameter input widgets and accessible while building the workflow.
+The subdirectory name is determined by the **key** passed to the `self.ui.upload_widget` method. The uploaded files are available via this key for parameter input widgets and are accessible while building the workflow.
 
 Calling this method will create a complete file upload page with the following components:
 
-- file uploader
-- list of currently uploaded files with this key (or a warning if there are none)
-- button to delete all files
+- file uploader  
+- list of currently uploaded files with this key (or a warning if there are none)  
+- button to delete all files  
+
 
 Fallback files(s) can be specified, which will be used if the user doesn't upload any files. This can be useful for example for database files where a default is provided.
 """
