@@ -22,7 +22,6 @@ pip install -r requirements.txt
 
 #install pyinstaller
 pip install pyinstaller
-
 ```
 
 ### streamlit files
