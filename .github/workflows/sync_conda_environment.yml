@@ -22,9 +22,9 @@ jobs:
           pip install -r requirements.txt
       - name: Export to environment.yml
         run: |
-          conda env export > environment.yml
+          conda env export -n template > environment.yml
       - name: Commit and push changes
         uses: stefanzweifel/git-auto-commit-action@v5
         with: 
-          commit_message: "Update requirements.txt from environment.yml"
+          commit_message: "Update environment.yml from requirements.txt"
           file_pattern: "environment.yml"
