@@ -95,7 +95,8 @@ Fallback files(s) can be specified, which will be used if the user doesn't uploa
 
 The parameter page is already pre-defined as a form with buttons to **save parameters** and **load defaults** and a toggle to show TOPP tool parameters marked as advanced.
 
-Generating parameter input widgets is done with the `self.ui.input` method for any parameter and the `self.ui.input_TOPP` method for TOPP tools.
+Generating parameter input widgets is done using methods like `self.ui.input_widget`, `self.ui.input_TOPP`, `self.ui.select_input_file`, and `self.ui.input_python`, depending on the type of input required.
+
 
 **1. Choose `self.ui.input_widget` for any parameter not-related to a TOPP tool or `self.ui.select_input_file` for any input file:**
 
