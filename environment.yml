@@ -1,4 +1,4 @@
-name: streamlit-template
+name: streamlit-env
 dependencies:
   - python=3.10
   - pip
