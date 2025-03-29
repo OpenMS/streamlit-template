@@ -2,6 +2,7 @@ name: Sync Conda Environment
 
 on:
   push:
+
 jobs:
   update-requirements:
     runs-on: ubuntu-latest
@@ -9,24 +10,40 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Conda
-        uses: conda-incubator/setup-miniconda@v3
+      - name: Setup Python
+        uses: actions/setup-python@v4
         with:
-          activate-environment: streamlit-env
           python-version: "3.10"
-          auto-activate-base: false
-          channels: conda-forge,bioconda,defaults
 
-      - name: Install requirements.txt in Conda environment 
-        run: | 
-          conda install pip
-          conda config --set pip_interop_enabled True
-          pip install -r requirements.txt
-      - name: Export to environment.yml
+      - name: Convert requirements.txt to environment.yml
         run: |
-          conda env export -n streamlit-env > environment.yml
+          python - <<EOF
+          requirements_file = "requirements.txt"
+          output_file = "environment.yml"
+          python_version= "3.10"
+
+          with open(requirements_file, "r") as f:
+              pip_packages = [
+                  line.strip()
+                  for line in f
+                  if line.strip() and not line.strip().startswith("#")
+              ]
+
+          with open(output_file, "w") as f:
+              f.write("name: my_env\n")
+              f.write("dependencies:\n")
+              f.write(f"  - python={python_version}\n")  # Adjust Python version if needed
+              f.write("  - pip\n")
+              f.write("  - pip:\n")
+              for package in pip_packages:
+                  f.write(f"      - {package}\n")
+
+          print(f"Converted {requirements_file} to {output_file}")
+          EOF
+
       - name: Commit and push changes
         uses: stefanzweifel/git-auto-commit-action@v5
-        with: 
+        with:
           commit_message: "Update environment.yml from requirements.txt"
           file_pattern: "environment.yml"
+
