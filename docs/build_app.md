@@ -26,7 +26,7 @@ save_params()
 - The main file `app.py` defines page layout.
 - **Pages** must be placed in the `content` directory.
 - It is recommended to use a separate file for defining functions per page in the `src` directory.
-- The `src/common.py` file contains a set of useful functions for common use (e.g. rendering a table with download button).
+- The `src/common/common.py` file contains a set of useful functions for common use (e.g. rendering a table with download button).
 
 ## Modify the template to build your own app
 
