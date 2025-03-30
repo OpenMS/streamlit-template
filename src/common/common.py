@@ -7,10 +7,33 @@ import time
 from typing import Any
 from pathlib import Path
 from streamlit.components.v1 import html
-
-import streamlit as st
 import pandas as pd
 import psutil
+import streamlit as st
+
+
+# Optional plotting package imports
+try:
+    import plotly.io as pio
+
+    PLOTLY_AVAILABLE = True
+except ImportError:
+    PLOTLY_AVAILABLE = False
+
+try:
+    import matplotlib.pyplot as plt
+
+    MPL_AVAILABLE = True
+except ImportError:
+    MPL_AVAILABLE = False
+
+try:
+    from bokeh.io import curdoc
+
+    BOKEH_AVAILABLE = True
+except ImportError:
+    BOKEH_AVAILABLE = False
+
 
 try:
     from tkinter import Tk, filedialog
@@ -27,12 +50,13 @@ OS_PLATFORM = sys.platform
 
 @st.fragment(run_every=5)
 def monitor_hardware():
+    """Display system resource utilization."""
+
     cpu_progress = psutil.cpu_percent(interval=None) / 100
     ram_progress = 1 - psutil.virtual_memory().available / psutil.virtual_memory().total
 
     st.text(f"Ram ({ram_progress * 100:.2f}%)")
     st.progress(ram_progress)
-
     st.text(f"CPU ({cpu_progress * 100:.2f}%)")
     st.progress(cpu_progress)
 
@@ -129,7 +153,7 @@ def page_setup(page: str = "") -> dict[str, Any]:
         with open("settings.json", "r") as f:
             st.session_state.settings = json.load(f)
 
-    # Set Streamlit page configurations
+    # Set Streamlit page configurations first - must be the first Streamlit command
     st.set_page_config(
         page_title=st.session_state.settings["app-name"],
         page_icon="assets/openms_transparent_bg_logo.svg",
@@ -370,6 +394,166 @@ def render_sidebar(page: str = "") -> None:
 
         # All pages have settings, workflow indicator and logo
         with st.expander("⚙️ **Settings**"):
+            # Application Theme settings
+            st.markdown("## Application Theme")
+
+            # Get current theme from Streamlit's global theme
+            current_theme = (
+                "light" if st.get_option("theme.base") == "light" else "dark"
+            )
+
+            # Add system theme option
+            theme_options = ["system", "light", "dark"]
+            selected_theme = st.selectbox(
+                "Theme Mode",
+                options=theme_options,
+                index=theme_options.index(current_theme),
+                key="app_theme_selector",
+            )
+
+            # Update theme if changed
+            if selected_theme != current_theme:
+                # Show a message that theme is changing
+                with st.spinner(f"Changing theme to {selected_theme}..."):
+                    # Apply immediate visual feedback for the current session
+                    if selected_theme == "dark":
+                        # Apply dark theme CSS immediately
+                        st.markdown(
+                            """
+                            <style>
+                                body {
+                                    color: #FAFAFA !important;
+                                    background-color: #0E1117 !important;
+                                }
+                                .stApp {
+                                    background-color: #0E1117 !important;
+                                }
+                                [data-testid="stSidebar"] {
+                                    background-color: #262730 !important;
+                                }
+                                .stMarkdown, .stText, h1, h2, h3, h4, h5, h6, p {
+                                    color: #FAFAFA !important;
+                                }
+                                button, [data-baseweb="select"] {
+                                    background-color: #262730 !important;
+                                }
+                                .stButton>button {
+                                    color: #FAFAFA !important;
+                                    background-color: #262730 !important;
+                                    border-color: #4F4F4F !important;
+                                }
+                                .stTextInput>div>div>input {
+                                    color: #FAFAFA !important;
+                                    background-color: #262730 !important;
+                                }
+                            </style>
+                            """,
+                            unsafe_allow_html=True,
+                        )
+                    else:
+                        # Apply light theme CSS immediately
+                        st.markdown(
+                            """
+                            <style>
+                                body {
+                                    color: #262730 !important;
+                                    background-color: #FFFFFF !important;
+                                }
+                                .stApp {
+                                    background-color: #FFFFFF !important;
+                                }
+                                [data-testid="stSidebar"] {
+                                    background-color: #F0F2F6 !important;
+                                }
+                                .stMarkdown, .stText, h1, h2, h3, h4, h5, h6, p {
+                                    color: #262730 !important;
+                                }
+                                button, [data-baseweb="select"] {
+                                    background-color: #F0F2F6 !important;
+                                }
+                                .stButton>button {
+                                    color: #262730 !important;
+                                    background-color: #F0F2F6 !important;
+                                    border-color: #CCCCCC !important;
+                                }
+                                .stTextInput>div>div>input {
+                                    color: #262730 !important;
+                                    background-color: #F0F2F6 !important;
+                                }
+                            </style>
+                            """,
+                            unsafe_allow_html=True,
+                        )
+
+                    # Update the config.toml file
+                    config_path = ".streamlit/config.toml"
+                    with open(config_path, "r") as f:
+                        config_lines = f.readlines()
+
+                    # Update the theme configuration
+                    in_theme_section = False
+                    theme_updated = False
+
+                    # First update the base theme
+                    for i, line in enumerate(config_lines):
+                        if "[theme]" in line:
+                            in_theme_section = True
+                        elif in_theme_section and line.strip().startswith("base"):
+                            config_lines[i] = f'base = "{selected_theme}"\n'
+                            theme_updated = True
+                            break
+
+                    # If theme section not found, add it
+                    if not theme_updated:
+                        config_lines.append("\n[theme]\n")
+                        config_lines.append(f'base = "{selected_theme}"\n')
+
+                    # Now update the theme colors based on the selected theme
+                    if selected_theme == "dark":
+                        # Update colors for dark theme
+                        dark_theme_colors = {
+                            "primaryColor": "#29379b",
+                            "backgroundColor": "#0E1117",
+                            "secondaryBackgroundColor": "#262730",
+                            "textColor": "#FAFAFA",
+                        }
+
+                        # Update each color in the config
+                        for i, line in enumerate(config_lines):
+                            for color_key, color_value in dark_theme_colors.items():
+                                if line.strip().startswith(color_key):
+                                    config_lines[i] = f'{color_key} = "{color_value}"\n'
+                    else:
+                        # Update colors for light theme
+                        light_theme_colors = {
+                            "primaryColor": "#29379b",
+                            "backgroundColor": "#FFFFFF",
+                            "secondaryBackgroundColor": "#F0F2F6",
+                            "textColor": "#262730",
+                        }
+
+                        # Update each color in the config
+                        for i, line in enumerate(config_lines):
+                            for color_key, color_value in light_theme_colors.items():
+                                if line.strip().startswith(color_key):
+                                    config_lines[i] = f'{color_key} = "{color_value}"\n'
+
+                    # Write the updated config
+                    with open(config_path, "w") as f:
+                        f.writelines(config_lines)
+
+                    # Add a small delay to ensure the spinner is visible
+                    time.sleep(0.5)
+
+                # Show a success message
+                st.success(f"Theme changed to {selected_theme}. Refreshing...")
+
+                # Force reload to apply theme change
+                time.sleep(0.5)  # Give user time to see the success message
+                st.rerun()
+
+            # Image format settings
+            st.markdown("## Export Settings")
             img_formats = ["svg", "png", "jpeg", "webp"]
             st.selectbox(
                 "image export format",
@@ -377,6 +561,8 @@ def render_sidebar(page: str = "") -> None:
                 img_formats.index(params["image-format"]),
                 key="image-format",
             )
+
+            # Spectrum plotting settings
             st.markdown("## Spectrum Plotting")
             st.selectbox("Bin Peaks", ["auto", True, False], key="spectrum_bin_peaks")
             if st.session_state["spectrum_bin_peaks"] == True:
@@ -514,6 +700,42 @@ def show_table(df: pd.DataFrame, download_name: str = "") -> None:
     return df
 
 
+def configure_plot_theme():
+    """Configure plot themes based on Streamlit's theme."""
+    # Get the current app theme from Streamlit's global theme
+    app_theme = "light" if st.get_option("theme.base") == "light" else "dark"
+
+    # Configure matplotlib if available
+    if MPL_AVAILABLE:
+        try:
+            if app_theme == "light":
+                plt.style.use("default")  # Default Matplotlib style for light theme
+            else:
+                plt.style.use("dark_background")  # Built-in dark theme
+        except Exception as e:
+            print(f"Error configuring matplotlib theme: {e}")
+
+    # Configure plotly if available
+    if PLOTLY_AVAILABLE:
+        try:
+            if app_theme == "light":
+                pio.templates.default = "plotly_white"  # Clean, light theme
+            else:
+                pio.templates.default = "plotly_dark"  # Built-in dark theme
+        except Exception as e:
+            print(f"Error configuring plotly theme: {e}")
+
+    # Configure bokeh if available
+    if BOKEH_AVAILABLE:
+        try:
+            if app_theme == "light":
+                curdoc().theme = "light_minimal"  # Built-in light theme
+            else:
+                curdoc().theme = "dark_minimal"  # Built-in dark theme
+        except Exception as e:
+            print(f"Error configuring bokeh theme: {e}")
+
+
 def show_fig(
     fig,
     download_name: str,
@@ -532,53 +754,119 @@ def show_fig(
     Returns:
         None
     """
-    if not selection_session_state_key:
-        st.plotly_chart(
-            fig,
-            use_container_width=container_width,
-            config={
-                "displaylogo": False,
-                "modeBarButtonsToRemove": [
-                    "zoom",
-                    "pan",
-                    "select",
-                    "lasso",
-                    "zoomin",
-                    "autoscale",
-                    "zoomout",
-                    "resetscale",
-                ],
-                "toImageButtonOptions": {
-                    "filename": download_name,
-                    "format": st.session_state["image-format"],
+    if not PLOTLY_AVAILABLE:
+        st.warning("Plotly package not installed. Figure display is limited.")
+        st.write("Figure cannot be displayed without Plotly.")
+        return
+
+    try:
+        # Configure plot theme before displaying
+        configure_plot_theme()
+
+        # Get current app theme from Streamlit's global theme
+        app_theme = "light" if st.get_option("theme.base") == "light" else "dark"
+
+        # Update Plotly figure layout based on theme
+        if hasattr(fig, "update_layout"):
+            if app_theme == "light":
+                fig.update_layout(
+                    paper_bgcolor="white",
+                    plot_bgcolor="white",
+                    font_color="black",
+                    xaxis=dict(
+                        gridcolor="lightgray",
+                        gridwidth=1,
+                        griddash="dash",
+                        linecolor="black",
+                        linewidth=1,
+                        ticks="outside",
+                        tickfont=dict(color="black"),
+                    ),
+                    yaxis=dict(
+                        gridcolor="lightgray",
+                        gridwidth=1,
+                        griddash="dash",
+                        linecolor="black",
+                        linewidth=1,
+                        ticks="outside",
+                        tickfont=dict(color="black"),
+                    ),
+                )
+            else:
+                fig.update_layout(
+                    paper_bgcolor="#0E1117",
+                    plot_bgcolor="#0E1117",
+                    font_color="#FFFFFF",
+                    xaxis=dict(
+                        gridcolor="#555555",
+                        gridwidth=1,
+                        griddash="dash",
+                        linecolor="#FFFFFF",
+                        linewidth=1,
+                        ticks="outside",
+                        tickfont=dict(color="#FFFFFF"),
+                    ),
+                    yaxis=dict(
+                        gridcolor="#555555",
+                        gridwidth=1,
+                        griddash="dash",
+                        linecolor="#FFFFFF",
+                        linewidth=1,
+                        ticks="outside",
+                        tickfont=dict(color="#FFFFFF"),
+                    ),
+                )
+
+        if not selection_session_state_key:
+            st.plotly_chart(
+                fig,
+                use_container_width=container_width,
+                config={
+                    "displaylogo": False,
+                    "modeBarButtonsToRemove": [
+                        "zoom",
+                        "pan",
+                        "select",
+                        "lasso",
+                        "zoomin",
+                        "autoscale",
+                        "zoomout",
+                        "resetscale",
+                    ],
+                    "toImageButtonOptions": {
+                        "filename": download_name,
+                        "format": st.session_state["image-format"],
+                    },
                 },
-            },
-        )
-    else:
-        st.plotly_chart(
-            fig,
-            key=selection_session_state_key,
-            selection_mode=["points", "box"],
-            on_select="rerun",
-            config={
-                "displaylogo": False,
-                "modeBarButtonsToRemove": [
-                    "zoom",
-                    "pan",
-                    "lasso",
-                    "zoomin",
-                    "autoscale",
-                    "zoomout",
-                    "resetscale",
-                    "select",
-                ],
-                "toImageButtonOptions": {
-                    "filename": download_name,
-                    "format": st.session_state["image-format"],
+            )
+        else:
+            st.plotly_chart(
+                fig,
+                key=selection_session_state_key,
+                selection_mode=["points", "box"],
+                on_select="rerun",
+                config={
+                    "displaylogo": False,
+                    "modeBarButtonsToRemove": [
+                        "zoom",
+                        "pan",
+                        "lasso",
+                        "zoomin",
+                        "autoscale",
+                        "zoomout",
+                        "resetscale",
+                        "select",
+                    ],
+                    "toImageButtonOptions": {
+                        "filename": download_name,
+                        "format": st.session_state["image-format"],
+                    },
                 },
-            },
-            use_container_width=True,
-        )
+                use_container_width=True,
+            )
+    except Exception as e:
+        st.warning(f"Error displaying figure: {e}")
+        st.write("Figure could not be displayed properly.")
 
 
 def reset_directory(path: Path) -> None:
