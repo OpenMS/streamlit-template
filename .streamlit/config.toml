@@ -1,3 +1,6 @@
+[browser]
+gatherUsageStats = false
+
 [global]
 developmentMode = false
 
@@ -23,6 +26,3 @@ textColor = "#262730"
 
 # Font family for all text in the app, except code blocks. One of "sans serif", "serif", or "monospace".
 # font =
-
-[browser]
-gatherUsageStats = false
