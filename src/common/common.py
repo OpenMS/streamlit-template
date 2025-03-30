@@ -7,6 +7,10 @@ import time
 from typing import Any
 from pathlib import Path
 from streamlit.components.v1 import html
+import pandas as pd
+import psutil
+import streamlit as st
+
 
 # Optional plotting package imports
 try:
@@ -30,43 +34,6 @@ try:
 except ImportError:
     BOKEH_AVAILABLE = False
 
-import streamlit as st
-
-# Optional pandas import
-try:
-    import pandas as pd
-
-    PANDAS_AVAILABLE = True
-except ImportError:
-    PANDAS_AVAILABLE = False
-
-    # Create a minimal DataFrame substitute if pandas is not available
-    class DataFrameSubstitute:
-        def __init__(self, data=None):
-            self.data = data if data is not None else []
-
-        def to_csv(self, *args, **kwargs):
-            return ""
-
-        def __len__(self):
-            return len(self.data)
-
-        def iloc(self, *args, **kwargs):
-            return self
-
-    # Create a minimal pandas substitute
-    class PandasSubstitute:
-        def DataFrame(self, *args, **kwargs):
-            return DataFrameSubstitute()
-
-    pd = PandasSubstitute()
-
-try:
-    import psutil
-
-    PSUTIL_AVAILABLE = True
-except ImportError:
-    PSUTIL_AVAILABLE = False
 
 try:
     from tkinter import Tk, filedialog
@@ -84,37 +51,16 @@ OS_PLATFORM = sys.platform
 @st.fragment(run_every=5)
 def monitor_hardware():
     """Display system resource utilization."""
-    if not PSUTIL_AVAILABLE:
-        st.warning("psutil package not installed. Resource monitoring is disabled.")
-        return
 
-    try:
-        # Get CPU usage
-        cpu_progress = psutil.cpu_percent(interval=None) / 100
+    cpu_progress = psutil.cpu_percent(interval=None) / 100
+    ram_progress = 1 - psutil.virtual_memory().available / psutil.virtual_memory().total
 
-        # Get RAM usage with better error handling
-        try:
-            ram_progress = (
-                1 - psutil.virtual_memory().available / psutil.virtual_memory().total
-            )
-        except (AttributeError, TypeError):
-            # If memory info is not available, show a warning
-            st.warning("Memory usage information is not available on this platform.")
-            ram_progress = 0
+    st.text(f"Ram ({ram_progress * 100:.2f}%)")
+    st.progress(ram_progress)
+    st.text(f"CPU ({cpu_progress * 100:.2f}%)")
+    st.progress(cpu_progress)
 
-        # Display RAM usage if available
-        if ram_progress > 0:
-            st.text(f"Ram ({ram_progress * 100:.2f}%)")
-            st.progress(ram_progress)
-
-        # Display CPU usage
-        st.text(f"CPU ({cpu_progress * 100:.2f}%)")
-        st.progress(cpu_progress)
-
-        st.caption(f"Last fetched at: {time.strftime('%H:%M:%S')}")
-    except Exception as e:
-        st.warning(f"Error monitoring hardware: {e}")
-        return
+    st.caption(f"Last fetched at: {time.strftime('%H:%M:%S')}")
 
 
 def load_params(default: bool = False) -> dict[str, Any]:
