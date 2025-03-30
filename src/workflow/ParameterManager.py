@@ -24,6 +24,32 @@ class ParameterManager:
         self.params_file = Path(workflow_dir, "params.json")
         self.param_prefix = f"{workflow_dir.stem}-param-"
         self.topp_param_prefix = f"{workflow_dir.stem}-TOPP-"
+        
+        
+    
+    def get_boolean_params(self, tool: str) -> list:
+        ini_file = Path(self.ini_dir, f"{tool}.ini")
+        if not ini_file.exists():
+            return []
+
+        param = poms.Param()
+        poms.ParamXMLFile().load(str(ini_file), param)
+
+        boolean_params = []
+
+        for key in param.keys():
+            try:
+                entry = param.getEntry(key)
+                # pyopenms 3.3.0 uses valueType == 3 for boolean
+                if hasattr(entry, 'valueType') and entry.valueType == 3:
+                    param_name = key.decode().split(":1:")[1]
+                    boolean_params.append(param_name)
+            except Exception as e:
+                print(f"Warning: Could not process key {key}: {e}")
+
+        return boolean_params
+
+
 
     def save_parameters(self) -> None:
         """
@@ -77,7 +103,7 @@ class ParameterManager:
         with open(self.params_file, "w", encoding="utf-8") as f:
             json.dump(json_params, f, indent=4)
 
-    def get_parameters_from_json(self) -> None:
+    def get_parameters_from_json(self) -> dict:
         """
         Loads parameters from the JSON file if it exists and returns them as a dictionary.
         If the file does not exist, it returns an empty dictionary.
@@ -97,7 +123,7 @@ class ParameterManager:
             except:
                 st.error("**ERROR**: Attempting to load an invalid JSON parameter file. Reset to defaults.")
                 return {}
-
+    
     def reset_to_default_parameters(self) -> None:
         """
         Resets the parameters to their default values by deleting the custom parameters

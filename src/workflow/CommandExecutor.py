@@ -164,13 +164,25 @@ class CommandExecutor:
                 else:
                     command += [value[i]]
             # Add non-default TOPP tool parameters
+            boolean_keys = self.parameter_manager.get_boolean_params(tool)
+
             if tool in params.keys():
+                
                 for k, v in params[tool].items():
-                    command += [f"-{k}"]
-                    if isinstance(v, str) and "\n" in v:
-                        command += v.split("\n")
+                    cli_key = k.replace('.', ':') 
+                    if k in boolean_keys:
+                        if v is True:
+                            command += [f"-{k}"]  # add flag only
+                        elif v is False:
+                            continue  # skip false
+                        else:
+                            raise ValueError(f"Invalid boolean value for {tool}:{k} → {v}")
                     else:
-                        command += [str(v)]
+                        command += [f"-{k}"]
+                        if isinstance(v, str) and "\n" in v:
+                            command += v.split("\n")
+                        else:
+                            command += [str(v)]
             # Add custom parameters
             for k, v in custom_params.items():
                 command += [f"-{k}"]
