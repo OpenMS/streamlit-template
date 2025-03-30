@@ -634,10 +634,6 @@ def display_large_dataframe(
     Returns:
         Index of selected row.
     """
-    if not PANDAS_AVAILABLE:
-        st.warning("pandas package not installed. DataFrame display is limited.")
-        st.write(df)
-        return None
 
     # Dropdown for selecting chunk size
     chunk_size = st.selectbox("Select Number of Rows to Display", chunk_sizes)
@@ -659,34 +655,25 @@ def display_large_dataframe(
         return df.iloc[start:end], start, end
 
     # Display the current chunk
-    try:
-        current_chunk_df, start_row, end_row = get_current_chunk(
-            df, chunk_size, page - 1
-        )
+    current_chunk_df, start_row, end_row = get_current_chunk(df, chunk_size, page - 1)
 
-        event = st.dataframe(current_chunk_df, **kwargs)
+    event = st.dataframe(current_chunk_df, **kwargs)
 
-        st.write(
-            f"Showing rows {start_row + 1} to {end_row} of {len(df)} ({get_dataframe_mem_useage(current_chunk_df):.2f} MB)"
-        )
+    st.write(
+        f"Showing rows {start_row + 1} to {end_row} of {len(df)} ({get_dataframe_mem_useage(current_chunk_df):.2f} MB)"
+    )
 
-        rows = event["selection"]["rows"]
+    rows = event["selection"]["rows"]
 
-        if st.session_state.settings[
-            "test"
-        ]:  # is a test App, return first row as selected
-            return 1
-        elif not rows:
-            return None
-        else:
-            # Calculate the index based on the current page and chunk size
-            base_index = (page - 1) * chunk_size
-            print(base_index)
-            return base_index + rows[0]
-    except Exception as e:
-        st.warning(f"Error displaying DataFrame: {e}")
-        st.write(df)
+    if st.session_state.settings["test"]:  # is a test App, return first row as selected
+        return 1
+    elif not rows:
         return None
+    else:
+        # Calculate the index based on the current page and chunk size
+        base_index = (page - 1) * chunk_size
+        print(base_index)
+        return base_index + rows[0]
 
 
 def show_table(df: pd.DataFrame, download_name: str = "") -> None:
@@ -701,26 +688,16 @@ def show_table(df: pd.DataFrame, download_name: str = "") -> None:
     Returns:
         df (pd.DataFrame): The possibly edited dataframe.
     """
-    if not PANDAS_AVAILABLE:
-        st.warning("pandas package not installed. Table display is limited.")
-        st.write(df)
-        return df
-
-    try:
-        # Show dataframe using container width
-        st.dataframe(df, use_container_width=True)
-        # Show download button with the given download name for the table if name is given
-        if download_name:
-            st.download_button(
-                "Download Table",
-                df.to_csv(sep="\t").encode("utf-8"),
-                download_name.replace(" ", "-") + ".tsv",
-            )
-        return df
-    except Exception as e:
-        st.warning(f"Error displaying table: {e}")
-        st.write(df)
-        return df
+    # Show dataframe using container width
+    st.dataframe(df, use_container_width=True)
+    # Show download button with the given download name for the table if name is given
+    if download_name:
+        st.download_button(
+            "Download Table",
+            df.to_csv(sep="\t").encode("utf-8"),
+            download_name.replace(" ", "-") + ".tsv",
+        )
+    return df
 
 
 def configure_plot_theme():
@@ -918,17 +895,11 @@ def get_dataframe_mem_useage(df):
     Returns:
         float: The memory usage of the DataFrame in megabytes.
     """
-    if not PANDAS_AVAILABLE:
-        return 0.0
-
-    try:
-        # Calculate the memory usage of the DataFrame in bytes
-        memory_usage_bytes = df.memory_usage(deep=True).sum()
-        # Convert bytes to megabytes
-        memory_usage_mb = memory_usage_bytes / (1024**2)
-        return memory_usage_mb
-    except Exception:
-        return 0.0
+    # Calculate the memory usage of the DataFrame in bytes
+    memory_usage_bytes = df.memory_usage(deep=True).sum()
+    # Convert bytes to megabytes
+    memory_usage_mb = memory_usage_bytes / (1024**2)
+    return memory_usage_mb
 
 
 def tk_directory_dialog(title: str = "Select Directory", parent_dir: str = os.getcwd()):
