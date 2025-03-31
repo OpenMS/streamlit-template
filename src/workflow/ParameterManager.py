@@ -77,7 +77,7 @@ class ParameterManager:
         with open(self.params_file, "w", encoding="utf-8") as f:
             json.dump(json_params, f, indent=4)
 
-    def get_parameters_from_json(self) -> None:
+    def get_parameters_from_json(self) -> dict:
         """
         Loads parameters from the JSON file if it exists and returns them as a dictionary.
         If the file does not exist, it returns an empty dictionary.
