@@ -24,6 +24,9 @@ class CommandExecutor:
         self.pid_dir = Path(workflow_dir, "pids")
         self.logger = logger
         self.parameter_manager = parameter_manager
+        self.states = {
+            "is_executing_error_occurred": False,
+        }
 
     def run_multiple_commands(
         self, commands: list[str]
@@ -42,6 +45,9 @@ class CommandExecutor:
         # Log the start of command execution
         self.logger.log(f"Running {len(commands)} commands in parallel...", 1)
         start_time = time.time()
+        
+        # make sure is_executing_error_occurred is reset to False
+        self.states["is_executing_error_occurred"] = False
 
         # Initialize a list to keep track of threads
         threads = []
@@ -55,6 +61,11 @@ class CommandExecutor:
         # Wait for all threads to complete
         for thread in threads:
             thread.join()
+        
+        # Check if any error occurred during execution and raise error so that no more commands are executed
+        if self.states["is_executing_error_occurred"]:
+            self.logger.log("❌ Stopping the execution as error occurred.")
+            raise Exception("Execution error occurred in one of the commands.")
 
         # Calculate and log the total execution time
         end_time = time.time()
@@ -89,6 +100,11 @@ class CommandExecutor:
         # Wait for command completion and capture output
         stdout, stderr = process.communicate()
         
+        # Check if the process is killed
+        if self.states["is_executing_error_occurred"]:
+            self.logger.log(f"Process {child_pid}: stopped the executing as in other thread error occurred")
+            return
+        
         # Cleanup PID file
         pid_file_path.unlink()
 
@@ -103,6 +119,7 @@ class CommandExecutor:
         
         # Log stderr and raise an exception if errors occurred
         if stderr or process.returncode != 0:
+            self.states["is_executing_error_occurred"] = True
             error_message = stderr.decode().strip()
             self.logger.log(f"ERRORS OCCURRED:\n{error_message}", 2)
 
