@@ -1,5 +1,4 @@
 from pathlib import Path
-import streamlit as st
 import streamlit.components.v1 as st_components
 from streamlit.util import calc_md5
 import streamlit.runtime.scriptrunner as scriptrunner
