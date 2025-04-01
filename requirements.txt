@@ -111,7 +111,7 @@ six==1.17.0
     # via python-dateutil
 smmap==5.0.2
     # via gitdb
-streamlit==1.43.0
+streamlit==1.44.0
     # via
     #   src (pyproject.toml)
     #   streamlit-js-eval

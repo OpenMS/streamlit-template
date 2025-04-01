@@ -1,7 +1,8 @@
 from pathlib import Path
 import streamlit as st
 import streamlit.components.v1 as st_components
-from streamlit.source_util import page_icon_and_name, calc_md5, get_pages, _on_pages_changed
+from streamlit.util import calc_md5
+import streamlit.runtime.scriptrunner as scriptrunner
 
 from captcha.image import ImageCaptcha
 
@@ -19,10 +20,11 @@ def delete_all_pages(main_script_path_str: str) -> None:
 
     Returns:
         None
-
     """
-    # Get all pages from the app's configuration
-    current_pages = get_pages(main_script_path_str)
+    # Get all pages from the app's configuration using st.session_state
+    if "_pages" not in st.session_state:
+        st.session_state._pages = {}
+    current_pages = st.session_state._pages
 
     # Create a list to store keys pages to delete
     keys_to_delete = []
@@ -37,7 +39,7 @@ def delete_all_pages(main_script_path_str: str) -> None:
         del current_pages[key]
 
     # Refresh the pages configuration
-    _on_pages_changed.send()
+    scriptrunner.get_script_run_ctx().pages_manager.refresh()
 
 
 def delete_page(main_script_path_str: str, page_name: str) -> None:
@@ -51,124 +53,87 @@ def delete_page(main_script_path_str: str, page_name: str) -> None:
     Returns:
         None
     """
-    # Get all pages
-    current_pages = get_pages(main_script_path_str)
+    # Get all pages from the app's configuration using st.session_state
+    if "_pages" not in st.session_state:
+        st.session_state._pages = {}
+    current_pages = st.session_state._pages
 
-    # Iterate over all pages and delete the desired page if found
+    # Create a list to store keys pages to delete
+    keys_to_delete = []
+
+    # Iterate over all pages and add keys to delete list if the desired page is found
     for key, value in current_pages.items():
         if value["page_name"] == page_name:
-            del current_pages[key]
+            keys_to_delete.append(key)
+
+    # Delete the keys from current pages
+    for key in keys_to_delete:
+        del current_pages[key]
 
     # Refresh the pages configuration
-    _on_pages_changed.send()
+    scriptrunner.get_script_run_ctx().pages_manager.refresh()
 
 
-def restore_all_pages(main_script_path_str: str) -> None:
-    """
-    restore all pages found in the "content" directory to an app's configuration.
-
-    Args:
-        main_script_path_str (str): The name of the main page, typically the app's name.
-
-    Returns:
-        None
-    """
-    # Get all pages
-    pages = get_pages(main_script_path_str)
-
-    # Obtain the path to the main script
-    main_script_path = Path(main_script_path_str)
-
-    # Define the directory where pages are stored
-    pages_dir = main_script_path.parent / "content"
-
-    # To store the pages for later, to add in ascending order
-    pages_temp = []
-
-    # Iterate over all .py files in the "content" directory
-    for script_path in pages_dir.glob("*.py"):
-        # append path with file name
-        script_path_str = str(script_path.resolve())
-
-        # Calculate the MD5 hash of the script path
-        psh = calc_md5(script_path_str)
-
-        # Obtain the page icon and name
-        pi, pn = page_icon_and_name(script_path)
-
-        # Extract the index from the page name
-        index = int(os.path.basename(script_path.stem).split("_")[0])
-
-        # Add the page data to the temporary list
-        pages_temp.append(
-            (
-                index,
-                {
-                    "page_script_hash": psh,
-                    "page_name": pn,
-                    "icon": pi,
-                    "script_path": script_path_str,
-                },
-            )
-        )
-
-    # Sort the pages_temp list by index in ascending order as defined in pages folder e-g 0_, 1_ etc
-    pages_temp.sort(key=lambda x: x[0])
-
-    # Add pages
-    for index, page_data in pages_temp:
-        # Add the new page configuration
-        pages[page_data["page_script_hash"]] = {
-            "page_script_hash": page_data["page_script_hash"],
-            "page_name": page_data["page_name"],
-            "icon": page_data["icon"],
-            "script_path": page_data["script_path"],
-        }
-
-    # Refresh the page configuration
-    _on_pages_changed.send()
-
-
-def add_page(main_script_path_str: str, page_name: str) -> None:
+def add_page(main_script_path_str: str, page_name: str, script_path_str: str) -> None:
     """
     Add a new page to an app's configuration.
 
     Args:
         main_script_path_str (str): The name of the main page, typically the app's name.
         page_name (str): The name of the page to be added.
+        script_path_str (str): The path to the script file for the new page.
 
     Returns:
         None
     """
-    # Get all pages
-    pages = get_pages(main_script_path_str)
+    # Get all pages from the app's configuration using st.session_state
+    if "_pages" not in st.session_state:
+        st.session_state._pages = {}
+    pages = st.session_state._pages
 
-    # Obtain the path to the main script
-    main_script_path = Path(main_script_path_str)
-
-    # Define the directory where pages are stored
-    pages_dir = main_script_path.parent / "content"
-
-    # Find the script path corresponding to the new page
-    script_path = [f for f in pages_dir.glob("*.py") if f.name.find(page_name) != -1][0]
-    script_path_str = str(script_path.resolve())
-
-    # Calculate the MD5 hash of the script path
+    # Calculate the page script hash
     psh = calc_md5(script_path_str)
 
-    # Obtain the page icon and name
-    pi, pn = page_icon_and_name(script_path)
-
-    # Add the new page configuration
+    # Add the new page to the pages dictionary
     pages[psh] = {
-        "page_script_hash": psh,
-        "page_name": pn,
-        "icon": pi,
+        "page_name": page_name,
         "script_path": script_path_str,
+        "icon": "",
     }
 
-    # Refresh the page configuration
-    _on_pages_changed.send()
+    # Refresh the pages configuration
+    scriptrunner.get_script_run_ctx().pages_manager.refresh()
+
+
+def update_page(main_script_path_str: str, page_name: str, script_path_str: str) -> None:
+    """
+    Update an existing page in an app's configuration.
+
+    Args:
+        main_script_path_str (str): The name of the main page, typically the app's name.
+        page_name (str): The name of the page to be updated.
+        script_path_str (str): The path to the script file for the updated page.
+
+    Returns:
+        None
+    """
+    # Get all pages from the app's configuration using st.session_state
+    if "_pages" not in st.session_state:
+        st.session_state._pages = {}
+    pages = st.session_state._pages
+
+    # Calculate the page script hash
+    psh = calc_md5(script_path_str)
+
+    # Update the page in the pages dictionary
+    pages[psh] = {
+        "page_name": page_name,
+        "script_path": script_path_str,
+        "icon": "",
+    }
+
+    # Refresh the pages configuration
+    scriptrunner.get_script_run_ctx().pages_manager.refresh()
 
 
 length_captcha = 5
