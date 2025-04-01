@@ -4,7 +4,6 @@ from src import fileupload
 import json
 from pathlib import Path
 import shutil
-import streamlit as st
 
 
 @pytest.fixture
