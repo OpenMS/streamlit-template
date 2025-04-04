@@ -1024,6 +1024,10 @@ class StreamlitUI:
                     if not "WORKFLOW FINISHED" in content:
                         st.error("**Errors occurred, check log file.**")
                     st.code(content, language="neon", line_numbers=False)
+        else:
+            # as log file is not created yet
+            time.sleep(1)
+            st.rerun()
 
     def results_section(self, custom_results_function) -> None:
         custom_results_function()
