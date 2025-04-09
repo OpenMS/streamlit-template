@@ -8,7 +8,6 @@ organizes parameters into sections, and properly toggles advanced parameters.
 import os
 import sys
 import pytest
-from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 # Add project root to path for imports using a named constant
