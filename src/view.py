@@ -56,11 +56,11 @@ def get_df(file: Union[str, Path]) -> pd.DataFrame:
     if not exp_ms1.empty():
         st.session_state["view_ms1"] = exp_ms1.get_df(long=True)
     else:
-        st.session_state["view_ms1"] = pd.DataFrame()
+        st.session_state["view_ms1"] = pd.DataFrame(columns=['RT', 'mz', 'inty'])
     if not exp_ms2.empty():
         st.session_state["view_ms2"] = exp_ms2.get_df(long=True)
     else:
-        st.session_state["view_ms2"] = pd.DataFrame()
+        st.session_state["view_ms2"] = pd.DataFrame(columns=['RT', 'mz', 'inty'])
 
 
 def plot_bpc_tic() -> go.Figure:
@@ -178,6 +178,8 @@ def view_peak_map():
             df = df[df["mz"] > box[0]["y"][1]]
             df = df[df["mz"] < box[0]["y"][0]]
             df = df[df["RT"] < box[0]["x"][1]]
+    if len(df) == 0:
+        return
     peak_map = df.plot(
         kind="peakmap",
         x="RT",
@@ -244,7 +246,7 @@ def view_spectrum():
             hide_index=True,
         )
     with cols[1]:
-        if index is not None:
+        if (index is not None) and (len(df) != 0):
             df = st.session_state.view_spectra.iloc[index]
             if "view_spectrum_selection" in st.session_state:
                 box = st.session_state.view_spectrum_selection.selection.box
