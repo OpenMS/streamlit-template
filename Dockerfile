@@ -94,7 +94,7 @@ RUN pip install dist/*.whl
 
 # Install other dependencies (excluding pyopenms)
 COPY requirements.txt ./requirements.txt 
-RUN grep -v '^pyopenms' requirements.txt > requirements_cleaned.txt && mv requirements_cleaned.txt requirements.txt
+RUN grep -Ev '^pyopenms([=<>!~].*)?$' requirements.txt > requirements_cleaned.txt && mv requirements_cleaned.txt requirements.txt
 RUN pip install -r requirements.txt
 
 WORKDIR /
