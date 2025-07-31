@@ -12,7 +12,6 @@ from src.common.common import page_setup, v_space
 from src.peptide_mz_calculator import (
     calculate_peptide_mz_range,
     validate_sequence,
-    get_supported_examples,
 )
 
 # Page setup
@@ -24,9 +23,9 @@ with col2:
     st.markdown(
         """
     <div style="text-align: center; padding: 0.5rem 0;">
-        <h1 style="font-size: 2rem; margin-bottom: 0.2rem;">⚖️ Peptide M/Z Calculator</h1>
+        <h1 style="font-size: 2rem; margin-bottom: 0.2rem;">⚖️ Peptide m/z Calculator</h1>
         <p style="font-size: 1rem; color: #666; margin-bottom: 0.5rem;">
-            Calculate theoretical mass-to-charge ratios using AASequence string format
+            Calculate theoretical mass-to-charge ratios (m/z) for peptides with and without modifications.
         </p>
     </div>
     """,
@@ -36,7 +35,7 @@ with col2:
 # Description
 st.markdown(
     """
-**Calculate precise theoretical m/z values** for peptides using PyOpenMS AASequence string format.
+**Calculate precise theoretical m/z values** for peptides.
 
 """
 )
@@ -44,29 +43,29 @@ st.markdown(
 # Expandable help sections
 with st.expander("📚 **Understanding AASequence Format**"):
     st.markdown("""
-    **PyOpenMS AASequence Format:**
-    - Uses **native PyOpenMS string representation**
-    - **Modification syntax**: `M(Oxidation)PEPTIDE`, `C(Carbamidomethyl)PEPTIDE`
-    - **Terminal modifications**: `.(Acetyl)PEPTIDE`, `PEPTIDE(Amidated).`
-    - **Mass deltas**: `PEPTIDE[+15.995]`, `M[+15.994915]PEPTIDE`
-    - **UNIMOD notation**: `C[UNIMOD:4]PEPTIDE`
-    
-    """)
 
-with st.expander("📝 **Supported Examples**", expanded=False):
-    st.markdown("**Native AASequence Format Examples:**")
-    examples = get_supported_examples()
-    
-    for seq, desc in examples.items():
-        st.markdown(f"• `{seq}` - {desc}")
-    
-    st.markdown("""
     **💡 Format Tips:**
     - Use parentheses for modifications: `(Oxidation)`, `(Carbamidomethyl)`
     - Use dots for terminal modifications: `.(Acetyl)`, `(Amidated).`
     - Use square brackets for mass deltas: `[+15.995]`, `[-18.010]`
     - UNIMOD format: `[UNIMOD:4]` for standardized modifications
+
+    **Examples:**
+    - `PEPTIDE`: Basic amino acid sequence
+    - `M(Oxidation)PEPTIDE`: Methionine oxidation modification
+    - `C(Carbamidomethyl)PEPTIDE`: Carbamidomethyl cysteine modification
+    - `.(Acetyl)PEPTIDE`: N-terminal acetylation
+    - `PEPTIDE(Amidated).`: C-terminal amidation
+    - `PEPTIDE[+15.995]`: Mass delta modification
+    - `M[+15.994915]PEPTIDE`: Specific mass delta on methionine
+    - `ALSSC[UNIMOD:4]VVDEEQDVER`: UNIMOD modification notation
+    - `M(Oxidation)PEPTIDE/3`: Modified sequence with charge state
+    - `PEPS(Phospho)TIDE`: Phosphorylation modification
+    - `.(Acetyl)M(Oxidation)PEPTIDE`: Multiple modifications
+
     """)
+
+    
 
 st.markdown("---")
 
@@ -89,9 +88,9 @@ with col1_input:
 with col2_input:
     # Charge range inputs
     st.markdown("**Charge State Range**")
-    
+
     default_charge = 2
-    
+
     charge_col1, charge_col2 = st.columns(2)
     with charge_col1:
         min_charge = st.number_input(

@@ -66,7 +66,6 @@ def calculate_peptide_mz(sequence: str, charge_state: int) -> Dict[str, Any]:
         "success": True,
     }
 
-
 def calculate_peptide_mz_range(
     sequence: str, 
     charge_range: Tuple[int, int]
@@ -114,25 +113,3 @@ def validate_sequence(sequence: str) -> Tuple[bool, str]:
         return True, ""
     except Exception as e:
         return False, f"Invalid sequence format: {str(e)}"
-
-
-def get_supported_examples() -> Dict[str, str]:
-    """Get examples of supported sequence formats.
-    
-    Returns:
-        Dictionary mapping example sequences to descriptions
-    """
-    return {
-        "PEPTIDE": "Basic amino acid sequence",
-        "PEPTIDE/2": "Sequence with charge state notation",
-        "M(Oxidation)PEPTIDE": "Methionine oxidation modification",
-        "C(Carbamidomethyl)PEPTIDE": "Carbamidomethyl cysteine modification", 
-        ".(Acetyl)PEPTIDE": "N-terminal acetylation",
-        "PEPTIDE(Amidated).": "C-terminal amidation",
-        "PEPTIDE[+15.995]": "Mass delta modification",
-        "M[+15.994915]PEPTIDE": "Specific mass delta on methionine",
-        "ALSSC[UNIMOD:4]VVDEEQDVER": "UNIMOD modification notation",
-        "M(Oxidation)PEPTIDE/3": "Modified sequence with charge state",
-        "PEPS(Phospho)TIDE": "Phosphorylation modification",
-        ".(Acetyl)M(Oxidation)PEPTIDE": "Multiple modifications",
-    }
