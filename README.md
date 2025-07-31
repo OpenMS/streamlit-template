@@ -20,7 +20,7 @@ Explore the hosted version here:  👉 [Live App](https://abi-services.cs.uni-tu
 
 ## 💻 Run Locally
 
-To test the app locally:
+To run the app locally:
 
 1. **Clone the repository**
    ```bash
@@ -29,11 +29,15 @@ To test the app locally:
    ```
 
 2. **Install dependencies**
+   
+   Make sure you can run ```pip``` commands.
+   
+   Install all dependencies with:
    ```bash
    pip install -r requirements.txt
    ```
 
-3. **Launch the app**
+4. **Launch the app**
    ```bash
    streamlit run app.py
    ```
@@ -82,7 +86,7 @@ To test the app locally:
    ```bash
    docker compose up -d --build
    ```
-   This will launch the app with full functionality, including tools that rely on OpenMS.
+   This will launch the app with full functionality.
 
 ## Documentation
 
