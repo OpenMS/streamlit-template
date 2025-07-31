@@ -24,7 +24,7 @@ To run the app locally:
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/Arslan-Siraj/streamlit-template.git
+   git clone https://github.com/OpenMS/streamlit-template.git
    cd streamlit-template
    ```
 
