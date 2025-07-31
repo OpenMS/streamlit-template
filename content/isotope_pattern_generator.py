@@ -75,6 +75,43 @@ def validate_peptide_sequence(sequence_str: str) -> Tuple[bool, str, Optional[st
     except Exception as e:
         return False, f"Error validating sequence: {str(e)}", None
 
+def validate_oligonucleotide_sequence(sequence_str: str) -> Tuple[bool, str, Optional[str]]:
+    """Validate an oligonucleotide (DNA/RNA) sequence and convert DNA to RNA.
+    
+    Args:
+        sequence_str (str): The nucleotide sequence
+        
+    Returns:
+        Tuple[bool, str, Optional[str]]: (is_valid, error_message, rna_sequence)
+    """
+    try:
+        # Clean the sequence
+        sequence_str = sequence_str.strip().upper()
+        if not sequence_str:
+            return False, "Sequence cannot be empty", None
+            
+        # Remove common formatting characters (spaces, numbers, newlines)
+        clean_sequence = re.sub(r'[^ACGTUN]', '', sequence_str)
+        
+        if not clean_sequence:
+            return False, "No valid nucleotide letters found", None
+            
+        # Validate nucleotides (A, C, G, T, U for RNA, N for any)
+        valid_nucleotides = set("ACGTUN")
+        invalid_chars = [nt for nt in clean_sequence if nt not in valid_nucleotides]
+        
+        if invalid_chars:
+            invalid_list = ", ".join(sorted(set(invalid_chars)))
+            return False, f"Invalid nucleotide(s): {invalid_list}. Valid nucleotides: A, C, G, T, U, N", None
+        
+        # Convert DNA to RNA (T -> U) since pyOpenMS NASequence only supports RNA
+        rna_sequence = clean_sequence.replace('T', 'U')
+            
+        return True, "", rna_sequence
+        
+    except Exception as e:
+        return False, f"Error validating oligonucleotide sequence: {str(e)}", None
+
 def generate_isotope_pattern_from_formula(formula_str: str, use_fine_generator: bool = False) -> Dict[str, Any]:
     """Generate isotope pattern from elemental formula using specified generator.
     
@@ -183,6 +220,75 @@ def generate_isotope_pattern_from_sequence(sequence_str: str, use_fine_generator
         
     except Exception as e:
         return {"success": False, "error": f"Error generating pattern from sequence: {str(e)}"}
+
+def generate_isotope_pattern_from_oligonucleotide(sequence_str: str, use_fine_generator: bool = False) -> Dict[str, Any]:
+    """Generate isotope pattern from oligonucleotide (DNA/RNA) sequence using specified generator.
+    
+    Args:
+        sequence_str (str): The nucleotide sequence (DNA will be converted to RNA)
+        use_fine_generator (bool): Whether to use FineIsotopePatternGenerator (default: False)
+        
+    Returns:
+        Dict[str, Any]: Results dictionary with mzs, intensities, and metadata
+    """
+    try:
+        # Validate sequence (converts DNA to RNA automatically)
+        is_valid, error_msg, rna_sequence = validate_oligonucleotide_sequence(sequence_str)
+        if not is_valid:
+            return {"success": False, "error": error_msg}
+        
+        # Check if conversion happened
+        original_clean = re.sub(r'[^ACGTUN]', '', sequence_str.strip().upper())
+        conversion_note = ""
+        if 'T' in original_clean:
+            conversion_note = " (DNA converted to RNA: T→U)"
+        
+        # Create NASequence object (for nucleic acids - RNA only)
+        na_sequence = oms.NASequence.fromString(rna_sequence)
+        
+        # Get empirical formula from sequence
+        empirical_formula = na_sequence.getFormula()
+        
+        # Select generator
+        generator = fine_pattern_generator if use_fine_generator else coarse_pattern_generator
+        generator_name = "Fine" if use_fine_generator else "Coarse"
+        
+        # Generate isotope pattern
+        isotope_distribution = empirical_formula.getIsotopeDistribution(generator)
+        avg_weight = na_sequence.getAverageWeight()
+        
+        distribution = isotope_distribution.getContainer()
+        
+        # Extract data
+        mzs = np.array([p.getMZ() for p in distribution])
+        intensities = np.array([p.getIntensity() for p in distribution])
+        
+        # Calculate masses
+        monoisotopic_mass = na_sequence.getMonoWeight()
+        average_mass = na_sequence.getAverageWeight()
+        
+        # Handle formula string conversion (pyOpenMS version compatibility)
+        formula_str = empirical_formula.toString()
+        if isinstance(formula_str, bytes):
+            formula_str = formula_str.decode('utf-8')
+        
+        return {
+            "success": True,
+            "mzs": mzs,
+            "intensities": intensities,
+            "monoisotopic_mass": monoisotopic_mass,
+            "average_mass": average_mass,
+            "formula": formula_str,
+            "sequence": rna_sequence,
+            "original_sequence": original_clean,
+            "conversion_note": conversion_note,
+            "source_type": f"Oligonucleotide Sequence ({generator_name}){conversion_note}",
+            "input_value": sequence_str,
+            "generator": generator_name
+        }
+        
+    except Exception as e:
+        return {"success": False, "error": f"Error generating pattern from oligonucleotide: {str(e)}"}
 
 def generate_isotope_pattern_from_mass(target_mass: float) -> Dict[str, Any]:
     """Generate isotope pattern from mass using CoarseIsotopePatternGenerator (existing method).
@@ -315,21 +421,22 @@ def create_isotope_plot(result_data: Dict[str, Any]) -> go.Figure:
 st.title("Isotopic Envelope Calculator")
 
 st.markdown("""
-Calculate isotopic patterns from three different input types:
+Calculate isotopic patterns from four different input types:
 - **Mass (Da)**: Estimate pattern from molecular weight
-- **Elemental Formula**: Precise calculation from molecular composition  
+- **Elemental Formula**: Precise calculation from molecular composition
 - **Peptide/Protein Sequence**: Calculate from amino acid sequence
+- **Oligonucleotide Sequence**: Calculate from DNA/RNA nucleotide sequence
 """)
 
 # Input method selection
 input_method = st.selectbox(
     "Select Input Method:",
-    ["Mass (Da)", "Elemental Formula", "Peptide/Protein Sequence"],
+    ["Mass (Da)", "Elemental Formula", "Peptide/Protein Sequence", "Oligonucleotide Sequence"],
     help="Choose how you want to specify your molecule"
 )
 
-# Generator selection (only for formula and sequence)
-if input_method in ["Elemental Formula", "Peptide/Protein Sequence"]:
+# Generator selection (only for formula, sequence, and oligonucleotide)
+if input_method in ["Elemental Formula", "Peptide/Protein Sequence", "Oligonucleotide Sequence"]:
     use_fine_generator = st.checkbox(
         "Use Fine Isotope Pattern Generator",
         value=False,
@@ -393,6 +500,23 @@ with col1:
             generator_type = "fine" if use_fine_generator else "coarse"
             with st.spinner(f'Computing from sequence using {generator_type} generator...'):
                 result_data = generate_isotope_pattern_from_sequence(sequence_input, use_fine_generator)
+    
+    elif input_method == "Oligonucleotide Sequence":
+        oligonucleotide_input = st.text_area(
+            "Nucleotide Sequence:",
+            value="ATCGATCG",
+            height=100,
+            help="""
+            Enter the DNA or RNA sequence using standard nucleotide codes.
+            Valid nucleotides: A (adenine), T (thymine), C (cytosine), G (guanine), U (uracil), N (any)
+            Examples: ATCGATCG, AAAUUUCCCGGG, ATCGNTCG
+            """
+        )
+        
+        if st.button('Compute Isotopic Envelope'):
+            generator_type = "fine" if use_fine_generator else "coarse"
+            with st.spinner(f'Computing from oligonucleotide using {generator_type} generator...'):
+                result_data = generate_isotope_pattern_from_oligonucleotide(oligonucleotide_input, use_fine_generator)
 
 with col2:
     if result_data:
@@ -406,6 +530,11 @@ with col2:
                 st.write(f"**Molecular Formula:** {result_data['formula']}")
             if "sequence" in result_data:
                 st.write(f"**Sequence:** {result_data['sequence']}")
+                # Show conversion info for oligonucleotides
+                if "original_sequence" in result_data and "conversion_note" in result_data:
+                    if result_data["conversion_note"]:
+                        st.write(f"**Original Sequence:** {result_data['original_sequence']}")
+                        st.info(f"DNA sequence converted to RNA for processing{result_data['conversion_note']}")
             st.write(f"**Monoisotopic Mass:** {result_data['monoisotopic_mass']:.5f} Da")
             st.write(f"**Average Mass:** {result_data['average_mass']:.5f} Da")
         else:
