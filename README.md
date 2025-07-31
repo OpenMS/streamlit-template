@@ -18,6 +18,90 @@ This repository contains a template app for OpenMS workflows in a web applicatio
 
 Documentation for **users** and **developers** is included as pages in [this template app](https://abi-services.cs.uni-tuebingen.de/streamlit-template/), indicated by the 📖 icon.
 
+# 🚀 Quickstart Guide
+
+## 🔗 Try the Online Demo
+
+Explore the hosted version here:  
+👉 [Live App](https://abi-services.cs.uni-tuebingen.de/streamlit-template/)
+
+---
+
+## 💻 Run Locally
+
+To test the app locally (without OpenMS features):
+
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/your-username/streamlit-template.git
+   cd streamlit-template
+   ```
+
+2. **Install dependencies**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+3. **Launch the app**
+   ```bash
+   streamlit run app.py
+   ```
+
+> ⚠️ Note: The local version offers limited functionality. Features that depend on OpenMS are only available in the Docker setup.
+
+---
+
+## 🐳 Run with Docker (Full Feature Set)
+
+We recommend using Docker for a consistent environment and access to all OpenMS-based tools.
+
+### 🔧 Install Docker (Ubuntu)
+
+Follow the [official Docker installation guide](https://docs.docker.com/engine/install/)  
+Or run the following commands on Ubuntu:
+
+<details>
+<summary>Click to expand</summary>
+
+```bash
+# Remove older Docker versions (if any)
+for pkg in docker.io docker-doc docker-compose docker-compose-v2 podman-docker containerd runc; do sudo apt-get remove -y $pkg; done
+
+# Install Docker’s GPG key and repository
+sudo apt-get update
+sudo apt-get install -y ca-certificates curl
+sudo install -m 0755 -d /etc/apt/keyrings
+sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+sudo chmod a+r /etc/apt/keyrings/docker.asc
+echo   "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu   $(. /etc/os-release && echo \"$VERSION_CODENAME\") stable" |   sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+sudo apt-get update
+sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+```
+
+</details>
+
+### ✅ Test Docker
+
+```bash
+docker run hello-world
+```
+
+You should see a "Hello from Docker!" message.
+
+---
+
+### ▶️ Build & Start the App
+
+From the project root directory:
+
+```bash
+docker compose up -d --build
+```
+
+This will launch the app with full functionality, including tools that rely on OpenMS.
+
+---
+
 ## Citation
 
 Please cite:
