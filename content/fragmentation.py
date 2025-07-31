@@ -392,12 +392,207 @@ def create_fragmentation_plot(result_data: Dict[str, Any]) -> go.Figure:
     return fig
 
 # UI Implementation
-st.title(" Peptide Fragmentation Calculator")
+st.title("💥 Peptide Fragmentation Calculator")
 
 st.markdown("""
-Generate theoretical fragment ion spectra for peptide sequences using pyOpenMS. 
+Generate theoretical fragment ion spectra for peptide sequences using pyOpenMS.
 Select ion types and charge states to customize the fragmentation pattern.
 """)
+
+# Documentation section
+with st.expander("📚 Documentation", expanded=False):
+    st.markdown("""
+    ## Overview
+    
+    The Peptide Fragmentation Calculator generates theoretical fragment ion spectra for peptide sequences using the
+    powerful **pyOpenMS** library. This tool simulates what would happen when a peptide is fragmented in a mass
+    spectrometer, providing essential information for mass spectrometry analysis and peptide identification.
+    
+    ## Peptide Fragmentation Theory
+    
+    When peptides are subjected to collision-induced dissociation (CID) or higher-energy collisional dissociation (HCD)
+    in a mass spectrometer, they fragment primarily along the peptide backbone. The fragmentation produces two series
+    of ions:
+    
+    - **N-terminal ions**: Contain the N-terminus of the original peptide
+    - **C-terminal ions**: Contain the C-terminus of the original peptide
+    
+    ### Ion Types Explained
+    
+    #### N-terminal Fragment Ions
+    - **a-ions**: Result from cleavage of the C-N bond with loss of CO (carbonyl group)
+      - Formula: [M + H - CO]⁺ where M is the N-terminal fragment mass
+      - Less commonly observed in standard CID conditions
+    
+    - **b-ions**: Result from cleavage of the peptide bond (amide bond)
+      - Formula: [M + H]⁺ where M is the N-terminal fragment mass
+      - Most abundant N-terminal ions in CID spectra
+    
+    - **c-ions**: Result from cleavage of the N-Cα bond with retention of NH₃
+      - Formula: [M + H + NH₃]⁺ where M is the N-terminal fragment mass
+      - More common in ETD (electron transfer dissociation) conditions
+    
+    #### C-terminal Fragment Ions
+    - **x-ions**: Result from cleavage of the N-Cα bond with addition of CO
+      - Formula: [M + H + CO - H]⁺ where M is the C-terminal fragment mass
+      - Less commonly observed
+    
+    - **y-ions**: Result from cleavage of the peptide bond with addition of H₂O
+      - Formula: [M + H + H₂O]⁺ where M is the C-terminal fragment mass
+      - Most abundant C-terminal ions in CID spectra
+    
+    - **z-ions**: Result from cleavage of the N-Cα bond with loss of NH₂
+      - Formula: [M + H - NH₂]⁺ where M is the C-terminal fragment mass
+      - More common in ETD conditions
+    
+    ## Usage Instructions
+    
+    ### 1. Enter Peptide Sequence
+    - Use standard single-letter amino acid codes (A, C, D, E, F, G, H, I, K, L, M, N, P, Q, R, S, T, V, W, Y)
+    - Extended codes (X, U) are also supported
+    - Minimum sequence length: 2 amino acids
+    - Example: `PEPTIDE`, `SAMPLESEQUENCE`, `ACDEFGHIK`
+    
+    ### 2. Select Ion Types
+    - Choose which fragment ion types to include in the spectrum
+    - **Recommended for CID/HCD**: b-ions and y-ions (default selection)
+    - **For ETD analysis**: Add c-ions and z-ions
+    - **Comprehensive analysis**: Select all ion types
+    
+    ### 3. Choose Charge States
+    - Select the charge states to consider (1+ to 5+)
+    - **Typical choice**: 1+ and 2+ for most peptides
+    - **For longer peptides**: Include higher charge states (3+, 4+)
+    - Higher charge states produce fragments at lower m/z values
+    
+    ### 4. Interpret Results
+    
+    #### Spectrum Plot
+    - **X-axis**: m/z (mass-to-charge ratio)
+    - **Y-axis**: Relative intensity (theoretical, normalized)
+    - **Colors**: Different colors represent different ion types
+    - **Hover**: Shows detailed information for each peak
+    
+    #### Fragment Table
+    - **Ion Type**: The type of fragment ion (a, b, c, x, y, z)
+    - **Fragment**: The fragment number (position from terminus)
+    - **Charge**: The charge state of the fragment
+    - **m/z**: The theoretical mass-to-charge ratio
+    - **Sequence**: The amino acid sequence of the fragment
+    
+    ## Technical Details
+    
+    ### Algorithm
+    - Uses pyOpenMS `TheoreticalSpectrumGenerator` class
+    - Calculates exact monoisotopic masses for fragments
+    - Applies ion-type specific mass corrections
+    - Supports multiple charge states simultaneously
+    
+    ### Mass Calculations
+    The theoretical m/z values are calculated using:
+    ```
+    m/z = (fragment_mass + ion_type_correction + charge × proton_mass) / charge
+    ```
+    
+    Where:
+    - `fragment_mass`: Exact monoisotopic mass of the amino acid sequence
+    - `ion_type_correction`: Ion-specific mass adjustment (see ion types above)
+    - `proton_mass`: 1.007276 Da
+    - `charge`: The charge state (1, 2, 3, etc.)
+    
+    ### Parameters
+    - **Isotopes**: Disabled for cleaner spectra (monoisotopic peaks only)
+    - **Neutral losses**: Disabled by default for simplicity
+    - **Mass accuracy**: Calculated to 4 decimal places
+    - **Intensity**: Relative theoretical intensities (not experimental)
+    
+    ## Example Workflows
+    
+    ### Basic Peptide Analysis
+    1. Enter sequence: `PEPTIDE`
+    2. Select: b-ions and y-ions
+    3. Charge states: 1+ and 2+
+    4. Expected fragments: b₁-b₆, y₁-y₆ ions
+    
+    ### Comprehensive Fragmentation
+    1. Enter sequence: `SAMPLESEQUENCE`
+    2. Select: All ion types
+    3. Charge states: 1+, 2+, 3+
+    4. Results: Complete fragmentation pattern
+    
+    ### ETD Simulation
+    1. Enter sequence: `PEPTIDE`
+    2. Select: c-ions and z-ions
+    3. Charge states: 1+ and 2+
+    4. Results: ETD-like fragmentation pattern
+    
+    ## Troubleshooting
+    
+    ### Common Issues
+    
+    **"Sequence cannot be empty"**
+    - Solution: Enter a valid amino acid sequence
+    
+    **"Invalid amino acid(s): X"**
+    - Solution: Check for typos or non-standard amino acid codes
+    - Use only standard single-letter codes
+    
+    **"Sequence must be at least 2 amino acids long"**
+    - Solution: Enter a longer peptide sequence
+    - Single amino acids cannot be fragmented
+    
+    **"Please select at least one ion type"**
+    - Solution: Check at least one ion type checkbox
+    
+    **"Please select at least one charge state"**
+    - Solution: Select at least one charge state from the dropdown
+    
+    ### Performance Notes
+    - Longer sequences (>20 amino acids) may take longer to process
+    - Higher charge states increase computation time
+    - All ion types selected will generate more fragments
+    
+    ## Applications
+    
+    ### Mass Spectrometry Method Development
+    - Design targeted MS/MS experiments
+    - Optimize fragmentation conditions
+    - Predict optimal precursor charge states
+    
+    ### Peptide Identification
+    - Compare experimental spectra with theoretical fragments
+    - Validate peptide sequence assignments
+    - Understand fragmentation efficiency
+    
+    ### Educational Purposes
+    - Learn peptide fragmentation patterns
+    - Understand ion nomenclature
+    - Explore charge state effects
+    
+    ## References and Further Reading
+    
+    ### Key Publications
+    1. **Roepstorff, P. & Fohlman, J.** (1984). Proposal for a common nomenclature for sequence ions in mass spectra of peptides. *Biomed. Mass Spectrom.* 11, 601.
+    
+    2. **Senko, M.W. et al.** (1995). Determination of monoisotopic masses and ion populations for large biomolecules from resolved isotopic distributions. *J. Am. Soc. Mass Spectrom.* 6, 229-233.
+    
+    3. **Hunt, D.F. et al.** (1986). Protein sequencing by tandem mass spectrometry. *Proc. Natl. Acad. Sci. USA* 83, 6233-6237.
+    
+    ### Software and Tools
+    - **pyOpenMS**: Open-source mass spectrometry library ([www.openms.de](https://www.openms.de))
+    - **NIST Mass Spectral Database**: Reference spectra and fragmentation patterns
+    - **Protein Prospector**: Online MS tools from UCSF
+    
+    ### Educational Resources
+    - **Mass Spectrometry: A Textbook** by Jürgen H. Gross
+    - **Introduction to Mass Spectrometry** by J. Throck Watson
+    - Online tutorials at [www.massspecpedia.com](http://www.massspecpedia.com)
+    
+    ---
+    
+    💡 **Tip**: Start with the default settings (b-ions and y-ions, charges 1+ and 2+) for most peptides,
+    then customize based on your specific analytical needs.
+    """)
 
 col1, col2 = st.columns([1, 1])
 
@@ -409,29 +604,69 @@ with col1:
         "Peptide Sequence:",
         value="PEPTIDE",
         height=100,
-        help="Enter the peptide sequence using single-letter amino acid codes."
+        help="""Enter the peptide sequence using single-letter amino acid codes:
+        
+• Standard amino acids: A, C, D, E, F, G, H, I, K, L, M, N, P, Q, R, S, T, V, W, Y
+• Extended codes: X (any amino acid), U (selenocysteine)
+• Minimum length: 2 amino acids for fragmentation
+• Spaces and non-letter characters will be automatically removed
+
+Examples: PEPTIDE, ACDEFGHIK, SAMPLESEQUENCE"""
     )
     
     # Ion type selection
     st.write("**Ion Types:**")
+    st.caption("Select which fragment ion types to include in the theoretical spectrum")
     ion_types = []
     
     col_ions1, col_ions2 = st.columns(2)
     
     with col_ions1:
-        if st.checkbox("a-ions", help="N-terminal ions (peptide bond + loss of CO)"):
+        st.markdown("**N-terminal ions:**")
+        if st.checkbox("a-ions", help="""a-ions: N-terminal fragments with CO loss
+        
+• Formation: Cleavage at peptide bond + loss of CO (28 Da)
+• Formula: [M + H - CO]⁺
+• Abundance: Low in CID, moderate in high-energy conditions
+• Mass shift: -27.99 Da from corresponding b-ion"""):
             ion_types.append('a')
-        if st.checkbox("b-ions", value=True, help="N-terminal ions (peptide bond cleavage)"):
+        if st.checkbox("b-ions", value=True, help="""b-ions: Most common N-terminal fragments
+        
+• Formation: Direct cleavage at peptide bond (amide bond)
+• Formula: [M + H]⁺ where M = N-terminal fragment mass
+• Abundance: High in CID/HCD spectra (dominant N-terminal series)
+• Nomenclature: b₁, b₂, b₃... numbered from N-terminus"""):
             ion_types.append('b')
-        if st.checkbox("c-ions", help="N-terminal ions (N-Cα bond cleavage)"):
+        if st.checkbox("c-ions", help="""c-ions: N-terminal fragments with NH₃ retention
+        
+• Formation: Cleavage at N-Cα bond + retention of NH₃
+• Formula: [M + H + NH₃]⁺
+• Abundance: High in ETD/ECD, low in CID
+• Mass shift: +17.03 Da from corresponding b-ion"""):
             ion_types.append('c')
     
     with col_ions2:
-        if st.checkbox("x-ions", help="C-terminal ions (N-Cα bond + addition of CO)"):
+        st.markdown("**C-terminal ions:**")
+        if st.checkbox("x-ions", help="""x-ions: C-terminal fragments with CO addition
+        
+• Formation: Cleavage at N-Cα bond + addition of CO
+• Formula: [M + H + CO - H]⁺
+• Abundance: Low in most fragmentation methods
+• Mass shift: +25.98 Da from corresponding y-ion"""):
             ion_types.append('x')
-        if st.checkbox("y-ions", value=True, help="C-terminal ions (peptide bond cleavage)"):
+        if st.checkbox("y-ions", value=True, help="""y-ions: Most common C-terminal fragments
+        
+• Formation: Cleavage at peptide bond + addition of H₂O
+• Formula: [M + H + H₂O]⁺ where M = C-terminal fragment mass
+• Abundance: High in CID/HCD spectra (dominant C-terminal series)
+• Nomenclature: y₁, y₂, y₃... numbered from C-terminus"""):
             ion_types.append('y')
-        if st.checkbox("z-ions", help="C-terminal ions (N-Cα bond cleavage)"):
+        if st.checkbox("z-ions", help="""z-ions: C-terminal fragments with NH₂ loss
+        
+• Formation: Cleavage at N-Cα bond + loss of NH₂
+• Formula: [M + H - NH₂]⁺
+• Abundance: High in ETD/ECD, low in CID
+• Mass shift: +0.98 Da from corresponding y-ion"""):
             ion_types.append('z')
     
     # Charge state selection
@@ -439,7 +674,17 @@ with col1:
         "Charge States:",
         options=[1, 2, 3, 4, 5],
         default=[1, 2],
-        help="Select charge states to include in the spectrum"
+        help="""Select charge states to include in the theoretical spectrum:
+        
+• 1+: Singly charged fragments (most common for short peptides)
+• 2+: Doubly charged fragments (common for longer peptides)
+• 3+ and higher: Multiple charges (for long peptides, lower m/z values)
+
+Higher charge states:
+- Produce fragments at lower m/z ratios
+- Are more common with longer peptide sequences
+- May improve fragmentation coverage
+- Require higher precursor charge states"""
     )
     
     # Generate button
