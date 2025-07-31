@@ -16,6 +16,7 @@ if __name__ == '__main__':
         ],
         "pyOpenMS Toolbox": [
             st.Page(Path("content", "digest.py"), title="In Silico Digest", icon="🔬"),
+            st.Page(Path("content", "calculator.py"), title="MZ Calculator", icon="🔢"),
         ],
         "TOPP Workflow Framework": [
             st.Page(Path("content", "topp_workflow_file_upload.py"), title="File Upload", icon="📁"),
