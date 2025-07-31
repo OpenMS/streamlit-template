@@ -47,6 +47,11 @@ To run the app locally:
 
 ## 🐳 Build with Docker
 
+This repository contains two Dockerfiles.
+
+1. `Dockerfile`: This Dockerfile builds all dependencies for the app including Python packages and the OpenMS TOPP tools. Recommended for more complex workflows where you want to use the OpenMS TOPP tools for instance with the **TOPP Workflow Framework**.
+2. `Dockerfile_simple`: This Dockerfile builds only the Python packages. Recommended for simple apps using pyOpenMS only.
+
 1. **Install Docker**
 
    Install Docker from the [official Docker installation guide](https://docs.docker.com/engine/install/)  
