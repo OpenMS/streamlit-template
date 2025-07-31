@@ -252,26 +252,59 @@ with col2_calc:
     if analysis.charge_detected:
         st.info(f"🔗 Charge state {analysis.charge} detected from sequence notation")
 
-    if analysis.charge_detected:
-        charge_range = st.slider(
-            "Charge State Range",
-            min_value=Config.MIN_CHARGE,
-            max_value=Config.MAX_CHARGE,
-            value=(analysis.charge, analysis.charge),
-            step=1,
-            help="Charge state detected from sequence notation. Range is fixed to detected value.",
-            key="charge_input",
-        )
+    st.markdown("**Charge State Range**")
+    charge_col1, charge_col2 = st.columns(2)
+    
+    with charge_col1:
+        if analysis.charge_detected:
+            min_charge = st.number_input(
+                "Minimum Charge",
+                min_value=Config.MIN_CHARGE,
+                max_value=Config.MAX_CHARGE,
+                value=analysis.charge,
+                step=1,
+                help="Charge state detected from sequence notation.",
+                key="min_charge_input",
+            )
+        else:
+            min_charge = st.number_input(
+                "Minimum Charge",
+                min_value=Config.MIN_CHARGE,
+                max_value=Config.MAX_CHARGE,
+                value=2,
+                step=1,
+                help="Minimum charge state for m/z calculation range.",
+                key="min_charge_input",
+            )
+    
+    with charge_col2:
+        if analysis.charge_detected:
+            max_charge = st.number_input(
+                "Maximum Charge",
+                min_value=Config.MIN_CHARGE,
+                max_value=Config.MAX_CHARGE,
+                value=analysis.charge,
+                step=1,
+                help="Charge state detected from sequence notation.",
+                key="max_charge_input",
+            )
+        else:
+            max_charge = st.number_input(
+                "Maximum Charge",
+                min_value=Config.MIN_CHARGE,
+                max_value=Config.MAX_CHARGE,
+                value=4,
+                step=1,
+                help="Maximum charge state for m/z calculation range.",
+                key="max_charge_input",
+            )
+    
+    # Ensure min_charge <= max_charge
+    if min_charge > max_charge:
+        st.error("⚠️ Minimum charge cannot be greater than maximum charge!")
+        charge_range = (min_charge, min_charge)  # Use min_charge for both to avoid errors
     else:
-        charge_range = st.slider(
-            "Charge State Range",
-            min_value=Config.MIN_CHARGE,
-            max_value=Config.MAX_CHARGE,
-            value=(2, 4),
-            step=1,
-            help="Select the charge state range to calculate m/z ratios for multiple charge states.",
-            key="charge_input",
-        )
+        charge_range = (min_charge, max_charge)
 
     calculate_button = st.button(
         (
