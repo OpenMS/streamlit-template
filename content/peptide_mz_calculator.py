@@ -67,9 +67,9 @@ with col2:
     st.markdown(
         """
     <div style="text-align: center; padding: 0.5rem 0;">
-        <h1 style="font-size: 2rem; margin-bottom: 0.2rem;">👋 Welcome to the Peptide M/Z Calculator</h1>
+        <h1 style="font-size: 2rem; margin-bottom: 0.2rem;">⚖️ Peptide M/Z Calculator</h1>
         <p style="font-size: 1rem; color: #666; margin-bottom: 0.5rem;">
-            Theoretical mass-to-charge ratio calculations for proteomics research
+            Calculate theoretical mass-to-charge ratios for peptide identification and method development
         </p>
     </div>
     """,
@@ -81,10 +81,40 @@ with col3:
 # working explanation
 st.markdown(
     """
-This calculator determines the mass-to-charge (m/z) ratio of peptides based on their amino acid sequence, 
-charge state, and modifications. It uses the pyOpenMS library for theoretical mass spectrometry calculations.
+**Calculate precise theoretical m/z values** for peptides with modifications and variable charge states.
+
+This tool helps you:
+- **Identify peptides** by comparing experimental m/z values with theoretical calculations
+- **Design targeted MS experiments** by predicting exact masses needed
+- **Validate peptide assignments** in proteomics workflows
+- **Plan method development** by understanding mass ranges and charge distributions
+- **Handle complex modifications** including oxidation, acetylation, and custom modifications
 """
 )
+
+with st.expander("📚 **Understanding M/Z Calculations**"):
+    st.markdown("""
+    **Mass-to-Charge Ratio (m/z):**
+    - Fundamental measurement in mass spectrometry
+    - Calculated as: **(Peptide Mass + (Charge × Proton Mass)) / Charge**
+    - Essential for peptide identification and quantification
+    
+    **Common Modifications:**
+    - **Carbamidomethylation (+57.021 Da)**: Cysteine alkylation to prevent disulfide formation
+    - **Oxidation (+15.995 Da)**: Methionine oxidation during sample preparation
+    - **Acetylation (+42.011 Da)**: N-terminal acetylation, common PTM
+    
+    **Charge States:**
+    - Peptides gain protons during electrospray ionization
+    - Longer peptides typically carry higher charges (2+, 3+, 4+)
+    - Multiple charge states provide confirmation and better mass accuracy
+    
+    **Applications:**
+    - **Database searching** for peptide identification
+    - **Targeted proteomics** (SRM/MRM method development)
+    - **Quality control** for synthetic peptide standards
+    - **Method optimization** for LC-MS/MS workflows
+    """)
 
 with st.expander("❓ How to use", expanded=False):
     st.markdown(

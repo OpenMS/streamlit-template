@@ -415,14 +415,50 @@ def create_isotope_plot(result_data: Dict[str, Any]) -> go.Figure:
     return fig
 
 # UI Implementation
-st.title("Isotopic Envelope Calculator")
+st.title("📶 Isotopic Pattern Calculator")
 
 st.markdown("""
-Calculate isotopic patterns from four different input types:
-- **Mass (Da)**: Estimate pattern from molecular weight
-- **Elemental Formula**: Precise calculation from molecular composition
-- **Peptide/Protein Sequence**: Calculate from amino acid sequence
-- **Oligonucleotide Sequence**: Calculate from DNA/RNA nucleotide sequence
+**Generate theoretical isotopic envelopes** for molecules to understand mass spectrometric signatures and optimize analysis conditions.
+
+This tool calculates isotopic distributions using pyOpenMS, helping you:
+- **Predict MS peak patterns** for accurate mass measurements and peak assignment
+- **Optimize MS parameters** by understanding peak spacing and intensity distributions
+- **Validate experimental data** by comparing observed vs theoretical patterns
+- **Design targeted experiments** by predicting isotopic signatures for specific molecules
+""")
+
+with st.expander("📚 **Understanding Isotopic Patterns**"):
+    st.markdown("""
+    **Natural Isotopes:**
+    - Elements exist as multiple isotopes with different masses
+    - **Carbon**: ¹²C (98.9%) and ¹³C (1.1%) - primary contributor to isotopic patterns
+    - **Nitrogen**: ¹⁴N (99.6%) and ¹⁵N (0.4%) - important for peptides and nucleotides
+    - **Sulfur**: ³²S (95.0%) and ³⁴S (4.2%) - significant contribution in proteins
+    
+    **Isotopic Envelope Shape:**
+    - **Small molecules**: Simple patterns with M+1, M+2 peaks
+    - **Large molecules**: Complex bell-shaped distributions
+    - **Pattern width** increases with molecular size due to multiple isotopic combinations
+    
+    **Input Methods:**
+    - **Mass Estimation**: Quick approximation for unknown compounds
+    - **Elemental Formula**: Precise calculation for known molecular composition
+    - **Peptide/Protein**: Automatic formula calculation from amino acid sequence
+    - **Oligonucleotides**: DNA/RNA sequence support with automatic T→U conversion
+    
+    **Generator Options:**
+    - **Coarse Generator**: Fast computation, suitable for most applications
+    - **Fine Generator**: High precision for detailed isotopic analysis
+    
+    **Applications:**
+    - **Peak assignment** in high-resolution mass spectrometry
+    - **Charge state determination** through isotopic peak spacing
+    - **Molecular formula confirmation** by pattern matching
+    - **Method development** for accurate mass measurements
+    """)
+
+st.markdown("""
+**Choose your input method:**
 """)
 
 # Input method selection

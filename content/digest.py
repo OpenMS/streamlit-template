@@ -27,11 +27,37 @@ DEFAULT_MAX_PEPTIDE_LENGTH = 50
 
 def main():
     """Main function for the digest page."""
-    st.title("🔬 In Silico Protein Digest")
+    st.title("✂️ In Silico Protein Digest")
+    
     st.markdown("""
-    Perform **in silico** protein digestion using pyOpenMS. Upload protein sequences in FASTA format
-    and generate peptide lists with mass-to-charge ratios for mass spectrometry analysis.
+    **Simulate enzymatic protein digestion computationally** to predict peptides for mass spectrometry analysis.
+    
+    This tool uses pyOpenMS to perform theoretical protein digestion with various proteases, helping you:
+    - **Plan MS experiments** by predicting which peptides will be generated
+    - **Optimize digestion conditions** by testing different enzymes and parameters
+    - **Analyze protein coverage** and identify potential issues before experimental work
+    - **Generate theoretical peptide lists** with accurate mass-to-charge ratios
     """)
+    
+    with st.expander("📚 **How In Silico Digestion Works**"):
+        st.markdown("""
+        **Enzymatic Cleavage Simulation:**
+        - Enzymes cut proteins at specific amino acid sequences (cleavage sites)
+        - **Trypsin** cuts after K (lysine) and R (arginine), except when followed by P (proline)
+        - **Pepsin** cuts preferentially at F, L, W, Y amino acids under acidic conditions
+        - **Chymotrypsin** cuts after F, W, Y, L amino acids
+        
+        **Missed Cleavages:**
+        - Real digestion is not 100% efficient - some cleavage sites are missed
+        - Allows prediction of longer peptides that contain uncleaved sites
+        - Important for comprehensive coverage analysis
+        
+        **Applications:**
+        - **Bottom-up proteomics** experiment planning
+        - **Peptide mapping** for protein characterization
+        - **Method development** for LC-MS/MS workflows
+        - **Quality control** for digestion efficiency assessment
+        """)
     
     # Input form section
     with st.form("digest_form"):
