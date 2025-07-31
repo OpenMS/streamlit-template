@@ -9,7 +9,7 @@
 
 FROM ubuntu:22.04 AS setup-build-system
 ARG OPENMS_REPO=https://github.com/OpenMS/OpenMS.git
-ARG OPENMS_BRANCH=release/3.2.0
+ARG OPENMS_BRANCH=release/3.4.0
 ARG PORT=8501
 # GitHub token to download latest OpenMS executable for Windows from Github action artifact.
 ARG GITHUB_TOKEN
@@ -31,7 +31,7 @@ RUN apt-get install -y --no-install-recommends --no-install-suggests libboost-da
                                                                      libboost-regex1.74-dev \
                                                                      libboost-math1.74-dev \
                                                                      libboost-random1.74-dev
-RUN apt-get install -y --no-install-recommends --no-install-suggests qtbase5-dev libqt5svg5-dev libqt5opengl5-dev
+RUN apt-get install -y --no-install-recommends --no-install-suggests qtbase6-dev libqt6svg5-dev libqt6opengl5-dev
 
 # Install Github CLI
 RUN (type -p wget >/dev/null || (apt-get update && apt-get install wget -y)) \
