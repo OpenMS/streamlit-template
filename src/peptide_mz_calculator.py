@@ -41,9 +41,6 @@ def calculate_peptide_mz(sequence: str, charge_state: int) -> Dict[str, Any]:
     mono_weight = aa_sequence.getMonoWeight()
     formula = aa_sequence.getFormula()
     
-    # Get the standardized string representation
-    standardized_sequence = aa_sequence.toString()
-    
     # Extract clean amino acid sequence for composition
     unmodified_aa_sequence = aa_sequence.toUnmodifiedString()
 
@@ -56,8 +53,6 @@ def calculate_peptide_mz(sequence: str, charge_state: int) -> Dict[str, Any]:
         "mz_ratio": mz_ratio,
         "monoisotopic_mass": mono_weight,
         "molecular_formula": formula.toString(),
-        "original_sequence": unmodified_aa_sequence,
-        "modified_sequence": standardized_sequence,
         "charge_state": charge_state,
         "sequence_length": len(unmodified_aa_sequence),
         "aa_composition": aa_composition,

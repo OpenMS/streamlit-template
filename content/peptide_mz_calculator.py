@@ -41,14 +41,13 @@ st.markdown(
 )
 
 # Expandable help sections
-with st.expander("📚 **Understanding AASequence Format**"):
+with st.expander("📚 **Sequence Format**"):
     st.markdown("""
 
     **💡 Format Tips:**
     - Use parentheses for modifications: `(Oxidation)`, `(Carbamidomethyl)`
     - Use dots for terminal modifications: `.(Acetyl)`, `(Amidated).`
     - Use square brackets for mass deltas: `[+15.995]`, `[-18.010]`
-    - UNIMOD format: `[UNIMOD:4]` for standardized modifications
 
     **Examples:**
     - `PEPTIDE`: Basic amino acid sequence
@@ -59,9 +58,33 @@ with st.expander("📚 **Understanding AASequence Format**"):
     - `PEPTIDE[+15.995]`: Mass delta modification
     - `M[+15.994915]PEPTIDE`: Specific mass delta on methionine
     - `ALSSC[UNIMOD:4]VVDEEQDVER`: UNIMOD modification notation
-    - `M(Oxidation)PEPTIDE/3`: Modified sequence with charge state
     - `PEPS(Phospho)TIDE`: Phosphorylation modification
     - `.(Acetyl)M(Oxidation)PEPTIDE`: Multiple modifications
+
+    - **Supported Amino Acids:**
+        Standard 20 amino acids (A, R, N, D, C, E, Q, G, H, I, L, K, M, F, P, S, T, W, Y, V) plus X (any) and U (selenocysteine)
+    
+    - **Common static modifications:**
+
+    | Name | Target Residue(s) | Mass Shift (Da) | Description |
+    |------|------------------|-----------------|-------------|
+    | Carbamidomethyl | C | +57.021464 | Carbamidomethylation of cysteine |
+    
+    - **Common dynamic modifications (for more see UniMod names):**
+
+    | Name | Target Residue(s) | Mass Shift (Da) | Description |
+    |------|------------------|-----------------|-------------|
+    | Oxidation | M | +15.994915 | Oxidation of methionine |
+    | Deamidated | N, Q | +0.984016 | Spontaneous deamidation |
+    | Phospho | S, T, Y | +79.966331 | Phosphorylation on STY |
+    | Acetyl | Protein N-term | +42.010565 | N-terminal acetylation |
+    | Gln->pyro-Glu | N-term Q | -17.026549 | Cyclization of glutamine |
+    | Glu->pyro-Glu | N-term E | -18.010565 | Cyclization of glutamic acid |
+    | Formyl | N-term | +27.994915 | Formylation of N-terminus |
+    | Methyl | K, R, H | +14.015650 | Single methyl group addition |
+    | Dimethyl | K, R | +28.031300 | Two methyl groups |
+    | Sulfo | Y | +79.956815 | Sulfation on tyrosine |
+    | GG (diglycyl) | K | +114.042927 | Ubiquitin remnant on lysine after trypsin digest |
 
     """)
 
@@ -177,7 +200,6 @@ if calculate_btn:
                 with result_col2:
                     st.markdown("### 🧪 Sequence Information")
                     st.markdown(f"**Input Sequence:** {sequence_input}")
-                    st.markdown(f"**Standardized Sequence:** {results['modified_sequence']}")
                     st.markdown(f"**Molecular Formula:** {results['molecular_formula']}")
                     st.markdown(f"**Length:** {results['sequence_length']} amino acids")
                 
