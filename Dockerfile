@@ -31,7 +31,7 @@ RUN apt-get install -y --no-install-recommends --no-install-suggests libboost-da
                                                                      libboost-regex1.74-dev \
                                                                      libboost-math1.74-dev \
                                                                      libboost-random1.74-dev
-RUN apt-get install -y --no-install-recommends --no-install-suggests qtbase6-dev libqt6svg5-dev libqt6opengl5-dev
+RUN apt-get install -y --no-install-recommends --no-install-suggests qt6-base-dev libqt6svg6-dev libqt6opengl6-dev libqt6openglwidgets6
 
 # Install Github CLI
 RUN (type -p wget >/dev/null || (apt-get update && apt-get install wget -y)) \
