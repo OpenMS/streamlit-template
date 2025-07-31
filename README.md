@@ -45,9 +45,9 @@ To run the app locally:
 > ⚠️ Note: The local version offers limited functionality. Features that depend on OpenMS are only available in the Docker setup.
 
 
-## 🐳 Run with Docker (Full Feature Set)
+## 🐳 Build with Docker
 
-1. **Install Docker (Ubuntu)**
+1. **Install Docker**
 
    Install Docker from the [official Docker installation guide](https://docs.docker.com/engine/install/)  
    
@@ -57,42 +57,59 @@ To run the app locally:
    ```bash
    # Remove older Docker versions (if any)
    for pkg in docker.io docker-doc docker-compose docker-compose-v2 podman-docker containerd runc; do sudo apt-get remove -y $pkg; done
-   
-   # Install Docker’s GPG key and repository
-   sudo apt-get update
-   sudo apt-get install -y ca-certificates curl
-   sudo install -m 0755 -d /etc/apt/keyrings
-   sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
-   sudo chmod a+r /etc/apt/keyrings/docker.asc
-   echo   "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu   $(. /etc/os-release && echo \"$VERSION_CODENAME\") stable" |   sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-   sudo apt-get update
-   sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
    ```
    
    </details>
 
 2. **Test Docker**
    
-   Verify that Docker is working..
+   Verify that Docker is working.
    ```bash
    docker run hello-world
    ```
    When running this command, you should see a hello world message from Docker.
+   
+3. **Clone the repository**
+   ```bash
+   git clone https://github.com/OpenMS/streamlit-template.git
+   cd streamlit-template
+   ```
+   
 4. **Specify GitHub token (to download Windows executables).**
    
    Create a temporary `.env` file with your Github token.
    
    It should contain only one line:
    `GITHUB_TOKEN=<your-github-token>`
-   
-3. **Build & Start the App**
 
+   ℹ️ **Note:** This step is not strictly required, but skipping it will remove the option to download executables from the WebApp.
+   
+3. **Build & Launch the App**
+
+   To build and start the containers.
    From the project root directory:
    
    ```bash
-   docker compose up -d --build
+   docker-compose up -d --build
    ```
-   This will launch the app with full functionality.
+     At the end, you should see this:
+      ```
+      [+] Running 2/2
+       ✔ openms-streamlit-template            Built      
+       ✔ Container openms-streamlit-template  Started  
+      ```
+      
+      To make sure server started successfully, run `docker compose ps`. You should see `UP´ status':
+      ```
+      CONTAINER ID   IMAGE                       COMMAND                  CREATED         STATUS                 PORTS                                           NAMES
+      4abe0603e521   openms_streamlit_template   "/app/entrypoint.sh …"   7 minutes ago   Up 7 minutes           0.0.0.0:8501->8501/tcp, :::8501->8501/tcp       openms-streamlit-template
+      ```
+   
+      To map the port to default streamlit port `8501´ and launch.
+      
+      ```
+      docker run -p 8505:8501 openms_streamlit_template
+      ```
 
 ## Documentation
 
