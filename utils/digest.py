@@ -140,27 +140,47 @@ def filter_peptides_by_mass(df: pd.DataFrame, min_mass: float = None, max_mass: 
     return filtered_df
 
 
+def filter_peptides_by_length(df: pd.DataFrame, min_length: int = None, max_length: int = None) -> pd.DataFrame:
+    """
+    Filter peptides by amino acid sequence length.
+    
+    Args:
+        df: DataFrame with digest results
+        min_length: Minimum peptide length (number of amino acids)
+        max_length: Maximum peptide length (number of amino acids)
+        
+    Returns:
+        Filtered DataFrame
+    """
+    filtered_df = df.copy()
+    
+    if min_length is not None:
+        filtered_df = filtered_df[filtered_df['Peptide Sequence'].str.len() >= min_length]
+    
+    if max_length is not None:
+        filtered_df = filtered_df[filtered_df['Peptide Sequence'].str.len() <= max_length]
+    
+    return filtered_df
+
+
 def get_available_enzymes() -> List[str]:
     """
-    Get list of available enzymes from pyOpenMS.
+    Get list of available enzymes from pyOpenMS EnzymesDB.
     
     Returns:
         List of enzyme names
+        
+    Raises:
+        RuntimeError: If pyOpenMS enzyme database cannot be loaded
     """
     try:
         # Get enzyme database
         enzyme_db = oms.ProteaseDB()
         enzymes = []
-        
-        # Get all enzyme names
-        for enzyme_name in enzyme_db.getAllNames():
-            enzymes.append(enzyme_name.decode() if isinstance(enzyme_name, bytes) else enzyme_name)
-        
-        return sorted(enzymes)
-    except Exception:
-        # Fallback to predefined list if pyOpenMS method fails
-        from .config import OPENMS_SUPPORTED_ENZYMES
-        return OPENMS_SUPPORTED_ENZYMES
+        enzyme_db.getAllNames(enzymes)       
+        return enzymes
+    except Exception as e:
+        raise RuntimeError(f"Failed to load pyOpenMS enzyme database: {e}. Please ensure pyOpenMS is properly configured.")
 
 
 def validate_enzyme(enzyme_name: str) -> bool:

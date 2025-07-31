@@ -49,8 +49,8 @@ ERROR_MESSAGES = {
 
 
 @dataclass
-class SequenceAnalysis:
-    """Data class for sequence analysis results"""
+class PeptideMzAnalysis:
+    """Data class for peptide m/z analysis results"""
 
     modification: str = "None"
     modification_detected: bool = False
@@ -837,14 +837,14 @@ def parse_proforma_sequence(sequence: str) -> Tuple[str, str, bool]:
     return clean_sequence, converted_sequence, False
 
 
-def analyze_peptide_sequence(sequence: str) -> SequenceAnalysis:
+def analyze_peptide_sequence(sequence: str) -> PeptideMzAnalysis:
     """Unified sequence analysis function that detects modifications and charge state.
 
     Args:
         sequence (str): The peptide sequence to analyze.
 
     Returns:
-        SequenceAnalysis: A dataclass containing analysis results including:
+        PeptideMzAnalysis: A dataclass containing analysis results including:
             - modification: Detected modification name
             - modification_detected: Boolean indicating if modification was found
             - charge: Detected or default charge state
@@ -854,7 +854,7 @@ def analyze_peptide_sequence(sequence: str) -> SequenceAnalysis:
             - error_message: Error message if validation failed
 
     """
-    analysis = SequenceAnalysis()
+    analysis = PeptideMzAnalysis()
 
     if not sequence or not sequence.strip():
         analysis.is_valid = False

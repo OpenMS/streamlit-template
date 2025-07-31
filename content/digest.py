@@ -15,8 +15,14 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
 
 from utils.fasta import validate_fasta_input, extract_accession, extract_description
-from utils.digest import perform_digest, get_digest_statistics, create_digest_summary, get_available_enzymes
-from utils.config import OPENMS_SUPPORTED_ENZYMES, DEFAULT_ENZYME, DEFAULT_MISSED_CLEAVAGES, DEFAULT_MAX_CHARGES
+from utils.digest import perform_digest, get_digest_statistics, create_digest_summary, get_available_enzymes, filter_peptides_by_length
+
+# Default values
+DEFAULT_ENZYME = "Trypsin"
+DEFAULT_MISSED_CLEAVAGES = 0  # Changed from 2 to 0
+DEFAULT_MAX_CHARGES = 5
+DEFAULT_MIN_PEPTIDE_LENGTH = 6
+DEFAULT_MAX_PEPTIDE_LENGTH = 50
 
 
 def main():
@@ -41,8 +47,13 @@ def main():
         # Get available enzymes
         try:
             available_enzymes = get_available_enzymes()
-        except Exception:
-            available_enzymes = OPENMS_SUPPORTED_ENZYMES
+            # convert bytes to str if necessary
+            available_enzymes = [enzyme.decode() if isinstance(enzyme, bytes) else enzyme for enzyme in available_enzymes]
+            
+        except Exception as e:
+            st.error(f"❌ Cannot load enzyme database: {e}")
+            st.error("Please ensure pyOpenMS is properly configured before using the digest functionality.")
+            st.stop()
         
         # Enzyme selection
         enzyme_index = 0
@@ -75,6 +86,28 @@ def main():
                 max_value=10,
                 value=DEFAULT_MAX_CHARGES,
                 help="Maximum charge state to calculate [M + nH]"
+            )
+        
+        # Peptide length filtering
+        st.subheader("Peptide Length Filtering")
+        col3, col4 = st.columns(2)
+        
+        with col3:
+            min_peptide_length = st.number_input(
+                "Min peptide length (AA)",
+                min_value=1,
+                max_value=100,
+                value=DEFAULT_MIN_PEPTIDE_LENGTH,
+                help="Minimum peptide length in amino acids"
+            )
+        
+        with col4:
+            max_peptide_length = st.number_input(
+                "Max peptide length (AA)",
+                min_value=1,
+                max_value=200,
+                value=DEFAULT_MAX_PEPTIDE_LENGTH,
+                help="Maximum peptide length in amino acids"
             )
         
         # Submit button
@@ -116,10 +149,19 @@ def main():
                     max_charges=max_charges
                 )
                 
+                progress_bar.progress(60, text="Applying peptide length filters...")
+                
+                # Apply peptide length filtering
+                df_results = filter_peptides_by_length(
+                    df_results,
+                    min_length=min_peptide_length,
+                    max_length=max_peptide_length
+                )
+                
                 progress_bar.progress(80, text="Processing results...")
                 
                 if df_results.empty:
-                    st.warning("⚠️ No peptides were generated from the digest. Try adjusting the parameters or check your input sequences.")
+                    st.warning("⚠️ No peptides were generated from the digest or all peptides were filtered out. Try adjusting the parameters or check your input sequences.")
                     progress_bar.empty()
                     return
                 

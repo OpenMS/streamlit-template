@@ -11,7 +11,7 @@ import pandas as pd
 from src.common.common import page_setup, v_space
 
 # importing backend functions for peptide calculations
-from src.peptide_calculator import (
+from src.peptide_mz_calculator import (
     validate_peptide_sequence,
     apply_modification,
     calculate_peptide_mz,
@@ -22,7 +22,7 @@ from src.peptide_calculator import (
     parse_sequence_with_mods_and_charge,
     detect_modification_from_sequence,
     analyze_peptide_sequence,
-    SequenceAnalysis,
+    PeptideMzAnalysis,
     get_cached_modifications,
     get_cached_examples,
     ERROR_MESSAGES,
@@ -56,7 +56,7 @@ if "last_sequence" not in st.session_state:
 if "calculation_in_progress" not in st.session_state:
     st.session_state["calculation_in_progress"] = False
 if "last_analysis" not in st.session_state:
-    st.session_state["last_analysis"] = SequenceAnalysis()
+    st.session_state["last_analysis"] = PeptideMzAnalysis()
 
 # Page setup
 page_setup(page="main")
@@ -180,7 +180,7 @@ with col1_calc:
     )
 
     # analyze sequence only if it has changed to avoid unnecessary processing
-    analysis = SequenceAnalysis()
+    analysis = PeptideMzAnalysis()
     if peptide_sequence.strip() and peptide_sequence != st.session_state.last_sequence:
         analysis = analyze_peptide_sequence(peptide_sequence)
         st.session_state.last_sequence = peptide_sequence
