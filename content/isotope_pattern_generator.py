@@ -25,7 +25,7 @@ with col1:
         help=
         """
         The most intense (or most abundant) peak is the isotope peak 
-        with the highest abundance in the protein’s mass spectrum. It 
+        with the highest abundance in the protein's mass spectrum. It 
         represents the most common isotopic composition and serves as 
         the reference point for reconstructing the full isotopic envelope.
         """

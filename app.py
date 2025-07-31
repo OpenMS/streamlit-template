@@ -17,7 +17,7 @@ if __name__ == '__main__':
         "pyOpenMS Toolbox": [
             st.Page(Path("content", "digest.py"), title="In Silico Digest", icon="🔬"),
             st.Page(Path("content", "peptide_mz_calculator.py"), title="m/z Calculator", icon="🔢"),
-            st.Page(Path("content", "peakstorm.py"), title="Isotopic Envelope Calculator", icon="📶"),
+            st.Page(Path("content", "isotope_pattern_generator.py"), title="Isotopic Pattern Calculator", icon="📶"),
         ],
         "TOPP Workflow Framework": [
             st.Page(Path("content", "topp_workflow_file_upload.py"), title="File Upload", icon="📁"),
