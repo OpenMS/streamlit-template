@@ -14,10 +14,6 @@ This repository contains a template app for OpenMS workflows in a web applicatio
 - framework for workflows with OpenMS TOPP tools
 - Deployment [with docker-compose](https://github.com/OpenMS/streamlit-deployment)
 
-## Documentation
-
-Documentation for **users** and **developers** is included as pages in [this template app](https://abi-services.cs.uni-tuebingen.de/streamlit-template/), indicated by the 📖 icon.
-
 ## 🔗 Try the Online Demo
 
 Explore the hosted version here:  👉 [Live App](https://abi-services.cs.uni-tuebingen.de/streamlit-template/)
@@ -87,6 +83,10 @@ To test the app locally:
    docker compose up -d --build
    ```
    This will launch the app with full functionality, including tools that rely on OpenMS.
+
+## Documentation
+
+Documentation for **users** and **developers** is included as pages in [this template app](https://abi-services.cs.uni-tuebingen.de/streamlit-template/), indicated by the 📖 icon.
 
 ## Citation
 
