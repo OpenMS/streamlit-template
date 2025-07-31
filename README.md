@@ -78,7 +78,13 @@ To run the app locally:
    docker run hello-world
    ```
    When running this command, you should see a hello world message from Docker.
-
+4. **Specify GitHub token (to download Windows executables).**
+   
+   Create a temporary `.env` file with your Github token.
+   
+   It should contain only one line:
+   `GITHUB_TOKEN=<your-github-token>`
+   
 3. **Build & Start the App**
 
    From the project root directory:
