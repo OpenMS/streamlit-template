@@ -1,7 +1,7 @@
 """
-Simplified Peptide M/Z Calculator Backend
+Peptide M/Z Calculator Backend
 
-This module provides simplified backend functions for peptide mass spectrometry calculations
+This module provides backend functions for peptide mass spectrometry calculations
 using pyOpenMS AASequence.fromString() directly with minimal parsing overhead.
 """
 
@@ -29,8 +29,6 @@ def calculate_peptide_mz(sequence: str, charge_state: int) -> Dict[str, Any]:
     
     if charge_state < 1:
         raise ValueError("Charge state must be a positive integer")
-    
-    # Parse charge from sequence if present
     
     try:
         # Use AASequence.fromString() directly - it supports many formats natively

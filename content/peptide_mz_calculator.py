@@ -1,5 +1,5 @@
 """
-Simplified Peptide m/z Calculator App.
+Peptide m/z Calculator App.
 """
 
 import streamlit as st
@@ -8,7 +8,7 @@ from pathlib import Path
 
 from src.common.common import page_setup, v_space
 
-# Import simplified backend functions
+# Import backend functions
 from src.peptide_mz_calculator import (
     calculate_peptide_mz_range,
     validate_sequence,
@@ -158,8 +158,7 @@ if calculate_btn:
                         for charge in charge_states:
                             charge_data = charge_results[charge]
                             mz_value = charge_data['mz_ratio']
-                            charge_indicator = " 🔗" if charge_data.get('charge_source') == "From sequence notation" else ""
-                            st.markdown(f"**Charge +{charge}:** {mz_value:.6f}{charge_indicator}")
+                            st.markdown(f"**Charge +{charge}:** {mz_value:.6f}")
                     else:
                         # Table for many charge states
                         table_data = []
@@ -184,15 +183,12 @@ if calculate_btn:
                 
                 # Additional details
                 with st.expander("📋 Additional Details"):
-                    if results.get('charge_source'):
-                        st.markdown(f"**Charge Source:** {results['charge_source']}")
-                    
                     # Amino acid composition
                     aa_composition = results["aa_composition"]
                     if aa_composition:
                         st.markdown("**Amino Acid Composition:**")
                         composition_text = ", ".join([
-                            f"{aa}: {count}" 
+                            f"{aa}: {count}"
                             for aa, count in sorted(aa_composition.items())
                         ])
                         st.markdown(composition_text)
@@ -210,7 +206,7 @@ if calculate_btn:
 
 # About section
 st.markdown("---")
-with st.expander("ℹ️ **About This Simplified Calculator**"):
+with st.expander("ℹ️ **About This Peptide m/z Calculator**"):
     st.markdown("""
     **AASequence Format Support:**
     - Uses PyOpenMS `AASequence.fromString()` directly
