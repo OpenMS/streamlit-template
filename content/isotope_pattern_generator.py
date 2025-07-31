@@ -76,7 +76,7 @@ def validate_peptide_sequence(sequence_str: str) -> Tuple[bool, str, Optional[st
         return False, f"Error validating sequence: {str(e)}", None
 
 def validate_oligonucleotide_sequence(sequence_str: str) -> Tuple[bool, str, Optional[str]]:
-    """Validate an oligonucleotide (DNA/RNA) sequence and convert DNA to RNA.
+    """Validate an oligonucleotide (RNA) sequence
     
     Args:
         sequence_str (str): The nucleotide sequence
@@ -91,22 +91,19 @@ def validate_oligonucleotide_sequence(sequence_str: str) -> Tuple[bool, str, Opt
             return False, "Sequence cannot be empty", None
             
         # Remove common formatting characters (spaces, numbers, newlines)
-        clean_sequence = re.sub(r'[^ACGTUN]', '', sequence_str)
+        clean_sequence = re.sub(r'[^ACGU]', '', sequence_str)
         
         if not clean_sequence:
             return False, "No valid nucleotide letters found", None
             
-        # Validate nucleotides (A, C, G, T, U for RNA, N for any)
-        valid_nucleotides = set("ACGTUN")
+        # Validate nucleotides (A, C, G, U for RNA)
+        valid_nucleotides = set("ACGU")
         invalid_chars = [nt for nt in clean_sequence if nt not in valid_nucleotides]
         
         if invalid_chars:
             invalid_list = ", ".join(sorted(set(invalid_chars)))
-            return False, f"Invalid nucleotide(s): {invalid_list}. Valid nucleotides: A, C, G, T, U, N", None
-        
-        # Convert DNA to RNA (T -> U) since pyOpenMS NASequence only supports RNA
-        rna_sequence = clean_sequence.replace('T', 'U')
-            
+            return False, f"Invalid nucleotide(s): {invalid_list}. Valid nucleotides: A, C, G, U", None
+                    
         return True, "", rna_sequence
         
     except Exception as e:
