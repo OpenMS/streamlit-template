@@ -99,13 +99,13 @@ To run the app locally:
        ✔ Container openms-streamlit-template  Started  
       ```
       
-      To make sure server started successfully, run `docker compose ps`. You should see `UP´ status':
+      To make sure server started successfully, run `docker compose ps`. You should see `Up` status:
       ```
       CONTAINER ID   IMAGE                       COMMAND                  CREATED         STATUS                 PORTS                                           NAMES
       4abe0603e521   openms_streamlit_template   "/app/entrypoint.sh …"   7 minutes ago   Up 7 minutes           0.0.0.0:8501->8501/tcp, :::8501->8501/tcp       openms-streamlit-template
       ```
    
-      To map the port to default streamlit port `8501´ and launch.
+      To map the port to default streamlit port `8501` and launch.
       
       ```
       docker run -p 8505:8501 openms_streamlit_template
