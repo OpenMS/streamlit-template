@@ -110,14 +110,13 @@ with col1_input:
 
 with col2_input:
     # Charge range inputs
-    st.markdown("**Charge State Range**")
 
     default_charge = 2
 
     charge_col1, charge_col2 = st.columns(2)
     with charge_col1:
         min_charge = st.number_input(
-            "Min", 
+            "Min Charge", 
             min_value=1, 
             max_value=20, 
             value=default_charge,
@@ -125,9 +124,9 @@ with col2_input:
         )
     with charge_col2:
         max_charge = st.number_input(
-            "Max", 
+            "Max Charge", 
             min_value=1, 
-            max_value=20, 
+            max_value=200, 
             value=min(default_charge + 2, 6),
             step=1
         )
