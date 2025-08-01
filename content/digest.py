@@ -220,6 +220,8 @@ def main():
                         "Description": st.column_config.TextColumn("Description", width="large"),
                         "Peptide Sequence": st.column_config.TextColumn("Peptide Sequence", width="medium"),
                         "Length": st.column_config.NumberColumn("Length", help="Peptide length in amino acids"),
+                        "Start": st.column_config.TextColumn("Start", width="small", help="1-based start position(s) in protein sequence"),
+                        "End": st.column_config.TextColumn("End", width="small", help="1-based end position(s) in protein sequence"),
                         "[M]": st.column_config.NumberColumn("[M]", format="%.4f"),
                     }
                 )

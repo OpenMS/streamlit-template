@@ -52,11 +52,30 @@ def perform_digest(sequences: List[Tuple[str, str]], enzyme: str, missed_cleavag
                         
                         # Create row data
                         peptide_string = peptide.toString()
+                        
+                        # Find all positions of this peptide in the original sequence
+                        start_positions = []
+                        end_positions = []
+                        start_pos = 0
+                        while True:
+                            pos = sequence.find(peptide_string, start_pos)
+                            if pos == -1:
+                                break
+                            start_positions.append(str(pos + 1))  # Convert to 1-based
+                            end_positions.append(str(pos + len(peptide_string)))  # End position (1-based)
+                            start_pos = pos + 1
+                        
+                        # Join positions with commas if multiple occurrences
+                        start_str = ','.join(start_positions)
+                        end_str = ','.join(end_positions)
+                        
                         row_data = {
                             'Accession': accession,
                             'Description': description,
                             'Peptide Sequence': peptide_string,
                             'Length': len(peptide_string),
+                            'Start': start_str,
+                            'End': end_str,
                             '[M]': round(mono_mass, 4)
                         }
                         
