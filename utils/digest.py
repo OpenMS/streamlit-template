@@ -246,3 +246,114 @@ def create_digest_summary(df: pd.DataFrame) -> str:
     """
     
     return summary
+
+
+def calculate_protein_coverage(df: pd.DataFrame, sequences: List[Tuple[str, str]]) -> Dict[str, Dict]:
+    """
+    Calculate coverage for each position in each protein sequence.
+    
+    Args:
+        df: DataFrame with digest results
+        sequences: List of (header, sequence) tuples
+        
+    Returns:
+        Dictionary mapping accession to coverage info
+    """
+    coverage_data = {}
+    
+    # Create mapping from accession to sequence
+    accession_to_sequence = {}
+    for header, sequence in sequences:
+        accession = extract_accession(header)
+        accession_to_sequence[accession] = sequence
+    
+    # Initialize coverage arrays for each protein
+    for accession, sequence in accession_to_sequence.items():
+        coverage_data[accession] = {
+            'sequence': sequence,
+            'coverage': [0] * len(sequence),
+            'description': ''
+        }
+    
+    # Calculate coverage from digest results
+    for _, row in df.iterrows():
+        accession = row['Accession']
+        if accession in coverage_data:
+            # Get description from first occurrence
+            if not coverage_data[accession]['description']:
+                coverage_data[accession]['description'] = row['Description']
+            
+            # Parse start and end positions
+            start_positions = row['Start'].split(',') if row['Start'] else []
+            end_positions = row['End'].split(',') if row['End'] else []
+            
+            # Increment coverage for each occurrence of this peptide
+            for start_str, end_str in zip(start_positions, end_positions):
+                try:
+                    start = int(start_str) - 1  # Convert to 0-based
+                    end = int(end_str)  # End is already exclusive in 1-based
+                    
+                    # Increment coverage for all positions covered by this peptide
+                    for pos in range(start, end):
+                        if 0 <= pos < len(coverage_data[accession]['coverage']):
+                            coverage_data[accession]['coverage'][pos] += 1
+                except (ValueError, IndexError):
+                    continue
+    
+    return coverage_data
+
+
+def generate_coverage_html(accession: str, coverage_info: Dict) -> str:
+    """
+    Generate HTML for protein sequence with coverage coloring.
+    
+    Args:
+        accession: Protein accession
+        coverage_info: Coverage information dictionary
+        
+    Returns:
+        HTML string for colored sequence
+    """
+    sequence = coverage_info['sequence']
+    coverage = coverage_info['coverage']
+    description = coverage_info['description']
+    
+    # Define colors for different coverage levels
+    colors = {
+        0: '#f0f0f0',  # Light gray for no coverage
+        1: '#ffffcc',  # Light yellow for 1x coverage
+        2: '#ffcc99',  # Light orange for 2x coverage
+        3: '#ff9999',  # Light red for 3x coverage
+        4: '#ff6666',  # Medium red for 4x coverage
+    }
+    
+    html_parts = [f"<h4>{accession} - {description}</h4>"]
+    html_parts.append("<div style='font-family: monospace; line-height: 1.8; word-wrap: break-word;'>")
+    
+    # Add coverage legend
+    html_parts.append("<div style='margin-bottom: 10px; font-size: 12px;'>")
+    html_parts.append("Coverage: ")
+    for level, color in colors.items():
+        if level <= 4:
+            label = f"{level}x" if level < 4 else "4+x"
+            html_parts.append(f"<span style='background-color: {color}; padding: 2px 6px; margin-right: 5px; border: 1px solid #ccc;'>{label}</span>")
+    html_parts.append("</div>")
+    
+    # Generate colored sequence
+    for i, aa in enumerate(sequence):
+        if i < len(coverage):
+            cov_level = min(coverage[i], 4)  # Cap at 4 for coloring
+            color = colors.get(cov_level, colors[4])
+        else:
+            color = colors[0]
+        
+        html_parts.append(f"<span style='background-color: {color}; padding: 1px;' title='Position {i+1}: {cov_level}x coverage'>{aa}</span>")
+        
+        # Add line breaks every 50 amino acids for readability
+        if (i + 1) % 50 == 0:
+            html_parts.append("<br>")
+    
+    html_parts.append("</div>")
+    html_parts.append("<br>")
+    
+    return "".join(html_parts)
