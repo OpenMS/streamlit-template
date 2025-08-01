@@ -219,6 +219,7 @@ def main():
                         "Accession": st.column_config.TextColumn("Accession", width="small"),
                         "Description": st.column_config.TextColumn("Description", width="large"),
                         "Peptide Sequence": st.column_config.TextColumn("Peptide Sequence", width="medium"),
+                        "Length": st.column_config.NumberColumn("Length", help="Peptide length in amino acids"),
                         "[M]": st.column_config.NumberColumn("[M]", format="%.4f"),
                     }
                 )

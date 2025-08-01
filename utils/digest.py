@@ -51,10 +51,12 @@ def perform_digest(sequences: List[Tuple[str, str]], enzyme: str, missed_cleavag
                         mono_mass = aa_seq.getMonoWeight()
                         
                         # Create row data
+                        peptide_string = peptide.toString()
                         row_data = {
                             'Accession': accession,
                             'Description': description,
-                            'Peptide Sequence': peptide.toString(),
+                            'Peptide Sequence': peptide_string,
+                            'Length': len(peptide_string),
                             '[M]': round(mono_mass, 4)
                         }
                         
