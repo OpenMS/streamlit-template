@@ -687,6 +687,9 @@ Higher charge states:
 - Require higher precursor charge states"""
     )
     
+    # Initialize result_data
+    result_data = None
+    
     # Generate button
     if st.button('Generate Fragment Spectrum', type='primary'):
         with st.spinner('Generating theoretical spectrum...'):
@@ -694,10 +697,6 @@ Higher charge states:
 
 with col2:
     st.subheader("Results")
-    
-    # Initialize result_data if button hasn't been pressed
-    if 'result_data' not in locals():
-        result_data = None
     
     if result_data:
         if result_data["success"]:
