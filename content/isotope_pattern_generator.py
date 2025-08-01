@@ -82,7 +82,7 @@ def validate_oligonucleotide_sequence(sequence_str: str) -> Tuple[bool, str, Opt
         sequence_str (str): The nucleotide sequence
         
     Returns:
-        Tuple[bool, str, Optional[str]]: (is_valid, error_message, rna_sequence)
+        Tuple[bool, str, Optional[str]]: (is_valid, error_message, sequence_str)
     """
     try:
         # Clean the sequence
@@ -104,7 +104,7 @@ def validate_oligonucleotide_sequence(sequence_str: str) -> Tuple[bool, str, Opt
             invalid_list = ", ".join(sorted(set(invalid_chars)))
             return False, f"Invalid nucleotide(s): {invalid_list}. Valid nucleotides: A, C, G, U", None
                     
-        return True, "", rna_sequence
+        return True, "", sequence_str
         
     except Exception as e:
         return False, f"Error validating oligonucleotide sequence: {str(e)}", None
@@ -537,12 +537,12 @@ with col1:
     elif input_method == "Oligonucleotide Sequence":
         oligonucleotide_input = st.text_area(
             "Nucleotide Sequence:",
-            value="ATCGATCG",
+            value="AUCGAUCG",
             height=100,
             help="""
-            Enter the DNA or RNA sequence using standard nucleotide codes.
-            Valid nucleotides: A (adenine), T (thymine), C (cytosine), G (guanine), U (uracil), N (any)
-            Examples: ATCGATCG, AAAUUUCCCGGG, ATCGNTCG
+            RNA sequence using standard nucleotide codes.
+            Valid nucleotides: A (adenine), C (cytosine), G (guanine), U (uracil), N (any)
+            Examples: AUCGAUCG, AAAUUUCCCGGG
             """
         )
         
