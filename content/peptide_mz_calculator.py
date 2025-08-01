@@ -57,7 +57,7 @@ with st.expander("📚 **Sequence Format**"):
     - `PEPTIDE(Amidated).`: C-terminal amidation
     - `PEPTIDE[+15.995]`: Mass delta modification
     - `M[+15.994915]PEPTIDE`: Specific mass delta on methionine
-    - `ALSSC[UNIMOD:4]VVDEEQDVER`: UNIMOD modification notation
+    - `ALSSC(UNIMOD:4)VVDEEQDVER`: UNIMOD modification notation
     - `PEPS(Phospho)TIDE`: Phosphorylation modification
     - `.(Acetyl)M(Oxidation)PEPTIDE`: Multiple modifications
 
