@@ -6,7 +6,6 @@ import plotly.graph_objects as go
 import streamlit as st
 import pyopenms as oms
 import pandas as pd
-import numpy as np
 
 from src.common.common import page_setup, show_fig
 
@@ -83,7 +82,7 @@ def configure_spectrum_generator(ion_types: List[str], max_charge: int = 2) -> o
             param.setValue(ION_TYPES[ion_type]['param'], "true")
     
     # Set other parameters
-    param.setValue("add_first_prefix_ion", "false")
+    param.setValue("add_first_prefix_ion", "true")
     param.setValue("add_losses", "false")  # Disable neutral losses for simplicity
     param.setValue("add_metainfo", "true")
     param.setValue("add_isotopes", "false")  # Disable isotopes for cleaner spectra
@@ -201,7 +200,6 @@ def parse_ion_annotation(annotation, mz: float, peptide_sequence: str = '') -> D
         }
     
     # Parse annotation like "b3+", "y5++", etc.
-    import re
     
     # Match pattern: ion_type + number + charges
     match = re.match(r'([abcxyz])(\d+)(\+*)', annotation)
@@ -743,32 +741,59 @@ if 'result_data' in locals() and result_data and result_data["success"]:
     # Download options
     st.subheader("Export Options")
     
-    # Prepare download data
-    csv_buffer = io.StringIO()
-    display_df[display_columns].to_csv(csv_buffer, index=False)
-    csv_buffer.seek(0)
-    csv_data = csv_buffer.getvalue()
+    # Prepare TSV data
+    tsv_buffer = io.StringIO()
+    display_df[display_columns].to_csv(tsv_buffer, sep='\t', index=False)
+    tsv_buffer.seek(0)
+    tsv_data = tsv_buffer.getvalue()
     
-    xlsx_buffer = io.BytesIO()
-    with pd.ExcelWriter(xlsx_buffer, engine="xlsxwriter") as writer:
-        display_df[display_columns].to_excel(writer, index=False, sheet_name="Fragment Ions")
-    xlsx_buffer.seek(0)
-    xlsx_data = xlsx_buffer.getvalue()
+    # Try to create Excel file with xlsxwriter, fallback to TSV if not available
+    xlsx_available = True
+    xlsx_data = None
+    xlsx_error_msg = None
     
-    col_csv, col_xlsx = st.columns(2)
+    try:
+        xlsx_buffer = io.BytesIO()
+        with pd.ExcelWriter(xlsx_buffer, engine="xlsxwriter") as writer:
+            display_df[display_columns].to_excel(writer, index=False, sheet_name="Fragment Ions")
+        xlsx_buffer.seek(0)
+        xlsx_data = xlsx_buffer.getvalue()
+    except ImportError as e:
+        xlsx_available = False
+        xlsx_error_msg = "xlsxwriter module not available"
+        st.warning("⚠️ Excel export unavailable: xlsxwriter module not found. Using TSV format as fallback.")
+    except Exception as e:
+        xlsx_available = False
+        xlsx_error_msg = f"Excel export error: {str(e)}"
+        st.warning(f"⚠️ Excel export failed: {str(e)}. Using TSV format as fallback.")
     
-    with col_csv:
+    if xlsx_available:
+        col_tsv, col_xlsx = st.columns(2)
+    else:
+        col_tsv, col_tsv_fallback = st.columns(2)
+    
+    with col_tsv:
         st.download_button(
-            label="Download CSV",
-            data=csv_data,
-            file_name=f"fragments_{result_data['sequence']}.csv",
-            mime="text/csv"
+            label="Download TSV",
+            data=tsv_data,
+            file_name=f"fragments_{result_data['sequence']}.tsv",
+            mime="text/tab-separated-values"
         )
     
-    with col_xlsx:
-        st.download_button(
-            label="Download Excel",
-            data=xlsx_data,
-            file_name=f"fragments_{result_data['sequence']}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+    if xlsx_available:
+        with col_xlsx:
+            st.download_button(
+                label="Download Excel",
+                data=xlsx_data,
+                file_name=f"fragments_{result_data['sequence']}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+    else:
+        with col_tsv_fallback:
+            st.download_button(
+                label="Download TSV (Excel fallback)",
+                data=tsv_data,
+                file_name=f"fragments_{result_data['sequence']}_fallback.tsv",
+                mime="text/tab-separated-values",
+                help="Excel export unavailable, downloading as TSV instead"
+            )

@@ -7,15 +7,14 @@ peptide lists with mass calculations.
 """
 
 import streamlit as st
-import pandas as pd
 import sys
 from pathlib import Path
 
 # Add utils to path
 sys.path.append(str(Path(__file__).parent.parent))
 
-from utils.fasta import validate_fasta_input, extract_accession, extract_description
-from utils.digest import perform_digest, get_digest_statistics, create_digest_summary, get_available_enzymes, filter_peptides_by_length, calculate_protein_coverage, generate_coverage_html
+from utils.fasta import validate_fasta_input
+from utils.digest import perform_digest, get_digest_statistics, get_available_enzymes, filter_peptides_by_length, calculate_protein_coverage, generate_coverage_html
 
 # Default values
 DEFAULT_ENZYME = "Trypsin"
@@ -317,7 +316,6 @@ NS"""
 
 
 if __name__ == "__main__":
+    
     main()
-
-# Call main function when page is loaded
 main()

@@ -41,8 +41,7 @@ def perform_digest(sequences: List[Tuple[str, str]], enzyme: str, missed_cleavag
 
             #for peptide_seq in peptide_strings:
             #    os.write(1, f"Generated peptide: {peptide_seq}\n".encode())
-            for i, peptide in enumerate(peptide_strings):
-                os.write(1, f"Peptide {i+1}: {peptide}\n".encode())
+            for i, peptide in enumerate(peptide_strings):                
 
                 if peptide.size() > 0:  # Skip empty peptides
                     try:
@@ -88,7 +87,7 @@ def perform_digest(sequences: List[Tuple[str, str]], enzyme: str, missed_cleavag
                     except Exception:
                         # Skip problematic peptides
                         continue
-        except Exception as e:
+        except Exception:
             # If digest fails, skip this sequence
             continue
     
@@ -201,7 +200,7 @@ def get_available_enzymes() -> List[str]:
         enzyme_db.getAllNames(enzymes)       
         return enzymes
     except Exception as e:
-        raise RuntimeError(f"Failed to load pyOpenMS enzyme database: {e}. Please ensure pyOpenMS is properly configured.")
+        raise RuntimeError(f"Failed to load pyOpenMS enzyme database: {e}. Please ensure pyOpenMS is properly configured.") from e
 
 
 def validate_enzyme(enzyme_name: str) -> bool:
@@ -345,6 +344,7 @@ def generate_coverage_html(accession: str, coverage_info: Dict) -> str:
             cov_level = min(coverage[i], 4)  # Cap at 4 for coloring
             color = colors.get(cov_level, colors[4])
         else:
+            cov_level = 0  # Default coverage level for positions beyond coverage array
             color = colors[0]
         
         html_parts.append(f"<span style='background-color: {color}; padding: 1px;' title='Position {i+1}: {cov_level}x coverage'>{aa}</span>")

@@ -5,8 +5,7 @@ This module provides backend functions for peptide mass spectrometry calculation
 using pyOpenMS AASequence.fromString() directly with minimal parsing overhead.
 """
 
-import re
-from typing import Dict, Any, Tuple, Optional, List, Union
+from typing import Dict, Any, Tuple
 import pyopenms as poms
 
 
@@ -34,7 +33,7 @@ def calculate_peptide_mz(sequence: str, charge_state: int) -> Dict[str, Any]:
         # Use AASequence.fromString() directly - it supports many formats natively
         aa_sequence = poms.AASequence.fromString(sequence)
     except Exception as e:
-        raise ValueError(f"Invalid sequence format: {str(e)}")
+        raise ValueError(f"Invalid sequence format: {str(e)}") from e
     
     # Calculate properties
     mz_ratio = aa_sequence.getMZ(charge_state)
