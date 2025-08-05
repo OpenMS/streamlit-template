@@ -48,7 +48,7 @@ markupsafe==3.0.2
     # via jinja2
 matplotlib==3.10.1
     # via pyopenms
-narwhals==1.32.0
+narwhals==2.0.1
     # via altair
 numpy==1.26.4
     # via
