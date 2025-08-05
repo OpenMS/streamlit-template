@@ -14,6 +14,12 @@ if __name__ == '__main__':
             st.Page(Path("content", "quickstart.py"), title="Quickstart", icon="👋"),
             st.Page(Path("content", "documentation.py"), title="Documentation", icon="📖"),
         ],
+        "pyOpenMS Toolbox": [
+            st.Page(Path("content", "digest.py"), title="In Silico Digest", icon="✂️"),
+            st.Page(Path("content", "peptide_mz_calculator.py"), title="m/z Calculator", icon="⚖️"),
+            st.Page(Path("content", "isotope_pattern_generator.py"), title="Isotopic Pattern Calculator", icon="📶"),
+            st.Page(Path("content", "fragmentation.py"), title="Fragment Ion Generation", icon="💥"),
+        ],
         "TOPP Workflow Framework": [
             st.Page(Path("content", "topp_workflow_file_upload.py"), title="File Upload", icon="📁"),
             st.Page(Path("content", "topp_workflow_parameter.py"), title="Configure", icon="⚙️"),

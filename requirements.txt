@@ -136,3 +136,4 @@ urllib3==2.3.0
     # via requests
 watchdog==6.0.0
     # via streamlit
+xlsxwriter
