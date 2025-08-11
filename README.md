@@ -42,7 +42,7 @@ To run the app locally:
    streamlit run app.py
    ```
 
-> ⚠️ Note: The local version offers limited functionality. Features that depend on OpenMS are only available in the Docker setup.
+> ⚠️ Note: The local version offers limited functionality. Features that depend on OpenMS TOPP tools are only available out of the box in the Docker setup. For the local version [OpenMS Command Line Tools](https://openms.readthedocs.io/en/latest/about/installation.html) must be installed separately.
 
 
 ## 🐳 Build with Docker
