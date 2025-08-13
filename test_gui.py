@@ -10,7 +10,7 @@ import shutil
 def launch(request):
     test = AppTest.from_file(request.param)
 
-    ## Initialize session state ##
+    # Initialize session state
     with open("settings.json", "r") as f:
         test.session_state.settings = json.load(f)
     test.session_state.settings["test"] = True
