@@ -64,75 +64,79 @@ def get_df(file: Union[str, Path]) -> pd.DataFrame:
 
 
 def plot_bpc_tic() -> go.Figure:
-    """Plot the base peak and total ion chromatogram (TIC).
+    """Plot TIC, BPC, and (optionally) XIC, overlaying the chromatograms
+    using the ms_plotly backend.
 
     Returns:
-        A plotly Figure object containing the BPC and TIC plot.
+        A plotly Figure object containing the overlaid chromatogram(s).
     """
-    fig = go.Figure()
+    # List to store DataFrames for each chromatogram, so we can concatenate them later.
+    # This is necessary because we need to plot them all together in one figure.
+    dfs = []
     max_int = 0
+
     if st.session_state.view_tic:
-        df = st.session_state.view_ms1.groupby("RT").sum().reset_index()
-        df["type"] = "TIC"
-        if df["inty"].max() > max_int:
-            max_int = df["inty"].max()
-        fig = df.plot(
-            backend="ms_plotly",
-            kind="chromatogram",
-            x="RT",
-            y="inty",
-            by="type",
-            color="#f24c5c",
-            show_plot=False,
-            grid=False,
-            aggregate_duplicates=True,
-        )
+        df_tic = st.session_state.view_ms1.groupby("RT").sum().reset_index()
+        df_tic["type"] = "TIC"
+        if df_tic["inty"].max() > max_int:
+            max_int = df_tic["inty"].max()
+        dfs.append(df_tic)
+
     if st.session_state.view_bpc:
-        df = st.session_state.view_ms1.groupby("RT").max().reset_index()
-        df["type"] = "BPC"
-        if df["inty"].max() > max_int:
-            max_int = df["inty"].max()
-        fig = df.plot(
-            backend="ms_plotly",
-            kind="chromatogram",
-            x="RT",
-            y="inty",
-            by="type",
-            color="#2d3a9d",
-            show_plot=False,
-            grid=False,
-            aggregate_duplicates=True,
-        )
+        df_bpc = st.session_state.view_ms1.groupby("RT").max().reset_index()
+        df_bpc["type"] = "BPC"
+        if df_bpc["inty"].max() > max_int:
+            max_int = df_bpc["inty"].max()
+        dfs.append(df_bpc)
+
     if st.session_state.view_eic:
         df = st.session_state.view_ms1
-        target_value = st.session_state.view_eic_mz.strip().replace(",", ".")
+        target_value_str = st.session_state.view_eic_mz.strip().replace(",", ".")
         try:
-            target_value = float(target_value)
+            target_value = float(target_value_str)
             ppm_tolerance = st.session_state.view_eic_ppm
             tolerance = (target_value * ppm_tolerance) / 1e6
 
-            # Filter the DataFrame
+            # Filter for m/z values within tolerance
             df_eic = df[
-                (df["mz"] >= target_value - tolerance)
-                & (df["mz"] <= target_value + tolerance)
+                (df["mz"] >= target_value - tolerance) &
+                (df["mz"] <= target_value + tolerance)
             ].copy()
+
             if not df_eic.empty:
-                df_eic.loc[:, "type"] = "XIC"
-                if df_eic["inty"].max() > max_int:
-                    max_int = df_eic["inty"].max()
-                fig = df_eic.plot(
-                    backend="ms_plotly",
-                    kind="chromatogram",
-                    x="RT",
-                    y="inty",
-                    by="type",
-                    color="#f6bf26",
-                    show_plot=False,
-                    grid=False,
-                    aggregate_duplicates=True,
-                )
+                # Aggregate duplicate RT entries (summing intensities)
+                df_eic_agg = df_eic.groupby("RT", as_index=False)["inty"].sum()
+                df_eic_agg["type"] = "XIC"
+                if df_eic_agg["inty"].max() > max_int:
+                    max_int = df_eic_agg["inty"].max()
+                dfs.append(df_eic_agg)
         except ValueError:
             st.error("Invalid m/z value for XIC provided. Please enter a valid number.")
+
+    if not dfs:
+        st.error("No chromatogram data to plot!")
+        return go.Figure()
+
+    # Concatenate all chromatogram DataFrames
+    df_combined = pd.concat(dfs, ignore_index=True)
+
+    df_combined["type"] = pd.Categorical(df_combined["type"], categories=["TIC", "BPC", "XIC"], ordered=True)
+    df_combined = df_combined.sort_values("type")
+
+    colors_map = {"TIC": "#f24c5c", "BPC": "#2d3a9d", "XIC": "#f6bf26"}
+    color_list = [colors_map[t] for t in ["TIC", "BPC", "XIC"]]
+
+    fig = df_combined.plot(
+        backend="ms_plotly",
+        kind="chromatogram",
+        x="RT",
+        y="inty",
+        by="type",
+        color=iter(color_list),
+        show_plot=False,
+        grid=False,
+        aggregate_duplicates=True,
+    )
 
     fig.update_yaxes(range=[0, max_int])
     fig.update_layout(
@@ -141,8 +145,9 @@ def plot_bpc_tic() -> go.Figure:
         yaxis_title="intensity",
         plot_bgcolor="rgb(255,255,255)",
         height=500,
+        template="plotly_white",
     )
-    fig.layout.template = "plotly_white"
+
     return fig
 
 
