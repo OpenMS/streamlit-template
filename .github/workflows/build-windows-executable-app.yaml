@@ -278,6 +278,7 @@ jobs:
 
         mv python-${{ env.PYTHON_VERSION }} streamlit_exe
         cp -r src streamlit_exe
+        cp -r utils streamlit_exe
         cp -r content streamlit_exe
         cp -r docs streamlit_exe
         cp -r assets streamlit_exe
