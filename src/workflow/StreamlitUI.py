@@ -995,35 +995,41 @@ class StreamlitUI:
         log_level = c1.selectbox(
             "log details", ["minimal", "commands and run times", "all"], key="log_level"
         )
-        if self.executor.pid_dir.exists():
+        
+        pid_exists = self.executor.pid_dir.exists()
+        log_path = Path(self.workflow_dir, "logs", log_level.replace(" ", "-") + ".log")
+        log_exists = log_path.exists()
+
+        if pid_exists:
             if c1.button("Stop Workflow", type="primary", use_container_width=True):
                 self.executor.stop()
                 st.rerun()
         elif c1.button("Start Workflow", type="primary", use_container_width=True):
             start_workflow_function()
-            st.rerun()
-        log_path = Path(self.workflow_dir, "logs", log_level.replace(" ", "-") + ".log")
-        if log_path.exists():
-            if self.executor.pid_dir.exists():
-                with st.spinner("**Workflow running...**"):
-                    with open(log_path, "r", encoding="utf-8") as f:
+            with st.spinner("**Workflow running...**"):
+                time.sleep(2)
+                st.rerun()     
+
+        if log_exists:
+            with open(log_path, "r", encoding="utf-8") as f:
+                if pid_exists:
+                    with st.spinner("**Workflow running...**"):
                         st.code(
-                            "".join(f.readlines()[-30:]),
-                            language="neon",
+                            "".join(f.readlines()[-30:]), language="neon",
                             line_numbers=False,
                         )
-                    time.sleep(2)
-                st.rerun()
-            else:
-                st.markdown(
-                    f"**Workflow log file: {datetime.fromtimestamp(log_path.stat().st_ctime).strftime('%Y-%m-%d %H:%M')} CET**"
-                )
-                with open(log_path, "r", encoding="utf-8") as f:
+                        time.sleep(2)
+                        st.rerun()
+                else:
+                    st.markdown(
+                        f"**Workflow log file: {datetime.fromtimestamp(log_path.stat().st_ctime).strftime('%Y-%m-%d %H:%M')} CET**"
+                    )
                     content = f.read()
                     # Check if workflow finished successfully
                     if not "WORKFLOW FINISHED" in content:
                         st.error("**Errors occurred, check log file.**")
                     st.code(content, language="neon", line_numbers=False)
+
 
     def results_section(self, custom_results_function) -> None:
         custom_results_function()
