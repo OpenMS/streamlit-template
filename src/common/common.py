@@ -5,7 +5,6 @@ import json
 import time
 import psutil
 import shutil
-import hashlib
 
 import pandas as pd
 import streamlit as st
@@ -668,10 +667,6 @@ def tk_file_dialog(
     )
     root.destroy()
     return file_path
-
-
-def calc_md5(string : str):
-    return hashlib.md5(string.encode()).hexdigest() 
 
 
 # General warning/error messages

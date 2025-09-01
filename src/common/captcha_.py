@@ -1,16 +1,23 @@
 import streamlit as st
 import streamlit.components.v1 as st_components
 
-from streamlit.source_util import page_icon_and_name, get_pages, _on_pages_changed
+from streamlit.source_util import page_icon_and_name
 from captcha.image import ImageCaptcha
 from pathlib import Path
 
-from src.common.common import calc_md5
-
+import hashlib
 import random
 import string
 import os
 
+def calc_md5(string : str):
+    return hashlib.md5(string.encode()).hexdigest() 
+
+def get_pages():
+    return st.runtime.get_pages()
+
+def set_pages(pages : dict):
+    st.runtime.set_pages(pages)
 
 def delete_all_pages(main_script_path_str: str) -> None:
     """
@@ -24,7 +31,7 @@ def delete_all_pages(main_script_path_str: str) -> None:
 
     """
     # Get all pages from the app's configuration
-    current_pages = get_pages(main_script_path_str)
+    current_pages = get_pages()
 
     # Create a list to store keys pages to delete
     keys_to_delete = []
@@ -39,7 +46,7 @@ def delete_all_pages(main_script_path_str: str) -> None:
         del current_pages[key]
 
     # Refresh the pages configuration
-    _on_pages_changed.send()
+    set_pages(current_pages)
 
 
 def delete_page(main_script_path_str: str, page_name: str) -> None:
@@ -54,7 +61,7 @@ def delete_page(main_script_path_str: str, page_name: str) -> None:
         None
     """
     # Get all pages
-    current_pages = get_pages(main_script_path_str)
+    current_pages = get_pages()
 
     # Iterate over all pages and delete the desired page if found
     for key, value in current_pages.items():
@@ -62,7 +69,7 @@ def delete_page(main_script_path_str: str, page_name: str) -> None:
             del current_pages[key]
 
     # Refresh the pages configuration
-    _on_pages_changed.send()
+    set_pages(current_pages)
 
 
 def restore_all_pages(main_script_path_str: str) -> None:
@@ -76,7 +83,7 @@ def restore_all_pages(main_script_path_str: str) -> None:
         None
     """
     # Get all pages
-    pages = get_pages(main_script_path_str)
+    pages = get_pages()
 
     # Obtain the path to the main script
     main_script_path = Path(main_script_path_str)
@@ -128,7 +135,7 @@ def restore_all_pages(main_script_path_str: str) -> None:
         }
 
     # Refresh the page configuration
-    _on_pages_changed.send()
+    set_pages(pages)
 
 
 def add_page(main_script_path_str: str, page_name: str) -> None:
@@ -143,7 +150,7 @@ def add_page(main_script_path_str: str, page_name: str) -> None:
         None
     """
     # Get all pages
-    pages = get_pages(main_script_path_str)
+    pages = get_pages()
 
     # Obtain the path to the main script
     main_script_path = Path(main_script_path_str)
@@ -170,7 +177,7 @@ def add_page(main_script_path_str: str, page_name: str) -> None:
     }
 
     # Refresh the page configuration
-    _on_pages_changed.send()
+    set_pages(pages)
 
 
 length_captcha = 5
