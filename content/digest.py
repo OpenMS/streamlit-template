@@ -315,7 +315,4 @@ NS"""
                 st.error("Please check your input and try again. If the problem persists, try with a simpler enzyme like Trypsin.")
 
 
-if __name__ == "__main__":
-    
-    main()
 main()
