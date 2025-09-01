@@ -1,16 +1,18 @@
-import json
 import os
-import shutil
 import sys
 import uuid
+import json
 import time
+import psutil
+import shutil
+import hashlib
+
+import pandas as pd
+import streamlit as st
+
 from typing import Any
 from pathlib import Path
 from streamlit.components.v1 import html
-
-import streamlit as st
-import pandas as pd
-import psutil
 
 try:
     from tkinter import Tk, filedialog
@@ -666,6 +668,10 @@ def tk_file_dialog(
     )
     root.destroy()
     return file_path
+
+
+def calc_md5(string : str):
+    return hashlib.md5(string.encode()).hexdigest() 
 
 
 # General warning/error messages

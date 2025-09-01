@@ -1,9 +1,11 @@
-from pathlib import Path
 import streamlit as st
 import streamlit.components.v1 as st_components
-from streamlit.source_util import page_icon_and_name, calc_md5, get_pages, _on_pages_changed
 
+from streamlit.source_util import page_icon_and_name, get_pages, _on_pages_changed
 from captcha.image import ImageCaptcha
+from pathlib import Path
+
+from src.common.common import calc_md5
 
 import random
 import string
