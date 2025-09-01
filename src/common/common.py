@@ -330,9 +330,6 @@ def render_sidebar(page: str = "") -> None:
                         for key in params.keys():
                             if key in st.session_state.keys():
                                 del st.session_state[key]
-                        st.session_state.workspace = Path(
-                            workspaces_dir, st.session_state["chosen-workspace"]
-                        )
                         st.query_params.workspace = st.session_state["chosen-workspace"]
 
                     # Get all available workspaces as options
