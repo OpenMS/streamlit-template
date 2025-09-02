@@ -1021,35 +1021,40 @@ class StreamlitUI:
                 time.sleep(1)
                 st.rerun()
 
-        if log_exists:
-            with open(log_path, "r", encoding="utf-8") as f:
-                if pid_exists:
-                    # Real-time display during execution
-                    with st.spinner("**Workflow running...**"):
-                        lines = f.readlines()
-                        if log_lines_count == "all":
-                            display_lines = lines
-                        else:
-                            display_lines = lines[-st.session_state.log_lines_count:]
-                        
-                        st.code(
-                            "".join(display_lines),
-                            language="neon",
-                            line_numbers=False,
-                        )
-                        # Faster polling for real-time updates
-                        time.sleep(1)
-                        st.rerun()
+        if log_exists and pid_exists:
+            # Real-time display during execution
+            with st.spinner("**Workflow running...**"):
+                with open(log_path, "r", encoding="utf-8") as f:
+                    lines = f.readlines()
+                if log_lines_count == "all":
+                    display_lines = lines
                 else:
-                    # Static display after completion
-                    st.markdown(
-                        f"**Workflow log file: {datetime.fromtimestamp(log_path.stat().st_ctime).strftime('%Y-%m-%d %H:%M')} CET**"
-                    )
-                    content = f.read()
-                    # Check if workflow finished successfully
-                    if not "WORKFLOW FINISHED" in content:
-                        st.error("**Errors occurred, check log file.**")
-                    st.code(content, language="neon", line_numbers=False)
+                    display_lines = lines[-st.session_state.log_lines_count:]
+                st.code(
+                    "".join(display_lines),
+                    language="neon",
+                    line_numbers=False,
+                )
+                # Faster polling for real-time updates
+                time.sleep(1)
+                st.rerun()
+
+        elif log_exists and not pid_exists:
+            # Static display after completion
+            st.markdown(
+                f"**Workflow log file: {datetime.fromtimestamp(log_path.stat().st_ctime).strftime('%Y-%m-%d %H:%M')} CET**"
+            )
+            with open(log_path, "r", encoding="utf-8") as f:
+                content = f.read()
+            # Check if workflow finished successfully
+            if not "WORKFLOW FINISHED" in content:
+                st.error("**Errors occurred, check log file.**")
+            st.code(content, language="neon", line_numbers=False)
+        elif pid_exists:
+            with st.spinner("**Workflow running...**"):
+                time.sleep(1)
+                st.rerun()
+
 
 
     def results_section(self, custom_results_function) -> None:
