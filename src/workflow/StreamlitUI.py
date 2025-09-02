@@ -996,6 +996,17 @@ class StreamlitUI:
             "log details", ["minimal", "commands and run times", "all"], key="log_level"
         )
         
+        # Real-time display options
+        if "log_lines_count" not in st.session_state:
+            st.session_state.log_lines_count = 100
+        
+        log_lines_count = c2.selectbox(
+            "lines to show", [50, 100, 200, 500, "all"],
+            index=1, key="log_lines_select"
+        )
+        if log_lines_count != "all":
+            st.session_state.log_lines_count = log_lines_count
+        
         pid_exists = self.executor.pid_dir.exists()
         log_path = Path(self.workflow_dir, "logs", log_level.replace(" ", "-") + ".log")
         log_exists = log_path.exists()
@@ -1007,20 +1018,30 @@ class StreamlitUI:
         elif c1.button("Start Workflow", type="primary", use_container_width=True):
             start_workflow_function()
             with st.spinner("**Workflow running...**"):
-                time.sleep(2)
-                st.rerun()     
+                time.sleep(1)
+                st.rerun()
 
         if log_exists:
             with open(log_path, "r", encoding="utf-8") as f:
                 if pid_exists:
+                    # Real-time display during execution
                     with st.spinner("**Workflow running...**"):
+                        lines = f.readlines()
+                        if log_lines_count == "all":
+                            display_lines = lines
+                        else:
+                            display_lines = lines[-st.session_state.log_lines_count:]
+                        
                         st.code(
-                            "".join(f.readlines()[-30:]), language="neon",
+                            "".join(display_lines),
+                            language="neon",
                             line_numbers=False,
                         )
-                        time.sleep(2)
+                        # Faster polling for real-time updates
+                        time.sleep(1)
                         st.rerun()
                 else:
+                    # Static display after completion
                     st.markdown(
                         f"**Workflow log file: {datetime.fromtimestamp(log_path.stat().st_ctime).strftime('%Y-%m-%d %H:%M')} CET**"
                     )
