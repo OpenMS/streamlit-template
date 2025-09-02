@@ -34,8 +34,6 @@ class WorkflowManager:
         # Add workflow process id to pid dir
         self.executor.pid_dir.mkdir()
         Path(self.executor.pid_dir, str(workflow_process.pid)).touch()
-        time.sleep(3)
-        st.rerun()
 
     def workflow_process(self) -> None:
         """

@@ -1,16 +1,17 @@
-import json
 import os
-import shutil
 import sys
 import uuid
+import json
 import time
+import psutil
+import shutil
+
+import pandas as pd
+import streamlit as st
+
 from typing import Any
 from pathlib import Path
 from streamlit.components.v1 import html
-
-import streamlit as st
-import pandas as pd
-import psutil
 
 try:
     from tkinter import Tk, filedialog
@@ -310,28 +311,25 @@ def render_sidebar(page: str = "") -> None:
         # The main page has workspace switcher
         # Display workspace switcher if workspace is enabled in local mode
         if st.session_state.settings["enable_workspaces"]:
-            with st.expander("🖥️ **Workspaces**"):
-                # Workspaces directory specified in the settings.json
-                if (
-                    st.session_state.settings["workspaces_dir"]
-                    and st.session_state.location == "local"
-                ):
-                    workspaces_dir = Path(
-                        st.session_state.settings["workspaces_dir"],
-                        "workspaces-" + st.session_state.settings["repository-name"],
-                    )
-                else:
-                    workspaces_dir = ".."
-                # Online: show current workspace name in info text and option to change to other existing workspace
-                if st.session_state.location == "local":
+            # Workspaces directory specified in the settings.json
+            if (
+                st.session_state.settings["workspaces_dir"]
+                and st.session_state.location == "local"
+            ):
+                workspaces_dir = Path(
+                    st.session_state.settings["workspaces_dir"],
+                    "workspaces-" + st.session_state.settings["repository-name"],
+                )
+            else:
+                workspaces_dir = ".."
+            # Online: show current workspace name in info text and option to change to other existing workspace
+            if st.session_state.location == "local":
+                with st.expander("🖥️ **Workspaces**"):
                     # Define callback function to change workspace
                     def change_workspace():
                         for key in params.keys():
                             if key in st.session_state.keys():
                                 del st.session_state[key]
-                        st.session_state.workspace = Path(
-                            workspaces_dir, st.session_state["chosen-workspace"]
-                        )
                         st.query_params.workspace = st.session_state["chosen-workspace"]
 
                     # Get all available workspaces as options

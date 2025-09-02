@@ -77,8 +77,15 @@ class CommandExecutor:
         self.logger.log(f"Running command:\n"+' '.join(command)+"\nWaiting for command to finish...", 1)   
         start_time = time.time()
         
-        # Execute the command
-        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        # Execute the command with real-time output capture
+        process = subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,  # Line buffered
+            universal_newlines=True
+        )
         child_pid = process.pid
         
         # Record the PID to keep track of running processes associated with this workspace/workflow
@@ -86,25 +93,69 @@ class CommandExecutor:
         pid_file_path = self.pid_dir / str(child_pid)
         pid_file_path.touch()
         
-        # Wait for command completion and capture output
-        stdout, stderr = process.communicate()
+        # Real-time output capture
+        self._stream_output(process)
+        
+        # Wait for process completion
+        process.wait()
         
         # Cleanup PID file
         pid_file_path.unlink()
 
         end_time = time.time()
         execution_time = end_time - start_time
-        # Format the logging prefix
+        
+        # Log completion
         self.logger.log(f"Process finished:\n"+' '.join(command)+f"\nTotal time to run command: {execution_time:.2f} seconds", 1)
         
-        # Log stdout if present
-        if stdout:
-            self.logger.log(stdout.decode(), 2)
+        # Check for errors
+        if process.returncode != 0:
+            self.logger.log(f"ERRORS OCCURRED: Process exited with code {process.returncode}", 2)
+
+    def _stream_output(self, process: subprocess.Popen) -> None:
+        """
+        Streams stdout and stderr from a running process in real-time to the logger.
+        This method runs in the workflow process, not the GUI thread, so it's safe to block.
         
-        # Log stderr and raise an exception if errors occurred
-        if stderr or process.returncode != 0:
-            error_message = stderr.decode().strip()
-            self.logger.log(f"ERRORS OCCURRED:\n{error_message}", 2)
+        Args:
+            process: The subprocess.Popen object to stream from
+        """
+        def read_stdout():
+            """Read stdout in real-time"""
+            try:
+                for line in iter(process.stdout.readline, ''):
+                    if line:
+                        self.logger.log(line.rstrip(), 2)
+                    if process.poll() is not None:
+                        break
+            except Exception as e:
+                self.logger.log(f"Error reading stdout: {e}", 2)
+            finally:
+                process.stdout.close()
+        
+        def read_stderr():
+            """Read stderr in real-time"""
+            try:
+                for line in iter(process.stderr.readline, ''):
+                    if line:
+                        self.logger.log(f"STDERR: {line.rstrip()}", 2)
+                    if process.poll() is not None:
+                        break
+            except Exception as e:
+                self.logger.log(f"Error reading stderr: {e}", 2)
+            finally:
+                process.stderr.close()
+        
+        # Start threads to read stdout and stderr simultaneously
+        stdout_thread = threading.Thread(target=read_stdout, daemon=True)
+        stderr_thread = threading.Thread(target=read_stderr, daemon=True)
+        
+        stdout_thread.start()
+        stderr_thread.start()
+        
+        # Wait for both threads to complete
+        stdout_thread.join()
+        stderr_thread.join()
 
     def run_topp(self, tool: str, input_output: dict, custom_params: dict = {}) -> None:
         """
