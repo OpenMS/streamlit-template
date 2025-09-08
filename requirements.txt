@@ -16,7 +16,7 @@ cachetools==5.5.2
     # via streamlit
 captcha==0.7.1
     # via src (pyproject.toml)
-certifi==2025.1.31
+certifi==2025.8.3
     # via requests
 charset-normalizer==3.4.1
     # via requests
