@@ -24,7 +24,7 @@ env:
 
 jobs:
   build-openms:
-    runs-on: windows-latest
+    runs-on: windows-2022
 
     steps:
     - name: Checkout
@@ -185,7 +185,7 @@ jobs:
         path: ${{ github.workspace }}/OpenMS/bld/*.zip
 
   build-executable:
-    runs-on: windows-latest
+    runs-on: windows-2022
     needs: build-openms  
 
     steps:
