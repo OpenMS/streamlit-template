@@ -50,6 +50,7 @@ To run the app locally:
 This repository contains two Dockerfiles.
 
 1. `Dockerfile`: This Dockerfile builds all dependencies for the app including Python packages and the OpenMS TOPP tools. Recommended for more complex workflows where you want to use the OpenMS TOPP tools for instance with the **TOPP Workflow Framework**.
+   - By default, it builds pyOpenMS from source. To install pyOpenMS from conda instead, use `--build-arg BUILD_PYOPENMS=OFF`.
 2. `Dockerfile_simple`: This Dockerfile builds only the Python packages. Recommended for simple apps using pyOpenMS only.
 
 1. **Install Docker**
@@ -115,6 +116,23 @@ This repository contains two Dockerfiles.
       ```
       docker run -p 8505:8501 openms_streamlit_template
       ```
+
+## ⚙️ Build Configuration
+
+### pyOpenMS Build Options
+
+You can control whether pyOpenMS is built from source or installed from conda/pip:
+
+#### Docker
+- **Build from source (default)**: `docker build -t streamlitapp:latest .`
+- **Install from conda**: `docker build --build-arg BUILD_PYOPENMS=OFF -t streamlitapp:latest .`
+
+#### Windows Workflows
+The GitHub Actions workflows (`build-windows-executable-app.yaml` and `build-windows-executable-app-with-pyinstaller.yaml`) can be configured via the `BUILD_PYOPENMS` environment variable:
+- **Install from pip (default)**: `BUILD_PYOPENMS: false`
+- **Build from source**: `BUILD_PYOPENMS: true`
+
+Change this value in the workflow file under the `env:` section to enable building pyOpenMS from source.
 
 ## Documentation
 
