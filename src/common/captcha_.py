@@ -258,7 +258,7 @@ def captcha_control():
                     st.rerun()
                 else:
                     # if the captcha is wrong, the controllo session state is set to False and the captcha is regenerated
-                    st.error("🚨 Captch is wrong")
+                    st.error("🚨 CAPTCHA is wrong")
                     del st.session_state["Captcha"]
                     del st.session_state["controllo"]
                     if "captcha_input" in st.session_state:
