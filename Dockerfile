@@ -117,7 +117,76 @@ ENV OPENMS_DATA_PATH="/openms/share/"
 RUN rm -rf openms-build
 
 # Prepare and run streamlit app.
-FROM compile-openms AS run-app
+# Use a minimal Python base image for the runtime
+FROM python:3.10-slim-bookworm AS run-app
+ARG PORT=8501
+ARG GITHUB_TOKEN
+ENV GH_TOKEN=${GITHUB_TOKEN}
+ARG GITHUB_USER=OpenMS
+ARG GITHUB_REPO=streamlit-template
+
+USER root
+
+# Install only runtime dependencies (not build dependencies)
+RUN apt-get -y update && apt-get install -y --no-install-recommends --no-install-suggests \
+    libgtk2.0-0 \
+    libsvm3 \
+    libglpk40 \
+    libzip4 \
+    zlib1g \
+    libxerces-c3.2 \
+    libbz2-1.0 \
+    libomp5 \
+    libhdf5-103-1 \
+    libboost-date-time1.74.0 \
+    libboost-iostreams1.74.0 \
+    libboost-regex1.74.0 \
+    libboost-math1.74.0 \
+    libboost-random1.74.0 \
+    libqt6core6 \
+    libqt6gui6 \
+    libqt6widgets6 \
+    libqt6svg6 \
+    libqt6opengl6 \
+    libqt6openglwidgets6 \
+    libgl1 \
+    openjdk-17-jre-headless \
+    curl \
+    jq \
+    cron \
+    gnupg \
+    wget \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+RUN update-ca-certificates
+
+# Install Github CLI (needed for downloading artifacts)
+RUN mkdir -p -m 755 /etc/apt/keyrings \
+    && wget -qO- https://cli.github.com/packages/githubcli-archive-keyring.gpg | tee /etc/apt/keyrings/githubcli-archive-keyring.gpg > /dev/null \
+    && chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
+    && apt-get update \
+    && apt-get install gh -y \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy OpenMS binaries and libraries from the build stage
+COPY --from=compile-openms /openms /openms
+COPY --from=compile-openms /thirdparty /thirdparty
+
+# Set environment variables for OpenMS
+ENV PATH="/openms/bin/:/thirdparty/LuciPHOr2:/thirdparty/MSGFPlus:/thirdparty/Sirius:/thirdparty/ThermoRawFileParser:/thirdparty/Comet:/thirdparty/Fido:/thirdparty/MaRaCluster:/thirdparty/MyriMatch:/thirdparty/OMSSA:/thirdparty/Percolator:/thirdparty/SpectraST:/thirdparty/XTandem:/thirdparty/crux:${PATH}"
+ENV LD_LIBRARY_PATH="/openms/lib/:${LD_LIBRARY_PATH}"
+ENV OPENMS_DATA_PATH="/openms/share/"
+
+# Copy pyOpenMS and Python packages from build stage
+# First install pip requirements
+COPY requirements.txt ./requirements.txt
+RUN python -m pip install --upgrade pip
+RUN grep -Ev '^pyopenms([=<>!~].*)?$' requirements.txt > requirements_cleaned.txt && mv requirements_cleaned.txt requirements.txt
+RUN python -m pip install -r requirements.txt
+
+# Copy pyOpenMS from build stage
+COPY --from=compile-openms /root/miniforge3/envs/streamlit-env/lib/python3.10/site-packages/pyopenms* /usr/local/lib/python3.10/site-packages/
 # Create workdir and copy over all streamlit related files/folders.
 
 # note: specifying folder with slash as suffix and repeating the folder name seems important to preserve directory structure
@@ -139,18 +208,16 @@ COPY .streamlit/config.toml /app/.streamlit/config.toml
 COPY clean-up-workspaces.py /app/clean-up-workspaces.py
 
 # add cron job to the crontab
-RUN echo "0 3 * * * /root/miniforge3/envs/streamlit-env/bin/python /app/clean-up-workspaces.py >> /app/clean-up-workspaces.log 2>&1" | crontab -
+RUN echo "0 3 * * * /usr/local/bin/python /app/clean-up-workspaces.py >> /app/clean-up-workspaces.log 2>&1" | crontab -
 
 # create entrypoint script to start cron service and launch streamlit app
 RUN echo "#!/bin/bash" > /app/entrypoint.sh && \
-    echo "source /root/miniforge3/bin/activate streamlit-env" >> /app/entrypoint.sh && \
     echo "service cron start" >> /app/entrypoint.sh && \
-    echo "streamlit run app.py" >> /app/entrypoint.sh
-# make the script executable
-RUN chmod +x /app/entrypoint.sh
+    echo "streamlit run app.py" >> /app/entrypoint.sh && \
+    chmod +x /app/entrypoint.sh
 
 # Patch Analytics
-RUN mamba run -n streamlit-env python hooks/hook-analytics.py
+RUN python hooks/hook-analytics.py
 
 # Set Online Deployment
 RUN jq '.online_deployment = true' settings.json > tmp.json && mv tmp.json settings.json
