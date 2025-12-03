@@ -179,15 +179,17 @@ ENV PATH="/openms/bin/:/thirdparty/LuciPHOr2:/thirdparty/MSGFPlus:/thirdparty/Si
 ENV LD_LIBRARY_PATH="/openms/lib/:${LD_LIBRARY_PATH}"
 ENV OPENMS_DATA_PATH="/openms/share/"
 
-# Copy pyOpenMS and Python packages from build stage
-# First install pip requirements
+# Install Python dependencies and copy pyOpenMS from build stage
 COPY requirements.txt ./requirements.txt
-RUN python -m pip install --upgrade pip
-RUN grep -Ev '^pyopenms([=<>!~].*)?$' requirements.txt > requirements_cleaned.txt && mv requirements_cleaned.txt requirements.txt
-RUN python -m pip install -r requirements.txt
+RUN python -m pip install --upgrade pip && \
+    grep -Ev '^pyopenms([=<>!~].*)?$' requirements.txt > requirements_cleaned.txt && \
+    mv requirements_cleaned.txt requirements.txt && \
+    python -m pip install -r requirements.txt
 
-# Copy pyOpenMS from build stage
+# Copy pyOpenMS from build stage (built with mamba in compile-openms stage)
+# Source path is from mamba environment, target is system site-packages
 COPY --from=compile-openms /root/miniforge3/envs/streamlit-env/lib/python3.10/site-packages/pyopenms* /usr/local/lib/python3.10/site-packages/
+
 # Create workdir and copy over all streamlit related files/folders.
 
 # note: specifying folder with slash as suffix and repeating the folder name seems important to preserve directory structure
