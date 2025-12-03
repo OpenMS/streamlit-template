@@ -1,5 +1,6 @@
 # This Dockerfile creates a container with pyOpenMS
 # It also adds a basic streamlit server that serves a pyOpenMS-based app.
+# Uses python:3.10-slim-bookworm as base image for smaller image size (~150MB vs ~700MB for ubuntu:22.04)
 # hints:
 # build image with: docker build -f Dockerfile_simple --no-cache -t streamlitapp:latest --build-arg GITHUB_TOKEN=<your-github-token> . 2>&1 | tee build.log
 # check if image was build: docker image ls

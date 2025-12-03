@@ -1,5 +1,6 @@
-# This Dockerfile builds OpenMS, the TOPP tools, pyOpenMS and thidparty tools.
+# This Dockerfile builds OpenMS, the TOPP tools, pyOpenMS and thirdparty tools.
 # It also adds a basic streamlit server that serves a pyOpenMS-based app.
+# Uses multi-stage build: Ubuntu for compilation, python:3.10-slim-bookworm for runtime (~150MB lighter)
 # hints:
 # build image and give it a name (here: streamlitapp) with: docker build --no-cache -t streamlitapp:latest --build-arg GITHUB_TOKEN=<your-github-token> . 2>&1 | tee build.log
 # check if image was build: docker image ls
