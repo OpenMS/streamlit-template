@@ -59,7 +59,7 @@ jobs:
 
     - name: Set up Python for pyOpenMS build
       if: env.BUILD_PYOPENMS == 'true'
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: ${{ env.PYTHON_VERSION }}
 
@@ -253,7 +253,8 @@ jobs:
 
         if "${{ env.BUILD_PYOPENMS }}" == "true" (
           pip install pyopenms-wheel/*.whl
-          pip install -r requirements.txt
+          findstr /v /r /c:"^pyopenms" requirements.txt > requirements_filtered.txt
+          pip install -r requirements_filtered.txt
         ) else (
           pip install -r requirements.txt
         )

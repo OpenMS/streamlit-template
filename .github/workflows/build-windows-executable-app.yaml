@@ -304,7 +304,7 @@ jobs:
     - name: Install Required Packages (excluding pyOpenMS if built from source)
       run: |
         if ("${{ env.BUILD_PYOPENMS }}" -eq "true") {
-          Get-Content requirements.txt | Where-Object { $_ -notmatch '^pyopenms' } | Set-Content requirements_filtered.txt
+          Get-Content requirements.txt | Where-Object { $_ -notmatch '^pyopenms([=<>!~\s]|$)' } | Set-Content requirements_filtered.txt
           .\python-${{ env.PYTHON_VERSION }}\python -m pip install --force-reinstall -r requirements_filtered.txt --no-warn-script-location
         } else {
           .\python-${{ env.PYTHON_VERSION }}\python -m pip install --force-reinstall -r requirements.txt --no-warn-script-location
