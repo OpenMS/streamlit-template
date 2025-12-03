@@ -15,6 +15,8 @@ permissions:
 env:
   OPENMS_VERSION: 3.2.0 
   PYTHON_VERSION: 3.11.0
+  # Control whether to build pyOpenMS from source (true) or use pip (false). Default: false
+  BUILD_PYOPENMS: false
   # Name of the installer
   APP_NAME: OpenMS-StreamlitTemplateApp
   # Define unique GUID for UpgradeCode
@@ -150,6 +152,7 @@ jobs:
           BUILD_TYPE: "Release"
           OPENMP: "Off"
           USE_STATIC_BOOST: "On"
+          PYOPENMS: "${{ env.BUILD_PYOPENMS == 'true' && 'ON' || 'OFF' }}"
           #  BUILD_FLAGS: "-p:CL_MPCount=2" # For VS Generator and MSBuild
           BUILD_FLAGS: "-j2" # Ninja will otherwise use all cores (doesn't go well in GHA)
           CMAKE_CCACHE_EXE: "ccache"
@@ -158,6 +161,28 @@ jobs:
           CCACHE_COMPRESS: true
           CCACHE_COMPRESSLEVEL: 12
           CCACHE_MAXSIZE: 400M
+
+    - name: Build pyOpenMS
+      if: env.BUILD_PYOPENMS == 'true'
+      shell: bash
+      run: |
+          cd $GITHUB_WORKSPACE/OpenMS/bld/
+          ninja pyopenms
+          
+    - name: Package pyOpenMS wheel
+      if: env.BUILD_PYOPENMS == 'true'
+      shell: bash
+      run: |
+          cd $GITHUB_WORKSPACE/OpenMS/bld/pyOpenMS
+          python -m pip install wheel
+          python setup.py bdist_wheel
+          
+    - name: Upload pyOpenMS wheel as artifact
+      if: env.BUILD_PYOPENMS == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: pyopenms-wheel
+        path: ${{ github.workspace }}/OpenMS/bld/pyOpenMS/dist/*.whl
 
     - name: Test Windows
       shell: bash
@@ -251,8 +276,26 @@ jobs:
       run: |
         sed -i 's/#import site/import site/' python-${{ env.PYTHON_VERSION }}/python311._pth
 
-    - name: Install Required Packages
-      run: .\python-${{ env.PYTHON_VERSION }}\python -m pip install --force-reinstall -r requirements.txt --no-warn-script-location
+    - name: Download pyOpenMS wheel (if built from source)
+      if: env.BUILD_PYOPENMS == 'true'
+      uses: actions/download-artifact@v4
+      with:
+        name: pyopenms-wheel
+        path: pyopenms-wheel
+
+    - name: Install pyOpenMS from wheel (if built from source)
+      if: env.BUILD_PYOPENMS == 'true'
+      run: |
+        .\python-${{ env.PYTHON_VERSION }}\python -m pip install pyopenms-wheel/*.whl --no-warn-script-location
+
+    - name: Install Required Packages (excluding pyOpenMS if built from source)
+      run: |
+        if ("${{ env.BUILD_PYOPENMS }}" -eq "true") {
+          Get-Content requirements.txt | Where-Object { $_ -notmatch '^pyopenms' } | Set-Content requirements_filtered.txt
+          .\python-${{ env.PYTHON_VERSION }}\python -m pip install --force-reinstall -r requirements_filtered.txt --no-warn-script-location
+        } else {
+          .\python-${{ env.PYTHON_VERSION }}\python -m pip install --force-reinstall -r requirements.txt --no-warn-script-location
+        }
 
     - name: Set to offline deployment
       run: |

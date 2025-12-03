@@ -3,6 +3,8 @@ on:
   workflow_dispatch:
 env:
   OPENMS_VERSION: 3.2.0 
+  # Control whether to build pyOpenMS from source (true) or use pip (false). Default: false
+  BUILD_PYOPENMS: false
   # Define needed TOPP tools here
   TOPP_TOOLS: "FeatureFinderMetabo MetaboliteAdductDecharger SiriusExport"
 
@@ -133,6 +135,7 @@ jobs:
           BUILD_TYPE: "Release"
           OPENMP: "Off"
           USE_STATIC_BOOST: "On"
+          PYOPENMS: "${{ env.BUILD_PYOPENMS == 'true' && 'ON' || 'OFF' }}"
           #  BUILD_FLAGS: "-p:CL_MPCount=2" # For VS Generator and MSBuild
           BUILD_FLAGS: "-j2" # Ninja will otherwise use all cores (doesn't go well in GHA)
           CMAKE_CCACHE_EXE: "ccache"
@@ -141,6 +144,28 @@ jobs:
           CCACHE_COMPRESS: true
           CCACHE_COMPRESSLEVEL: 12
           CCACHE_MAXSIZE: 400M
+
+    - name: Build pyOpenMS
+      if: env.BUILD_PYOPENMS == 'true'
+      shell: bash
+      run: |
+          cd $GITHUB_WORKSPACE/OpenMS/bld/
+          ninja pyopenms
+          
+    - name: Package pyOpenMS wheel
+      if: env.BUILD_PYOPENMS == 'true'
+      shell: bash
+      run: |
+          cd $GITHUB_WORKSPACE/OpenMS/bld/pyOpenMS
+          python -m pip install wheel
+          python setup.py bdist_wheel
+          
+    - name: Upload pyOpenMS wheel as artifact
+      if: env.BUILD_PYOPENMS == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: pyopenms-wheel
+        path: ${{ github.workspace }}/OpenMS/bld/pyOpenMS/dist/*.whl
 
     - name: Package
       shell: bash
@@ -197,6 +222,13 @@ jobs:
       with:
         python-version: ${{ env.PYTHON_VERSION }}
 
+    - name: Download pyOpenMS wheel (if built from source)
+      if: env.BUILD_PYOPENMS == 'true'
+      uses: actions/download-artifact@v4
+      with:
+        name: pyopenms-wheel
+        path: pyopenms-wheel
+
     - name: Setup virtual environment
       shell: cmd
       run: |
@@ -204,7 +236,12 @@ jobs:
 
         call myenv\Scripts\activate.bat   
 
-        pip install -r requirements.txt
+        if "${{ env.BUILD_PYOPENMS }}" == "true" (
+          pip install pyopenms-wheel/*.whl
+          pip install -r requirements.txt
+        ) else (
+          pip install -r requirements.txt
+        )
 
         pip install pyinstaller
 
