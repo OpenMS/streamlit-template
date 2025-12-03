@@ -188,6 +188,7 @@ RUN python -m pip install --upgrade pip && \
 
 # Copy pyOpenMS from build stage (built with mamba in compile-openms stage)
 # Source path is from mamba environment, target is system site-packages
+# The wildcard matches both pyopenms/ package dir and pyopenms-*.dist-info/ metadata
 COPY --from=compile-openms /root/miniforge3/envs/streamlit-env/lib/python3.10/site-packages/pyopenms* /usr/local/lib/python3.10/site-packages/
 
 # Create workdir and copy over all streamlit related files/folders.
