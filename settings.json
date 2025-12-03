@@ -1,0 +1,20 @@
+{
+    "app-name": "OpenMS WebApp Template",
+    "github-user": "OpenMS",
+    "version": "1.1.1",
+    "repository-name": "streamlit-template",
+    "analytics": {
+        "google-analytics": {
+            "enabled": false,
+            "tag": ""
+        },
+        "piwik-pro": {
+            "enabled": true,
+            "tag": "57690c44-d635-43b0-ab43-f8bd3064ca06"
+        }
+    },
+    "online_deployment": false,
+    "enable_workspaces": true,
+    "test": true,
+    "workspaces_dir": ".."
+}

@@ -1,0 +1,10 @@
+{
+    "example-workflow-selected-mzML-files": [],
+    "image-format": "svg",
+    "2D-map-intensity-cutoff": 5000,
+
+    "example-x-dimension": 10,
+    "example-y-dimension": 5,
+
+    "controllo": false
+}

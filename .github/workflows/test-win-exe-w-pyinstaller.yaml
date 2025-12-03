@@ -1,0 +1,103 @@
+name: Test streamlit executable for Windows with pyinstaller
+on: 
+  workflow_dispatch:
+
+jobs:
+  build-win-executable-with-pyinstaller:
+    runs-on: windows-latest 
+    
+    env:
+      PYTHON_VERSION: 3.11.0
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4 
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Setup virtual environment
+      shell: cmd 
+      run: |
+        python -m venv myenv
+        call myenv\Scripts\activate.bat   
+        pip install -r requirements.txt
+        pip install pyinstaller   
+        
+    - name: Check if myenv is activated
+      shell: cmd 
+      run: |
+        call myenv\Scripts\activate.bat
+        if "%VIRTUAL_ENV%" == "" (
+          echo myenv is not activated
+        ) else (
+          echo myenv is activated
+        )
+        
+    - name: Debug Environment
+      shell: cmd
+      run: |
+        echo Current directory: %CD%
+        echo Path to myenv: %CD%\myenv
+        dir %CD%\myenv\Scripts
+
+    - name: Write function to cli.py
+      shell: bash
+      run: |
+        head -n -2 D:/a/streamlit-template/streamlit-template/myenv/Lib/site-packages/streamlit/web/cli.py > temp_cli.py
+
+        cat << EOF >> temp_cli.py
+        def _main_run_clExplicit(file, command_line, args=[], flag_options=[]):
+            main._is_running_with_streamlit = True
+            bootstrap.run(file, command_line, args, flag_options)
+
+
+        if __name__ == "__main__":
+            main()
+        EOF
+
+        mv temp_cli.py D:/a/streamlit-template/streamlit-template/myenv/Lib/site-packages/streamlit/web/cli.py 
+
+    - name: Compile app with pyinstaller
+      shell: cmd
+      run: |
+        call myenv\Scripts\activate.bat 
+        pyinstaller --onefile --additional-hooks-dir ./hooks run_app.py --clean
+
+    - name: Copy everything to dist directory
+      shell: bash
+      run: | 
+        cp -r .streamlit dist/.streamlit
+        cp -r content dist/content
+        cp -r src dist/src
+        cp -r example-data dist/example-data
+        cp -r assets dist/assets
+        cp app.py dist/
+
+    - name: Modify .spec file
+      shell: bash
+      run: |
+        cp run_app_temp.spec run_app.spec
+   
+    - name: Make executable
+      shell: cmd
+      run: |
+        call myenv\Scripts\activate.bat
+        pyinstaller run_app.spec --clean
+
+    - name: Copy artifacts
+      shell: bash
+      run: |
+        mkdir artifacts
+        cp -r dist artifacts/
+        cp -r build artifacts/
+        cp run_app.spec artifacts/ 
+        cp D:/a/streamlit-template/streamlit-template/myenv/Lib/site-packages/streamlit/web/cli.py artifacts/ 
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: Outfolders
+        path: artifacts
