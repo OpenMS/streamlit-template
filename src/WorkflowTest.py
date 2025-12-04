@@ -43,18 +43,18 @@ class WorkflowTest(WorkflowManager):
 
         # Create tabs for different analysis steps.
         t = st.tabs(
-            ["**CometAdapter**", "**ProteomicsLFQ**"]
+            ["**CometAdapter**", "**PercolatorAdapter**", "**ProteomicsLFQ**"]
             )
         with t[0]:
             # Parameters for FeatureFinderMetabo TOPP tool.
             self.ui.input_TOPP(
                 "CometAdapter"
             )
-        # with t[1]:
-        #     # Parameters for MetaboliteAdductDecharger TOPP tool.
-        #     self.ui.input_TOPP(
-        #         "PercolatorAdapter"
-        #     )
+        with t[1]:
+            # Parameters for MetaboliteAdductDecharger TOPP tool.
+            self.ui.input_TOPP(
+                "PercolatorAdapter"
+            )
         with t[1]:
             self.ui.input_TOPP("ProteomicsLFQ")
 
@@ -85,22 +85,18 @@ class WorkflowTest(WorkflowManager):
             str(Path(self.workflow_dir, "results", "comet_results", Path(f).stem + ".idXML"))
             for f in in_mzML
         ]
-        # percolator_results = [
-        #     str(Path(self.workflow_dir, "results", "percolator_results", Path(f).stem + ".idXML"))
-        #     for f in comet_results
-        # ]
-        # quantified = [
-        #     str(Path(self.workflow_dir, "results", "quant_results", Path(f).stem + ".tsv"))
-        #     for f in percolator_results
-        # ]
+        percolator_results = [
+            str(Path(self.workflow_dir, "results", "percolator_results", Path(f).stem + ".idXML"))
+            for f in comet_results
+        ]
         quantified = [
             str(Path(self.workflow_dir, "results", "quant_results", Path(f).stem + ".tsv"))
-            for f in comet_results
+            for f in percolator_results
         ]
 
         # 출력 디렉토리 생성
         Path(self.workflow_dir, "results", "comet_results").mkdir(parents=True, exist_ok=True)
-        # Path(self.workflow_dir, "results", "percolator_results").mkdir(parents=True, exist_ok=True)
+        Path(self.workflow_dir, "results", "percolator_results").mkdir(parents=True, exist_ok=True)
         Path(self.workflow_dir, "results", "quant_results").mkdir(parents=True, exist_ok=True)
 
         # 🔍 파일 리스트 길이 및 내용 확인
@@ -117,7 +113,7 @@ class WorkflowTest(WorkflowManager):
         self.logger.log(f"comet_results type: {type(comet_results)}")
         self.logger.log(f"comet_results content: {comet_results}")
         
-        # self.logger.log(f"percolator_results: {len(percolator_results)} files")
+        self.logger.log(f"percolator_results: {len(percolator_results)} files")
         self.logger.log(f"quantified: {len(quantified)} files")
         self.logger.log("=" * 50)
         
@@ -172,37 +168,37 @@ class WorkflowTest(WorkflowManager):
         # ----------------------------
         # 2️⃣ PercolatorAdapter
         # ----------------------------
-        # self.logger.log("Running PercolatorAdapter...")
-        # self.logger.log(f"PercolatorAdapter inputs:")
-        # self.logger.log(f"  - in: {comet_results}")
-        # self.logger.log(f"  - out: {percolator_results}")
+        self.logger.log("Running PercolatorAdapter...")
+        self.logger.log(f"PercolatorAdapter inputs:")
+        self.logger.log(f"  - in: {comet_results}")
+        self.logger.log(f"  - out: {percolator_results}")
         
-        # self.executor.run_topp(
-        #     "PercolatorAdapter",
-        #     {"in": comet_results, "out": percolator_results}
-        # )
+        self.executor.run_topp(
+            "PercolatorAdapter",
+            {"in": comet_results, "out": percolator_results}
+        )
         
-        # # Check if output was created
-        # if Path(percolator_results[0]).exists():
-        #     self.logger.log(f"✓ PercolatorAdapter output created: {percolator_results[0]}")
-        #     st.success(f"✓ PercolatorAdapter completed")
-        # else:
-        #     self.logger.log(f"✗ PercolatorAdapter output NOT found: {percolator_results[0]}")
-        #     st.error(f"✗ PercolatorAdapter failed - output file not created")
-        #     st.stop()
+        # Check if output was created
+        if Path(percolator_results[0]).exists():
+            self.logger.log(f"✓ PercolatorAdapter output created: {percolator_results[0]}")
+            st.success(f"✓ PercolatorAdapter completed")
+        else:
+            self.logger.log(f"✗ PercolatorAdapter output NOT found: {percolator_results[0]}")
+            st.error(f"✗ PercolatorAdapter failed - output file not created")
+            st.stop()
 
         # ----------------------------
         # 3️⃣ ProteomicsLFQ
         # ----------------------------
         self.logger.log("Running ProteomicsLFQ...")
         self.logger.log(f"ProteomicsLFQ inputs:")
-        # self.logger.log(f"  - in: {percolator_results}")
+        self.logger.log(f"  - in: {percolator_results}")
         self.logger.log(f"  - in: {comet_results}")
         self.logger.log(f"  - out: {quantified}")
         
         self.executor.run_topp(
             "ProteomicsLFQ",
-            {"in": comet_results, "out": quantified}
+            {"in": percolator_results, "out": quantified}
         )
         
         # Check if output was created
