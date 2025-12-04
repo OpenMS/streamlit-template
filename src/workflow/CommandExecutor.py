@@ -164,13 +164,13 @@ class CommandExecutor:
                 else:
                     command += [value[i]]
             # Add non-default TOPP tool parameters
-            if tool in params.keys():
-                for k, v in params[tool].items():
-                    command += [f"-{k}"]
-                    if isinstance(v, str) and "\n" in v:
-                        command += v.split("\n")
-                    else:
-                        command += [str(v)]
+            # if tool in params.keys():
+            #     for k, v in params[tool].items():
+            #         command += [f"-{k}"]
+            #         if isinstance(v, str) and "\n" in v:
+            #             command += v.split("\n")
+            #         else:
+            #             command += [str(v)]
             # Add custom parameters
             for k, v in custom_params.items():
                 command += [f"-{k}"]
@@ -185,6 +185,11 @@ class CommandExecutor:
             ini_path = Path(self.parameter_manager.ini_dir, tool + ".ini")
             if ini_path.exists():
                 command += ["-ini", str(ini_path)]
+
+        print("\n=== FINAL GENERATED TOPP COMMAND(S) ===")
+        for idx, cmd in enumerate(commands, start=1):
+            print(f"[Command {idx}] {' '.join(cmd)}")
+        print("====================================\n")
 
         # Run command(s)
         if len(commands) == 1:
