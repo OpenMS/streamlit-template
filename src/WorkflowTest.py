@@ -21,7 +21,7 @@ class WorkflowTest(WorkflowManager):
         with t[0]:
             self.ui.upload_widget(
                 key="mzML-files",
-                name="MS spectra files",
+                name="MS data",
                 file_types="mzML",
                 fallback=[str(f) for f in Path("example-data", "mzML").glob("*.mzML")],
             )
@@ -43,23 +43,23 @@ class WorkflowTest(WorkflowManager):
 
         # Create tabs for different analysis steps.
         t = st.tabs(
-            ["**CometAdapter**", "**PercolatorAdapter**", "**ProteomicsLFQ**"]
+            ["**CometAdapter**", "**ProteomicsLFQ**"]
             )
         with t[0]:
             # Parameters for FeatureFinderMetabo TOPP tool.
             self.ui.input_TOPP(
                 "CometAdapter"
             )
+        # with t[1]:
+        #     # Parameters for MetaboliteAdductDecharger TOPP tool.
+        #     self.ui.input_TOPP(
+        #         "PercolatorAdapter"
+        #     )
         with t[1]:
-            # Parameters for MetaboliteAdductDecharger TOPP tool.
-            self.ui.input_TOPP(
-                "PercolatorAdapter"
-            )
-        with t[2]:
             self.ui.input_TOPP("ProteomicsLFQ")
 
     def execution(self) -> None:
-        comet_exe = "C:/Users/admin/Desktop/comet_2021010/comet.2021010.win64"
+        comet_exe = "C:/Users/admin/Desktop/comet_2021010/comet.2021010.win64.exe"
 
         # Check input mzML
         if not self.params.get("mzML-files"):
@@ -80,37 +80,138 @@ class WorkflowTest(WorkflowManager):
         self.logger.log(f"Input mzML files: {len(in_mzML)}")
         self.logger.log(f"FASTA: {fasta_file}")
 
-        # Prepare output filenames
-        comet_results = self.file_manager.get_files(in_mzML, set_file_type="idXML", set_results_dir="comet_results")
-        percolator_results = self.file_manager.get_files(comet_results, set_file_type="idXML", set_results_dir="percolator_results")
-        quantified = self.file_manager.get_files(percolator_results, set_file_type="tsv", set_results_dir="quant_results")
+        # Prepare output filenames - 입력 파일 개수만큼만 생성
+        comet_results = [
+            str(Path(self.workflow_dir, "results", "comet_results", Path(f).stem + ".idXML"))
+            for f in in_mzML
+        ]
+        # percolator_results = [
+        #     str(Path(self.workflow_dir, "results", "percolator_results", Path(f).stem + ".idXML"))
+        #     for f in comet_results
+        # ]
+        # quantified = [
+        #     str(Path(self.workflow_dir, "results", "quant_results", Path(f).stem + ".tsv"))
+        #     for f in percolator_results
+        # ]
+        quantified = [
+            str(Path(self.workflow_dir, "results", "quant_results", Path(f).stem + ".tsv"))
+            for f in comet_results
+        ]
+
+        # 출력 디렉토리 생성
+        Path(self.workflow_dir, "results", "comet_results").mkdir(parents=True, exist_ok=True)
+        # Path(self.workflow_dir, "results", "percolator_results").mkdir(parents=True, exist_ok=True)
+        Path(self.workflow_dir, "results", "quant_results").mkdir(parents=True, exist_ok=True)
+
+        # 🔍 파일 리스트 길이 및 내용 확인
+        self.logger.log("=" * 50)
+        self.logger.log("FILE LIST LENGTH CHECK:")
+        self.logger.log(f"in_mzML: {len(in_mzML)} files")
+        self.logger.log(f"in_mzML type: {type(in_mzML)}")
+        self.logger.log(f"in_mzML content: {in_mzML}")
+        
+        self.logger.log(f"fasta_file type: {type(fasta_file)}")
+        self.logger.log(f"fasta_file content: {fasta_file}")
+        
+        self.logger.log(f"comet_results: {len(comet_results)} files")
+        self.logger.log(f"comet_results type: {type(comet_results)}")
+        self.logger.log(f"comet_results content: {comet_results}")
+        
+        # self.logger.log(f"percolator_results: {len(percolator_results)} files")
+        self.logger.log(f"quantified: {len(quantified)} files")
+        self.logger.log("=" * 50)
+        
+        # Streamlit에도 표시
+        st.info("📊 **파일 리스트 상세 확인:**")
+        st.write(f"- in_mzML: **{len(in_mzML)}** files")
+        st.code(f"Type: {type(in_mzML)}\nContent: {in_mzML}")
+        
+        st.write(f"- fasta_file: **1** file")
+        st.code(f"Type: {type(fasta_file)}\nContent: {fasta_file}")
+        
+        st.write(f"- comet_results: **{len(comet_results)}** files")
+        st.code(f"Type: {type(comet_results)}\nContent: {comet_results}")
 
         # ----------------------------
         # 1️⃣ CometAdapter
         # ----------------------------
         self.logger.log("Running CometAdapter...")
-        self.executor.run_topp(
-            "CometAdapter",
-            {"in": in_mzML, "database": fasta_file, "out": comet_results, "executable": comet_exe},
-        )
+        self.logger.log(f"CometAdapter inputs:")
+        self.logger.log(f"  - in: {in_mzML}")
+        self.logger.log(f"  - database: {[fasta_file]}")
+        self.logger.log(f"  - out: {comet_results}")
+        self.logger.log(f"  - executable: {[comet_exe]}")
+        
+        # Check if executable exists
+        if not Path(comet_exe).exists():
+            error_msg = f"ERROR: Comet executable not found at: {comet_exe}"
+            self.logger.log(error_msg)
+            st.error(error_msg)
+            st.stop()
+        
+        try:
+            self.executor.run_topp(
+                "CometAdapter",
+                {"in": in_mzML, "database": [fasta_file], "out": comet_results, "comet_executable": [comet_exe]},
+            )
+        except Exception as e:
+            self.logger.log(f"ERROR in CometAdapter: {str(e)}")
+            st.error(f"CometAdapter failed: {str(e)}")
+            st.stop()
+        
+        # Check if output was created
+        if Path(comet_results[0]).exists():
+            self.logger.log(f"✓ CometAdapter output created: {comet_results[0]}")
+            st.success(f"✓ CometAdapter completed")
+        else:
+            self.logger.log(f"✗ CometAdapter output NOT found: {comet_results[0]}")
+            st.error(f"✗ CometAdapter failed - output file not created. Check if CometAdapter ran successfully.")
+            st.info("💡 Possible issues:\n- Comet executable path incorrect\n- Input mzML file format issue\n- FASTA database format issue\n- Check log files for detailed error messages")
+            st.stop()
 
         # ----------------------------
         # 2️⃣ PercolatorAdapter
         # ----------------------------
-        self.logger.log("Running PercolatorAdapter...")
-        self.executor.run_topp(
-            "PercolatorAdapter",
-            {"in": comet_results, "out": percolator_results}
-        )
+        # self.logger.log("Running PercolatorAdapter...")
+        # self.logger.log(f"PercolatorAdapter inputs:")
+        # self.logger.log(f"  - in: {comet_results}")
+        # self.logger.log(f"  - out: {percolator_results}")
+        
+        # self.executor.run_topp(
+        #     "PercolatorAdapter",
+        #     {"in": comet_results, "out": percolator_results}
+        # )
+        
+        # # Check if output was created
+        # if Path(percolator_results[0]).exists():
+        #     self.logger.log(f"✓ PercolatorAdapter output created: {percolator_results[0]}")
+        #     st.success(f"✓ PercolatorAdapter completed")
+        # else:
+        #     self.logger.log(f"✗ PercolatorAdapter output NOT found: {percolator_results[0]}")
+        #     st.error(f"✗ PercolatorAdapter failed - output file not created")
+        #     st.stop()
 
         # ----------------------------
         # 3️⃣ ProteomicsLFQ
         # ----------------------------
         self.logger.log("Running ProteomicsLFQ...")
+        self.logger.log(f"ProteomicsLFQ inputs:")
+        # self.logger.log(f"  - in: {percolator_results}")
+        self.logger.log(f"  - in: {comet_results}")
+        self.logger.log(f"  - out: {quantified}")
+        
         self.executor.run_topp(
             "ProteomicsLFQ",
-            {"in": percolator_results, "out": quantified}
+            {"in": comet_results, "out": quantified}
         )
+        
+        # Check if output was created
+        if Path(quantified[0]).exists():
+            self.logger.log(f"✓ ProteomicsLFQ output created: {quantified[0]}")
+            st.success(f"✓ ProteomicsLFQ completed")
+        else:
+            self.logger.log(f"✗ ProteomicsLFQ output NOT found: {quantified[0]}")
+            st.error(f"✗ ProteomicsLFQ failed - output file not created")
 
         self.logger.log("Pipeline Completed Successfully.")
         st.success("🎉 Processing complete!")
@@ -137,10 +238,19 @@ class WorkflowTest(WorkflowManager):
                     "💡 Select one ore more rows in the table to show a barplot with intensities."
                 )
 
+        # Look for output in quant_results directory
         file = Path(
-            self.workflow_dir, "results", "feature-linking", "feature_matrix.tsv"
+            self.workflow_dir, "results", "quant_results", "protein_abundances.tsv"
         )
+        if not file.exists():
+            # Try alternative output file
+            result_dir = Path(self.workflow_dir, "results", "quant_results")
+            if result_dir.exists():
+                tsv_files = list(result_dir.glob("*.tsv"))
+                if tsv_files:
+                    file = tsv_files[0]
+        
         if file.exists():
             show_consensus_features()
         else:
-            st.warning("No consensus feature file found. Please run workflow first.")
+            st.warning("No quantification results found. Please run workflow first.")
