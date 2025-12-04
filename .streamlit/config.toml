@@ -5,7 +5,7 @@ gatherUsageStats = false
 developmentMode = false
 
 [server]
-maxUploadSize =  200 #MB
+maxUploadSize = 1000 #MB
 port = 8501 # should be same as configured in deployment repo
 
 [theme]
