@@ -137,3 +137,4 @@ urllib3==2.3.0
 watchdog==6.0.0
     # via streamlit
 xlsxwriter
+streamlit_plotly_events
