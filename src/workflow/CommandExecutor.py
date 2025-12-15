@@ -77,6 +77,7 @@ class CommandExecutor:
         self.logger.log(f"Running command:\n"+' '.join(command)+"\nWaiting for command to finish...", 1)   
         start_time = time.time()
         
+        print("COMMAND:", command)
         # Execute the command
         process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         child_pid = process.pid
@@ -164,13 +165,13 @@ class CommandExecutor:
                 else:
                     command += [value[i]]
             # Add non-default TOPP tool parameters
-            # if tool in params.keys():
-            #     for k, v in params[tool].items():
-            #         command += [f"-{k}"]
-            #         if isinstance(v, str) and "\n" in v:
-            #             command += v.split("\n")
-            #         else:
-            #             command += [str(v)]
+            if tool in params.keys():
+                for k, v in params[tool].items():
+                    command += [f"-{k}"]
+                    if isinstance(v, str) and "\n" in v:
+                        command += v.split("\n")
+                    else:
+                        command += [str(v)]
             # Add custom parameters
             for k, v in custom_params.items():
                 command += [f"-{k}"]
