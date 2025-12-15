@@ -142,19 +142,8 @@ class WorkflowTest(WorkflowManager):
             {
                 "in": in_mzML, 
                 "out": comet_results, 
-                "database": [fasta_file], 
-                "missed_cleavages": ["2"],
-                "min_peptide_length": ["6"],
-                "max_peptide_length": ["40"],
-                "num_hits": ["1"],
-                "num_enzyme_termini": ["fully"],
-                "enzyme": ["Trypsin"],
-                "precursor_charge": ["2:4"],
-                "max_variable_mods_in_peptide": ["3"],
-                "minimum_peaks": ["10"],
-                "PeptideIndexing:unmatched_action": ["warn"],
-                # "force": [],
-             }
+                "database": [fasta_file],
+            }
         )
 
         # Check if output was created
@@ -181,9 +170,6 @@ class WorkflowTest(WorkflowManager):
             {
                 "in": comet_results, 
                 "out": percolator_results,
-                "subset_max_train": ["300000"],
-                "decoy_pattern": ["DECOY_"],
-                "score_type": ["pep"]
             }
         )
         
