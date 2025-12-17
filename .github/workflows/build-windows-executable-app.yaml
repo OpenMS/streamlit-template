@@ -133,6 +133,7 @@ jobs:
           ENABLE_TOPP_TESTING: "ON"
           ENABLE_CLASS_TESTING: "ON"
           WITH_GUI: "OFF"
+          WITH_PARQUET: "OFF"
           ADDRESS_SANITIZER: "Off"
           BUILD_TYPE: "Release"
           OPENMP: "Off"
