@@ -9,7 +9,7 @@
 
 FROM ubuntu:22.04 AS setup-build-system
 ARG OPENMS_REPO=https://github.com/OpenMS/OpenMS.git
-ARG OPENMS_BRANCH=release/3.4.1
+ARG OPENMS_BRANCH=release/3.5.0
 ARG PORT=8501
 # GitHub token to download latest OpenMS executable for Windows from Github action artifact.
 ARG GITHUB_TOKEN

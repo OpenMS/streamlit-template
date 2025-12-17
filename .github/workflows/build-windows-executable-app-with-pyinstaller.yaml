@@ -2,7 +2,7 @@ name: Build executable for Windows with pyinstaller
 on:
   workflow_dispatch:
 env:
-  OPENMS_VERSION: 3.2.0 
+  OPENMS_VERSION: 3.5.0 
   # Define needed TOPP tools here
   TOPP_TOOLS: "FeatureFinderMetabo MetaboliteAdductDecharger SiriusExport"
 
