@@ -244,21 +244,25 @@ def captcha_control():
             st.image(data)
             c1, c2 = st.columns([70, 30])
             capta2_text = st.empty()
-            capta2_text = c1.text_input("Enter captcha text", max_chars=5)
+            capta2_text = c1.text_input("Enter captcha text", max_chars=5, key="captcha_input")
             c2.markdown("##")
             if c2.form_submit_button("Verify the code", type="primary"):
                 capta2_text = capta2_text.replace(" ", "")
                 # if the captcha is correct, the controllo session state is set to True
                 if st.session_state["Captcha"].lower() == capta2_text.lower().strip():
                     del st.session_state["Captcha"]
+                    if "captcha_input" in st.session_state:
+                        del st.session_state["captcha_input"]
                     col1.empty()
                     st.session_state["controllo"] = True
                     st.rerun()
                 else:
                     # if the captcha is wrong, the controllo session state is set to False and the captcha is regenerated
-                    st.error("🚨 Captch is wrong")
+                    st.error("🚨 CAPTCHA is wrong")
                     del st.session_state["Captcha"]
                     del st.session_state["controllo"]
+                    if "captcha_input" in st.session_state:
+                        del st.session_state["captcha_input"]
                     st.rerun()
             else:
                 # wait for the button click
