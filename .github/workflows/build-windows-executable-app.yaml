@@ -34,15 +34,13 @@ jobs:
         ref: release/${{ env.OPENMS_VERSION }}
         path: 'OpenMS'
 
-    - name: Install Qt
+    - name: Install Qt (Windows)
       uses: jurplel/install-qt-action@v4
       with:
-        version: '5.15.2' # 5.12.7 is broken https://bugreports.qt.io/browse/QTBUG-81715, > 5.15.2 is not available on official archives (https://github.com/miurahr/aqtinstall/issues/636)
-        host: 'windows' # default: win64_msvc2017_64
-        target: 'desktop'
-        install-deps: 'true'
+        version: '6.8.3'    ## Note this version is build with win64_msvc2022_64 and should always match what we use
+        arch: 'win64_msvc2022_64'
         cache: 'false'
-        aqtversion: '==3.1.*'
+        archives: 'qtsvg qtimageformats qtbase'
 
     # https://github.com/marketplace/actions/visual-studio-shell
     - name: Set up Visual Studio shell
@@ -126,7 +124,6 @@ jobs:
           bash OpenMS/tools/ci/capture-env.sh -v $GITHUB_WORKSPACE/OpenMS/bld/CMakeCache.txt
           ctest --output-on-failure -V -S $GITHUB_WORKSPACE/OpenMS/tools/ci/cibuild.cmake
       env:
-          #OS_PREFIX_PATH: "${{ env.Qt5_DIR }}/lib/cmake;${{ env.Qt5_DIR }}"
           OPENMS_CONTRIB_LIBS: "${{ github.workspace }}/OpenMS/contrib"
           CI_PROVIDER: "GitHub-Actions"
           CMAKE_GENERATOR: "Ninja"
