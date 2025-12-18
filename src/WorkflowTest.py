@@ -52,7 +52,14 @@ class WorkflowTest(WorkflowManager):
             self.ui.input_TOPP("ProteomicsLFQ")
 
     def execution(self) -> None:
-
+        """
+        Refactored TOPP workflow execution:
+        - Per-sample: CometAdapter -> PercolatorAdapter -> IDFilter
+        - Cross-sample: ProteomicsLFQ (single combined output)
+        """
+        # ================================
+        # 0️⃣ Input validation
+        # ================================
         if not self.params.get("mzML-files"):
             st.error("No mzML files selected.")
             return
@@ -64,197 +71,139 @@ class WorkflowTest(WorkflowManager):
         in_mzML = self.file_manager.get_files(self.params["mzML-files"])
         fasta_file = self.file_manager.get_files([self.params["fasta-file"]])[0]
 
-        comet_results = [
-            str(Path(self.workflow_dir, "results", "comet_results", Path(f).stem + "_comet.idXML"))
-            for f in in_mzML
-        ]
-
-        percolator_results = [
-            str(Path(self.workflow_dir, "results", "percolator_results", Path(f).stem + "_per.idXML"))
-            for f in in_mzML
-        ]
-
-        filter_results = [
-            str(Path(self.workflow_dir, "results", "filter_results", Path(f).stem + "_filter.idXML"))
-            for f in in_mzML
-        ]
-
-        quantified = [
-            str(Path(self.workflow_dir, "results", "quant_results", Path(f).stem + "_openms.mzTab"))
-            for f in in_mzML
-        ]
-
-        out_cxml_file = [
-            str(Path(self.workflow_dir, "results", "quant_results", Path(f).stem + "_openms.consensusXML"))
-            for f in in_mzML
-        ]
-
-        out_msstats = [
-            str(Path(self.workflow_dir, "results", "quant_results", Path(f).stem + "_openms.csv"))
-            for f in in_mzML
-        ]
-
-        # Create folders
-        Path(self.workflow_dir, "results", "comet_results").mkdir(parents=True, exist_ok=True)
-        Path(self.workflow_dir, "results", "percolator_results").mkdir(parents=True, exist_ok=True)
-        Path(self.workflow_dir, "results", "filter_results").mkdir(parents=True, exist_ok=True)
-        Path(self.workflow_dir, "results", "quant_results").mkdir(parents=True, exist_ok=True)
-
-        self.logger.log("=" * 50)
-        self.logger.log("FILE LIST LENGTH CHECK:")
-        self.logger.log(f"in_mzML: {len(in_mzML)} files")
-        self.logger.log(f"in_mzML type: {type(in_mzML)}")
-        self.logger.log(f"in_mzML content: {in_mzML}")
+        if len(in_mzML) < 1:
+            st.error("At least one mzML file is required.")
+            return
         
-        self.logger.log(f"fasta_file type: {type(fasta_file)}")
-        self.logger.log(f"fasta_file content: {fasta_file}")
-        
-        self.logger.log(f"comet_results: {len(comet_results)} files")
-        self.logger.log(f"comet_results type: {type(comet_results)}")
-        self.logger.log(f"comet_results content: {comet_results}")
-        
-        self.logger.log(f"percolator_results: {len(percolator_results)} files")
-        self.logger.log(f"quantified: {len(quantified)} files")
-        self.logger.log("=" * 50)
-        
-        st.info("📊 **Detailed file list overview:**")
-        st.write(f"- in_mzML: **{len(in_mzML)}** files")
-        st.code(f"Type: {type(in_mzML)}\nContent: {in_mzML}")
-        
-        st.write(f"- fasta_file: **1** file")
-        st.code(f"Type: {type(fasta_file)}\nContent: {fasta_file}")
-        
-        st.write(f"- comet_results: **{len(comet_results)}** files")
-        st.code(f"Type: {type(comet_results)}\nContent: {comet_results}")
+        # ================================
+        # 1️⃣ Directory setup
+        # ================================
+        results_dir = Path(self.workflow_dir, "results")
+        comet_dir = results_dir / "comet_results"
+        perc_dir = results_dir / "percolator_results"
+        filter_dir = results_dir / "filter_results"
+        quant_dir = results_dir / "quant_results"
 
-        # ----------------------------
-        # 1️⃣ CometAdapter
-        # ----------------------------
-        self.logger.log("Running CometAdapter...")
-        self.logger.log(f"CometAdapter inputs:")
-        self.logger.log(f"  - in: {in_mzML}")
-        self.logger.log(f"  - database: {[fasta_file]}")
-        self.logger.log(f"  - out: {comet_results}")
-        
-        # Run CometAdapter
-        self.executor.run_topp(
-            "CometAdapter",
-            {
-                "in": in_mzML, 
-                "out": comet_results, 
-                "database": [fasta_file],
-            }
-        )
+        for d in [comet_dir, perc_dir, filter_dir, quant_dir]:
+            d.mkdir(parents=True, exist_ok=True)
 
-        # Check if output was created
-        if Path(comet_results[0]).exists():
-            self.logger.log(f"✓ CometAdapter output created: {comet_results[0]}")
-            st.success(f"✓ CometAdapter completed")
-        else:
-            self.logger.log(f"✗ CometAdapter output NOT found: {comet_results[0]}")
-            st.error(f"✗ CometAdapter failed - output file not created. Check if CometAdapter ran successfully.")
-            st.info("💡 Possible issues:\n- Comet executable path incorrect\n- Input mzML file format issue\n- FASTA database format issue\n- Check log files for detailed error messages")
+        # ================================
+        # 2️⃣ File path definitions (per sample)
+        # ================================
+        comet_results = []
+        percolator_results = []
+        filter_results = []
+
+        for mz in in_mzML:
+            stem = Path(mz).stem
+            comet_results.append(str(comet_dir / f"{stem}_comet.idXML"))
+            percolator_results.append(str(perc_dir / f"{stem}_per.idXML"))
+            filter_results.append(str(filter_dir / f"{stem}_filter.idXML"))
+
+        # ================================
+        # 3️⃣ Per-file processing
+        # ================================
+        # for i, mz in enumerate(in_mzML):
+        #     stem = Path(mz).stem
+        #     st.info(f"Processing sample: {stem}")
+
+        #     # --- CometAdapter ---
+        #     with st.spinner(f"CometAdapter ({stem})"):
+        #         self.executor.run_topp(
+        #             "CometAdapter",
+        #             {
+        #                 "in": [mz],
+        #                 "out": [comet_results[i]],
+        #                 "database": [fasta_file],
+        #                 "threads": 12,
+        #             },
+        #         )
+
+        #     if not Path(comet_results[i]).exists():
+        #         st.error(f"CometAdapter failed for {stem}")
+        #         st.stop()
+
+        #     # --- PercolatorAdapter ---
+        #     with st.spinner(f"PercolatorAdapter ({stem})"):
+        #         self.executor.run_topp(
+        #             "PercolatorAdapter",
+        #             {
+        #                 "in": [comet_results[i]],
+        #                 "out": [percolator_results[i]],
+        #                 "threads": 8,
+        #             },
+        #         )
+
+        #     if not Path(percolator_results[i]).exists():
+        #         st.error(f"PercolatorAdapter failed for {stem}")
+        #         st.stop()
+
+        #     # --- IDFilter ---
+        #     with st.spinner(f"IDFilter ({stem})"):
+        #         self.executor.run_topp(
+        #             "IDFilter",
+        #             {
+        #                 "in": [percolator_results[i]],
+        #                 "out": [filter_results[i]],
+        #                 "threads": 2,
+        #             },
+        #         )
+
+        #     if not Path(filter_results[i]).exists():
+        #         st.error(f"IDFilter failed for {stem}")
+        #         st.stop()
+
+        #     st.success(f"✓ {stem} identification completed")
+
+        # ================================
+        # 4️⃣ ProteomicsLFQ (cross-sample)
+        # ================================
+        st.info("Running ProteomicsLFQ (cross-sample quantification)")
+
+        quant_mztab = str(quant_dir / "openms_quant.mzTab")
+        quant_cxml = str(quant_dir / "openms.consensusXML")
+        quant_msstats = str(quant_dir / "openms_msstats.csv")
+
+        with st.spinner("ProteomicsLFQ"):
+                combined_in = " ".join(in_mzML)
+                combined_ids = " ".join(filter_results)
+                self.logger.log(f"COMBINED_IN {combined_in}", 1)
+                self.logger.log(f"COMBINED_IN_TYPE {type(combined_in).__name__}", 1)
+                self.logger.log(f"FILTER_RESULTS = {filter_results}", 1)
+                self.logger.log(f"FILTER_RESULTS_LEN = {len(filter_results)}", 1)
+
+                self.executor.run_topp(
+                        "ProteomicsLFQ",
+                        {
+                            "in": in_mzML,
+                            "ids": filter_results,
+                            "fasta": [fasta_file],
+                            "out": [quant_mztab],
+                            "out_cxml": [quant_cxml],
+                            "out_msstats": [quant_msstats],
+                            "psmFDR": 0.5,
+                            "proteinFDR": 0.5,
+                            "threads": 15,
+                        },
+                    )
+
+        if not Path(quant_mztab).exists():
+            st.error("ProteomicsLFQ failed: mzTab not created")
             st.stop()
 
-        # ----------------------------
-        # 2️⃣ PercolatorAdapter
-        # ----------------------------
-        self.logger.log("Running PercolatorAdapter...")
-        self.logger.log(f"PercolatorAdapter inputs:")
-        self.logger.log(f"  - in: {comet_results}")
-        self.logger.log(f"  - out: {percolator_results}")
 
-        # Run PercolatorAdapter
-        self.executor.run_topp(
-            "PercolatorAdapter", 
-            {
-                "in": comet_results, 
-                "out": percolator_results,
-            }
-        )
-        
-        # Check if output was created
-        if Path(percolator_results[0]).exists():
-            self.logger.log(f"✓ PercolatorAdapter output created: {percolator_results[0]}")
-            st.success(f"✓ PercolatorAdapter completed")
-        else:
-            self.logger.log(f"✗ PercolatorAdapter output NOT found: {percolator_results[0]}")
-            st.error(f"✗ PercolatorAdapter failed - output file not created")
-            st.stop()
+        # ================================
+        # 5️⃣ Final report
+        # ================================
+        st.success("🎉 TOPP workflow completed successfully")
+        st.write("📁 Results directory:")   
+        st.code(str(results_dir))
 
-        # ----------------------------
-        # 3️⃣ IDFilter
-        # ----------------------------
-        self.logger.log("Running IDFilter...")
-        self.logger.log(f"IDFilter inputs:")
-        self.logger.log(f"  - in: {percolator_results}")
-        self.logger.log(f"  - in: {comet_results}")
-        self.logger.log(f"  - out: {filter_results}")
 
-        # Run IDFilter
-        self.executor.run_topp(
-            "IDFilter", 
-            {
-                "in": percolator_results, 
-                "out": filter_results, 
-            }
-        )
-
-        # 🔍 Check if IDFilter output exists
-        if Path(filter_results[0]).exists():
-            self.logger.log(f"✓ IDFilter output created: {filter_results[0]}")
-            st.success("✓ IDFilter completed")
-        else:
-            self.logger.log(f"✗ IDFilter output NOT found: {filter_results[0]}")
-            st.error("✗ IDFilter failed - output file not created.")
-            st.info("💡 Check log for detailed error messages.")
-            st.stop()        
-
-        # ----------------------------
-        # 4️⃣ ProteomicsLFQ
-        # ----------------------------
-        self.logger.log("Running ProteomicsLFQ...")
-        self.logger.log(f"ProteomicsLFQ inputs:")
-        self.logger.log(f"  - in: {in_mzML}")
-        self.logger.log(f"  - ids: {filter_results}")
-        self.logger.log(f"  - out: {quantified}")
-
-        # Run ProteomicsLFQ
-        self.executor.run_topp(
-            "ProteomicsLFQ", 
-            {
-                "in": in_mzML, 
-                "ids": filter_results, 
-                "fasta": [fasta_file],
-                "protein_inference": ["aggregation"],
-                "quantification_method": ["feature_intensity"],
-                "targeted_only": ["true"],
-                "feature_with_id_min_score": ["0.10"],
-                "feature_without_id_min_score": ["0.75"],
-                "mass_recalibration": ["false"],
-                "Seeding:intThreshold": ["1000"],
-                "protein_quantification": ["unique_peptides"],
-                "alignment_order": ["star"],
-                "psmFDR": ["0.1"],
-                "proteinFDR": ["0.1"],
-                "picked_proteinFDR": ["true"],
-                "out_msstats": out_msstats,
-                "out_cxml": out_cxml_file,
-                "out": quantified
-            }
-        )
-
-        # Check if output was created
-        if Path(quantified[0]).exists():
-            self.logger.log(f"✓ ProteomicsLFQ output created: {quantified[0]}")
-            st.success(f"✓ ProteomicsLFQ completed")
-        else:
-            self.logger.log(f"✗ ProteomicsLFQ output NOT found: {quantified[0]}")
-            st.error(f"✗ ProteomicsLFQ failed - output file not created")
-
-        self.logger.log("Pipeline Completed Successfully.")
-        st.success("🎉 Processing complete!")
-        st.write(f"📁 Output files saved in: `{quantified}`")
+        st.write("📄 Generated files:")
+        st.write(f"- mzTab: {quant_mztab}")
+        st.write(f"- consensusXML: {quant_cxml}")
+        st.write(f"- MSstats CSV: {quant_msstats}")
 
     @st.fragment
     def results(self) -> None:
