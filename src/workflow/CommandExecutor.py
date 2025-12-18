@@ -109,96 +109,147 @@ class CommandExecutor:
 
     def run_topp(self, tool: str, input_output: dict, custom_params: dict = {}) -> None:
         """
-        Constructs and executes commands for the specified tool OpenMS TOPP tool based on the given
-        input and output configurations. Ensures that all input/output file lists
-        are of the same length, or single strings, to maintain consistency in command
-        execution.
-        In many tools, a single input file is processed to produce a single output file.
-        When dealing with lists of input or output files, the convention is that
-        files are paired based on their order. For instance, the n-th input file is
-        assumed to correspond to the n-th output file, maintaining a structured
-        relationship between input and output data.
-        Supports executing commands either as single or multiple processes
-        based on the input size.
+        Constructs and executes commands for an OpenMS TOPP tool.
+        Supports both per-sample and cross-sample tools (e.g. ProteomicsLFQ).
 
-        Args:
-            tool (str): The executable name or path of the tool.
-            input_output (dict): A dictionary specifying the input/output parameter names (as key) and their corresponding file paths (as value).
-            custom_params (dict): A dictionary of custom parameters to pass to the tool.
+        - Per-sample tools: CometAdapter, PercolatorAdapter, IDFilter, ...
+        - Cross-sample tools: ProteomicsLFQ, IDMerger, FeatureLinkerUnlabeled, ...
 
-        Raises:
-            ValueError: If the lengths of input/output file lists are inconsistent,
-                        except for single string inputs.
+        Rules:
+        - multi-value flags (e.g. -in, -ids) are passed once with multiple values
+        - other flags determine the number of processes
         """
-        # check input: any input lists must be same length, other items can be a single string
-        # e.g. input_mzML : [list of n mzML files], output_featureXML : [list of n featureXML files], input_database : database.tsv
-        io_lengths = [len(v) for v in input_output.values() if len(v) > 1]
+
+        # Flags that accept multiple values in a single invocation
+        multi_value_flags = {"in", "ids"}
+
+        # --------------------------------------------------
+        # 1️⃣ Determine number of processes (exclude multi-value flags)
+        # --------------------------------------------------
+        io_lengths = [
+            len(v)
+            for k, v in input_output.items()
+            if (
+                k not in multi_value_flags
+                and isinstance(v, (list, tuple))
+                and len(v) > 1
+            )
+        ]
 
         if len(set(io_lengths)) > 1:
-            raise ValueError(f"ERROR in {tool} input/output.\nFile list lengths must be 1 and/or the same. They are {io_lengths}.")
+            raise ValueError(
+                f"ERROR in {tool} input/output.\n"
+                f"File list lengths must be 1 and/or the same. They are {io_lengths}."
+            )
 
-        if len(io_lengths) == 0:  # all inputs/outputs are length == 1
-            n_processes = 1
-        else:
-            n_processes = max(io_lengths)
+        # If nothing drives multiple processes → run once
+        n_processes = max(io_lengths) if io_lengths else 1
 
         commands = []
 
-        # Load parameters for non-defaults
+        # Load parameters (JSON-based UI parameters)
         params = self.parameter_manager.get_parameters_from_json()
-        # Construct commands for each process
+
+        # --------------------------------------------------
+        # 2️⃣ Build command(s)
+        # --------------------------------------------------
         for i in range(n_processes):
             command = [tool]
-            # Add input/output files
-            for k in input_output.keys():
-                # add key as parameter name
-                command += [f"-{k}"]
-                # get value from input_output dictionary
-                value = input_output[k]
-                # when multiple input/output files exist (e.g., multiple mzMLs and featureXMLs), but only one additional input file (e.g., one input database file)
+
+            for k, value in input_output.items():
+                flag = f"-{k}"
+
+                # ---- multi-value flags (cross-sample) ----
+                if k in multi_value_flags:
+                    command.append(flag)
+                    if isinstance(value, (list, tuple)):
+                        command += [str(x) for x in value]
+                    else:
+                        command.append(str(value))
+                    continue
+
+                # ---- normal per-sample flags ----
+                if not isinstance(value, (list, tuple)):
+                    command += [flag, str(value)]
+                    continue
+
                 if len(value) == 1:
-                    i = 0
-                # when the entry is a list of collected files to be passed as one [["sample1", "sample2"]]
-                if isinstance(value[i], list):
-                    command += value[i]
-                # standard case, files was a list of strings, take the file name at index
+                    elem = value[0]
                 else:
-                    command += [value[i]]
-            # Add non-default TOPP tool parameters
-            if tool in params.keys():
+                    elem = value[i]
+
+                if isinstance(elem, (list, tuple)):
+                    command.append(flag)
+                    command += [str(x) for x in elem]
+                else:
+                    command += [flag, str(elem)]
+
+            # --------------------------------------------------
+            # 3️⃣ Add tool parameters (from JSON)
+            # --------------------------------------------------
+            if tool in params:
                 for k, v in params[tool].items():
-                    command += [f"-{k}"]
+                    if v == "" or v is None or (isinstance(v, list) and len(v) == 0):
+                        continue
+
+                    if isinstance(v, bool):
+                        if v:
+                            command.append(f"-{k}")
+                        continue
+
+                    command.append(f"-{k}")
                     if isinstance(v, str) and "\n" in v:
                         command += v.split("\n")
-                    else:
-                        command += [str(v)]
-            # Add custom parameters
-            for k, v in custom_params.items():
-                command += [f"-{k}"]
-                if v:
-                    if isinstance(v, list):
+                    elif isinstance(v, list):
                         command += [str(x) for x in v]
                     else:
-                        command += [str(v)]
-            commands.append(command)
+                        command.append(str(v))
 
-            # check if a ini file has been written, if yes use it (contains custom defaults)
+            # --------------------------------------------------
+            # 4️⃣ Add custom parameters (explicit override)
+            # --------------------------------------------------
+            for k, v in custom_params.items():
+                if v == "" or v is None or (isinstance(v, list) and len(v) == 0):
+                    continue
+
+                if isinstance(v, bool):
+                    if v:
+                        command.append(f"-{k}")
+                    continue
+
+                command.append(f"-{k}")
+                if isinstance(v, list):
+                    command += [str(x) for x in v]
+                else:
+                    command.append(str(v))
+
+            # --------------------------------------------------
+            # 5️⃣ Add ini file if present
+            # --------------------------------------------------
             ini_path = Path(self.parameter_manager.ini_dir, tool + ".ini")
             if ini_path.exists():
                 command += ["-ini", str(ini_path)]
 
+            print("DEBUG command:", command)
+            commands.append(command)
+
+        # --------------------------------------------------
+        # 6️⃣ Final debug output
+        # --------------------------------------------------
         print("\n=== FINAL GENERATED TOPP COMMAND(S) ===")
         for idx, cmd in enumerate(commands, start=1):
             print(f"[Command {idx}] {' '.join(cmd)}")
         print("====================================\n")
 
-        # Run command(s)
+        # --------------------------------------------------
+        # 7️⃣ Execute
+        # --------------------------------------------------
         if len(commands) == 1:
             self.run_command(commands[0])
         elif len(commands) > 1:
             self.run_multiple_commands(commands)
         else:
-            raise Exception("No commands to execute.")
+            raise RuntimeError("No commands to execute.")
 
     def stop(self) -> None:
         """
