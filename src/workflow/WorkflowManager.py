@@ -44,15 +44,15 @@ class WorkflowManager:
         try:
             self.logger.log("STARTING WORKFLOW")
             results_dir = Path(self.workflow_dir, "results")
-            # if results_dir.exists():
-            #     shutil.rmtree(results_dir)
-            # results_dir.mkdir(parents=True)
+            if results_dir.exists():
+                shutil.rmtree(results_dir)
+            results_dir.mkdir(parents=True)
             self.execution()
             self.logger.log("WORKFLOW FINISHED")
         except Exception as e:
             self.logger.log(f"ERROR: {e}")
         # Delete pid dir path to indicate workflow is done
-        # shutil.rmtree(self.executor.pid_dir, ignore_errors=True)
+        shutil.rmtree(self.executor.pid_dir, ignore_errors=True)
 
     def show_file_upload_section(self) -> None:
         """

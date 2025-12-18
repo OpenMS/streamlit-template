@@ -107,103 +107,101 @@ class WorkflowTest(WorkflowManager):
         #     stem = Path(mz).stem
         #     st.info(f"Processing sample: {stem}")
 
-        #     # --- CometAdapter ---
-        #     with st.spinner(f"CometAdapter ({stem})"):
-        #         self.executor.run_topp(
-        #             "CometAdapter",
-        #             {
-        #                 "in": [mz],
-        #                 "out": [comet_results[i]],
-        #                 "database": [fasta_file],
-        #                 "threads": 12,
-        #             },
-        #         )
+            # --- CometAdapter ---
+        with st.spinner(f"CometAdapter ({stem})"):
+            self.executor.run_topp(
+                "CometAdapter",
+                {
+                    "in": in_mzML,
+                    "out": comet_results,
+                },
+                {"database": fasta_file},
+            )
 
-        #     if not Path(comet_results[i]).exists():
-        #         st.error(f"CometAdapter failed for {stem}")
-        #         st.stop()
+            # if not Path(comet_results[i]).exists():
+            #     st.error(f"CometAdapter failed for {stem}")
+            #     st.stop()
 
-        #     # --- PercolatorAdapter ---
-        #     with st.spinner(f"PercolatorAdapter ({stem})"):
-        #         self.executor.run_topp(
-        #             "PercolatorAdapter",
-        #             {
-        #                 "in": [comet_results[i]],
-        #                 "out": [percolator_results[i]],
-        #                 "threads": 8,
-        #             },
-        #         )
-
-        #     if not Path(percolator_results[i]).exists():
-        #         st.error(f"PercolatorAdapter failed for {stem}")
-        #         st.stop()
-
-        #     # --- IDFilter ---
-        #     with st.spinner(f"IDFilter ({stem})"):
-        #         self.executor.run_topp(
-        #             "IDFilter",
-        #             {
-        #                 "in": [percolator_results[i]],
-        #                 "out": [filter_results[i]],
-        #                 "threads": 2,
-        #             },
-        #         )
-
-        #     if not Path(filter_results[i]).exists():
-        #         st.error(f"IDFilter failed for {stem}")
-        #         st.stop()
-
-        #     st.success(f"✓ {stem} identification completed")
-
-        # ================================
-        # 4️⃣ ProteomicsLFQ (cross-sample)
-        # ================================
-        st.info("Running ProteomicsLFQ (cross-sample quantification)")
-
-        quant_mztab = str(quant_dir / "openms_quant.mzTab")
-        quant_cxml = str(quant_dir / "openms.consensusXML")
-        quant_msstats = str(quant_dir / "openms_msstats.csv")
-
-        with st.spinner("ProteomicsLFQ"):
-                combined_in = " ".join(in_mzML)
-                combined_ids = " ".join(filter_results)
-                self.logger.log(f"COMBINED_IN {combined_in}", 1)
-                self.logger.log(f"COMBINED_IN_TYPE {type(combined_in).__name__}", 1)
-                self.logger.log(f"FILTER_RESULTS = {filter_results}", 1)
-                self.logger.log(f"FILTER_RESULTS_LEN = {len(filter_results)}", 1)
-
+            # --- PercolatorAdapter ---
+            with st.spinner(f"PercolatorAdapter ({stem})"):
                 self.executor.run_topp(
-                        "ProteomicsLFQ",
-                        {
-                            "in": in_mzML,
-                            "ids": filter_results,
-                            "fasta": [fasta_file],
-                            "out": [quant_mztab],
-                            "out_cxml": [quant_cxml],
-                            "out_msstats": [quant_msstats],
-                            "psmFDR": 0.5,
-                            "proteinFDR": 0.5,
-                            "threads": 15,
-                        },
-                    )
+                    "PercolatorAdapter",
+                    {
+                        "in": comet_results,
+                        "out": percolator_results
+                    }
+                
+                )
+           
+            # if not Path(percolator_results[i]).exists():
+            #     st.error(f"PercolatorAdapter failed for {stem}")
+            #     st.stop()
 
-        if not Path(quant_mztab).exists():
-            st.error("ProteomicsLFQ failed: mzTab not created")
-            st.stop()
+            # --- IDFilter ---
+            with st.spinner(f"IDFilter ({stem})"):
+                self.executor.run_topp(
+                    "IDFilter",
+                    {
+                        "in": percolator_results,
+                        "out": filter_results
+                    },
+                )
+
+            # if not Path(filter_results[i]).exists():
+            #     st.error(f"IDFilter failed for {stem}")
+            #     st.stop()
+
+            st.success(f"✓ {stem} identification completed")
+
+        # # ================================
+        # # 4️⃣ ProteomicsLFQ (cross-sample)
+        # # ================================
+        # st.info("Running ProteomicsLFQ (cross-sample quantification)")
+
+        # quant_mztab = str(quant_dir / "openms_quant.mzTab")
+        # quant_cxml = str(quant_dir / "openms.consensusXML")
+        # quant_msstats = str(quant_dir / "openms_msstats.csv")
+
+        # with st.spinner("ProteomicsLFQ"):
+        #         combined_in = " ".join(in_mzML)
+        #         combined_ids = " ".join(filter_results)
+        #         self.logger.log(f"COMBINED_IN {combined_in}", 1)
+        #         self.logger.log(f"COMBINED_IN_TYPE {type(combined_in).__name__}", 1)
+        #         self.logger.log(f"FILTER_RESULTS = {filter_results}", 1)
+        #         self.logger.log(f"FILTER_RESULTS_LEN = {len(filter_results)}", 1)
+
+        #         self.executor.run_topp(
+        #                 "ProteomicsLFQ",
+        #                 {
+        #                     "in": in_mzML,
+        #                     "ids": filter_results,
+        #                     "fasta": [fasta_file],
+        #                     "out": [quant_mztab],
+        #                     "out_cxml": [quant_cxml],
+        #                     "out_msstats": [quant_msstats],
+        #                     "psmFDR": 0.5,
+        #                     "proteinFDR": 0.5,
+        #                     "threads": 15,
+        #                 },
+        #             )
+
+        # if not Path(quant_mztab).exists():
+        #     st.error("ProteomicsLFQ failed: mzTab not created")
+        #     st.stop()
 
 
         # ================================
         # 5️⃣ Final report
-        # ================================
-        st.success("🎉 TOPP workflow completed successfully")
-        st.write("📁 Results directory:")   
-        st.code(str(results_dir))
+        # # ================================
+        # st.success("🎉 TOPP workflow completed successfully")
+        # st.write("📁 Results directory:")   
+        # st.code(str(results_dir))
 
 
-        st.write("📄 Generated files:")
-        st.write(f"- mzTab: {quant_mztab}")
-        st.write(f"- consensusXML: {quant_cxml}")
-        st.write(f"- MSstats CSV: {quant_msstats}")
+        # st.write("📄 Generated files:")
+        # st.write(f"- mzTab: {quant_mztab}")
+        # st.write(f"- consensusXML: {quant_cxml}")
+        # st.write(f"- MSstats CSV: {quant_msstats}")
 
     @st.fragment
     def results(self) -> None:
