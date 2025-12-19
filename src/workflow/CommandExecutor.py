@@ -132,7 +132,7 @@ class CommandExecutor:
         # check input: any input lists must be same length, other items can be a single string
         # e.g. input_mzML : [list of n mzML files], output_featureXML : [list of n featureXML files], input_database : database.tsv
         
-        print("input_output____________________________",input_output)
+        # print("input_output____________________________",input_output)
         io_lengths = [len(v) for v in input_output.values() if len(v) > 1]
 
         if len(set(io_lengths)) > 1:
@@ -147,18 +147,18 @@ class CommandExecutor:
 
         # Load parameters for non-defaults
         params = self.parameter_manager.get_parameters_from_json()
-        print("params____________________________",params)
+        # print("params____________________________",params)
         # Construct commands for each process
         for i in range(n_processes):
             command = [tool]
             # Add input/output files
             for k in input_output.keys():
                 # add key as parameter name
-                print("k____________________________",k)
+                # print("k____________________________",k)
                 command += [f"-{k}"]
                 # get value from input_output dictionary
                 value = input_output[k]
-                print("value____________________________",value)
+                # print("value____________________________",value)
                 # when multiple input/output files exist (e.g., multiple mzMLs and featureXMLs), but only one additional input file (e.g., one input database file)
                 if len(value) == 1:
                     i = 0
@@ -171,13 +171,8 @@ class CommandExecutor:
             # Add non-default TOPP tool parameters
             if tool in params.keys():
                 for k, v in params[tool].items():
-                    #"sssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss"
                     if v == "" or v is None or (isinstance(v, list) and len(v) == 0):
                         continue
-
-
-
-
                     command += [f"-{k}"]
                     if isinstance(v, str) and "\n" in v:
                         command += v.split("\n")
@@ -197,6 +192,18 @@ class CommandExecutor:
             ini_path = Path(self.parameter_manager.ini_dir, tool + ".ini")
             if ini_path.exists():
                 command += ["-ini", str(ini_path)]
+
+        # --------------------------------------------------
+        # 6️⃣ Final debug output
+        # --------------------------------------------------
+        print("\n=== FINAL GENERATED TOPP COMMAND(S) ===")
+        for idx, cmd in enumerate(commands, start=1):
+            print(f"[Command {idx}] {' '.join(cmd)}")
+        print("====================================\n")
+
+        # 🔍 DEBUG: number of generated commands
+        print(f"DEBUG: len(commands) = {len(commands)}")
+        
 
         # Run command(s)
         if len(commands) == 1:
