@@ -138,3 +138,4 @@ watchdog==6.0.0
     # via streamlit
 xlsxwriter
 streamlit_plotly_events
+scipy
