@@ -4,6 +4,8 @@ import pandas as pd
 import plotly.express as px
 from streamlit_plotly_events import plotly_events
 from pyopenms import IdXMLFile
+from scipy.stats import ttest_ind
+import numpy as np
 
 from src.workflow.WorkflowManager import WorkflowManager
 
@@ -37,7 +39,7 @@ class WorkflowTest(WorkflowManager):
         self.ui.select_input_file("mzML-files", multiple=True)
         self.ui.select_input_file("fasta-file", multiple=False)
 
-        t = st.tabs(["**CometAdapter**", "**PercolatorAdapter**", "**IDFilter**", "**ProteomicsLFQ**"])
+        t = st.tabs(["**CometAdapter**", "**PercolatorAdapter**", "**IDFilter**", "**ProteomicsLFQ**", "**Group Selection**"])
 
         with t[0]:
             self.ui.input_TOPP("CometAdapter")
@@ -50,6 +52,67 @@ class WorkflowTest(WorkflowManager):
 
         with t[3]:
             self.ui.input_TOPP("ProteomicsLFQ")
+
+        with t[4]:
+            st.markdown("### 🧪 Sample Group Assignment")
+            st.info(
+                "Enter a group name for each mzML file.\n\n"
+                "Examples: control, treated, KO, WT, batch1, batch2"
+            )
+
+            mzml_files = self.file_manager.get_files(self.params.get("mzML-files", []))
+
+            if not mzml_files:
+                st.warning("No mzML files available. Please upload mzML files first.")
+                return
+
+            # ================================
+            # 1️⃣ Draft state (입력 중)
+            # ================================
+            if "mzML_groups_draft" not in st.session_state:
+                st.session_state["mzML_groups_draft"] = {
+                    Path(f).name: "" for f in mzml_files
+                }
+
+            # ================================
+            # 2️⃣ Confirmed state (저장됨)
+            # ================================
+            if "mzML_groups" not in st.session_state:
+                st.session_state["mzML_groups"] = {}
+
+            # ================================
+            # 3️⃣ UI: 파일별 그룹 입력
+            # ================================
+            for mz in mzml_files:
+                name = Path(mz).name
+
+                st.session_state["mzML_groups_draft"][name] = st.text_input(
+                    label=f"Group for {name}",
+                    value=st.session_state["mzML_groups_draft"].get(name, ""),
+                    placeholder="e.g. control, case",
+                    key=f"group_input_{name}",
+                )
+
+            # ================================
+            # 4️⃣ Save button
+            # ================================
+            col1, col2 = st.columns([1, 3])
+
+            with col1:
+                if st.button("💾 Save Groups", use_container_width=True):
+                    st.session_state["mzML_groups"] = dict(
+                        st.session_state["mzML_groups_draft"]
+                    )
+                    st.success("Group assignment saved!")
+
+            # ================================
+            # 5️⃣ Preview (확정된 값)
+            # ================================
+            if st.session_state["mzML_groups"]:
+                st.markdown("#### 📋 Saved Group Assignment")
+                st.json(st.session_state["mzML_groups"])
+            else:
+                st.info("No group assignment saved yet.")
 
     def execution(self) -> None:
         """
@@ -115,7 +178,10 @@ class WorkflowTest(WorkflowManager):
                     "in": in_mzML,
                     "out": comet_results,
                 },
-                {"database": fasta_file},
+                {
+                    "database": fasta_file,
+                    "threads": 12,
+                },
             )
 
         # if not Path(comet_results).exists():
@@ -128,7 +194,10 @@ class WorkflowTest(WorkflowManager):
                 "PercolatorAdapter",
                 {
                     "in": comet_results,
-                    "out": percolator_results
+                    "out": percolator_results,
+                },
+                {
+                    "threads": 8,
                 }
             )
            
@@ -142,8 +211,11 @@ class WorkflowTest(WorkflowManager):
                 "IDFilter",
                 {
                     "in": percolator_results,
-                    "out": filter_results
+                    "out": filter_results,
                 },
+                {
+                    "threads": 2,
+                }
             )
 
         # if not Path(filter_results[i]).exists():
@@ -169,20 +241,28 @@ class WorkflowTest(WorkflowManager):
                 self.logger.log(f"FILTER_RESULTS = {filter_results}", 1)
                 self.logger.log(f"FILTER_RESULTS_LEN = {len(filter_results)}", 1)
 
+                # ✅ Streamlit 화면 출력
+                st.markdown("### 🔍 ProteomicsLFQ Input Debug")
+                st.write("**combined_in:**", combined_in)
+                st.write("**combined_in type:**", type(combined_in).__name__)
+
+                st.write("**combined_ids:**", combined_ids)
+                st.write("**combined_ids type:**", type(combined_ids).__name__)
+
                 self.executor.run_topp(
                         "ProteomicsLFQ",
                         {
-                            "in": in_mzML,
-                            "ids": filter_results,
-                            "fasta": [fasta_file],
+                            "in": [in_mzML],
+                            "ids": [filter_results],
                             "out": [quant_mztab],
                             "out_cxml": [quant_cxml],
                             "out_msstats": [quant_msstats],
                         },
                         {
+                            "fasta": fasta_file,
                             "psmFDR": 0.5,
                             "proteinFDR": 0.5,
-                            "threads": 15,
+                            "threads": 12,
                         }
                     )
 
@@ -426,7 +506,7 @@ class WorkflowTest(WorkflowManager):
             csv_file = csv_files[0]
 
             # Protein / PSM table tab
-            protein_tab, psm_tab = st.tabs(["🧬 Protein Table", "📄 PSM-level Quantification Table"])
+            protein_tab, psm_tab, volcano_tab = st.tabs(["🧬 Protein Table", "📄 PSM-level Quantification Table", "🌋 Volcano Plot"])
 
             try:
                 df = pd.read_csv(csv_file)
@@ -434,30 +514,87 @@ class WorkflowTest(WorkflowManager):
                 if df.empty:
                     st.info("No data found in this file.")
                     return
-                
-                # PSM-level Table
-                with psm_tab:
-                    st.markdown(f"### 📄 PSM-level Quantification Table")
-                    st.info("💡INFO \n\n This table shows the PSM-level quantification data, including protein IDs,peptide sequences, charge states, and intensities across samples.Each row represents one peptide-spectrum match detected from the MS/MS analysis.")
-                    st.dataframe(df, use_container_width=True)
 
                 # Protein-level Table
                 with protein_tab:
+
                     st.markdown("### 🧬 Protein-Level Abundance Table")
-                    st.info("💡INFO \n\n"
+
+                    st.info(
+                        "💡INFO\n\n"
                         "This protein-level table is generated by grouping all PSMs that map to the "
                         "same protein and aggregating their intensities across samples.\n"
-                        "It provides an overview of protein abundance rather than individual peptide measurements."
+                        "Additionally, log2 fold change and p-values are calculated between sample groups."
                     )
 
-                    df['Sample'] = df['Reference'].str.replace('.mzML', '', regex=False)
+                    # --------------------------------------------------
+                    # 1️⃣ Load group information
+                    # --------------------------------------------------
+                    group_map = st.session_state.get("mzML_groups", {})
 
-                    all_samples = sorted(df['Sample'].unique())
+                    if not group_map:
+                        st.warning("No group information found. Please define sample groups first.")
+                        return
+
+                    # --------------------------------------------------
+                    # 2️⃣ Sample → Group mapping
+                    # --------------------------------------------------
+                    df["Sample"] = df["Reference"].str.replace(".mzML", "", regex=False)
+                    df["Group"] = df["Reference"].map(group_map)
+
+                    df = df.dropna(subset=["Group"])
+
+                    # --------------------------------------------------
+                    # 3️⃣ Determine comparison groups
+                    # --------------------------------------------------
+                    groups = sorted(df["Group"].unique())
+
+                    if len(groups) < 2:
+                        st.warning("At least two groups are required for statistical comparison.")
+                        return
+
+                    group1, group2 = groups[:2]
+
+                    st.info(f"Statistical comparison: **{group2} vs {group1}**")
+
+                    # --------------------------------------------------
+                    # 4️⃣ Protein-level statistics
+                    # --------------------------------------------------
+                    stats_rows = []
+
+                    for protein, protein_df in df.groupby("ProteinName"):
+                        g1_vals = protein_df[protein_df["Group"] == group1]["Intensity"].values
+                        g2_vals = protein_df[protein_df["Group"] == group2]["Intensity"].values
+
+                        if len(g1_vals) < 2 or len(g2_vals) < 2:
+                            pval = np.nan
+                        else:
+                            _, pval = ttest_ind(g1_vals, g2_vals, equal_var=False)
+
+                        mean_g1 = np.mean(g1_vals) if len(g1_vals) > 0 else np.nan
+                        mean_g2 = np.mean(g2_vals) if len(g2_vals) > 0 else np.nan
+
+                        log2fc = np.log2(mean_g2 / mean_g1) if mean_g1 > 0 else np.nan
+
+                        stats_rows.append(
+                            {
+                                "ProteinName": protein,
+                                "log2FC": log2fc,
+                                "p-value": pval,
+                            }
+                        )
+
+                    stats_df = pd.DataFrame(stats_rows)
+
+                    # --------------------------------------------------
+                    # 5️⃣ Build protein abundance table (pivot)
+                    # --------------------------------------------------
+                    all_samples = sorted(df["Sample"].unique())
                     pivot_list = []
 
-                    for protein, group in df.groupby('ProteinName'):
-                        peptides = ";".join(group['PeptideSequence'].unique())
-                        intensity_dict = group.groupby('Sample')['Intensity'].sum().to_dict()
+                    for protein, group_df in df.groupby("ProteinName"):
+                        peptides = ";".join(group_df["PeptideSequence"].unique())
+                        intensity_dict = group_df.groupby("Sample")["Intensity"].sum().to_dict()
 
                         intensity_dict_complete = {
                             sample: intensity_dict.get(sample, 0)
@@ -465,16 +602,101 @@ class WorkflowTest(WorkflowManager):
                         }
 
                         row = {
-                            'ProteinName': protein,
+                            "ProteinName": protein,
                             **intensity_dict_complete,
-                            'PeptideSequence': peptides
+                            "PeptideSequence": peptides,
                         }
+
                         pivot_list.append(row)
 
                     pivot_df = pd.DataFrame(pivot_list)
-                    pivot_df = pivot_df[['ProteinName'] + all_samples + ['PeptideSequence']]
 
-                    st.dataframe(pivot_df, use_container_width=True)
+                    # --------------------------------------------------
+                    # 6️⃣ Merge statistics + reorder columns
+                    # --------------------------------------------------
+                    pivot_df = pivot_df.merge(stats_df, on="ProteinName", how="left")
+
+                    pivot_df = pivot_df[
+                        ["ProteinName", "log2FC", "p-value"] + all_samples + ["PeptideSequence"]
+                    ]
+
+                    # --------------------------------------------------
+                    # 7️⃣ Display
+                    # --------------------------------------------------
+                    st.dataframe(
+                        pivot_df.sort_values("p-value"),
+                        use_container_width=True,
+                    )
+
+                # PSM-level Table
+                with psm_tab:
+                    st.markdown(f"### 📄 PSM-level Quantification Table")
+                    st.info("💡INFO \n\n This table shows the PSM-level quantification data, including protein IDs,peptide sequences, charge states, and intensities across samples.Each row represents one peptide-spectrum match detected from the MS/MS analysis.")
+                    st.dataframe(df, use_container_width=True)
+
+                # ================================
+                # 🌋 Volcano Plot
+                # ================================
+                with volcano_tab:
+
+                    st.markdown("### 🌋 Volcano Plot")
+
+                    if pivot_df.empty:
+                        st.info("No data available for volcano plot.")
+                        return
+
+                    volcano_df = pivot_df.copy()
+                    volcano_df = volcano_df.dropna(subset=["log2FC", "p-value"])
+
+                    volcano_df["neg_log10_p"] = -np.log10(volcano_df["p-value"])
+
+                    # Thresholds
+                    fc_thresh = st.slider(
+                        "log2 Fold Change threshold",
+                        min_value=0.5,
+                        max_value=3.0,
+                        value=1.0,
+                        step=0.1,
+                    )
+
+                    p_thresh = st.slider(
+                        "p-value threshold",
+                        min_value=0.001,
+                        max_value=0.1,
+                        value=0.05,
+                        step=0.001,
+                    )
+
+                    volcano_df["Significance"] = "Not significant"
+                    volcano_df.loc[
+                        (volcano_df["p-value"] <= p_thresh) & (volcano_df["log2FC"] >= fc_thresh),
+                        "Significance",
+                    ] = "Up-regulated"
+
+                    volcano_df.loc[
+                        (volcano_df["p-value"] <= p_thresh) & (volcano_df["log2FC"] <= -fc_thresh),
+                        "Significance",
+                    ] = "Down-regulated"
+
+                    fig_volcano = px.scatter(
+                        volcano_df,
+                        x="log2FC",
+                        y="neg_log10_p",
+                        color="Significance",
+                        hover_data=["ProteinName", "p-value"],
+                    )
+
+                    fig_volcano.add_vline(x=fc_thresh, line_dash="dash")
+                    fig_volcano.add_vline(x=-fc_thresh, line_dash="dash")
+                    fig_volcano.add_hline(y=-np.log10(p_thresh), line_dash="dash")
+
+                    fig_volcano.update_layout(
+                        xaxis_title="log2 Fold Change",
+                        yaxis_title="-log10(p-value)",
+                        height=600,
+                    )
+
+                    st.plotly_chart(fig_volcano, use_container_width=True)
 
             except Exception as e:
                 st.error(f"Failed to load {csv_file.name}: {e}")
