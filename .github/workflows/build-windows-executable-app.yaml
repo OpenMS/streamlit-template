@@ -264,6 +264,14 @@ jobs:
       run: |
         echo '@echo off' > ${{ env.APP_NAME }}.bat
         echo '' >> ${{ env.APP_NAME }}.bat
+        echo 'REM Set OpenMS data path for TOPP tools' >> ${{ env.APP_NAME }}.bat
+        echo 'set OPENMS_DATA_PATH=%~dp0share\OpenMS' >> ${{ env.APP_NAME }}.bat
+        echo '' >> ${{ env.APP_NAME }}.bat
+        echo 'REM Add each subfolder in share\OpenMS\THIRDPARTY to PATH' >> ${{ env.APP_NAME }}.bat
+        echo 'for /D %%D in ("%OPENMS_DATA_PATH%\THIRDPARTY\*") do (' >> ${{ env.APP_NAME }}.bat
+        echo '    set "PATH=!PATH!;%%D"' >> ${{ env.APP_NAME }}.bat
+        echo ')' >> ${{ env.APP_NAME }}.bat
+        echo '' >> ${{ env.APP_NAME }}.bat
         echo 'REM Create .streamlit directory in user''s home if it doesn''t exist' >> ${{ env.APP_NAME }}.bat
         echo 'if not exist "%USERPROFILE%\.streamlit" mkdir "%USERPROFILE%\.streamlit"' >> ${{ env.APP_NAME }}.bat
         echo '' >> ${{ env.APP_NAME }}.bat
