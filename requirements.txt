@@ -125,7 +125,7 @@ toml==0.10.2
     # via streamlit
 tornado==6.4.2
     # via streamlit
-typing-extensions==4.13.0
+typing-extensions==4.15.0
     # via
     #   altair
     #   referencing
