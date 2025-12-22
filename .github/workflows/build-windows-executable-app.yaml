@@ -263,6 +263,7 @@ jobs:
     - name: Create .bat file
       run: |
         echo '@echo off' > ${{ env.APP_NAME }}.bat
+        echo 'setlocal EnableDelayedExpansion' > ${{ env.APP_NAME }}.bat
         echo '' >> ${{ env.APP_NAME }}.bat
         echo 'REM Set OpenMS data path for TOPP tools' >> ${{ env.APP_NAME }}.bat
         echo 'set OPENMS_DATA_PATH=%~dp0share\OpenMS' >> ${{ env.APP_NAME }}.bat
