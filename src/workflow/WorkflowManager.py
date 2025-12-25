@@ -8,6 +8,7 @@ import multiprocessing
 import streamlit as st
 import shutil
 import time
+import traceback
 
 class WorkflowManager:
     # Core workflow logic using the above classes
@@ -49,6 +50,7 @@ class WorkflowManager:
             self.logger.log("WORKFLOW FINISHED")
         except Exception as e:
             self.logger.log(f"ERROR: {e}")
+            self.logger.log("".join(traceback.format_exception(e)))
         # Delete pid dir path to indicate workflow is done
         shutil.rmtree(self.executor.pid_dir, ignore_errors=True)
 
