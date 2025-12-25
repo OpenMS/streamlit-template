@@ -98,6 +98,40 @@ class ParameterManager:
                 st.error("**ERROR**: Attempting to load an invalid JSON parameter file. Reset to defaults.")
                 return {}
 
+    def get_topp_parameters(self, tool: str) -> dict:
+        """
+        Get all parameters for a TOPP tool, merging defaults with user values.
+
+        Args:
+            tool: Name of the TOPP tool (e.g., "CometAdapter")
+
+        Returns:
+            Dict with parameter names as keys (without tool prefix) and their values.
+            Returns empty dict if ini file doesn't exist.
+        """
+        ini_path = Path(self.ini_dir, f"{tool}.ini")
+        if not ini_path.exists():
+            return {}
+
+        # Load defaults from ini file
+        param = poms.Param()
+        poms.ParamXMLFile().load(str(ini_path), param)
+
+        # Build dict from ini (extract short key names)
+        prefix = f"{tool}:1:"
+        full_params = {}
+        for key in param.keys():
+            key_str = key.decode() if isinstance(key, bytes) else str(key)
+            if prefix in key_str:
+                short_key = key_str.split(prefix, 1)[1]
+                full_params[short_key] = param.getValue(key)
+
+        # Override with user-modified values from JSON
+        user_params = self.get_parameters_from_json().get(tool, {})
+        full_params.update(user_params)
+
+        return full_params
+
     def reset_to_default_parameters(self) -> None:
         """
         Resets the parameters to their default values by deleting the custom parameters
