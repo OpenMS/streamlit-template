@@ -512,7 +512,7 @@ class WorkflowTest(WorkflowManager):
                     # --------------------------------------------------
                     # 1️⃣ Load group information
                     # --------------------------------------------------
-                    group_map = st.session_state.get("mzML_groups", {})
+                    group_map = self._get_group_map()
 
                     if not group_map:
                         st.warning("No group information found. Please define sample groups first.")
