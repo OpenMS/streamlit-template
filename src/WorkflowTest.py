@@ -15,6 +15,15 @@ class WorkflowTest(WorkflowManager):
     def __init__(self) -> None:
         super().__init__("TOPP Workflow", st.session_state["workspace"])
 
+    def _get_group_map(self) -> dict:
+        """Extract group assignments from persisted parameters."""
+        group_map = {}
+        for key, value in self.params.items():
+            if key.startswith("group-") and value:
+                filename = key.replace("group-", "")
+                group_map[filename] = value
+        return group_map
+
     def upload(self) -> None:
         t = st.tabs(["MS data (mzML)", "FASTA database"])
 
@@ -66,53 +75,24 @@ class WorkflowTest(WorkflowManager):
                 st.warning("No mzML files available. Please upload mzML files first.")
                 return
 
-            # ================================
-            # 1️⃣ Draft state (입력 중)
-            # ================================
-            if "mzML_groups_draft" not in st.session_state:
-                st.session_state["mzML_groups_draft"] = {
-                    Path(f).name: "" for f in mzml_files
-                }
-
-            # ================================
-            # 2️⃣ Confirmed state (저장됨)
-            # ================================
-            if "mzML_groups" not in st.session_state:
-                st.session_state["mzML_groups"] = {}
-
-            # ================================
-            # 3️⃣ UI: 파일별 그룹 입력
-            # ================================
+            # Use input_widget for each file - automatically persists to params.json
             for mz in mzml_files:
                 name = Path(mz).name
-
-                st.session_state["mzML_groups_draft"][name] = st.text_input(
-                    label=f"Group for {name}",
-                    value=st.session_state["mzML_groups_draft"].get(name, ""),
-                    placeholder="e.g. control, case",
-                    key=f"group_input_{name}",
+                self.ui.input_widget(
+                    key=f"group-{name}",
+                    default="",
+                    name=f"Group for {name}",
+                    help="e.g. control, case, treated",
+                    widget_type="text",
                 )
 
-            # ================================
-            # 4️⃣ Save button
-            # ================================
-            col1, col2 = st.columns([1, 3])
-
-            with col1:
-                if st.button("💾 Save Groups", use_container_width=True):
-                    st.session_state["mzML_groups"] = dict(
-                        st.session_state["mzML_groups_draft"]
-                    )
-                    st.success("Group assignment saved!")
-
-            # ================================
-            # 5️⃣ Preview (확정된 값)
-            # ================================
-            if st.session_state["mzML_groups"]:
-                st.markdown("#### 📋 Saved Group Assignment")
-                st.json(st.session_state["mzML_groups"])
+            # Show current assignments (read from persisted params)
+            st.markdown("#### 📋 Current Group Assignment")
+            group_map = self._get_group_map()
+            if any(group_map.values()):
+                st.json(group_map)
             else:
-                st.info("No group assignment saved yet.")
+                st.info("No groups assigned yet. Enter group names above.")
 
     def execution(self) -> None:
         """
