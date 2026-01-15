@@ -263,6 +263,8 @@ class WorkflowTest(WorkflowManager):
                             "psmFDR": 0.5,
                             "proteinFDR": 0.5,
                             "threads": 12,
+                            # Disable FAIMS feature merging to avoid segfault bug in ProteomicsLFQ
+                            "PeptideQuantification:faims:merge_features": "false",
                         }
                     )
 
