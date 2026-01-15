@@ -42,8 +42,8 @@ class ParameterManager:
         # Advanced parameters are only in session state if the view is active
         json_params = self.get_parameters_from_json() | json_params
 
-        # get a list of TOPP tools which are in session state
-        current_topp_tools = list(
+        # get a list of TOPP tool instances (or tools) which are in session state
+        current_topp_instances = list(
             set(
                 [
                     k.replace(self.topp_param_prefix, "").split(":1:")[0]
@@ -52,30 +52,85 @@ class ParameterManager:
                 ]
             )
         )
-        # for each TOPP tool, open the ini file
-        for tool in current_topp_tools:
-            if tool not in json_params:
-                json_params[tool] = {}
+        # for each TOPP tool instance, open the ini file
+        for instance in current_topp_instances:
+            if instance not in json_params:
+                json_params[instance] = {}
+            # Extract actual tool name from instance name (instance might be the tool name itself)
+            # We need to check which ini file exists to determine the actual tool name
+            tool_name = self._get_tool_name_from_instance(instance)
+            if not tool_name:
+                continue
             # load the param object
             param = poms.Param()
-            poms.ParamXMLFile().load(str(Path(self.ini_dir, f"{tool}.ini")), param)
-            # get all session state param keys and values for this tool
+            poms.ParamXMLFile().load(str(Path(self.ini_dir, f"{tool_name}.ini")), param)
+            # get all session state param keys and values for this tool instance
             for key, value in st.session_state.items():
-                if key.startswith(f"{self.topp_param_prefix}{tool}:1:"):
-                    # get ini_key
-                    ini_key = key.replace(self.topp_param_prefix, "").encode()
+                if key.startswith(f"{self.topp_param_prefix}{instance}:1:"):
+                    # get ini_key by replacing instance with actual tool name
+                    ini_key_str = key.replace(self.topp_param_prefix, "").replace(f"{instance}:1:", f"{tool_name}:1:")
+                    ini_key = ini_key_str.encode()
                     # get ini (default) value by ini_key
                     ini_value = param.getValue(ini_key)
                     # check if value is different from default
                     if (
                         (ini_value != value) 
-                        or (key.split(":1:")[1] in json_params[tool])
+                        or (key.split(":1:")[1] in json_params[instance])
                     ):
                         # store non-default value
-                        json_params[tool][key.split(":1:")[1]] = value
+                        json_params[instance][key.split(":1:")[1]] = value
         # Save to json file
         with open(self.params_file, "w", encoding="utf-8") as f:
             json.dump(json_params, f, indent=4)
+
+    def _get_tool_name_from_instance(self, instance: str) -> str:
+        """
+        Get the actual TOPP tool name from an instance identifier.
+        If the instance name corresponds to an existing ini file, it's the tool name itself.
+        Otherwise, extract from stored metadata in params.
+        
+        Args:
+            instance (str): The tool instance identifier (could be tool name or custom name)
+            
+        Returns:
+            str: The actual tool name, or None if not found
+        """
+        # Check if instance name corresponds to an existing ini file
+        if Path(self.ini_dir, f"{instance}.ini").exists():
+            return instance
+        
+        # Check if we have metadata about this instance in the params
+        params = self.get_parameters_from_json()
+        if instance in params and isinstance(params[instance], dict):
+            # Check if there's a special metadata key for tool name
+            if "_tool_name" in params[instance]:
+                return params[instance]["_tool_name"]
+        
+        # Otherwise, find which ini file was used for this instance by checking session state
+        for ini_file in Path(self.ini_dir).glob("*.ini"):
+            tool_name = ini_file.stem
+            # Check if any session state key matches the pattern for this instance and tool
+            for key in st.session_state.keys():
+                if key.startswith(f"{self.topp_param_prefix}{instance}:1:"):
+                    # Try to see if this parameter exists in this tool's ini file
+                    try:
+                        param = poms.Param()
+                        poms.ParamXMLFile().load(str(ini_file), param)
+                        param_name = key.split(":1:")[1]
+                        # Check if this parameter exists in the tool
+                        test_key = f"{tool_name}:1:{param_name}".encode()
+                        if test_key in param.keys():
+                            # Store this mapping for future use
+                            if instance in params:
+                                params[instance]["_tool_name"] = tool_name
+                            else:
+                                params[instance] = {"_tool_name": tool_name}
+                            with open(self.params_file, "w", encoding="utf-8") as f:
+                                json.dump(params, f, indent=4)
+                            return tool_name
+                    except Exception:
+                        continue
+        return None
 
     def get_parameters_from_json(self) -> dict:
         """
@@ -98,18 +153,23 @@ class ParameterManager:
                 st.error("**ERROR**: Attempting to load an invalid JSON parameter file. Reset to defaults.")
                 return {}
 
-    def get_topp_parameters(self, tool: str) -> dict:
+    def get_topp_parameters(self, tool_or_instance: str) -> dict:
         """
-        Get all parameters for a TOPP tool, merging defaults with user values.
+        Get all parameters for a TOPP tool or tool instance, merging defaults with user values.
 
         Args:
-            tool: Name of the TOPP tool (e.g., "CometAdapter")
+            tool_or_instance: Name of the TOPP tool (e.g., "CometAdapter") or tool instance name (e.g., "IDFilter-first")
 
         Returns:
             Dict with parameter names as keys (without tool prefix) and their values.
             Returns empty dict if ini file doesn't exist.
         """
-        ini_path = Path(self.ini_dir, f"{tool}.ini")
+        # Determine if this is an instance name or actual tool name
+        tool_name = self._get_tool_name_from_instance(tool_or_instance)
+        if not tool_name:
+            return {}
+            
+        ini_path = Path(self.ini_dir, f"{tool_name}.ini")
         if not ini_path.exists():
             return {}
 
@@ -118,7 +178,7 @@ class ParameterManager:
         poms.ParamXMLFile().load(str(ini_path), param)
 
         # Build dict from ini (extract short key names)
-        prefix = f"{tool}:1:"
+        prefix = f"{tool_name}:1:"
         full_params = {}
         for key in param.keys():
             key_str = key.decode() if isinstance(key, bytes) else str(key)
@@ -127,7 +187,8 @@ class ParameterManager:
                 full_params[short_key] = param.getValue(key)
 
         # Override with user-modified values from JSON
-        user_params = self.get_parameters_from_json().get(tool, {})
+        # Use tool_or_instance as key since that's what's stored in params
+        user_params = self.get_parameters_from_json().get(tool_or_instance, {})
         full_params.update(user_params)
 
         return full_params

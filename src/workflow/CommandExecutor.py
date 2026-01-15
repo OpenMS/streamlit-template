@@ -157,7 +157,7 @@ class CommandExecutor:
         stdout_thread.join()
         stderr_thread.join()
 
-    def run_topp(self, tool: str, input_output: dict, custom_params: dict = {}) -> None:
+    def run_topp(self, tool: str, input_output: dict, custom_params: dict = {}, tool_instance_name: str = None) -> None:
         """
         Constructs and executes commands for the specified tool OpenMS TOPP tool based on the given
         input and output configurations. Ensures that all input/output file lists
@@ -175,6 +175,7 @@ class CommandExecutor:
             tool (str): The executable name or path of the tool.
             input_output (dict): A dictionary specifying the input/output parameter names (as key) and their corresponding file paths (as value).
             custom_params (dict): A dictionary of custom parameters to pass to the tool.
+            tool_instance_name (str, optional): Unique identifier for this tool instance. Use when the same tool is configured multiple times with different parameters.
 
         Raises:
             ValueError: If the lengths of input/output file lists are inconsistent,
@@ -196,6 +197,8 @@ class CommandExecutor:
 
         # Load parameters for non-defaults
         params = self.parameter_manager.get_parameters_from_json()
+        # Use tool_instance_name if provided, otherwise use tool name
+        param_key = tool_instance_name if tool_instance_name else tool
         # Construct commands for each process
         for i in range(n_processes):
             command = [tool]
@@ -215,8 +218,11 @@ class CommandExecutor:
                 else:
                     command += [value[i]]
             # Add non-default TOPP tool parameters
-            if tool in params.keys():
-                for k, v in params[tool].items():
+            if param_key in params.keys():
+                for k, v in params[param_key].items():
+                    # Skip metadata keys (starting with underscore)
+                    if k.startswith("_"):
+                        continue
                     command += [f"-{k}"]
                     if isinstance(v, str) and "\n" in v:
                         command += v.split("\n")

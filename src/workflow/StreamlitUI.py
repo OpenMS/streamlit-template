@@ -542,6 +542,7 @@ class StreamlitUI:
         display_subsections: bool = True,
         display_subsection_tabs: bool = False,
         custom_defaults: dict = {},
+        tool_instance_name: str = None,
     ) -> None:
         """
         Generates input widgets for TOPP tool parameters dynamically based on the tool's
@@ -557,12 +558,25 @@ class StreamlitUI:
             display_subsections (bool, optional): Whether to split parameters into subsections based on the prefix. Defaults to True.
             display_subsection_tabs (bool, optional): Whether to display main subsections in separate tabs (if more than one main section). Defaults to False.
             custom_defaults (dict, optional): Dictionary of custom defaults to use. Defaults to an empty dict.
+            tool_instance_name (str, optional): Unique identifier for this tool instance. Required when using the same TOPP tool multiple times with different configurations. Defaults to None.
         """
 
         if not display_subsections:
             display_subsection_tabs = False
         if display_subsection_tabs:
             display_subsections = True
+
+        # Use tool_instance_name if provided, otherwise use tool name
+        param_key = tool_instance_name if tool_instance_name else topp_tool_name
+        
+        # Store tool name mapping for instances
+        if tool_instance_name and tool_instance_name != topp_tool_name:
+            # Store the actual tool name in params for later retrieval
+            if param_key not in self.params:
+                self.params[param_key] = {}
+            if "_tool_name" not in self.params[param_key]:
+                self.params[param_key]["_tool_name"] = topp_tool_name
+                self.parameter_manager.save_parameters()
 
         # write defaults ini files
         ini_file_path = Path(self.parameter_manager.ini_dir, f"{topp_tool_name}.ini")
@@ -636,9 +650,9 @@ class StreamlitUI:
         # else check if the parameter is already in self.params, if yes take the value from self.params
         for p in params:
             name = p["key"].decode().split(":1:")[1]
-            if topp_tool_name in self.params:
-                if name in self.params[topp_tool_name]:
-                    p["value"] = self.params[topp_tool_name][name]
+            if param_key in self.params:
+                if name in self.params[param_key]:
+                    p["value"] = self.params[param_key][name]
                 elif name in custom_defaults:
                     p["value"] = custom_defaults[name]
             elif name in custom_defaults:
@@ -668,7 +682,8 @@ class StreamlitUI:
 
         # Display tool name if required
         if display_tool_name:
-            st.markdown(f"**{topp_tool_name}**")
+            display_name = f"{topp_tool_name}" if not tool_instance_name else f"{topp_tool_name} ({tool_instance_name})"
+            st.markdown(f"**{display_name}**")
 
         tab_names = [k for k in param_sections.keys() if ":" not in k]
         tabs = None
@@ -696,8 +711,10 @@ class StreamlitUI:
             cols = st.columns(num_cols)
             i = 0
             for p in params:
-                # get key and name
-                key = f"{self.parameter_manager.topp_param_prefix}{p['key'].decode()}"
+                # get key and name - replace tool name with param_key for unique widget keys
+                original_key = p['key'].decode()
+                widget_key = original_key.replace(f"{topp_tool_name}:1:", f"{param_key}:1:")
+                key = f"{self.parameter_manager.topp_param_prefix}{widget_key}"
                 name = p["name"]
                 try:
                     # sometimes strings with newline, handle as list
