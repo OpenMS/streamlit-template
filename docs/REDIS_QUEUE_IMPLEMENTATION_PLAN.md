@@ -1,0 +1,1143 @@
+# Redis Queue Implementation Plan for Online Mode
+
+## Overview
+
+This document outlines the implementation plan for introducing a Redis-based job queueing system to the OpenMS Streamlit Template's **online mode only**. This system will replace the current `multiprocessing.Process` approach with a more robust, scalable queue architecture suitable for production deployments.
+
+## Current Architecture
+
+### How Workflows Execute Today
+
+```
+┌─────────────────────┐      ┌──────────────────────────┐
+│   Streamlit UI      │      │    Detached Process      │
+│   (Browser)         │      │    (Same Container)      │
+├─────────────────────┤      ├──────────────────────────┤
+│ 1. User clicks      │─────→│ multiprocessing.Process  │
+│    "Start Workflow" │      │                          │
+│ 2. Monitor log file │      │ • Runs workflow_process()│
+│ 3. Poll for PID     │      │ • Executes TOPP tools    │
+│    removal          │      │ • Logs to files          │
+└─────────────────────┘      │ • Deletes PID on done    │
+                             └──────────────────────────┘
+```
+
+**Key Files:**
+- `/src/workflow/WorkflowManager.py:25-38` - Process spawning
+- `/src/workflow/StreamlitUI.py:989-1057` - Execution UI/monitoring
+- `/src/workflow/CommandExecutor.py:28-61` - Command execution
+
+**Limitations of Current Approach:**
+1. No job persistence across container restarts
+2. No visibility into queue depth or worker health
+3. Limited scalability (single container)
+4. No job retry mechanism on failure
+5. No priority queuing
+6. Difficult to add job timeouts
+
+---
+
+## Proposed Architecture
+
+### Redis Queue System
+
+```
+┌─────────────────────┐     ┌─────────────┐     ┌──────────────────────┐
+│   Streamlit App     │     │    Redis    │     │   Worker Service(s)  │
+│   (Web Container)   │     │   (Queue)   │     │   (Worker Container) │
+├─────────────────────┤     ├─────────────┤     ├──────────────────────┤
+│ • Submit job to     │────→│ • Job queue │────→│ • Poll for jobs      │
+│   queue             │     │ • Job state │     │ • Execute workflows  │
+│ • Monitor job       │←────│ • Results   │←────│ • Update status      │
+│   status via Redis  │     │ • Pub/Sub   │     │ • Store results      │
+└─────────────────────┘     └─────────────┘     └──────────────────────┘
+```
+
+### Technology Stack
+
+| Component | Technology | Rationale |
+|-----------|------------|-----------|
+| Message Broker | **Redis** | Fast, simple, built-in pub/sub for real-time updates |
+| Task Queue | **RQ (Redis Queue)** | Lightweight, Python-native, simpler than Celery |
+| Job Monitoring | **rq-dashboard** | Built-in web UI for queue monitoring |
+
+**Why RQ over Celery?**
+- Simpler configuration (fewer moving parts)
+- Lower memory footprint
+- Native Python job serialization
+- Sufficient for our use case (not distributed across multiple machines)
+- Easier to debug and maintain
+
+---
+
+## Implementation Plan
+
+### Phase 1: Infrastructure Setup
+
+#### 1.1 Add Redis Service to Docker Compose
+
+**File:** `/docker-compose.yml`
+
+```yaml
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: openms-redis
+    restart: always
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  openms-streamlit-template:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        GITHUB_TOKEN: $GITHUB_TOKEN
+    image: openms_streamlit_template
+    container_name: openms-streamlit-template
+    restart: always
+    ports:
+      - 8501:8501
+    volumes:
+      - workspaces-streamlit-template:/workspaces-streamlit-template
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+    command: streamlit run openms-streamlit-template/app.py
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: openms_streamlit_template
+    container_name: openms-worker
+    restart: always
+    volumes:
+      - workspaces-streamlit-template:/workspaces-streamlit-template
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+    command: rq worker --url redis://redis:6379/0 openms-workflows
+    deploy:
+      replicas: 1  # Can scale up as needed
+
+  rq-dashboard:
+    image: eoranged/rq-dashboard
+    container_name: openms-rq-dashboard
+    restart: always
+    ports:
+      - 9181:9181
+    environment:
+      - RQ_DASHBOARD_REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - redis
+
+volumes:
+  workspaces-streamlit-template:
+  redis-data:
+```
+
+#### 1.2 Update Requirements
+
+**File:** `/requirements.txt` (additions)
+
+```
+rq>=1.16.0
+redis>=5.0.0
+```
+
+#### 1.3 Update Dockerfile
+
+**File:** `/Dockerfile` (add to run-app stage, around line 130)
+
+```dockerfile
+# Install Redis client and RQ
+RUN pip install rq redis
+```
+
+---
+
+### Phase 2: Core Queue Implementation
+
+#### 2.1 Create Queue Manager Module
+
+**New File:** `/src/workflow/QueueManager.py`
+
+```python
+"""
+Redis Queue Manager for Online Mode Workflow Execution
+
+This module provides job queueing functionality for online deployments,
+replacing the multiprocessing approach with Redis-backed job queues.
+"""
+
+import os
+from typing import Optional, Callable, Any
+from dataclasses import dataclass
+from enum import Enum
+from redis import Redis
+from rq import Queue, Worker
+from rq.job import Job
+import json
+from pathlib import Path
+import streamlit as st
+
+
+class JobStatus(Enum):
+    """Job status enumeration matching RQ states"""
+    QUEUED = "queued"
+    STARTED = "started"
+    FINISHED = "finished"
+    FAILED = "failed"
+    DEFERRED = "deferred"
+    CANCELED = "canceled"
+
+
+@dataclass
+class JobInfo:
+    """Container for job information"""
+    job_id: str
+    status: JobStatus
+    progress: float  # 0.0 to 1.0
+    current_step: str
+    result: Optional[Any] = None
+    error: Optional[str] = None
+    enqueued_at: Optional[str] = None
+    started_at: Optional[str] = None
+    ended_at: Optional[str] = None
+
+
+class QueueManager:
+    """
+    Manages Redis Queue operations for workflow execution.
+
+    Only active in online mode. Falls back to direct execution in local mode.
+    """
+
+    QUEUE_NAME = "openms-workflows"
+    REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+
+    def __init__(self):
+        self._redis: Optional[Redis] = None
+        self._queue: Optional[Queue] = None
+        self._is_online = self._check_online_mode()
+
+        if self._is_online:
+            self._init_redis()
+
+    def _check_online_mode(self) -> bool:
+        """Check if running in online mode"""
+        if "settings" in st.session_state:
+            return st.session_state.settings.get("online_deployment", False)
+
+        # Fallback: check settings file
+        try:
+            with open("settings.json", "r") as f:
+                settings = json.load(f)
+                return settings.get("online_deployment", False)
+        except Exception:
+            return False
+
+    def _init_redis(self) -> None:
+        """Initialize Redis connection and queue"""
+        try:
+            self._redis = Redis.from_url(self.REDIS_URL)
+            self._redis.ping()  # Test connection
+            self._queue = Queue(self.QUEUE_NAME, connection=self._redis)
+        except Exception as e:
+            st.error(f"Failed to connect to Redis: {e}")
+            self._redis = None
+            self._queue = None
+
+    @property
+    def is_available(self) -> bool:
+        """Check if queue system is available"""
+        return self._is_online and self._queue is not None
+
+    def submit_job(
+        self,
+        func: Callable,
+        args: tuple = (),
+        kwargs: dict = None,
+        job_id: Optional[str] = None,
+        timeout: int = 3600,  # 1 hour default
+        result_ttl: int = 86400,  # 24 hours
+        description: str = ""
+    ) -> Optional[str]:
+        """
+        Submit a job to the queue.
+
+        Args:
+            func: The function to execute
+            args: Positional arguments for the function
+            kwargs: Keyword arguments for the function
+            job_id: Optional custom job ID (defaults to UUID)
+            timeout: Job timeout in seconds
+            result_ttl: How long to keep results
+            description: Human-readable job description
+
+        Returns:
+            Job ID if successful, None otherwise
+        """
+        if not self.is_available:
+            return None
+
+        kwargs = kwargs or {}
+
+        try:
+            job = self._queue.enqueue(
+                func,
+                args=args,
+                kwargs=kwargs,
+                job_id=job_id,
+                job_timeout=timeout,
+                result_ttl=result_ttl,
+                description=description,
+                meta={"description": description}
+            )
+            return job.id
+        except Exception as e:
+            st.error(f"Failed to submit job: {e}")
+            return None
+
+    def get_job_info(self, job_id: str) -> Optional[JobInfo]:
+        """
+        Get information about a job.
+
+        Args:
+            job_id: The job ID to query
+
+        Returns:
+            JobInfo object or None if not found
+        """
+        if not self.is_available:
+            return None
+
+        try:
+            job = Job.fetch(job_id, connection=self._redis)
+
+            # Map RQ status to our enum
+            status_map = {
+                "queued": JobStatus.QUEUED,
+                "started": JobStatus.STARTED,
+                "finished": JobStatus.FINISHED,
+                "failed": JobStatus.FAILED,
+                "deferred": JobStatus.DEFERRED,
+                "canceled": JobStatus.CANCELED,
+            }
+
+            status = status_map.get(job.get_status(), JobStatus.QUEUED)
+
+            # Get progress from job meta
+            meta = job.meta or {}
+            progress = meta.get("progress", 0.0)
+            current_step = meta.get("current_step", "")
+
+            return JobInfo(
+                job_id=job.id,
+                status=status,
+                progress=progress,
+                current_step=current_step,
+                result=job.result if status == JobStatus.FINISHED else None,
+                error=str(job.exc_info) if job.exc_info else None,
+                enqueued_at=str(job.enqueued_at) if job.enqueued_at else None,
+                started_at=str(job.started_at) if job.started_at else None,
+                ended_at=str(job.ended_at) if job.ended_at else None,
+            )
+        except Exception:
+            return None
+
+    def cancel_job(self, job_id: str) -> bool:
+        """
+        Cancel a queued or running job.
+
+        Args:
+            job_id: The job ID to cancel
+
+        Returns:
+            True if successfully canceled
+        """
+        if not self.is_available:
+            return False
+
+        try:
+            job = Job.fetch(job_id, connection=self._redis)
+            job.cancel()
+            return True
+        except Exception:
+            return False
+
+    def get_queue_stats(self) -> dict:
+        """
+        Get queue statistics.
+
+        Returns:
+            Dictionary with queue stats
+        """
+        if not self.is_available:
+            return {}
+
+        try:
+            return {
+                "queued": len(self._queue),
+                "started": len(self._queue.started_job_registry),
+                "finished": len(self._queue.finished_job_registry),
+                "failed": len(self._queue.failed_job_registry),
+                "workers": Worker.count(queue=self._queue),
+            }
+        except Exception:
+            return {}
+
+    def update_job_progress(
+        self,
+        job: Job,
+        progress: float,
+        current_step: str = ""
+    ) -> None:
+        """
+        Update job progress (call from within worker).
+
+        Args:
+            job: The current RQ job object
+            progress: Progress value 0.0 to 1.0
+            current_step: Description of current step
+        """
+        job.meta["progress"] = min(max(progress, 0.0), 1.0)
+        job.meta["current_step"] = current_step
+        job.save_meta()
+
+    def store_job_id(self, workflow_dir: Path, job_id: str) -> None:
+        """Store job ID in workflow directory for recovery"""
+        job_file = workflow_dir / ".job_id"
+        job_file.write_text(job_id)
+
+    def load_job_id(self, workflow_dir: Path) -> Optional[str]:
+        """Load job ID from workflow directory"""
+        job_file = workflow_dir / ".job_id"
+        if job_file.exists():
+            return job_file.read_text().strip()
+        return None
+
+    def clear_job_id(self, workflow_dir: Path) -> None:
+        """Clear stored job ID"""
+        job_file = workflow_dir / ".job_id"
+        if job_file.exists():
+            job_file.unlink()
+```
+
+#### 2.2 Create Worker Tasks Module
+
+**New File:** `/src/workflow/tasks.py`
+
+```python
+"""
+Worker tasks for Redis Queue execution.
+
+These functions are executed by RQ workers and should not import Streamlit.
+"""
+
+import sys
+import json
+from pathlib import Path
+from typing import Any
+from rq import get_current_job
+
+# Add src to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+
+from src.workflow.CommandExecutor import CommandExecutor
+from src.workflow.FileManager import FileManager
+from src.workflow.ParameterManager import ParameterManager
+from src.workflow.Logger import Logger
+
+
+def execute_workflow(
+    workflow_dir: str,
+    workflow_class: str,
+    workflow_module: str,
+) -> dict:
+    """
+    Execute a workflow in the worker process.
+
+    Args:
+        workflow_dir: Path to the workflow directory
+        workflow_class: Name of the Workflow class
+        workflow_module: Module path containing the Workflow class
+
+    Returns:
+        Dictionary with execution results
+    """
+    job = get_current_job()
+    workflow_path = Path(workflow_dir)
+
+    try:
+        # Update progress
+        _update_progress(job, 0.0, "Initializing workflow...")
+
+        # Load the workflow class dynamically
+        import importlib
+        module = importlib.import_module(workflow_module)
+        WorkflowClass = getattr(module, workflow_class)
+
+        # Initialize workflow components (non-Streamlit mode)
+        workflow_path = Path(workflow_dir)
+
+        # Create a minimal workflow instance for execution
+        # The workflow will read params from the saved params.json
+        params_file = workflow_path / "params.json"
+        if params_file.exists():
+            with open(params_file, "r") as f:
+                params = json.load(f)
+        else:
+            params = {}
+
+        # Initialize executor and logger
+        logger = Logger(workflow_path)
+        file_manager = FileManager(workflow_path, params)
+        executor = CommandExecutor(workflow_path, logger)
+
+        # Create workflow instance with components
+        workflow = WorkflowClass.__new__(WorkflowClass)
+        workflow.workflow_dir = workflow_path
+        workflow.params = params
+        workflow.logger = logger
+        workflow.file_manager = file_manager
+        workflow.executor = executor
+
+        # Inject progress callback
+        workflow._job = job
+        workflow._update_progress = lambda p, s: _update_progress(job, p, s)
+
+        _update_progress(job, 0.1, "Starting workflow execution...")
+
+        # Execute the workflow
+        workflow.execution()
+
+        _update_progress(job, 1.0, "Workflow completed")
+
+        return {
+            "success": True,
+            "workflow_dir": str(workflow_path),
+            "message": "Workflow completed successfully"
+        }
+
+    except Exception as e:
+        import traceback
+        error_msg = f"Workflow failed: {str(e)}\n{traceback.format_exc()}"
+
+        # Log error to workflow logs
+        try:
+            log_file = workflow_path / "logs" / "all.log"
+            log_file.parent.mkdir(parents=True, exist_ok=True)
+            with open(log_file, "a") as f:
+                f.write(f"\n\nERROR: {error_msg}\n")
+        except Exception:
+            pass
+
+        return {
+            "success": False,
+            "workflow_dir": str(workflow_path),
+            "error": error_msg
+        }
+
+
+def _update_progress(job, progress: float, step: str) -> None:
+    """Update job progress metadata"""
+    if job:
+        job.meta["progress"] = progress
+        job.meta["current_step"] = step
+        job.save_meta()
+```
+
+---
+
+### Phase 3: Integration with Existing Code
+
+#### 3.1 Modify WorkflowManager
+
+**File:** `/src/workflow/WorkflowManager.py`
+
+Add queue support while maintaining backward compatibility:
+
+```python
+"""
+Modified WorkflowManager with Redis Queue support for online mode.
+"""
+
+import multiprocessing
+from pathlib import Path
+from typing import Optional
+import json
+import streamlit as st
+
+from src.workflow.StreamlitUI import StreamlitUI
+from src.workflow.CommandExecutor import CommandExecutor
+from src.workflow.FileManager import FileManager
+from src.workflow.ParameterManager import ParameterManager
+from src.workflow.Logger import Logger
+
+
+class WorkflowManager(StreamlitUI):
+    """
+    Base class for workflow management with dual execution modes:
+    - Online mode: Uses Redis Queue for job execution
+    - Local mode: Uses multiprocessing (existing behavior)
+    """
+
+    def __init__(
+        self,
+        name: str,
+        st_session_state: dict
+    ) -> None:
+        self.name = name
+        self.params = st_session_state
+
+        # Initialize paths
+        self.workflow_dir = Path(
+            st.session_state.workspace,
+            self.name.replace(" ", "-").lower()
+        )
+        self.workflow_dir.mkdir(parents=True, exist_ok=True)
+
+        # Initialize components
+        self.logger = Logger(self.workflow_dir)
+        self.file_manager = FileManager(self.workflow_dir, self.params)
+        self.executor = CommandExecutor(self.workflow_dir, self.logger)
+        self.parameter_manager = ParameterManager(self.workflow_dir, self.params)
+
+        # Initialize StreamlitUI
+        super().__init__(
+            self.workflow_dir,
+            self.logger,
+            self.executor,
+            self.parameter_manager,
+            self.file_manager
+        )
+
+        # Initialize queue manager for online mode
+        self._queue_manager: Optional['QueueManager'] = None
+        if self._is_online_mode():
+            self._init_queue_manager()
+
+    def _is_online_mode(self) -> bool:
+        """Check if running in online deployment mode"""
+        return st.session_state.get("settings", {}).get("online_deployment", False)
+
+    def _init_queue_manager(self) -> None:
+        """Initialize queue manager for online mode"""
+        try:
+            from src.workflow.QueueManager import QueueManager
+            self._queue_manager = QueueManager()
+        except ImportError:
+            pass  # Queue not available, will use fallback
+
+    def start_workflow(self) -> None:
+        """
+        Starts workflow execution.
+
+        Online mode: Submits to Redis queue
+        Local mode: Spawns multiprocessing.Process (existing behavior)
+        """
+        # Save current parameters before execution
+        self.parameter_manager.save_parameters()
+
+        if self._queue_manager and self._queue_manager.is_available:
+            self._start_workflow_queued()
+        else:
+            self._start_workflow_local()
+
+    def _start_workflow_queued(self) -> None:
+        """Submit workflow to Redis queue (online mode)"""
+        from src.workflow.tasks import execute_workflow
+
+        # Generate job ID based on workspace
+        job_id = f"workflow-{self.workflow_dir.name}-{Path(st.session_state.workspace).name}"
+
+        # Submit job
+        submitted_id = self._queue_manager.submit_job(
+            func=execute_workflow,
+            kwargs={
+                "workflow_dir": str(self.workflow_dir),
+                "workflow_class": self.__class__.__name__,
+                "workflow_module": self.__class__.__module__,
+            },
+            job_id=job_id,
+            timeout=7200,  # 2 hour timeout
+            description=f"Workflow: {self.name}"
+        )
+
+        if submitted_id:
+            # Store job ID for status checking
+            self._queue_manager.store_job_id(self.workflow_dir, submitted_id)
+            st.success(f"Workflow submitted to queue (Job ID: {submitted_id})")
+        else:
+            st.error("Failed to submit workflow to queue")
+
+    def _start_workflow_local(self) -> None:
+        """Start workflow as local process (existing behavior)"""
+        workflow_process = multiprocessing.Process(target=self.workflow_process)
+        workflow_process.start()
+
+        # Create PID directory and file
+        self.executor.pid_dir.mkdir(parents=True, exist_ok=True)
+        Path(self.executor.pid_dir, str(workflow_process.pid)).touch()
+
+    def workflow_process(self) -> None:
+        """
+        Main workflow execution method.
+        Override in subclass to define workflow logic.
+        """
+        self.logger.log("Starting workflow...")
+        self.execution()
+        self.logger.log("WORKFLOW FINISHED")
+
+    def get_workflow_status(self) -> dict:
+        """
+        Get current workflow execution status.
+
+        Returns:
+            Dictionary with status information
+        """
+        if self._queue_manager and self._queue_manager.is_available:
+            job_id = self._queue_manager.load_job_id(self.workflow_dir)
+            if job_id:
+                job_info = self._queue_manager.get_job_info(job_id)
+                if job_info:
+                    return {
+                        "running": job_info.status.value in ["queued", "started"],
+                        "status": job_info.status.value,
+                        "progress": job_info.progress,
+                        "current_step": job_info.current_step,
+                        "job_id": job_id,
+                    }
+
+        # Fallback: check PID files (local mode)
+        pid_dir = self.executor.pid_dir
+        if pid_dir.exists() and list(pid_dir.iterdir()):
+            return {
+                "running": True,
+                "status": "running",
+                "progress": None,
+                "current_step": None,
+                "job_id": None,
+            }
+
+        return {
+            "running": False,
+            "status": "idle",
+            "progress": None,
+            "current_step": None,
+            "job_id": None,
+        }
+
+    def stop_workflow(self) -> bool:
+        """
+        Stop a running workflow.
+
+        Returns:
+            True if successfully stopped
+        """
+        if self._queue_manager and self._queue_manager.is_available:
+            job_id = self._queue_manager.load_job_id(self.workflow_dir)
+            if job_id:
+                success = self._queue_manager.cancel_job(job_id)
+                if success:
+                    self._queue_manager.clear_job_id(self.workflow_dir)
+                return success
+
+        # Fallback: kill local process
+        return self._stop_local_workflow()
+
+    def _stop_local_workflow(self) -> bool:
+        """Stop locally running workflow process"""
+        import os
+        import signal
+
+        pid_dir = self.executor.pid_dir
+        if not pid_dir.exists():
+            return False
+
+        for pid_file in pid_dir.iterdir():
+            try:
+                pid = int(pid_file.name)
+                os.kill(pid, signal.SIGTERM)
+                pid_file.unlink()
+            except (ValueError, ProcessLookupError, PermissionError):
+                pid_file.unlink()  # Clean up stale PID file
+
+        return True
+
+    # Abstract methods to override
+    def upload(self) -> None:
+        """Override to define file upload UI"""
+        pass
+
+    def configure(self) -> None:
+        """Override to define parameter configuration UI"""
+        pass
+
+    def execution(self) -> None:
+        """Override to define workflow execution logic"""
+        pass
+
+    def results(self) -> None:
+        """Override to define results display"""
+        pass
+```
+
+#### 3.2 Update StreamlitUI Execution Section
+
+**File:** `/src/workflow/StreamlitUI.py`
+
+Modify the `show_execution_section()` method to show queue status:
+
+```python
+def show_execution_section(self) -> None:
+    """
+    Display workflow execution section with queue status for online mode.
+    """
+    st.header("Workflow Execution")
+
+    # Get workflow status
+    status = self.get_workflow_status() if hasattr(self, 'get_workflow_status') else {}
+    is_running = status.get("running", False)
+
+    # Show queue status for online mode
+    if status.get("job_id"):
+        self._show_queue_status(status)
+
+    # Execution controls
+    col1, col2 = st.columns(2)
+
+    with col1:
+        if is_running:
+            if st.button("Stop Workflow", type="secondary", use_container_width=True):
+                if hasattr(self, 'stop_workflow'):
+                    self.stop_workflow()
+                    st.rerun()
+        else:
+            if st.button("Start Workflow", type="primary", use_container_width=True):
+                if hasattr(self, 'start_workflow'):
+                    self.start_workflow()
+                    st.rerun()
+
+    with col2:
+        log_level = st.selectbox(
+            "Log Level",
+            ["minimal", "commands and run times", "all"],
+            key="log-level-select"
+        )
+
+    # Show logs
+    self._show_logs(log_level, is_running)
+
+
+def _show_queue_status(self, status: dict) -> None:
+    """Display queue job status"""
+    job_status = status.get("status", "unknown")
+    progress = status.get("progress")
+    current_step = status.get("current_step", "")
+
+    # Status indicator
+    status_colors = {
+        "queued": "🟡",
+        "started": "🔵",
+        "finished": "🟢",
+        "failed": "🔴",
+    }
+
+    status_icon = status_colors.get(job_status, "⚪")
+    st.markdown(f"**Job Status:** {status_icon} {job_status.capitalize()}")
+
+    # Progress bar
+    if progress is not None and job_status == "started":
+        st.progress(progress, text=current_step or "Processing...")
+
+    # Job ID
+    with st.expander("Job Details"):
+        st.code(f"Job ID: {status.get('job_id', 'N/A')}")
+```
+
+---
+
+### Phase 4: Configuration & Environment
+
+#### 4.1 Update Settings Schema
+
+**File:** `/settings.json` (additions)
+
+```json
+{
+    "online_deployment": false,
+    "queue_settings": {
+        "enabled": true,
+        "redis_url": "redis://redis:6379/0",
+        "default_timeout": 7200,
+        "max_retries": 3,
+        "result_ttl": 86400
+    }
+}
+```
+
+#### 4.2 Environment Variables
+
+Add to Docker environment:
+
+```
+REDIS_URL=redis://redis:6379/0
+RQ_QUEUE_NAME=openms-workflows
+RQ_WORKER_TIMEOUT=7200
+```
+
+---
+
+### Phase 5: Monitoring & Operations
+
+#### 5.1 Queue Health Check Endpoint
+
+**New File:** `/src/workflow/health.py`
+
+```python
+"""Health check utilities for queue monitoring"""
+
+import os
+from redis import Redis
+
+
+def check_redis_health() -> dict:
+    """Check Redis connection health"""
+    redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+
+    try:
+        redis = Redis.from_url(redis_url)
+        redis.ping()
+        info = redis.info()
+
+        return {
+            "status": "healthy",
+            "connected_clients": info.get("connected_clients", 0),
+            "used_memory": info.get("used_memory_human", "unknown"),
+            "uptime_days": info.get("uptime_in_days", 0),
+        }
+    except Exception as e:
+        return {
+            "status": "unhealthy",
+            "error": str(e),
+        }
+
+
+def check_worker_health() -> dict:
+    """Check RQ worker health"""
+    from rq import Worker, Queue
+
+    redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+
+    try:
+        redis = Redis.from_url(redis_url)
+        queue = Queue("openms-workflows", connection=redis)
+        workers = Worker.all(connection=redis)
+
+        return {
+            "status": "healthy",
+            "worker_count": len(workers),
+            "queue_length": len(queue),
+            "workers": [
+                {
+                    "name": w.name,
+                    "state": w.get_state(),
+                    "current_job": w.get_current_job_id(),
+                }
+                for w in workers
+            ]
+        }
+    except Exception as e:
+        return {
+            "status": "unhealthy",
+            "error": str(e),
+        }
+```
+
+#### 5.2 Admin Dashboard Page (Optional)
+
+**New File:** `/content/admin_queue.py`
+
+```python
+"""Queue administration page for online deployments"""
+
+import streamlit as st
+from src.common.common import page_setup
+
+page_setup()
+
+# Only show in online mode
+if not st.session_state.settings.get("online_deployment", False):
+    st.warning("Queue administration is only available in online mode.")
+    st.stop()
+
+st.title("Queue Administration")
+
+from src.workflow.health import check_redis_health, check_worker_health
+
+# Redis Health
+st.subheader("Redis Status")
+redis_health = check_redis_health()
+if redis_health["status"] == "healthy":
+    st.success("Redis: Connected")
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Clients", redis_health.get("connected_clients", 0))
+    col2.metric("Memory", redis_health.get("used_memory", "N/A"))
+    col3.metric("Uptime (days)", redis_health.get("uptime_days", 0))
+else:
+    st.error(f"Redis: {redis_health.get('error', 'Disconnected')}")
+
+# Worker Health
+st.subheader("Worker Status")
+worker_health = check_worker_health()
+if worker_health["status"] == "healthy":
+    st.success(f"Workers: {worker_health.get('worker_count', 0)} active")
+    st.metric("Queue Length", worker_health.get("queue_length", 0))
+
+    if worker_health.get("workers"):
+        st.write("**Active Workers:**")
+        for worker in worker_health["workers"]:
+            state_emoji = "🟢" if worker["state"] == "busy" else "🟡"
+            st.write(f"{state_emoji} {worker['name']} - {worker['state']}")
+else:
+    st.error(f"Workers: {worker_health.get('error', 'No workers')}")
+
+# Link to RQ Dashboard
+st.subheader("Detailed Monitoring")
+st.markdown("[Open RQ Dashboard](http://localhost:9181)")
+```
+
+---
+
+## File Summary
+
+### New Files to Create
+
+| File | Purpose |
+|------|---------|
+| `/src/workflow/QueueManager.py` | Redis queue interaction layer |
+| `/src/workflow/tasks.py` | Worker task definitions |
+| `/src/workflow/health.py` | Health check utilities |
+| `/content/admin_queue.py` | Admin dashboard page (optional) |
+
+### Files to Modify
+
+| File | Changes |
+|------|---------|
+| `/docker-compose.yml` | Add Redis, worker, rq-dashboard services |
+| `/requirements.txt` | Add `rq`, `redis` packages |
+| `/Dockerfile` | Install queue dependencies |
+| `/src/workflow/WorkflowManager.py` | Add queue submission logic |
+| `/src/workflow/StreamlitUI.py` | Add queue status display |
+| `/settings.json` | Add queue configuration section |
+
+---
+
+## Deployment Considerations
+
+### Scaling Workers
+
+```yaml
+# In docker-compose.yml
+worker:
+  deploy:
+    replicas: 3  # Scale to 3 workers
+```
+
+### Redis Persistence
+
+The implementation uses Redis AOF (Append Only File) for durability:
+```
+command: redis-server --appendonly yes
+```
+
+### Resource Limits
+
+```yaml
+worker:
+  deploy:
+    resources:
+      limits:
+        cpus: '2'
+        memory: 4G
+```
+
+### Monitoring
+
+- **RQ Dashboard**: Built-in web UI at port 9181
+- **Redis CLI**: `docker exec -it openms-redis redis-cli`
+- **Worker Logs**: `docker logs openms-worker`
+
+---
+
+## Migration Path
+
+### Phase 1: Infrastructure (Week 1)
+- Add Redis and worker services to docker-compose
+- Update Dockerfile and requirements
+- Deploy and verify services start correctly
+
+### Phase 2: Core Implementation (Week 2)
+- Implement QueueManager class
+- Implement worker tasks
+- Add health checks
+
+### Phase 3: Integration (Week 3)
+- Modify WorkflowManager
+- Update StreamlitUI
+- Test execution flow end-to-end
+
+### Phase 4: Testing & Documentation (Week 4)
+- Comprehensive testing
+- Performance benchmarking
+- Documentation updates
+
+---
+
+## Rollback Plan
+
+If issues arise, the system can fall back to local execution:
+
+1. Set `queue_settings.enabled = false` in settings.json
+2. Or remove REDIS_URL environment variable
+3. The WorkflowManager will automatically use multiprocessing fallback
+
+---
+
+## Future Enhancements
+
+1. **Priority Queues**: Separate queues for different workflow types
+2. **Job Scheduling**: Delayed job execution
+3. **Email Notifications**: Notify users when long jobs complete
+4. **Job Dependencies**: Chain workflows together
+5. **Resource Quotas**: Limit jobs per user/workspace
+
+---
+
+## Appendix: Testing Checklist
+
+- [ ] Redis container starts and accepts connections
+- [ ] Worker container connects to Redis
+- [ ] Job submission from Streamlit succeeds
+- [ ] Job status updates in real-time
+- [ ] Job completion triggers correct callbacks
+- [ ] Job cancellation works
+- [ ] Failed jobs are handled gracefully
+- [ ] RQ Dashboard accessible and shows correct data
+- [ ] Local mode fallback works when Redis unavailable
+- [ ] Workspace cleanup still functions correctly
+- [ ] Logs are written correctly from worker
+- [ ] Multiple concurrent jobs execute properly
