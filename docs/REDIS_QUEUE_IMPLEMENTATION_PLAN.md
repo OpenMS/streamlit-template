@@ -39,60 +39,128 @@ This document outlines the implementation plan for introducing a Redis-based job
 
 ## Proposed Architecture
 
-### Redis Queue System
+### Single-Container Redis Queue System
+
+All components run within the same Docker container, ensuring identical environments for the web app and worker processes.
 
 ```
-┌─────────────────────┐     ┌─────────────┐     ┌──────────────────────┐
-│   Streamlit App     │     │    Redis    │     │   Worker Service(s)  │
-│   (Web Container)   │     │   (Queue)   │     │   (Worker Container) │
-├─────────────────────┤     ├─────────────┤     ├──────────────────────┤
-│ • Submit job to     │────→│ • Job queue │────→│ • Poll for jobs      │
-│   queue             │     │ • Job state │     │ • Execute workflows  │
-│ • Monitor job       │←────│ • Results   │←────│ • Update status      │
-│   status via Redis  │     │ • Pub/Sub   │     │ • Store results      │
-└─────────────────────┘     └─────────────┘     └──────────────────────┘
+┌────────────────────────────────────────────────────────────┐
+│                    Docker Container                         │
+│                                                             │
+│  ┌─────────────────┐    ┌─────────────┐    ┌────────────┐  │
+│  │  Streamlit App  │───→│ Redis Server│←───│ RQ Worker  │  │
+│  │  (Main Process) │    │ (localhost) │    │ (Background)│  │
+│  └─────────────────┘    └─────────────┘    └────────────┘  │
+│         │                      ↑                  │         │
+│         │    Submit jobs       │    Poll jobs     │         │
+│         └──────────────────────┴──────────────────┘         │
+│                                                             │
+│  All processes share: pyOpenMS, TOPP tools, Python env     │
+└────────────────────────────────────────────────────────────┘
 ```
 
 ### Technology Stack
 
 | Component | Technology | Rationale |
 |-----------|------------|-----------|
-| Message Broker | **Redis** | Fast, simple, built-in pub/sub for real-time updates |
+| Message Broker | **Redis** (embedded) | Fast, simple, runs as background process |
 | Task Queue | **RQ (Redis Queue)** | Lightweight, Python-native, simpler than Celery |
-| Job Monitoring | **rq-dashboard** | Built-in web UI for queue monitoring |
+| Job Monitoring | **rq-dashboard** (optional) | Can run in same container if needed |
+
+**Why Single Container?**
+- **Environment consistency**: Worker has identical pyOpenMS/TOPP installation
+- **Simpler deployment**: One image, one container, no orchestration complexity
+- **No networking issues**: All communication via localhost
+- **Easier debugging**: All logs in one place
+- **Lower resource overhead**: No container-to-container communication
 
 **Why RQ over Celery?**
 - Simpler configuration (fewer moving parts)
 - Lower memory footprint
 - Native Python job serialization
-- Sufficient for our use case (not distributed across multiple machines)
+- Perfect for single-container deployment
 - Easier to debug and maintain
 
 ---
 
 ## Implementation Plan
 
-### Phase 1: Infrastructure Setup
+### Phase 1: Infrastructure Setup (Single Container)
 
-#### 1.1 Add Redis Service to Docker Compose
+#### 1.1 Update Dockerfile
+
+**File:** `/Dockerfile`
+
+Add Redis server installation and modify the entrypoint to start all services.
+
+```dockerfile
+# === Add to the run-app stage (around line 130) ===
+
+# Install Redis server
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    redis-server \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python Redis client and RQ
+RUN pip install rq redis
+
+# Create Redis data directory
+RUN mkdir -p /var/lib/redis && chown redis:redis /var/lib/redis
+
+# === Replace the entrypoint script section (around line 160-170) ===
+
+# Create entrypoint script that starts all services
+RUN echo '#!/bin/bash\n\
+set -e\n\
+\n\
+# Start cron for workspace cleanup\n\
+service cron start\n\
+\n\
+# Start Redis server in background\n\
+echo "Starting Redis server..."\n\
+redis-server --daemonize yes --dir /var/lib/redis --appendonly yes\n\
+\n\
+# Wait for Redis to be ready\n\
+until redis-cli ping > /dev/null 2>&1; do\n\
+    echo "Waiting for Redis..."\n\
+    sleep 1\n\
+done\n\
+echo "Redis is ready"\n\
+\n\
+# Start RQ worker(s) in background\n\
+echo "Starting RQ worker..."\n\
+cd /openms-streamlit-template\n\
+rq worker openms-workflows --url redis://localhost:6379/0 &\n\
+\n\
+# Optionally start RQ dashboard (uncomment if needed)\n\
+# rq-dashboard --redis-url redis://localhost:6379/0 --port 9181 &\n\
+\n\
+# Start Streamlit (foreground - main process)\n\
+echo "Starting Streamlit app..."\n\
+exec streamlit run app.py\n\
+' > /entrypoint.sh && chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]
+```
+
+#### 1.2 Update Requirements
+
+**File:** `/requirements.txt` (additions)
+
+```
+rq>=1.16.0
+redis>=5.0.0
+rq-dashboard>=0.6.0  # Optional: for web-based queue monitoring
+```
+
+#### 1.3 Docker Compose (Minimal Changes)
 
 **File:** `/docker-compose.yml`
 
+The docker-compose.yml requires minimal changes - just add environment variable:
+
 ```yaml
 services:
-  redis:
-    image: redis:7-alpine
-    container_name: openms-redis
-    restart: always
-    volumes:
-      - redis-data:/data
-    command: redis-server --appendonly yes
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   openms-streamlit-template:
     build:
       context: .
@@ -104,65 +172,68 @@ services:
     restart: always
     ports:
       - 8501:8501
+      # - 9181:9181  # Uncomment to expose RQ dashboard
     volumes:
       - workspaces-streamlit-template:/workspaces-streamlit-template
-    depends_on:
-      redis:
-        condition: service_healthy
     environment:
-      - REDIS_URL=redis://redis:6379/0
-    command: streamlit run openms-streamlit-template/app.py
-
-  worker:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: openms_streamlit_template
-    container_name: openms-worker
-    restart: always
-    volumes:
-      - workspaces-streamlit-template:/workspaces-streamlit-template
-    depends_on:
-      redis:
-        condition: service_healthy
-    environment:
-      - REDIS_URL=redis://redis:6379/0
-    command: rq worker --url redis://redis:6379/0 openms-workflows
-    deploy:
-      replicas: 1  # Can scale up as needed
-
-  rq-dashboard:
-    image: eoranged/rq-dashboard
-    container_name: openms-rq-dashboard
-    restart: always
-    ports:
-      - 9181:9181
-    environment:
-      - RQ_DASHBOARD_REDIS_URL=redis://redis:6379/0
-    depends_on:
-      - redis
+      - REDIS_URL=redis://localhost:6379/0
+    # command is handled by entrypoint.sh
 
 volumes:
   workspaces-streamlit-template:
-  redis-data:
 ```
 
-#### 1.2 Update Requirements
+#### 1.4 Alternative: Supervisor for Process Management (Optional)
 
-**File:** `/requirements.txt` (additions)
+For more robust process management, use `supervisord`:
 
+**File:** `/supervisord.conf`
+
+```ini
+[supervisord]
+nodaemon=true
+user=root
+
+[program:redis]
+command=redis-server --dir /var/lib/redis --appendonly yes
+autostart=true
+autorestart=true
+priority=10
+stdout_logfile=/dev/stdout
+stdout_logfile_maxbytes=0
+stderr_logfile=/dev/stderr
+stderr_logfile_maxbytes=0
+
+[program:rq-worker]
+command=rq worker openms-workflows --url redis://localhost:6379/0
+directory=/openms-streamlit-template
+autostart=true
+autorestart=true
+priority=20
+startsecs=5
+stdout_logfile=/dev/stdout
+stdout_logfile_maxbytes=0
+stderr_logfile=/dev/stderr
+stderr_logfile_maxbytes=0
+
+[program:streamlit]
+command=streamlit run app.py
+directory=/openms-streamlit-template
+autostart=true
+autorestart=true
+priority=30
+startsecs=10
+stdout_logfile=/dev/stdout
+stdout_logfile_maxbytes=0
+stderr_logfile=/dev/stderr
+stderr_logfile_maxbytes=0
 ```
-rq>=1.16.0
-redis>=5.0.0
-```
 
-#### 1.3 Update Dockerfile
-
-**File:** `/Dockerfile` (add to run-app stage, around line 130)
-
+Then update Dockerfile:
 ```dockerfile
-# Install Redis client and RQ
-RUN pip install rq redis
+RUN apt-get update && apt-get install -y supervisor
+COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
 ```
 
 ---
@@ -222,9 +293,11 @@ class QueueManager:
     Manages Redis Queue operations for workflow execution.
 
     Only active in online mode. Falls back to direct execution in local mode.
+    Redis runs on localhost within the same container.
     """
 
     QUEUE_NAME = "openms-workflows"
+    # Redis runs locally in the same container
     REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
 
     def __init__(self):
@@ -881,7 +954,7 @@ def _show_queue_status(self, status: dict) -> None:
     "online_deployment": false,
     "queue_settings": {
         "enabled": true,
-        "redis_url": "redis://redis:6379/0",
+        "redis_url": "redis://localhost:6379/0",
         "default_timeout": 7200,
         "max_retries": 3,
         "result_ttl": 86400
@@ -891,10 +964,10 @@ def _show_queue_status(self, status: dict) -> None:
 
 #### 4.2 Environment Variables
 
-Add to Docker environment:
+These are set automatically in the container (localhost since same container):
 
 ```
-REDIS_URL=redis://redis:6379/0
+REDIS_URL=redis://localhost:6379/0
 RQ_QUEUE_NAME=openms-workflows
 RQ_WORKER_TIMEOUT=7200
 ```
@@ -1032,14 +1105,15 @@ st.markdown("[Open RQ Dashboard](http://localhost:9181)")
 | `/src/workflow/tasks.py` | Worker task definitions |
 | `/src/workflow/health.py` | Health check utilities |
 | `/content/admin_queue.py` | Admin dashboard page (optional) |
+| `/supervisord.conf` | Process manager config (optional) |
 
 ### Files to Modify
 
 | File | Changes |
 |------|---------|
-| `/docker-compose.yml` | Add Redis, worker, rq-dashboard services |
+| `/Dockerfile` | Install Redis server, RQ, update entrypoint |
+| `/docker-compose.yml` | Minor: add REDIS_URL env var |
 | `/requirements.txt` | Add `rq`, `redis` packages |
-| `/Dockerfile` | Install queue dependencies |
 | `/src/workflow/WorkflowManager.py` | Add queue submission logic |
 | `/src/workflow/StreamlitUI.py` | Add queue status display |
 | `/settings.json` | Add queue configuration section |
@@ -1048,61 +1122,81 @@ st.markdown("[Open RQ Dashboard](http://localhost:9181)")
 
 ## Deployment Considerations
 
-### Scaling Workers
+### Scaling Workers (Within Container)
 
-```yaml
-# In docker-compose.yml
-worker:
-  deploy:
-    replicas: 3  # Scale to 3 workers
+You can run multiple RQ workers within the same container by modifying the entrypoint:
+
+```bash
+# Start multiple workers (in entrypoint.sh)
+for i in 1 2 3; do
+    rq worker openms-workflows --url redis://localhost:6379/0 --name worker-$i &
+done
+```
+
+Or with supervisord, add multiple worker programs:
+
+```ini
+[program:rq-worker]
+command=rq worker openms-workflows --url redis://localhost:6379/0
+numprocs=3
+process_name=%(program_name)s-%(process_num)02d
 ```
 
 ### Redis Persistence
 
-The implementation uses Redis AOF (Append Only File) for durability:
+Redis data is persisted using AOF (Append Only File):
+```bash
+redis-server --appendonly yes --dir /var/lib/redis
 ```
-command: redis-server --appendonly yes
+
+For container restarts, mount the Redis data directory:
+```yaml
+volumes:
+  - redis-data:/var/lib/redis
 ```
 
 ### Resource Limits
 
 ```yaml
-worker:
+# In docker-compose.yml
+openms-streamlit-template:
   deploy:
     resources:
       limits:
-        cpus: '2'
-        memory: 4G
+        cpus: '4'
+        memory: 8G
 ```
 
 ### Monitoring
 
-- **RQ Dashboard**: Built-in web UI at port 9181
-- **Redis CLI**: `docker exec -it openms-redis redis-cli`
-- **Worker Logs**: `docker logs openms-worker`
+- **RQ Dashboard**: Enable in entrypoint, access at port 9181
+- **Redis CLI**: `docker exec -it openms-streamlit-template redis-cli`
+- **Worker Status**: `docker exec -it openms-streamlit-template rq info`
+- **All Logs**: `docker logs openms-streamlit-template`
 
 ---
 
 ## Migration Path
 
-### Phase 1: Infrastructure (Week 1)
-- Add Redis and worker services to docker-compose
-- Update Dockerfile and requirements
-- Deploy and verify services start correctly
+### Phase 1: Infrastructure
+- Update Dockerfile to install Redis server and RQ
+- Create entrypoint script to start all services
+- Update requirements.txt
+- Build and verify container starts correctly with all services
 
-### Phase 2: Core Implementation (Week 2)
+### Phase 2: Core Implementation
 - Implement QueueManager class
-- Implement worker tasks
-- Add health checks
+- Implement worker tasks module
+- Add health check utilities
 
-### Phase 3: Integration (Week 3)
-- Modify WorkflowManager
-- Update StreamlitUI
+### Phase 3: Integration
+- Modify WorkflowManager to use queue in online mode
+- Update StreamlitUI for queue status display
 - Test execution flow end-to-end
 
-### Phase 4: Testing & Documentation (Week 4)
-- Comprehensive testing
-- Performance benchmarking
+### Phase 4: Testing & Polish
+- Comprehensive testing across all scenarios
+- Verify local mode still works unchanged
 - Documentation updates
 
 ---
@@ -1115,6 +1209,8 @@ If issues arise, the system can fall back to local execution:
 2. Or remove REDIS_URL environment variable
 3. The WorkflowManager will automatically use multiprocessing fallback
 
+The entrypoint can also be modified to skip Redis/RQ startup entirely if needed.
+
 ---
 
 ## Future Enhancements
@@ -1124,20 +1220,22 @@ If issues arise, the system can fall back to local execution:
 3. **Email Notifications**: Notify users when long jobs complete
 4. **Job Dependencies**: Chain workflows together
 5. **Resource Quotas**: Limit jobs per user/workspace
+6. **Multi-Container Scaling**: If needed later, extract workers to separate containers
 
 ---
 
 ## Appendix: Testing Checklist
 
-- [ ] Redis container starts and accepts connections
-- [ ] Worker container connects to Redis
+- [ ] Container starts with Redis, RQ worker, and Streamlit all running
+- [ ] `redis-cli ping` returns PONG inside container
+- [ ] `rq info` shows worker registered
 - [ ] Job submission from Streamlit succeeds
 - [ ] Job status updates in real-time
 - [ ] Job completion triggers correct callbacks
 - [ ] Job cancellation works
 - [ ] Failed jobs are handled gracefully
-- [ ] RQ Dashboard accessible and shows correct data
-- [ ] Local mode fallback works when Redis unavailable
-- [ ] Workspace cleanup still functions correctly
+- [ ] Local mode (non-Docker) still works with multiprocessing fallback
+- [ ] Workspace cleanup cron still functions correctly
 - [ ] Logs are written correctly from worker
 - [ ] Multiple concurrent jobs execute properly
+- [ ] Container restart recovers Redis state (if persistence enabled)
