@@ -128,7 +128,7 @@ class ParameterManager:
                             with open(self.params_file, "w", encoding="utf-8") as f:
                                 json.dump(params, f, indent=4)
                             return tool_name
-                    except:
+                    except Exception:
                         continue
         return None
 

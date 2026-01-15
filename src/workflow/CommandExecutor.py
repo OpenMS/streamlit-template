@@ -220,6 +220,9 @@ class CommandExecutor:
             # Add non-default TOPP tool parameters
             if param_key in params.keys():
                 for k, v in params[param_key].items():
+                    # Skip metadata keys (starting with underscore)
+                    if k.startswith("_"):
+                        continue
                     command += [f"-{k}"]
                     if isinstance(v, str) and "\n" in v:
                         command += v.split("\n")

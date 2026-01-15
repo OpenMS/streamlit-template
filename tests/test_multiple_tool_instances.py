@@ -58,6 +58,15 @@ def test_tool_instance_name_storage(temp_workflow_dir, mock_streamlit_state):
         ini_dir.mkdir(parents=True, exist_ok=True)
         (ini_dir / "IDFilter.ini").touch()
         
+        # Pre-populate params file with _tool_name metadata
+        # (this would be set by StreamlitUI.input_TOPP in real usage)
+        initial_params = {
+            "IDFilter-first": {"_tool_name": "IDFilter"},
+            "IDFilter-second": {"_tool_name": "IDFilter"}
+        }
+        with open(pm.params_file, 'w') as f:
+            json.dump(initial_params, f)
+        
         # Mock pyopenms Param and ParamXMLFile
         mock_param = MagicMock()
         mock_param.keys.return_value = [
@@ -83,6 +92,9 @@ def test_tool_instance_name_storage(temp_workflow_dir, mock_streamlit_state):
         assert "IDFilter-second" in saved_params
         assert saved_params["IDFilter-first"]["score:psm"] == 0.05
         assert saved_params["IDFilter-second"]["score:psm"] == 0.01
+        # Verify metadata is preserved
+        assert saved_params["IDFilter-first"]["_tool_name"] == "IDFilter"
+        assert saved_params["IDFilter-second"]["_tool_name"] == "IDFilter"
 
 
 def test_get_tool_name_from_instance(temp_workflow_dir):
