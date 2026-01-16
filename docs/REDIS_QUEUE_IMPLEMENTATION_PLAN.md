@@ -4,6 +4,60 @@
 
 This document outlines the implementation plan for introducing a Redis-based job queueing system to the OpenMS Streamlit Template's **online mode only**. This system will replace the current `multiprocessing.Process` approach with a more robust, scalable queue architecture suitable for production deployments.
 
+**Important:** The existing multiprocessing system remains completely unchanged for offline/local deployments (including the Windows installer). Redis queue is purely additive and only activates in online Docker deployments.
+
+---
+
+## Design Principles
+
+### Plug & Play Architecture
+
+The Redis queue system is designed with minimal changes to existing code:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                      WorkflowManager                             │
+│                                                                   │
+│   start_workflow()                                               │
+│        │                                                         │
+│        ▼                                                         │
+│   ┌─────────────────────────────────────────────────────────┐   │
+│   │  if online_mode AND redis_available:                     │   │
+│   │      → Submit to Redis Queue (new code)                  │   │
+│   │  else:                                                   │   │
+│   │      → multiprocessing.Process (existing code, unchanged)│   │
+│   └─────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Key Design Decisions:**
+1. **Zero changes to local mode**: Windows installer and local development work exactly as before
+2. **Graceful fallback**: If Redis is unavailable, automatically uses multiprocessing
+3. **Feature flag**: Can be disabled via `queue_settings.enabled = false`
+4. **Same execution logic**: The `execution()` method code is identical - only the process spawning differs
+
+### Offline Mode (Windows Installer) Compatibility
+
+The Windows installer built from GitHub Actions uses local mode with no Redis:
+
+| Mode | Queue System | Process Model | Use Case |
+|------|--------------|---------------|----------|
+| **Local** (`online_deployment: false`) | None | `multiprocessing.Process` | Windows installer, local dev |
+| **Online** (`online_deployment: true`) | Redis + RQ | RQ Worker | Docker deployment |
+
+**No code changes required for offline mode.** The detection happens automatically:
+
+```python
+# In WorkflowManager
+def start_workflow(self):
+    if self._is_online_mode() and self._queue_manager.is_available:
+        self._start_workflow_queued()    # Redis queue
+    else:
+        self._start_workflow_local()      # Existing multiprocessing (unchanged)
+```
+
+---
+
 ## Current Architecture
 
 ### How Workflows Execute Today
@@ -1120,6 +1174,319 @@ st.markdown("[Open RQ Dashboard](http://localhost:9181)")
 
 ---
 
+## Configuring Worker Count
+
+### Why Multiple Workers?
+
+Each RQ worker can process **one job at a time**. With a single worker, users must wait for the previous workflow to complete before theirs can start. Multiple workers allow parallel execution.
+
+| Workers | Concurrent Jobs | Use Case |
+|---------|-----------------|----------|
+| 1 | 1 | Development, low-traffic deployments |
+| 2-3 | 2-3 | Small team, moderate usage |
+| 4-8 | 4-8 | Production, high traffic |
+
+### Configuration Methods
+
+#### Method 1: Environment Variable (Recommended)
+
+Set `RQ_WORKER_COUNT` in docker-compose.yml or the entrypoint:
+
+```yaml
+# docker-compose.yml
+environment:
+  - REDIS_URL=redis://localhost:6379/0
+  - RQ_WORKER_COUNT=3  # Number of workers to start
+```
+
+Update entrypoint.sh to read this variable:
+
+```bash
+#!/bin/bash
+# ... Redis startup ...
+
+# Start RQ workers based on environment variable
+WORKER_COUNT=${RQ_WORKER_COUNT:-1}
+echo "Starting $WORKER_COUNT RQ worker(s)..."
+
+for i in $(seq 1 $WORKER_COUNT); do
+    rq worker openms-workflows --url redis://localhost:6379/0 --name worker-$i &
+done
+
+# Start Streamlit
+exec streamlit run app.py
+```
+
+#### Method 2: Supervisord Configuration
+
+For more robust process management with automatic restart:
+
+```ini
+# supervisord.conf
+[program:rq-worker]
+command=rq worker openms-workflows --url redis://localhost:6379/0
+directory=/openms-streamlit-template
+numprocs=%(ENV_RQ_WORKER_COUNT)s  # Read from environment
+process_name=worker-%(process_num)02d
+autostart=true
+autorestart=true
+startsecs=5
+```
+
+#### Method 3: Settings File
+
+Add to settings.json for runtime configuration:
+
+```json
+{
+    "queue_settings": {
+        "worker_count": 2
+    }
+}
+```
+
+### Resource Considerations
+
+Each worker consumes memory for:
+- Python interpreter (~100-200MB base)
+- pyOpenMS/TOPP tools during execution (~500MB-2GB depending on workflow)
+- Input/output file processing
+
+**Recommended formula:**
+```
+max_workers = (available_memory - 2GB) / 1.5GB
+```
+
+Example: 8GB container → max 4 workers
+
+---
+
+## User Experience: Queue Status Display
+
+### What Users See When Queued
+
+When a user starts a workflow and it enters the queue, they need clear feedback:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Workflow Execution                                          │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  🟡 Status: Queued                                          │
+│                                                              │
+│  Your workflow is #3 in the queue                           │
+│  Estimated wait: ~5-10 minutes                              │
+│                                                              │
+│  ┌─────────────────────────────────────────────────────┐    │
+│  │ Queue Position    ███░░░░░░░░░░░░░░░░░  3 of 5     │    │
+│  └─────────────────────────────────────────────────────┘    │
+│                                                              │
+│  [Cancel Workflow]                                          │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Status States and UI Feedback
+
+| Status | Icon | Message | UI Elements |
+|--------|------|---------|-------------|
+| **Queued** | 🟡 | "Your workflow is #N in queue" | Position indicator, cancel button |
+| **Starting** | 🔵 | "Workflow is starting..." | Spinner |
+| **Running** | 🔵 | "Workflow in progress" | Progress bar, log viewer, stop button |
+| **Completed** | 🟢 | "Workflow completed successfully" | View results button |
+| **Failed** | 🔴 | "Workflow failed" | Error details, retry button |
+| **Cancelled** | ⚪ | "Workflow was cancelled" | Restart button |
+
+### Implementation: Queue Status UI
+
+**File:** `/src/workflow/StreamlitUI.py` (additions)
+
+```python
+def _show_queue_status(self, status: dict) -> None:
+    """Display detailed queue status to user"""
+    job_status = status.get("status", "unknown")
+
+    # Status icons and colors
+    status_display = {
+        "queued": ("🟡", "Queued", "warning"),
+        "started": ("🔵", "Running", "info"),
+        "finished": ("🟢", "Completed", "success"),
+        "failed": ("🔴", "Failed", "error"),
+        "canceled": ("⚪", "Cancelled", "secondary"),
+    }
+
+    icon, label, color = status_display.get(job_status, ("⚪", "Unknown", "secondary"))
+
+    # Main status display
+    st.markdown(f"### {icon} Status: {label}")
+
+    # Queue-specific information
+    if job_status == "queued":
+        queue_position = status.get("queue_position", "?")
+        queue_length = status.get("queue_length", "?")
+
+        st.info(f"Your workflow is **#{queue_position}** in the queue ({queue_length} total)")
+
+        # Visual queue indicator
+        if isinstance(queue_position, int) and isinstance(queue_length, int):
+            progress = 1 - (queue_position / max(queue_length, 1))
+            st.progress(progress, text=f"Position {queue_position} of {queue_length}")
+
+        # Estimate wait time (rough: 5 min per job ahead)
+        if isinstance(queue_position, int):
+            wait_min = (queue_position - 1) * 5
+            if wait_min > 0:
+                st.caption(f"Estimated wait: ~{wait_min}-{wait_min + 10} minutes")
+
+    # Running status with progress
+    elif job_status == "started":
+        progress = status.get("progress", 0)
+        current_step = status.get("current_step", "Processing...")
+
+        st.progress(progress, text=current_step)
+
+    # Expandable job details
+    with st.expander("Job Details", expanded=False):
+        st.code(f"""Job ID: {status.get('job_id', 'N/A')}
+Submitted: {status.get('enqueued_at', 'N/A')}
+Started: {status.get('started_at', 'N/A')}
+Workers Active: {status.get('active_workers', 'N/A')}""")
+```
+
+---
+
+## Sidebar Metrics (Online Mode)
+
+### Metrics to Display
+
+In online mode, enhance the existing CPU/RAM sidebar with queue metrics:
+
+```
+┌─────────────────────────┐
+│  System Status          │
+├─────────────────────────┤
+│  CPU    ████░░░░  45%   │
+│  RAM    ██████░░  72%   │
+├─────────────────────────┤
+│  Queue Status           │
+├─────────────────────────┤
+│  Workers   2/3 busy     │
+│  Queued    5 jobs       │
+│  Running   2 jobs       │
+└─────────────────────────┘
+```
+
+### Implementation: Sidebar Queue Metrics
+
+**File:** `/src/common/common.py` (additions to `render_sidebar()`)
+
+```python
+def render_queue_metrics() -> None:
+    """Display queue metrics in sidebar (online mode only)"""
+    if not st.session_state.settings.get("online_deployment", False):
+        return
+
+    try:
+        from src.workflow.QueueManager import QueueManager
+        qm = QueueManager()
+
+        if not qm.is_available:
+            return
+
+        stats = qm.get_queue_stats()
+        if not stats:
+            return
+
+        st.sidebar.markdown("---")
+        st.sidebar.markdown("**Queue Status**")
+
+        # Worker status
+        total_workers = stats.get("workers", 0)
+        busy_workers = stats.get("started", 0)
+
+        col1, col2 = st.sidebar.columns(2)
+        col1.metric("Workers", f"{busy_workers}/{total_workers}",
+                    delta=None,
+                    help="Active workers / Total workers")
+
+        # Queue depth
+        queued = stats.get("queued", 0)
+        col2.metric("Queued", queued,
+                    delta=None,
+                    help="Jobs waiting in queue")
+
+        # Visual indicator
+        if total_workers > 0:
+            utilization = busy_workers / total_workers
+            st.sidebar.progress(utilization, text=f"{int(utilization*100)}% utilized")
+
+        # Warning if queue is backing up
+        if queued > total_workers * 2:
+            st.sidebar.warning(f"High queue depth: {queued} jobs waiting")
+
+    except Exception:
+        pass  # Silently fail if queue not available
+
+
+def render_sidebar() -> None:
+    """Existing sidebar render function - add queue metrics"""
+    # ... existing sidebar code ...
+
+    # Add queue metrics for online mode
+    render_queue_metrics()
+```
+
+### Available Metrics
+
+| Metric | Description | Source |
+|--------|-------------|--------|
+| **Workers Total** | Number of RQ workers running | `Worker.count()` |
+| **Workers Busy** | Workers currently processing | `started_job_registry` |
+| **Queue Depth** | Jobs waiting to be processed | `len(queue)` |
+| **Jobs Running** | Jobs currently being processed | `started_job_registry` |
+| **Jobs Completed** | Recent completed jobs | `finished_job_registry` |
+| **Jobs Failed** | Recent failed jobs | `failed_job_registry` |
+| **Avg Wait Time** | Average time in queue | Calculated from job metadata |
+| **Avg Run Time** | Average execution time | Calculated from job metadata |
+
+### Extended Metrics (Optional)
+
+For more detailed monitoring, add a dedicated metrics endpoint:
+
+```python
+def get_detailed_queue_metrics() -> dict:
+    """Get comprehensive queue metrics"""
+    from rq import Queue, Worker
+    from redis import Redis
+
+    redis = Redis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
+    queue = Queue("openms-workflows", connection=redis)
+    workers = Worker.all(connection=redis)
+
+    return {
+        # Capacity
+        "total_workers": len(workers),
+        "idle_workers": len([w for w in workers if w.get_state() == "idle"]),
+        "busy_workers": len([w for w in workers if w.get_state() == "busy"]),
+
+        # Queue state
+        "queued_jobs": len(queue),
+        "started_jobs": len(queue.started_job_registry),
+        "finished_jobs_24h": len(queue.finished_job_registry),
+        "failed_jobs_24h": len(queue.failed_job_registry),
+
+        # Performance (if tracking)
+        "avg_wait_time_sec": _calculate_avg_wait_time(queue),
+        "avg_run_time_sec": _calculate_avg_run_time(queue),
+
+        # Health
+        "redis_connected": redis.ping(),
+        "redis_memory_mb": redis.info().get("used_memory_human", "N/A"),
+    }
+```
+
+---
+
 ## Deployment Considerations
 
 ### Scaling Workers (Within Container)
@@ -1128,7 +1495,8 @@ You can run multiple RQ workers within the same container by modifying the entry
 
 ```bash
 # Start multiple workers (in entrypoint.sh)
-for i in 1 2 3; do
+WORKER_COUNT=${RQ_WORKER_COUNT:-1}
+for i in $(seq 1 $WORKER_COUNT); do
     rq worker openms-workflows --url redis://localhost:6379/0 --name worker-$i &
 done
 ```
@@ -1138,7 +1506,7 @@ Or with supervisord, add multiple worker programs:
 ```ini
 [program:rq-worker]
 command=rq worker openms-workflows --url redis://localhost:6379/0
-numprocs=3
+numprocs=%(ENV_RQ_WORKER_COUNT)s
 process_name=%(program_name)s-%(process_num)02d
 ```
 
