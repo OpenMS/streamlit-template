@@ -986,7 +986,12 @@ class StreamlitUI:
                     f.write(up.read().decode("utf-8"))
                 streamlit_js_eval(js_expressions="parent.window.location.reload()")
 
-    def execution_section(self, start_workflow_function) -> None:
+    def execution_section(
+        self,
+        start_workflow_function,
+        get_status_function=None,
+        stop_workflow_function=None
+    ) -> None:
         with st.expander("**Summary**"):
             st.markdown(self.export_parameters_markdown())
 
@@ -995,51 +1000,80 @@ class StreamlitUI:
         log_level = c1.selectbox(
             "log details", ["minimal", "commands and run times", "all"], key="log_level"
         )
-        
+
         # Real-time display options
         if "log_lines_count" not in st.session_state:
             st.session_state.log_lines_count = 100
-        
+
         log_lines_count = c2.selectbox(
             "lines to show", [50, 100, 200, 500, "all"],
             index=1, key="log_lines_select"
         )
         if log_lines_count != "all":
             st.session_state.log_lines_count = log_lines_count
-        
-        pid_exists = self.executor.pid_dir.exists()
+
+        # Get workflow status (supports both queue and local modes)
+        status = {}
+        if get_status_function:
+            status = get_status_function()
+
+        # Determine if workflow is running
+        is_running = status.get("running", False)
+        job_status = status.get("status", "idle")
+
+        # Fallback to PID check for backward compatibility
+        pid_exists = self.executor.pid_dir.exists() and list(self.executor.pid_dir.iterdir())
+        if not is_running and pid_exists:
+            is_running = True
+            job_status = "running"
+
         log_path = Path(self.workflow_dir, "logs", log_level.replace(" ", "-") + ".log")
         log_exists = log_path.exists()
 
-        if pid_exists:
+        # Show queue status if available (online mode)
+        if status.get("job_id"):
+            self._show_queue_status(status)
+
+        # Control buttons
+        if is_running:
             if c1.button("Stop Workflow", type="primary", use_container_width=True):
-                self.executor.stop()
+                if stop_workflow_function:
+                    stop_workflow_function()
+                else:
+                    self.executor.stop()
                 st.rerun()
         elif c1.button("Start Workflow", type="primary", use_container_width=True):
             start_workflow_function()
-            with st.spinner("**Workflow running...**"):
+            with st.spinner("**Workflow starting...**"):
                 time.sleep(1)
                 st.rerun()
 
-        if log_exists and pid_exists:
+        # Display logs and status
+        if is_running:
             # Real-time display during execution
-            with st.spinner("**Workflow running...**"):
-                with open(log_path, "r", encoding="utf-8") as f:
-                    lines = f.readlines()
-                if log_lines_count == "all":
-                    display_lines = lines
-                else:
-                    display_lines = lines[-st.session_state.log_lines_count:]
-                st.code(
-                    "".join(display_lines),
-                    language="neon",
-                    line_numbers=False,
-                )
+            spinner_text = "**Workflow running...**"
+            if job_status == "queued":
+                pos = status.get("queue_position", "?")
+                spinner_text = f"**Waiting in queue (position {pos})...**"
+
+            with st.spinner(spinner_text):
+                if log_exists:
+                    with open(log_path, "r", encoding="utf-8") as f:
+                        lines = f.readlines()
+                    if log_lines_count == "all":
+                        display_lines = lines
+                    else:
+                        display_lines = lines[-st.session_state.log_lines_count:]
+                    st.code(
+                        "".join(display_lines),
+                        language="neon",
+                        line_numbers=False,
+                    )
                 # Faster polling for real-time updates
                 time.sleep(1)
                 st.rerun()
 
-        elif log_exists and not pid_exists:
+        elif log_exists:
             # Static display after completion
             st.markdown(
                 f"**Workflow log file: {datetime.fromtimestamp(log_path.stat().st_ctime).strftime('%Y-%m-%d %H:%M')} CET**"
@@ -1050,10 +1084,51 @@ class StreamlitUI:
             if not "WORKFLOW FINISHED" in content:
                 st.error("**Errors occurred, check log file.**")
             st.code(content, language="neon", line_numbers=False)
-        elif pid_exists:
-            with st.spinner("**Workflow running...**"):
-                time.sleep(1)
-                st.rerun()
+
+    def _show_queue_status(self, status: dict) -> None:
+        """Display queue job status for online mode"""
+        job_status = status.get("status", "unknown")
+
+        # Status icons
+        status_display = {
+            "queued": ("Queued", "info"),
+            "started": ("Running", "info"),
+            "finished": ("Completed", "success"),
+            "failed": ("Failed", "error"),
+            "canceled": ("Cancelled", "warning"),
+        }
+
+        label, msg_type = status_display.get(job_status, ("Unknown", "info"))
+
+        # Queue-specific information
+        if job_status == "queued":
+            queue_position = status.get("queue_position", "?")
+            queue_length = status.get("queue_length", "?")
+            st.info(f"**Status: {label}** - Your workflow is #{queue_position} in the queue ({queue_length} total jobs)")
+
+            # Visual queue indicator
+            if isinstance(queue_position, int) and isinstance(queue_length, int) and queue_length > 0:
+                progress = 1 - (queue_position / queue_length)
+                st.progress(progress, text=f"Queue position {queue_position} of {queue_length}")
+
+        elif job_status == "started":
+            progress = status.get("progress", 0)
+            current_step = status.get("current_step", "Processing...")
+            st.info(f"**Status: {label}**")
+            if progress and progress > 0:
+                st.progress(progress, text=current_step or "Processing...")
+
+        elif job_status == "finished":
+            st.success(f"**Status: {label}**")
+
+        elif job_status == "failed":
+            st.error(f"**Status: {label}**")
+
+        # Expandable job details
+        with st.expander("Job Details", expanded=False):
+            st.code(f"""Job ID: {status.get('job_id', 'N/A')}
+Submitted: {status.get('enqueued_at', 'N/A')}
+Started: {status.get('started_at', 'N/A')}""")
 
 
 

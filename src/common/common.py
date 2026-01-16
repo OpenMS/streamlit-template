@@ -40,6 +40,50 @@ def monitor_hardware():
     st.caption(f"Last fetched at: {time.strftime('%H:%M:%S')}")
 
 
+@st.fragment(run_every=5)
+def monitor_queue():
+    """Display queue metrics in sidebar (online mode only)"""
+    try:
+        from src.workflow.health import get_queue_metrics
+
+        metrics = get_queue_metrics()
+        if not metrics.get("available", False):
+            return
+
+        st.markdown("---")
+        st.markdown("**Queue Status**")
+
+        total_workers = metrics.get("total_workers", 0)
+        busy_workers = metrics.get("busy_workers", 0)
+        queued_jobs = metrics.get("queued_jobs", 0)
+
+        col1, col2 = st.columns(2)
+        col1.metric(
+            "Workers",
+            f"{busy_workers}/{total_workers}",
+            help="Busy workers / Total workers"
+        )
+        col2.metric(
+            "Queued",
+            queued_jobs,
+            help="Jobs waiting in queue"
+        )
+
+        # Utilization progress bar
+        if total_workers > 0:
+            utilization = busy_workers / total_workers
+            st.progress(utilization, text=f"{int(utilization * 100)}% utilized")
+
+        # Warning if queue is backing up
+        if queued_jobs > total_workers * 2 and total_workers > 0:
+            st.warning(f"High queue depth: {queued_jobs} jobs waiting")
+
+        st.caption(f"Last fetched at: {time.strftime('%H:%M:%S')}")
+
+    except Exception:
+        pass  # Silently fail if queue not available
+
+
 def load_params(default: bool = False) -> dict[str, Any]:
     """
     Load parameters from a JSON file and return a dictionary containing them.
@@ -386,6 +430,9 @@ def render_sidebar(page: str = "") -> None:
 
         with st.expander("📊 **Resource Utilization**"):
             monitor_hardware()
+            # Show queue metrics in online mode
+            if st.session_state.settings.get("online_deployment", False):
+                monitor_queue()
 
         # Display OpenMS WebApp Template Version from settings.json
         with st.container():

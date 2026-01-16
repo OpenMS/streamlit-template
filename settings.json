@@ -16,5 +16,10 @@
     "online_deployment": false,
     "enable_workspaces": true,
     "test": true,
-    "workspaces_dir": ".."
+    "workspaces_dir": "..",
+    "queue_settings": {
+        "enabled": true,
+        "default_timeout": 7200,
+        "result_ttl": 86400
+    }
 }
