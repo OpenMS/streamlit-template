@@ -617,6 +617,7 @@ class StreamlitUI:
                 "name": entry.name.decode(),
                 "key": key,
                 "value": entry.value,
+                "original_is_list": isinstance(entry.value, list),
                 "valid_strings": [v.decode() for v in entry.valid_strings],
                 "description": entry.description.decode(),
                 "advanced": (b"advanced" in param.getTags(key)),
@@ -703,6 +704,10 @@ class StreamlitUI:
                     # sometimes strings with newline, handle as list
                     if isinstance(p["value"], str) and "\n" in p["value"]:
                         p["value"] = p["value"].split("\n")
+                    # If original type was list but value is now string (single value from JSON),
+                    # convert back to list to preserve widget type
+                    if p["original_is_list"] and isinstance(p["value"], str):
+                        p["value"] = [p["value"]] if p["value"] else []
                     # bools
                     if isinstance(p["value"], bool):
                         cols[i].markdown("##")
