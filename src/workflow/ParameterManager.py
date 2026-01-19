@@ -68,9 +68,14 @@ class ParameterManager:
                     ini_value = param.getValue(ini_key)
                     # check if value is different from default
                     if (
-                        (ini_value != value) 
+                        (ini_value != value)
                         or (key.split(":1:")[1] in json_params[tool])
                     ):
+                        # Don't store empty strings for list parameters - handled at runtime
+                        if value == "" and isinstance(ini_value, list):
+                            # Remove from json if previously stored
+                            json_params[tool].pop(key.split(":1:")[1], None)
+                            continue
                         # store non-default value
                         json_params[tool][key.split(":1:")[1]] = value
         # Save to json file

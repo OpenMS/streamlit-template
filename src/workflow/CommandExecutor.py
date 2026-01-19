@@ -9,6 +9,7 @@ from .ParameterManager import ParameterManager
 import sys
 import importlib.util
 import json
+import streamlit as st
 
 class CommandExecutor:
     """
@@ -196,9 +197,31 @@ class CommandExecutor:
 
         # Load parameters for non-defaults
         params = self.parameter_manager.get_parameters_from_json()
+
+        # Load ini file to detect cleared list parameters
+        ini_path = Path(self.parameter_manager.ini_dir, tool + ".ini")
+        ini_list_params = {}  # Track list params with non-empty defaults
+        if ini_path.exists():
+            import pyopenms as poms
+            ini_param = poms.Param()
+            poms.ParamXMLFile().load(str(ini_path), ini_param)
+            prefix = f"{tool}:1:".encode()
+            for key in ini_param.keys():
+                if key.startswith(prefix):
+                    short_key = key.decode().split(f"{tool}:1:")[1]
+                    value = ini_param.getValue(key)
+                    # Track list parameters with non-empty defaults
+                    if isinstance(value, list) and len(value) > 0:
+                        ini_list_params[short_key] = value
+
         # Construct commands for each process
         for i in range(n_processes):
             command = [tool]
+
+            # Add ini file first (command line params will override)
+            if ini_path.exists():
+                command += ["-ini", str(ini_path)]
+
             # Add input/output files
             for k in input_output.keys():
                 # add key as parameter name
@@ -225,6 +248,17 @@ class CommandExecutor:
                         command += [" "]
                     else:
                         command += [str(v)]
+
+            # Check for cleared list parameters (have non-empty ini default but not in params.json)
+            # These need to pass ' ' to override the ini default
+            tool_params = params.get(tool, {})
+            for k, default_val in ini_list_params.items():
+                if k not in tool_params:
+                    # Check if this param was explicitly cleared (exists in session state as empty)
+                    session_key = f"{self.parameter_manager.topp_param_prefix}{tool}:1:{k}"
+                    if session_key in st.session_state and st.session_state[session_key] == "":
+                        command += [f"-{k}", " "]
+
             # Add custom parameters
             for k, v in custom_params.items():
                 command += [f"-{k}"]
@@ -234,11 +268,6 @@ class CommandExecutor:
                     else:
                         command += [str(v)]
             commands.append(command)
-
-            # check if a ini file has been written, if yes use it (contains custom defaults)
-            ini_path = Path(self.parameter_manager.ini_dir, tool + ".ini")
-            if ini_path.exists():
-                command += ["-ini", str(ini_path)]
 
         # Run command(s)
         if len(commands) == 1:
