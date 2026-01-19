@@ -220,6 +220,9 @@ class CommandExecutor:
                     command += [f"-{k}"]
                     if isinstance(v, str) and "\n" in v:
                         command += v.split("\n")
+                    elif v == "":
+                        # Pass a space for empty text areas (e.g., empty fixed_modifications)
+                        command += [" "]
                     else:
                         command += [str(v)]
             # Add custom parameters
