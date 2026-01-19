@@ -218,7 +218,12 @@ class CommandExecutor:
             if tool in params.keys():
                 for k, v in params[tool].items():
                     command += [f"-{k}"]
-                    if isinstance(v, str) and "\n" in v:
+                    # Handle empty string as "set to empty list" - pass flag with no values
+                    if isinstance(v, str) and v == "":
+                        # Empty string indicates intentionally empty list,
+                        # don't add any values after the flag
+                        pass
+                    elif isinstance(v, str) and "\n" in v:
                         command += v.split("\n")
                     else:
                         command += [str(v)]

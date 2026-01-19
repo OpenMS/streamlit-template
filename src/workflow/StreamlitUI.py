@@ -542,6 +542,7 @@ class StreamlitUI:
         display_subsections: bool = True,
         display_subsection_tabs: bool = False,
         custom_defaults: dict = {},
+        allow_empty: List[str] = [],
     ) -> None:
         """
         Generates input widgets for TOPP tool parameters dynamically based on the tool's
@@ -557,6 +558,7 @@ class StreamlitUI:
             display_subsections (bool, optional): Whether to split parameters into subsections based on the prefix. Defaults to True.
             display_subsection_tabs (bool, optional): Whether to display main subsections in separate tabs (if more than one main section). Defaults to False.
             custom_defaults (dict, optional): Dictionary of custom defaults to use. Defaults to an empty dict.
+            allow_empty (List[str], optional): List of parameter names (short names without tool prefix) that should have an "allow empty" option. When enabled, users can set list parameters to empty even if they have default values. Defaults to an empty list.
         """
 
         if not display_subsections:
@@ -691,18 +693,35 @@ class StreamlitUI:
                     ),
                 )
 
-        def display_TOPP_params(params: dict, num_cols):
-            """Displays individual TOPP parameters in given number of columns"""
+        def display_TOPP_params(params: dict, num_cols, allow_empty: List[str] = []):
+            """Displays individual TOPP parameters in given number of columns
+
+            Args:
+                params: List of parameter dictionaries
+                num_cols: Number of columns for layout
+                allow_empty: List of parameter short names that can be set to empty
+            """
             cols = st.columns(num_cols)
             i = 0
             for p in params:
                 # get key and name
                 key = f"{self.parameter_manager.topp_param_prefix}{p['key'].decode()}"
                 name = p["name"]
+                # Get short parameter name (without tool prefix) for allow_empty check
+                short_name = p['key'].decode().split(":1:")[1]
                 try:
                     # sometimes strings with newline, handle as list
                     if isinstance(p["value"], str) and "\n" in p["value"]:
                         p["value"] = p["value"].split("\n")
+
+                    # Check if this is an empty string for a list parameter in allow_empty
+                    # (empty string indicates intentionally set to empty)
+                    is_empty_list_param = (
+                        isinstance(p["value"], str) and
+                        p["value"] == "" and
+                        short_name in allow_empty
+                    )
+
                     # bools
                     if isinstance(p["value"], bool):
                         cols[i].markdown("##")
@@ -717,8 +736,8 @@ class StreamlitUI:
                             key=key,
                         )
 
-                    # strings
-                    elif isinstance(p["value"], str):
+                    # strings (but not empty list params)
+                    elif isinstance(p["value"], str) and not is_empty_list_param:
                         # string options
                         if p["valid_strings"]:
                             cols[i].selectbox(
@@ -749,12 +768,17 @@ class StreamlitUI:
                             key=key,
                         )
 
-                    # lists
-                    elif isinstance(p["value"], list):
-                        p["value"] = [
-                            v.decode() if isinstance(v, bytes) else v
-                            for v in p["value"]
-                        ]
+                    # lists (or empty string for allow_empty params)
+                    elif isinstance(p["value"], list) or is_empty_list_param:
+                        # Handle empty string case (was set to empty)
+                        if is_empty_list_param:
+                            p["value"] = []
+                        else:
+                            p["value"] = [
+                                v.decode() if isinstance(v, bytes) else v
+                                for v in p["value"]
+                            ]
+
                         valid_entries_info = ''
                         if len(p['valid_strings']) > 0:
                             valid_entries_info = (
@@ -762,12 +786,46 @@ class StreamlitUI:
                                 + ', '.join(sorted(p['valid_strings']))
                             )
 
-                        cols[i].text_area(
-                            name,
-                            value="\n".join([str(val) for val in p["value"]]),
-                            help=p["description"] + " Separate entries using the \"Enter\" key." + valid_entries_info,
-                            key=key,
-                        )
+                        # Check if this parameter supports allow_empty and has valid_strings
+                        if short_name in allow_empty and p["valid_strings"]:
+                            # Use multiselect with "(empty)" option
+                            empty_option = "(empty)"
+                            options = [empty_option] + sorted(p["valid_strings"])
+
+                            # Determine default selection
+                            if is_empty_list_param:
+                                default = [empty_option]
+                            else:
+                                default = [v for v in p["value"] if v in p["valid_strings"]]
+
+                            selected = cols[i].multiselect(
+                                name,
+                                options=options,
+                                default=default,
+                                help=p["description"],
+                                key=key,
+                            )
+
+                            # If "(empty)" is selected, store empty string
+                            if empty_option in selected:
+                                st.session_state[key] = ""
+                            else:
+                                st.session_state[key] = "\n".join(selected)
+                        elif short_name in allow_empty:
+                            # No valid_strings, use text_area with "(empty)" hint
+                            cols[i].text_area(
+                                name,
+                                value="" if is_empty_list_param else "\n".join([str(val) for val in p["value"]]),
+                                help=p["description"] + " Separate entries using the \"Enter\" key. Leave empty for no values.",
+                                key=key,
+                            )
+                        else:
+                            cols[i].text_area(
+                                name,
+                                value="\n".join([str(val) for val in p["value"]]),
+                                help=p["description"] + " Separate entries using the \"Enter\" key." + valid_entries_info,
+                                key=key,
+                            )
 
                     # increment number of columns, create new cols object if end of line is reached
                     i += 1
@@ -782,12 +840,12 @@ class StreamlitUI:
         for section, params in param_sections.items():
             if tabs is None:
                 show_subsection_header(section, display_subsections)
-                display_TOPP_params(params, num_cols)
+                display_TOPP_params(params, num_cols, allow_empty)
             else:
                 tab_name = section.split(":")[0]
                 with tabs[tab_names.index(tab_name)]:
                     show_subsection_header(section, display_subsections)
-                    display_TOPP_params(params, num_cols)
+                    display_TOPP_params(params, num_cols, allow_empty)
         
         self.parameter_manager.save_parameters()
             

@@ -98,6 +98,8 @@ Make sure to match the **key** of the upload widget when calling `self.ui.input_
 
 It takes the obligatory **topp_tool_name** parameter and generates input widgets for each parameter present in the **ini** file (automatically created) except for input and output file parameters. For all input file parameters a widget needs to be created with `self.ui.select_input_file` with an appropriate **key**. For TOPP tool parameters only non-default values are stored.
 
+Use the optional **allow_empty** parameter to specify list parameters that can be set to empty. This adds a "Set to empty" checkbox above the parameter's text area, allowing users to clear all values for parameters like `fixed_modifications` or `variable_modifications`. Example: `self.ui.input_TOPP("CometAdapter", allow_empty=["fixed_modifications"])`
+
 **3. Choose `self.ui.input_python` to automatically generate complete input sections for a custom Python tool:**
 
 Takes the obligatory **script_file** argument. The default location for the Python script files is in `src/python-tools` (in this case the `.py` file extension is optional in the **script_file** argument), however, any other path can be specified as well. Parameters need to be specified in the Python script in the **DEFAULTS** variable with the mandatory **key** and **value** parameters.
