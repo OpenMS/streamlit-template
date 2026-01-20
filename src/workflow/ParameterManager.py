@@ -66,10 +66,12 @@ class ParameterManager:
                     ini_key = key.replace(self.topp_param_prefix, "").encode()
                     # get ini (default) value by ini_key
                     ini_value = param.getValue(ini_key)
-                    # check if value is different from default
+                    is_list_param = isinstance(ini_value, list)
+                    # check if value is different from default OR is an empty list parameter
                     if (
-                        (ini_value != value) 
+                        (ini_value != value)
                         or (key.split(":1:")[1] in json_params[tool])
+                        or (is_list_param and not value)  # Always save empty list params
                     ):
                         # store non-default value
                         json_params[tool][key.split(":1:")[1]] = value
