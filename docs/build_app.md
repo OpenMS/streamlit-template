@@ -66,3 +66,13 @@ Take a look at the example pages `Simple Workflow` or `Workflow with mzML files`
 ### Complex workflow using TOPP tools
 
 This template app features a module in `src/workflow` that allows for complex and long workflows to be built very efficiently. Check out the `TOPP Workflow Framework` page for more information (on the *sidebar*).
+
+### Converting Nextflow workflows
+
+If you have an existing nf-core or Nextflow workflow that uses OpenMS TOPP tools (e.g., mhcquant, quantms), you can convert it to the TOPP Workflow Framework. See the [Nextflow Conversion Guide](nextflow_conversion_guide.md) for detailed instructions, including:
+
+- Step-by-step conversion methodology
+- Mapping Nextflow channels to FileManager operations
+- Converting process definitions to `run_topp()` calls
+- Handling parameters, conditionals, and file grouping
+- Complete example conversions
