@@ -140,6 +140,8 @@ class WorkflowManager:
                         "queue_length": job_info.queue_length,
                         "enqueued_at": job_info.enqueued_at,
                         "started_at": job_info.started_at,
+                        "result": job_info.result,
+                        "error": job_info.error,
                     }
                 else:
                     # Job not found, clear the stored job ID

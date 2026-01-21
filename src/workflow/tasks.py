@@ -72,6 +72,7 @@ def execute_workflow(
         file_manager = FileManager(workflow_path)
         parameter_manager = ParameterManager(workflow_path)
         executor = CommandExecutor(workflow_path, logger, parameter_manager)
+        executor.pid_dir.mkdir(parents=True, exist_ok=True)
 
         _update_progress(job, 0.1, "Starting workflow execution...")
 

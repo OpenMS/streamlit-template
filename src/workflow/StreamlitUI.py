@@ -1081,8 +1081,10 @@ class StreamlitUI:
             with open(log_path, "r", encoding="utf-8") as f:
                 content = f.read()
             # Check if workflow finished successfully
-            if not "WORKFLOW FINISHED" in content:
-                st.error("**Errors occurred, check log file.**")
+            if "WORKFLOW FINISHED" not in content:
+                st.error("**Workflow did not complete. Check log file for errors.**")
+            elif "ERRORS OCCURRED" in content or "ERROR:" in content:
+                st.warning("**Workflow completed with errors. Some results may be missing.**")
             st.code(content, language="neon", line_numbers=False)
 
     def _show_queue_status(self, status: dict) -> None:
@@ -1119,10 +1121,23 @@ class StreamlitUI:
                 st.progress(progress, text=current_step or "Processing...")
 
         elif job_status == "finished":
-            st.success(f"**Status: {label}**")
+            # Check if the job result indicates success or failure
+            job_result = status.get("result")
+            if job_result and isinstance(job_result, dict) and job_result.get("success") is False:
+                st.error(f"**Status: Completed with errors**")
+                error_msg = job_result.get("error", "Unknown error")
+                if error_msg:
+                    with st.expander("Error Details", expanded=True):
+                        st.code(error_msg)
+            else:
+                st.success(f"**Status: {label}**")
 
         elif job_status == "failed":
             st.error(f"**Status: {label}**")
+            job_error = status.get("error")
+            if job_error:
+                with st.expander("Error Details", expanded=True):
+                    st.code(job_error)
 
         # Expandable job details
         with st.expander("Job Details", expanded=False):
