@@ -154,7 +154,7 @@ ENV RQ_WORKER_COUNT=1
 ENV REDIS_URL=redis://localhost:6379/0
 
 # create entrypoint script to start cron, Redis, RQ workers, and Streamlit
-RUN echo '#!/bin/bash\n\
+RUN echo -e '#!/bin/bash\n\
 set -e\n\
 source /root/miniforge3/bin/activate streamlit-env\n\
 \n\
