@@ -176,7 +176,7 @@ echo "Redis is ready"\n\
 WORKER_COUNT=${RQ_WORKER_COUNT:-1}\n\
 echo "Starting $WORKER_COUNT RQ worker(s)..."\n\
 for i in $(seq 1 $WORKER_COUNT); do\n\
-    rq worker openms-workflows --url redis://localhost:6379/0 --name worker-$i &\n\
+    rq worker openms-workflows --url $REDIS_URL --name worker-$i &\n\
 done\n\
 \n\
 # Start Streamlit (foreground - main process)\n\
