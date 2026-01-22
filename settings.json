@@ -20,5 +20,10 @@
     "queue_settings": {
         "default_timeout": 7200,
         "result_ttl": 86400
+    },
+    "demo_workspaces": {
+        "enabled": true,
+        "source_dir": "example-data/workspaces",
+        "auto_load_for_online": true
     }
 }
