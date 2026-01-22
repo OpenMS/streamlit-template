@@ -56,11 +56,11 @@ def get_df(file: Union[str, Path]) -> pd.DataFrame:
     if not exp_ms1.empty():
         st.session_state["view_ms1"] = exp_ms1.get_df(long=True)
     else:
-        st.session_state["view_ms1"] = pd.DataFrame(columns=['RT', 'mz', 'inty'])
+        st.session_state["view_ms1"] = pd.DataFrame(columns=['rt', 'mz', 'inty'])
     if not exp_ms2.empty():
         st.session_state["view_ms2"] = exp_ms2.get_df(long=True)
     else:
-        st.session_state["view_ms2"] = pd.DataFrame(columns=['RT', 'mz', 'inty'])
+        st.session_state["view_ms2"] = pd.DataFrame(columns=['rt', 'mz', 'inty'])
 
 
 def plot_bpc_tic() -> go.Figure:
@@ -72,14 +72,14 @@ def plot_bpc_tic() -> go.Figure:
     fig = go.Figure()
     max_int = 0
     if st.session_state.view_tic:
-        df = st.session_state.view_ms1.groupby("RT").sum().reset_index()
+        df = st.session_state.view_ms1.groupby("rt").sum().reset_index()
         df["type"] = "TIC"
         if df["inty"].max() > max_int:
             max_int = df["inty"].max()
         fig = df.plot(
             backend="ms_plotly",
             kind="chromatogram",
-            x="RT",
+            x="rt",
             y="inty",
             by="type",
             color="#f24c5c",
@@ -88,14 +88,14 @@ def plot_bpc_tic() -> go.Figure:
             aggregate_duplicates=True,
         )
     if st.session_state.view_bpc:
-        df = st.session_state.view_ms1.groupby("RT").max().reset_index()
+        df = st.session_state.view_ms1.groupby("rt").max().reset_index()
         df["type"] = "BPC"
         if df["inty"].max() > max_int:
             max_int = df["inty"].max()
         fig = df.plot(
             backend="ms_plotly",
             kind="chromatogram",
-            x="RT",
+            x="rt",
             y="inty",
             by="type",
             color="#2d3a9d",
@@ -123,7 +123,7 @@ def plot_bpc_tic() -> go.Figure:
                 fig = df_eic.plot(
                     backend="ms_plotly",
                     kind="chromatogram",
-                    x="RT",
+                    x="rt",
                     y="inty",
                     by="type",
                     color="#f6bf26",
@@ -174,15 +174,15 @@ def view_peak_map():
         box = st.session_state.view_peak_map_selection.selection.box
         if box:
             df = st.session_state.view_ms1.copy()
-            df = df[df["RT"] > box[0]["x"][0]]
+            df = df[df["rt"] > box[0]["x"][0]]
             df = df[df["mz"] > box[0]["y"][1]]
             df = df[df["mz"] < box[0]["y"][0]]
-            df = df[df["RT"] < box[0]["x"][1]]
+            df = df[df["rt"] < box[0]["x"][1]]
     if len(df) == 0:
         return
     peak_map = df.plot(
         kind="peakmap",
-        x="RT",
+        x="rt",
         y="mz",
         z="inty",
         title=st.session_state.view_selected_file,
@@ -209,7 +209,7 @@ def view_peak_map():
                 kind="peakmap",
                 plot_3d=True,
                 backend="ms_plotly",
-                x="RT",
+                x="rt",
                 y="mz",
                 z="inty",
                 zlabel="Intensity",
@@ -235,7 +235,7 @@ def view_spectrum():
             df,
             column_order=[
                 "spectrum ID",
-                "RT",
+                "rt",
                 "MS level",
                 "max intensity m/z",
                 "precursor m/z",
@@ -267,7 +267,7 @@ def view_spectrum():
                         "intensity": df["intarray"],
                     }
                 )
-                df_selected["RT"] = df["RT"]
+                df_selected["rt"] = df["rt"]
                 df_selected["MS level"] = df["MS level"]
                 df_selected["precursor m/z"] = df["precursor m/z"]
                 df_selected["max intensity m/z"] = df["max intensity m/z"]
