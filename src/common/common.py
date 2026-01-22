@@ -359,13 +359,6 @@ def page_setup(page: str = "") -> dict[str, Any]:
                 workspace_id = str(uuid.uuid1())
                 st.session_state.workspace = Path(workspaces_dir, workspace_id)
                 st.query_params.workspace = workspace_id
-
-                # Auto-load default demo workspace for new online sessions
-                if demo_config.get("auto_load_for_online", False) and "default" in available_demos:
-                    shutil.copytree(
-                        demo_source_dir / "default",
-                        st.session_state.workspace
-                    )
             else:
                 st.session_state.workspace = Path(workspaces_dir, "default")
                 st.query_params.workspace = "default"

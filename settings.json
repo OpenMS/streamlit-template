@@ -23,7 +23,6 @@
     },
     "demo_workspaces": {
         "enabled": true,
-        "source_dir": "example-data/workspaces",
-        "auto_load_for_online": true
+        "source_dir": "example-data/workspaces"
     }
 }
