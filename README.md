@@ -40,7 +40,7 @@ To run the app locally:
 
    > ℹ️ **Note:** `pyopenms` is not included in `requirements.txt` because it is built from source for Docker and Windows executable distributions. For local development, install it separately via pip as shown above.
 
-4. **Launch the app**
+3. **Launch the app**
    ```bash
    streamlit run app.py
    ```

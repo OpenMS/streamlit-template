@@ -190,7 +190,7 @@ jobs:
         pip install dist/*.whl
         python -c "import pyopenms; print(f'pyOpenMS version: {pyopenms.__version__}')"
         # Run basic tests (skip tutorial tests which may require additional data)
-        pytest tests/ -v --ignore=tests/test_tutorial.py -x -q 2>&1 | head -100 || true
+        pytest tests/ -v --ignore=tests/test_tutorial.py -x -q 2>&1 | head -100
 
     - name: Package
       shell: bash
