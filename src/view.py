@@ -19,7 +19,7 @@ def get_df(file: Union[str, Path]) -> pd.DataFrame:
 
     Returns:
         pd.DataFrame: A pandas DataFrame with the following columns: "mslevel",
-        "precursormz", "mzarray", and "intarray". The "mzarray" and "intarray"
+        "precursormz", "mz_array", and "int_array". The "mz_array" and "int_array"
         columns contain NumPy arrays with the m/z and intensity values for each
         spectrum in the mzML file, respectively.
     """
@@ -37,10 +37,10 @@ def get_df(file: Union[str, Path]) -> pd.DataFrame:
     df_spectra["precursor m/z"] = precs
 
     # Drop spectra without peaks
-    df_spectra = df_spectra[df_spectra["mzarray"].apply(lambda x: len(x) > 0)]
+    df_spectra = df_spectra[df_spectra["mz_array"].apply(lambda x: len(x) > 0)]
 
     df_spectra["max intensity m/z"] = df_spectra.apply(
-        lambda x: x["mzarray"][x["intarray"].argmax()], axis=1
+        lambda x: x["mz_array"][x["int_array"].argmax()], axis=1
     )
     if not df_spectra.empty:
         st.session_state["view_spectra"] = df_spectra
@@ -252,19 +252,19 @@ def view_spectrum():
                 box = st.session_state.view_spectrum_selection.selection.box
                 if box:
                     mz_min, mz_max = sorted(box[0]["x"])
-                    mask = (df["mzarray"] > mz_min) & (df["mzarray"] < mz_max)
-                    df["intarray"] = df["intarray"][mask]
-                    df["mzarray"] = df["mzarray"][mask]
+                    mask = (df["mz_array"] > mz_min) & (df["mz_array"] < mz_max)
+                    df["int_array"] = df["int_array"][mask]
+                    df["mz_array"] = df["mz_array"][mask]
 
-            if df["mzarray"].size > 0:
+            if df["mz_array"].size > 0:
                 title = f"{st.session_state.view_selected_file}  spec={index+1}  mslevel={df['MS level']}"
                 if df["precursor m/z"] > 0:
                     title += f" precursor m/z: {round(df['precursor m/z'], 4)}"
 
                 df_selected = pd.DataFrame(
                     {
-                        "mz": df["mzarray"],
-                        "intensity": df["intarray"],
+                        "mz": df["mz_array"],
+                        "intensity": df["int_array"],
                     }
                 )
                 df_selected["rt"] = df["rt"]
