@@ -19,7 +19,7 @@ def get_df(file: Union[str, Path]) -> pd.DataFrame:
 
     Returns:
         pd.DataFrame: A pandas DataFrame with the following columns: "mslevel",
-        "precursormz", "mz_array", and "int_array". The "mz_array" and "int_array"
+        "precursormz", "mz_array", and "intensity_array". The "mz_array" and "intensity_array"
         columns contain NumPy arrays with the m/z and intensity values for each
         spectrum in the mzML file, respectively.
     """
@@ -40,7 +40,7 @@ def get_df(file: Union[str, Path]) -> pd.DataFrame:
     df_spectra = df_spectra[df_spectra["mz_array"].apply(lambda x: len(x) > 0)]
 
     df_spectra["max intensity m/z"] = df_spectra.apply(
-        lambda x: x["mz_array"][x["int_array"].argmax()], axis=1
+        lambda x: x["mz_array"][x["intensity_array"].argmax()], axis=1
     )
     if not df_spectra.empty:
         st.session_state["view_spectra"] = df_spectra
@@ -56,11 +56,11 @@ def get_df(file: Union[str, Path]) -> pd.DataFrame:
     if not exp_ms1.empty():
         st.session_state["view_ms1"] = exp_ms1.get_df(long=True)
     else:
-        st.session_state["view_ms1"] = pd.DataFrame(columns=['rt', 'mz', 'inty'])
+        st.session_state["view_ms1"] = pd.DataFrame(columns=['rt', 'mz', 'intensity'])
     if not exp_ms2.empty():
         st.session_state["view_ms2"] = exp_ms2.get_df(long=True)
     else:
-        st.session_state["view_ms2"] = pd.DataFrame(columns=['rt', 'mz', 'inty'])
+        st.session_state["view_ms2"] = pd.DataFrame(columns=['rt', 'mz', 'intensity'])
 
 
 def plot_bpc_tic() -> go.Figure:
@@ -74,13 +74,13 @@ def plot_bpc_tic() -> go.Figure:
     if st.session_state.view_tic:
         df = st.session_state.view_ms1.groupby("rt").sum().reset_index()
         df["type"] = "TIC"
-        if df["inty"].max() > max_int:
-            max_int = df["inty"].max()
+        if df["intensity"].max() > max_int:
+            max_int = df["intensity"].max()
         fig = df.plot(
             backend="ms_plotly",
             kind="chromatogram",
             x="rt",
-            y="inty",
+            y="intensity",
             by="type",
             color="#f24c5c",
             show_plot=False,
@@ -90,13 +90,13 @@ def plot_bpc_tic() -> go.Figure:
     if st.session_state.view_bpc:
         df = st.session_state.view_ms1.groupby("rt").max().reset_index()
         df["type"] = "BPC"
-        if df["inty"].max() > max_int:
-            max_int = df["inty"].max()
+        if df["intensity"].max() > max_int:
+            max_int = df["intensity"].max()
         fig = df.plot(
             backend="ms_plotly",
             kind="chromatogram",
             x="rt",
-            y="inty",
+            y="intensity",
             by="type",
             color="#2d3a9d",
             show_plot=False,
@@ -118,13 +118,13 @@ def plot_bpc_tic() -> go.Figure:
             ].copy()
             if not df_eic.empty:
                 df_eic.loc[:, "type"] = "XIC"
-                if df_eic["inty"].max() > max_int:
-                    max_int = df_eic["inty"].max()
+                if df_eic["intensity"].max() > max_int:
+                    max_int = df_eic["intensity"].max()
                 fig = df_eic.plot(
                     backend="ms_plotly",
                     kind="chromatogram",
                     x="rt",
-                    y="inty",
+                    y="intensity",
                     by="type",
                     color="#f6bf26",
                     show_plot=False,
@@ -184,7 +184,7 @@ def view_peak_map():
         kind="peakmap",
         x="rt",
         y="mz",
-        z="inty",
+        z="intensity",
         title=st.session_state.view_selected_file,
         grid=False,
         show_plot=False,
@@ -211,7 +211,7 @@ def view_peak_map():
                 backend="ms_plotly",
                 x="rt",
                 y="mz",
-                z="inty",
+                z="intensity",
                 zlabel="Intensity",
                 title="",
                 show_plot=False,
@@ -253,7 +253,7 @@ def view_spectrum():
                 if box:
                     mz_min, mz_max = sorted(box[0]["x"])
                     mask = (df["mz_array"] > mz_min) & (df["mz_array"] < mz_max)
-                    df["int_array"] = df["int_array"][mask]
+                    df["intensity_array"] = df["intensity_array"][mask]
                     df["mz_array"] = df["mz_array"][mask]
 
             if df["mz_array"].size > 0:
@@ -264,7 +264,7 @@ def view_spectrum():
                 df_selected = pd.DataFrame(
                     {
                         "mz": df["mz_array"],
-                        "intensity": df["int_array"],
+                        "intensity": df["intensity_array"],
                     }
                 )
                 df_selected["rt"] = df["rt"]
