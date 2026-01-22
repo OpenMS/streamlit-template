@@ -50,7 +50,7 @@ matplotlib==3.10.1
     # via src (pyproject.toml)
 narwhals==2.5.0
     # via altair
-numpy==1.26.4
+numpy>=2.0.0
     # via
     #   contourpy
     #   matplotlib
