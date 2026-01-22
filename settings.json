@@ -23,6 +23,8 @@
     },
     "demo_workspaces": {
         "enabled": true,
-        "source_dir": "example-data/workspaces"
+        "source_dirs": [
+            "example-data/workspaces"
+        ]
     }
 }

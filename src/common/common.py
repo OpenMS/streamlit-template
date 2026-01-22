@@ -26,12 +26,15 @@ from src.common.captcha_ import captcha_control
 OS_PLATFORM = sys.platform
 
 
-def get_available_demo_workspaces() -> list[str]:
+def get_demo_source_dirs() -> list[Path]:
     """
-    Get a list of available demo workspaces from the example-data directory.
+    Get list of demo workspace source directories from settings.
+
+    Supports both legacy 'source_dir' (string) and new 'source_dirs' (array) formats.
+    Non-existent directories are silently skipped.
 
     Returns:
-        list[str]: List of demo workspace names.
+        list[Path]: List of existing source directory paths.
     """
     settings = st.session_state.get("settings", {})
     demo_config = settings.get("demo_workspaces", {})
@@ -39,16 +42,65 @@ def get_available_demo_workspaces() -> list[str]:
     if not demo_config.get("enabled", False):
         return []
 
-    source_dir = Path(demo_config.get("source_dir", "example-data/workspaces"))
-    if not source_dir.exists():
-        return []
+    # Support both source_dirs (array) and source_dir (string) for backward compatibility
+    if "source_dirs" in demo_config:
+        dirs = demo_config["source_dirs"]
+        if isinstance(dirs, str):
+            dirs = [dirs]
+    elif "source_dir" in demo_config:
+        dirs = [demo_config["source_dir"]]
+    else:
+        dirs = ["example-data/workspaces"]
 
-    return [p.name for p in source_dir.iterdir() if p.is_dir()]
+    # Return only existing directories
+    return [Path(d) for d in dirs if Path(d).exists()]
+
+
+def get_available_demo_workspaces() -> list[str]:
+    """
+    Get a list of available demo workspaces from all configured source directories.
+
+    When the same demo name exists in multiple directories, the first occurrence wins.
+
+    Returns:
+        list[str]: List of unique demo workspace names.
+    """
+    seen = set()
+    demos = []
+
+    for source_dir in get_demo_source_dirs():
+        for p in source_dir.iterdir():
+            if p.is_dir() and p.name not in seen:
+                seen.add(p.name)
+                demos.append(p.name)
+
+    return demos
+
+
+def find_demo_workspace_path(demo_name: str) -> Path | None:
+    """
+    Find the source path for a demo workspace by searching all configured directories.
+
+    Directories are searched in order; the first match is returned.
+
+    Args:
+        demo_name: Name of the demo workspace to find.
+
+    Returns:
+        Path to the demo workspace, or None if not found.
+    """
+    for source_dir in get_demo_source_dirs():
+        demo_path = source_dir / demo_name
+        if demo_path.exists() and demo_path.is_dir():
+            return demo_path
+    return None
 
 
 def copy_demo_workspace(demo_name: str, target_path: Path) -> bool:
     """
     Copy a demo workspace to the target path.
+
+    Searches all configured source directories for the demo (first match wins).
 
     Args:
         demo_name: Name of the demo workspace to copy.
@@ -57,12 +109,9 @@ def copy_demo_workspace(demo_name: str, target_path: Path) -> bool:
     Returns:
         bool: True if copy was successful, False otherwise.
     """
-    settings = st.session_state.get("settings", {})
-    demo_config = settings.get("demo_workspaces", {})
-    source_dir = Path(demo_config.get("source_dir", "example-data/workspaces"))
-    demo_path = source_dir / demo_name
+    demo_path = find_demo_workspace_path(demo_name)
 
-    if not demo_path.exists():
+    if demo_path is None:
         return False
 
     try:
@@ -329,13 +378,8 @@ def page_setup(page: str = "") -> dict[str, Any]:
 
         # Check if workspace logic is enabled
         if st.session_state.settings["enable_workspaces"]:
-            # Get available demo workspaces
-            demo_config = st.session_state.settings.get("demo_workspaces", {})
-            demo_enabled = demo_config.get("enabled", False)
-            demo_source_dir = Path(demo_config.get("source_dir", "example-data/workspaces"))
-            available_demos = []
-            if demo_enabled and demo_source_dir.exists():
-                available_demos = [p.name for p in demo_source_dir.iterdir() if p.is_dir()]
+            # Get available demo workspaces using helper function
+            available_demos = get_available_demo_workspaces()
 
             if "workspace" in st.query_params:
                 requested_workspace = st.query_params.workspace
@@ -346,11 +390,8 @@ def page_setup(page: str = "") -> dict[str, Any]:
                     workspace_id = str(uuid.uuid1())
                     st.session_state.workspace = Path(workspaces_dir, workspace_id)
                     st.query_params.workspace = workspace_id
-                    # Copy demo workspace contents
-                    shutil.copytree(
-                        demo_source_dir / requested_workspace,
-                        st.session_state.workspace
-                    )
+                    # Copy demo workspace contents using helper function
+                    copy_demo_workspace(requested_workspace, st.session_state.workspace)
                 else:
                     st.session_state.workspace = Path(
                         workspaces_dir, requested_workspace
@@ -368,15 +409,10 @@ def page_setup(page: str = "") -> dict[str, Any]:
             st.session_state.workspace = Path(workspaces_dir, "default")
 
             # For local mode with workspaces disabled, copy demo workspaces if they don't exist
-            demo_config = st.session_state.settings.get("demo_workspaces", {})
-            if demo_config.get("enabled", False):
-                demo_source_dir = Path(demo_config.get("source_dir", "example-data/workspaces"))
-                if demo_source_dir.exists():
-                    for demo in demo_source_dir.iterdir():
-                        if demo.is_dir():
-                            target = Path(workspaces_dir, demo.name)
-                            if not target.exists():
-                                shutil.copytree(demo, target)
+            for demo_name in get_available_demo_workspaces():
+                target = Path(workspaces_dir, demo_name)
+                if not target.exists():
+                    copy_demo_workspace(demo_name, target)
 
         if st.session_state.location != "online":
             # not any captcha so, controllo should be true
@@ -493,34 +529,30 @@ def render_sidebar(page: str = "") -> None:
 
             # Demo workspace loader for online mode
             if st.session_state.location == "online":
-                demo_config = st.session_state.settings.get("demo_workspaces", {})
-                if demo_config.get("enabled", False):
-                    demo_source_dir = Path(demo_config.get("source_dir", "example-data/workspaces"))
-                    if demo_source_dir.exists():
-                        available_demos = [p.name for p in demo_source_dir.iterdir() if p.is_dir()]
-                        if available_demos:
-                            with st.expander("🎮 **Demo Data**"):
-                                st.caption("Load example data to explore the app")
-                                selected_demo = st.selectbox(
-                                    "Select demo dataset",
-                                    available_demos,
-                                    key="selected-demo-workspace"
-                                )
-                                if st.button("Load Demo Data"):
-                                    demo_path = demo_source_dir / selected_demo
-                                    if demo_path.exists():
-                                        # Copy demo files to current workspace
-                                        for item in demo_path.iterdir():
-                                            target = st.session_state.workspace / item.name
-                                            if item.is_dir():
-                                                if target.exists():
-                                                    shutil.rmtree(target)
-                                                shutil.copytree(item, target)
-                                            else:
-                                                shutil.copy2(item, target)
-                                        st.success(f"Demo data '{selected_demo}' loaded!")
-                                        time.sleep(1)
-                                        st.rerun()
+                available_demos = get_available_demo_workspaces()
+                if available_demos:
+                    with st.expander("🎮 **Demo Data**"):
+                        st.caption("Load example data to explore the app")
+                        selected_demo = st.selectbox(
+                            "Select demo dataset",
+                            available_demos,
+                            key="selected-demo-workspace"
+                        )
+                        if st.button("Load Demo Data"):
+                            demo_path = find_demo_workspace_path(selected_demo)
+                            if demo_path:
+                                # Copy demo files to current workspace
+                                for item in demo_path.iterdir():
+                                    target = st.session_state.workspace / item.name
+                                    if item.is_dir():
+                                        if target.exists():
+                                            shutil.rmtree(target)
+                                        shutil.copytree(item, target)
+                                    else:
+                                        shutil.copy2(item, target)
+                                st.success(f"Demo data '{selected_demo}' loaded!")
+                                time.sleep(1)
+                                st.rerun()
 
         # All pages have settings, workflow indicator and logo
         with st.expander("⚙️ **Settings**"):
