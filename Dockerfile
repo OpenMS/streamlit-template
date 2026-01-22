@@ -118,6 +118,14 @@ RUN rm -rf openms-build
 
 # Prepare and run streamlit app.
 FROM compile-openms AS run-app
+
+# Install Redis server for job queue
+RUN apt-get update && apt-get install -y --no-install-recommends redis-server \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create Redis data directory
+RUN mkdir -p /var/lib/redis && chown redis:redis /var/lib/redis
+
 # Create workdir and copy over all streamlit related files/folders.
 
 # note: specifying folder with slash as suffix and repeating the folder name seems important to preserve directory structure
@@ -141,11 +149,40 @@ COPY clean-up-workspaces.py /app/clean-up-workspaces.py
 # add cron job to the crontab
 RUN echo "0 3 * * * /root/miniforge3/envs/streamlit-env/bin/python /app/clean-up-workspaces.py >> /app/clean-up-workspaces.log 2>&1" | crontab -
 
-# create entrypoint script to start cron service and launch streamlit app
-RUN echo "#!/bin/bash" > /app/entrypoint.sh && \
-    echo "source /root/miniforge3/bin/activate streamlit-env" >> /app/entrypoint.sh && \
-    echo "service cron start" >> /app/entrypoint.sh && \
-    echo "streamlit run app.py" >> /app/entrypoint.sh
+# Set default worker count (can be overridden via environment variable)
+ENV RQ_WORKER_COUNT=1
+ENV REDIS_URL=redis://localhost:6379/0
+
+# create entrypoint script to start cron, Redis, RQ workers, and Streamlit
+RUN echo -e '#!/bin/bash\n\
+set -e\n\
+source /root/miniforge3/bin/activate streamlit-env\n\
+\n\
+# Start cron for workspace cleanup\n\
+service cron start\n\
+\n\
+# Start Redis server in background\n\
+echo "Starting Redis server..."\n\
+redis-server --daemonize yes --dir /var/lib/redis --appendonly no\n\
+\n\
+# Wait for Redis to be ready\n\
+until redis-cli ping > /dev/null 2>&1; do\n\
+    echo "Waiting for Redis..."\n\
+    sleep 1\n\
+done\n\
+echo "Redis is ready"\n\
+\n\
+# Start RQ worker(s) in background\n\
+WORKER_COUNT=${RQ_WORKER_COUNT:-1}\n\
+echo "Starting $WORKER_COUNT RQ worker(s)..."\n\
+for i in $(seq 1 $WORKER_COUNT); do\n\
+    rq worker openms-workflows --url $REDIS_URL --name worker-$i &\n\
+done\n\
+\n\
+# Start Streamlit (foreground - main process)\n\
+echo "Starting Streamlit app..."\n\
+exec streamlit run app.py\n\
+' > /app/entrypoint.sh
 # make the script executable
 RUN chmod +x /app/entrypoint.sh
 
