@@ -26,6 +26,22 @@ from src.common.captcha_ import captcha_control
 OS_PLATFORM = sys.platform
 
 
+def is_safe_workspace_name(name: str) -> bool:
+    """
+    Check if a workspace name is safe (no path traversal characters).
+
+    Args:
+        name: The workspace name to validate.
+
+    Returns:
+        bool: True if safe, False if contains path separators or parent references.
+    """
+    if not name:
+        return False
+    # Reject path separators and parent directory references
+    return "/" not in name and "\\" not in name and name not in ("..", ".")
+
+
 def get_demo_source_dirs() -> list[Path]:
     """
     Get list of demo workspace source directories from settings.
@@ -87,8 +103,12 @@ def find_demo_workspace_path(demo_name: str) -> Path | None:
         demo_name: Name of the demo workspace to find.
 
     Returns:
-        Path to the demo workspace, or None if not found.
+        Path to the demo workspace, or None if not found or name is unsafe.
     """
+    # Validate against path traversal attacks
+    if not is_safe_workspace_name(demo_name):
+        return None
+
     for source_dir in get_demo_source_dirs():
         demo_path = source_dir / demo_name
         if demo_path.exists() and demo_path.is_dir():
@@ -384,8 +404,14 @@ def page_setup(page: str = "") -> dict[str, Any]:
             if "workspace" in st.query_params:
                 requested_workspace = st.query_params.workspace
 
+                # Validate workspace name against path traversal
+                if not is_safe_workspace_name(requested_workspace):
+                    # Invalid workspace name - fall back to new UUID workspace
+                    workspace_id = str(uuid.uuid1())
+                    st.session_state.workspace = Path(workspaces_dir, workspace_id)
+                    st.query_params.workspace = workspace_id
                 # Check if the requested workspace is a demo workspace (online mode)
-                if st.session_state.location == "online" and requested_workspace in available_demos:
+                elif st.session_state.location == "online" and requested_workspace in available_demos:
                     # Create a new UUID workspace and copy demo contents
                     workspace_id = str(uuid.uuid1())
                     st.session_state.workspace = Path(workspaces_dir, workspace_id)
