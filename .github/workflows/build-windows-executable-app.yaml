@@ -161,6 +161,7 @@ jobs:
           PY_NO_OPTIMIZATION: "ON"
           Python_ROOT_DIR: "${{ runner.tool_cache }}/Python/${{ env.PYTHON_VERSION }}/x64"
           PYTHON_EXECUTABLE: "${{ runner.tool_cache }}/Python/${{ env.PYTHON_VERSION }}/x64/python.exe"
+          Python_FIND_STRATEGY: "LOCATION"
           #  BUILD_FLAGS: "-p:CL_MPCount=2" # For VS Generator and MSBuild
           BUILD_FLAGS: "-j2" # Ninja will otherwise use all cores (doesn't go well in GHA)
           CMAKE_CCACHE_EXE: "ccache"
