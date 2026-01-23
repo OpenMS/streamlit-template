@@ -617,6 +617,7 @@ class StreamlitUI:
                 "name": entry.name.decode(),
                 "key": key,
                 "value": entry.value,
+                "original_is_list": isinstance(entry.value, list),
                 "valid_strings": [v.decode() for v in entry.valid_strings],
                 "description": entry.description.decode(),
                 "advanced": (b"advanced" in param.getTags(key)),
@@ -643,6 +644,10 @@ class StreamlitUI:
                     p["value"] = custom_defaults[name]
             elif name in custom_defaults:
                 p["value"] = custom_defaults[name]
+            # Ensure list parameters stay as lists after loading from JSON
+            # (JSON may store single-item lists as strings)
+            if p["original_is_list"] and isinstance(p["value"], str):
+                p["value"] = p["value"].split("\n") if p["value"] else []
 
         # Split into subsections if required
         param_sections = {}
