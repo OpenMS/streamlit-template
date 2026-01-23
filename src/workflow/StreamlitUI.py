@@ -303,13 +303,13 @@ class StreamlitUI:
         elif not fallback:
             st.warning(f"No **{name}** files!")
 
-    @st.fragment
     def select_input_file(
         self,
         key: str,
         name: str = "",
         multiple: bool = False,
         display_file_path: bool = False,
+        reactive: bool = False,
     ) -> None:
         """
         Presents a widget for selecting input files from those that have been uploaded.
@@ -320,7 +320,22 @@ class StreamlitUI:
             name (str, optional): The display name for the selection widget. Defaults to the key if not provided.
             multiple (bool, optional): If True, allows multiple files to be selected.
             display_file_path (bool, optional): If True, displays the full file path in the selection widget.
+            reactive (bool, optional): If True, widget changes trigger the parent
+                section to re-render, enabling conditional UI based on this widget's
+                value. Use for widgets that control visibility of other UI elements.
+                Default is False (widget changes are isolated for performance).
         """
+        if reactive:
+            self._select_input_file_impl(key, name, multiple, display_file_path, reactive)
+        else:
+            self._select_input_file_fragmented(key, name, multiple, display_file_path, reactive)
+
+    @st.fragment
+    def _select_input_file_fragmented(self, key, name, multiple, display_file_path, reactive):
+        self._select_input_file_impl(key, name, multiple, display_file_path, reactive)
+
+    def _select_input_file_impl(self, key, name, multiple, display_file_path, reactive):
+        """Internal implementation of select_input_file - contains all the widget logic."""
         if not name:
             name = f"**{key}**"
         path = Path(self.workflow_dir, "input-files", key)
@@ -349,6 +364,7 @@ class StreamlitUI:
             widget_type=widget_type,
             options=options,
             display_file_path=display_file_path,
+            reactive=reactive,
         )
 
     def input_widget(
