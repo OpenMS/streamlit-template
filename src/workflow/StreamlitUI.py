@@ -3,7 +3,7 @@ import pyopenms as poms
 from pathlib import Path
 import shutil
 import subprocess
-from typing import Any, Union, List, Literal
+from typing import Any, Union, List, Literal, Callable
 import json
 import os
 import sys
@@ -351,7 +351,6 @@ class StreamlitUI:
             display_file_path=display_file_path,
         )
 
-    @st.fragment
     def input_widget(
         self,
         key: str,
@@ -364,6 +363,8 @@ class StreamlitUI:
         max_value: Union[int, float] = None,
         step_size: Union[int, float] = 1,
         display_file_path: bool = False,
+        on_change: Callable = None,
+        reactive: bool = False,
     ) -> None:
         """
         Creates and displays a Streamlit widget for user input based on specified
@@ -385,7 +386,42 @@ class StreamlitUI:
             max_value (Union[int, float], optional): Maximum value for number/slider widgets.
             step_size (Union[int, float], optional): Step size for number/slider widgets.
             display_file_path (bool, optional): Whether to display the full file path for file options.
+            reactive (bool, optional): If True, widget changes trigger the parent
+                section to re-render, enabling conditional UI based on this widget's
+                value. Use for widgets that control visibility of other UI elements.
+                Default is False (widget changes are isolated for performance).
         """
+        if reactive:
+            # Render directly in parent context - changes trigger parent rerun
+            self._input_widget_impl(
+                key, default, name, help, widget_type, options,
+                min_value, max_value, step_size, display_file_path, on_change
+            )
+        else:
+            # Render in isolated fragment - changes don't affect parent
+            self._input_widget_fragmented(
+                key, default, name, help, widget_type, options,
+                min_value, max_value, step_size, display_file_path, on_change
+            )
+
+    @st.fragment
+    def _input_widget_fragmented(
+        self, key, default, name, help, widget_type,
+        options, min_value, max_value, step_size,
+        display_file_path, on_change
+    ):
+        self._input_widget_impl(
+            key, default, name, help, widget_type,
+            options, min_value, max_value, step_size,
+            display_file_path, on_change
+        )
+
+    def _input_widget_impl(
+        self, key, default, name, help, widget_type,
+        options, min_value, max_value, step_size,
+        display_file_path, on_change
+    ):
+        """Internal implementation of input_widget - contains all the widget logic."""
 
         def format_files(input: Any) -> List[str]:
             if not display_file_path and Path(input).exists():
@@ -407,10 +443,10 @@ class StreamlitUI:
         key = f"{self.parameter_manager.param_prefix}{key}"
 
         if widget_type == "text":
-            st.text_input(name, value=value, key=key, help=help)
+            st.text_input(name, value=value, key=key, help=help, on_change=on_change)
 
         elif widget_type == "textarea":
-            st.text_area(name, value=value, key=key, help=help)
+            st.text_area(name, value=value, key=key, help=help, on_change=on_change)
 
         elif widget_type == "number":
             number_type = float if isinstance(value, float) else int
@@ -429,10 +465,11 @@ class StreamlitUI:
                 format=None,
                 key=key,
                 help=help,
+                on_change=on_change,
             )
 
         elif widget_type == "checkbox":
-            st.checkbox(name, value=value, key=key, help=help)
+            st.checkbox(name, value=value, key=key, help=help, on_change=on_change)
 
         elif widget_type == "selectbox":
             if options is not None:
@@ -443,6 +480,7 @@ class StreamlitUI:
                     key=key,
                     format_func=format_files,
                     help=help,
+                    on_change=on_change,
                 )
             else:
                 st.warning(f"Select widget '{name}' requires options parameter")
@@ -456,6 +494,7 @@ class StreamlitUI:
                     key=key,
                     format_func=format_files,
                     help=help,
+                    on_change=on_change,
                 )
             else:
                 st.warning(f"Select widget '{name}' requires options parameter")
@@ -477,6 +516,7 @@ class StreamlitUI:
                     key=key,
                     format=None,
                     help=help,
+                    on_change=on_change,
                 )
             else:
                 st.warning(
@@ -484,47 +524,66 @@ class StreamlitUI:
                 )
 
         elif widget_type == "password":
-            st.text_input(name, value=value, type="password", key=key, help=help)
+            st.text_input(name, value=value, type="password", key=key, help=help, on_change=on_change)
 
         elif widget_type == "auto":
             # Auto-determine widget type based on value
             if isinstance(value, bool):
-                st.checkbox(name, value=value, key=key, help=help)
+                st.checkbox(name, value=value, key=key, help=help, on_change=on_change)
             elif isinstance(value, (int, float)):
-                self.input_widget(
+                self._input_widget_impl(
                     key,
                     value,
-                    widget_type="number",
                     name=name,
+                    help=help,
+                    widget_type="number",
+                    options=None,
                     min_value=min_value,
                     max_value=max_value,
                     step_size=step_size,
-                    help=help,
+                    display_file_path=False,
+                    on_change=on_change,
                 )
             elif (isinstance(value, str) or value == None) and options is not None:
-                self.input_widget(
+                self._input_widget_impl(
                     key,
                     value,
-                    widget_type="selectbox",
                     name=name,
-                    options=options,
                     help=help,
+                    widget_type="selectbox",
+                    options=options,
+                    min_value=None,
+                    max_value=None,
+                    step_size=1,
+                    display_file_path=False,
+                    on_change=on_change,
                 )
             elif isinstance(value, list) and options is not None:
-                self.input_widget(
+                self._input_widget_impl(
                     key,
                     value,
-                    widget_type="multiselect",
                     name=name,
-                    options=options,
                     help=help,
+                    widget_type="multiselect",
+                    options=options,
+                    min_value=None,
+                    max_value=None,
+                    step_size=1,
+                    display_file_path=False,
+                    on_change=on_change,
                 )
             elif isinstance(value, bool):
-                self.input_widget(
-                    key, value, widget_type="checkbox", name=name, help=help
+                self._input_widget_impl(
+                    key, value, name=name, help=help, widget_type="checkbox",
+                    options=None, min_value=None, max_value=None, step_size=1,
+                    display_file_path=False, on_change=on_change
                 )
             else:
-                self.input_widget(key, value, widget_type="text", name=name, help=help)
+                self._input_widget_impl(
+                    key, value, name=name, help=help, widget_type="text",
+                    options=None, min_value=None, max_value=None, step_size=1,
+                    display_file_path=False, on_change=on_change
+                )
 
         else:
             st.error(f"Unsupported widget type '{widget_type}'")
