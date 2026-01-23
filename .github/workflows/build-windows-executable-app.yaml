@@ -142,7 +142,8 @@ jobs:
       env:
           OPENMS_CONTRIB_LIBS: "${{ github.workspace }}/OpenMS/contrib"
           CI_PROVIDER: "GitHub-Actions"
-          CMAKE_GENERATOR: "Ninja"
+          CMAKE_GENERATOR: "Visual Studio 17 2022"
+          CMAKE_GENERATOR_PLATFORM: "x64"
           SOURCE_DIRECTORY: "${{ github.workspace }}/OpenMS"
           BUILD_NAME: "${{ env.RUN_NAME }}-Win64-class-topp-${{ github.run_number }}"
           ENABLE_STYLE_TESTING: "OFF"
@@ -162,8 +163,7 @@ jobs:
           Python_ROOT_DIR: "${{ runner.tool_cache }}/Python/${{ env.PYTHON_VERSION }}/x64"
           PYTHON_EXECUTABLE: "${{ runner.tool_cache }}/Python/${{ env.PYTHON_VERSION }}/x64/python.exe"
           Python_FIND_STRATEGY: "LOCATION"
-          #  BUILD_FLAGS: "-p:CL_MPCount=2" # For VS Generator and MSBuild
-          BUILD_FLAGS: "-j2" # Ninja will otherwise use all cores (doesn't go well in GHA)
+          BUILD_FLAGS: "-p:CL_MPCount=2"
           CMAKE_CCACHE_EXE: "ccache"
           CCACHE_BASEDIR: ${{ github.workspace }}
           CCACHE_DIR: ${{ github.workspace }}/.ccache
@@ -183,7 +183,7 @@ jobs:
       shell: bash
       run: |
         cd $GITHUB_WORKSPACE/OpenMS/bld
-        cmake --build . --target pyopenms --config Release -- -j2
+        cmake --build . --target pyopenms --config Release -- /p:CL_MPCount=2 /m:2
 
     - name: Test pyOpenMS
       shell: bash
