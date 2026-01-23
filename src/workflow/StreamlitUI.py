@@ -1081,10 +1081,10 @@ class StreamlitUI:
             with open(log_path, "r", encoding="utf-8") as f:
                 content = f.read()
             # Check if workflow finished successfully
-            if "WORKFLOW FINISHED" not in content:
-                st.error("**Workflow did not complete. Check log file for errors.**")
-            elif "ERRORS OCCURRED" in content or "ERROR:" in content:
-                st.warning("**Workflow completed with errors. Some results may be missing.**")
+            if "WORKFLOW FINISHED" in content:
+                st.success("**Workflow completed successfully.**")
+            else:
+                st.error("**Errors occurred, check log file.**")
             st.code(content, language="neon", line_numbers=False)
 
     def _show_queue_status(self, status: dict) -> None:

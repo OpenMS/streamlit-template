@@ -101,8 +101,9 @@ class WorkflowManager:
             if results_dir.exists():
                 shutil.rmtree(results_dir)
             results_dir.mkdir(parents=True)
-            self.execution()
-            self.logger.log("WORKFLOW FINISHED")
+            success = self.execution()
+            if success:
+                self.logger.log("WORKFLOW FINISHED")
         except Exception as e:
             self.logger.log(f"ERROR: {e}")
             self.logger.log("".join(traceback.format_exception(e)))
@@ -258,14 +259,15 @@ class WorkflowManager:
         ###################################
         pass
 
-    def execution(self) -> None:
+    def execution(self) -> bool:
         """
-        Add your workflow steps here
+        Add your workflow steps here.
+        Returns True on success, False on error.
         """
         ###################################
         # Add your workflow steps here
         ###################################
-        pass
+        return True
 
     def results(self) -> None:
         """
