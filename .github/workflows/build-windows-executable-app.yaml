@@ -179,6 +179,7 @@ jobs:
           CI_PROVIDER: "GitHub-Actions"
           BUILD_NAME: "${{ env.RUN_NAME }}-Win64-class-topp-${{ github.run_number }}"
           BUILD_TYPE: "Release"
+          CTEST_CONFIGURATION_TYPE: "Release"
 
     - name: Build pyOpenMS
       shell: bash
