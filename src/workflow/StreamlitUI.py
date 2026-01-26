@@ -585,31 +585,55 @@ class StreamlitUI:
         # read into Param object
         param = poms.Param()
         poms.ParamXMLFile().load(str(ini_file_path), param)
+
+        def _matches_parameter(pattern: str, key: bytes) -> bool:
+            """
+            Match pattern against TOPP parameter key using suffix matching.
+
+            Key format: b"ToolName:1:section:subsection:param_name"
+
+            Returns True if pattern matches the end of the param path,
+            bounded by ':' or start of path.
+            """
+            pattern = pattern.lstrip(":")  # Strip legacy leading colon
+            key_str = key.decode()
+
+            # Extract param path after "ToolName:1:"
+            parts = key_str.split(":")
+            param_path = ":".join(parts[2:]) if len(parts) > 2 else key_str
+
+            # Check if pattern matches as a suffix, bounded by ':' or start
+            return param_path == pattern or param_path.endswith(":" + pattern)
+
+        # Always apply base exclusions (input/output files, standard excludes)
+        excluded_keys = [
+            "log",
+            "debug",
+            "threads",
+            "no_progress",
+            "force",
+            "version",
+            "test",
+        ] + exclude_parameters
+
+        valid_keys = [
+            key
+            for key in param.keys()
+            if not (
+                b"input file" in param.getTags(key)
+                or b"output file" in param.getTags(key)
+                or any([_matches_parameter(k, key) for k in excluded_keys])
+            )
+        ]
+
+        # Track which keys are "included" (shown by default) vs "non-included" (advanced only)
         if include_parameters:
-            valid_keys = [
-                key
-                for key in param.keys()
-                if any([k.encode() in key for k in include_parameters])
-            ]
+            included_keys = {
+                key for key in valid_keys
+                if any([_matches_parameter(k, key) for k in include_parameters])
+            }
         else:
-            excluded_keys = [
-                "log",
-                "debug",
-                "threads",
-                "no_progress",
-                "force",
-                "version",
-                "test",
-            ] + exclude_parameters
-            valid_keys = [
-                key
-                for key in param.keys()
-                if not (
-                    b"input file" in param.getTags(key)
-                    or b"output file" in param.getTags(key)
-                    or any([k.encode() in key for k in excluded_keys])
-                )
-            ]
+            included_keys = set(valid_keys)  # All are included when no filter specified
         params = []
         for key in valid_keys:
             entry = param.getEntry(key)
@@ -620,6 +644,7 @@ class StreamlitUI:
                 "valid_strings": [v.decode() for v in entry.valid_strings],
                 "description": entry.description.decode(),
                 "advanced": (b"advanced" in param.getTags(key)),
+                "non_included": key not in included_keys,
                 "section_description": param.getSectionDescription(
                     ":".join(key.decode().split(":")[:-1])
                 ),
@@ -649,8 +674,8 @@ class StreamlitUI:
         section_descriptions = {}
         if display_subsections:
             for p in params:
-                # Skip adavnaced parameters if not selected
-                if not st.session_state["advanced"] and p["advanced"]:
+                # Skip advanced/non-included parameters if toggle not enabled
+                if not st.session_state["advanced"] and (p["advanced"] or p["non_included"]):
                     continue
                 # Add section description to section_descriptions dictionary if it exists
                 if p["section_description"]:
@@ -664,7 +689,11 @@ class StreamlitUI:
                     param_sections[p["sections"]] = [p]
         else:
             # Simply put all parameters in "all" section if no subsections required
-            param_sections["all"] = params
+            # Filter advanced/non-included parameters if toggle not enabled
+            param_sections["all"] = [
+                p for p in params
+                if st.session_state["advanced"] or (not p["advanced"] and not p["non_included"])
+            ]
 
         # Display tool name if required
         if display_tool_name:
