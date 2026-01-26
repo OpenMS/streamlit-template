@@ -11,6 +11,8 @@ import shutil
 import traceback
 from pathlib import Path
 
+from .CommandExecutor import WorkflowCancelled
+
 
 def execute_workflow(
     workflow_dir: str,
@@ -74,6 +76,16 @@ def execute_workflow(
         executor = CommandExecutor(workflow_path, logger, parameter_manager)
         executor.pid_dir.mkdir(parents=True, exist_ok=True)
 
+        # Set up cancellation check for Redis queue mode
+        if job is not None:
+            def should_stop():
+                try:
+                    job.refresh()  # Get latest status from Redis
+                    return job.is_stopped
+                except Exception:
+                    return False
+            executor.set_cancellation_check(should_stop)
+
         _update_progress(job, 0.1, "Starting workflow execution...")
 
         # Create workflow instance
@@ -116,6 +128,32 @@ def execute_workflow(
             "success": True,
             "workflow_dir": str(workflow_path),
             "message": "Workflow completed successfully"
+        }
+
+    except WorkflowCancelled:
+        # Handle user-initiated cancellation cleanly
+        try:
+            log_dir = workflow_path / "logs"
+            log_dir.mkdir(parents=True, exist_ok=True)
+            for log_name in ["minimal.log", "commands-and-run-times.log", "all.log"]:
+                log_file = log_dir / log_name
+                with open(log_file, "a") as f:
+                    f.write("\n\nWorkflow cancelled by user\n")
+        except Exception:
+            pass
+
+        # Clean up pid directory
+        try:
+            pid_dir = workflow_path / "pids"
+            shutil.rmtree(pid_dir, ignore_errors=True)
+        except Exception:
+            pass
+
+        return {
+            "success": False,
+            "workflow_dir": str(workflow_path),
+            "cancelled": True,
+            "error": "Workflow cancelled by user"
         }
 
     except Exception as e:
