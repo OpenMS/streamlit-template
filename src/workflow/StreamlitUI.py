@@ -1217,17 +1217,9 @@ class StreamlitUI:
             queue_length = status.get("queue_length", "?")
             st.info(f"**Status: {label}** - Your workflow is #{queue_position} in the queue ({queue_length} total jobs)")
 
-            # Visual queue indicator
-            if isinstance(queue_position, int) and isinstance(queue_length, int) and queue_length > 0:
-                progress = 1 - (queue_position / queue_length)
-                st.progress(progress, text=f"Queue position {queue_position} of {queue_length}")
-
         elif job_status == "started":
-            progress = status.get("progress", 0)
             current_step = status.get("current_step", "Processing...")
-            st.info(f"**Status: {label}**")
-            if progress and progress > 0:
-                st.progress(progress, text=current_step or "Processing...")
+            st.info(f"**Status: {label}** - {current_step}")
 
         elif job_status == "finished":
             # Check if the job result indicates success or failure
