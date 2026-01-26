@@ -116,9 +116,33 @@ def find_demo_workspace_path(demo_name: str) -> Path | None:
     return None
 
 
+def _symlink_tree(source: Path, target: Path) -> None:
+    """
+    Recursively create directory structure and symlink files from source to target.
+
+    Creates real directories but symlinks individual files, allowing users to
+    add new files to workspace directories without affecting the original.
+
+    Args:
+        source: Source directory path.
+        target: Target directory path.
+    """
+    target.mkdir(parents=True, exist_ok=True)
+    for item in source.iterdir():
+        target_item = target / item.name
+        if item.is_dir():
+            _symlink_tree(item, target_item)
+        else:
+            # Create symlink to the source file
+            target_item.symlink_to(item.resolve())
+
+
 def copy_demo_workspace(demo_name: str, target_path: Path) -> bool:
     """
     Copy a demo workspace to the target path.
+
+    On Linux, creates symlinks to demo files instead of copying them.
+    On other platforms, copies files normally.
 
     Searches all configured source directories for the demo (first match wins).
 
@@ -137,7 +161,12 @@ def copy_demo_workspace(demo_name: str, target_path: Path) -> bool:
     try:
         if target_path.exists():
             shutil.rmtree(target_path)
-        shutil.copytree(demo_path, target_path)
+
+        # Use symlinks on Linux for efficiency
+        if OS_PLATFORM == "linux":
+            _symlink_tree(demo_path, target_path)
+        else:
+            shutil.copytree(demo_path, target_path)
         return True
     except Exception:
         return False
@@ -567,15 +596,24 @@ def render_sidebar(page: str = "") -> None:
                         if st.button("Load Demo Data"):
                             demo_path = find_demo_workspace_path(selected_demo)
                             if demo_path:
-                                # Copy demo files to current workspace
+                                # Link or copy demo files to current workspace
                                 for item in demo_path.iterdir():
                                     target = st.session_state.workspace / item.name
                                     if item.is_dir():
                                         if target.exists():
                                             shutil.rmtree(target)
-                                        shutil.copytree(item, target)
+                                        # Use symlinks on Linux for efficiency
+                                        if OS_PLATFORM == "linux":
+                                            _symlink_tree(item, target)
+                                        else:
+                                            shutil.copytree(item, target)
                                     else:
-                                        shutil.copy2(item, target)
+                                        if target.exists():
+                                            target.unlink()
+                                        if OS_PLATFORM == "linux":
+                                            target.symlink_to(item.resolve())
+                                        else:
+                                            shutil.copy2(item, target)
                                 st.success(f"Demo data '{selected_demo}' loaded!")
                                 time.sleep(1)
                                 st.rerun()
