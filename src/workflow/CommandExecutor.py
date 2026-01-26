@@ -27,7 +27,7 @@ class CommandExecutor:
 
     def run_multiple_commands(
         self, commands: list[str]
-    ) -> None:
+    ) -> bool:
         """
         Executes multiple shell commands concurrently in separate threads.
 
@@ -38,17 +38,28 @@ class CommandExecutor:
         Args:
             commands (list[str]): A list where each element is a list representing
                                         a command and its arguments.
+
+        Returns:
+            bool: True if all commands succeeded, False if any failed.
         """
         # Log the start of command execution
         self.logger.log(f"Running {len(commands)} commands in parallel...", 1)
         start_time = time.time()
+
+        results = []
+        lock = threading.Lock()
+
+        def run_and_track(cmd):
+            success = self.run_command(cmd)
+            with lock:
+                results.append(success)
 
         # Initialize a list to keep track of threads
         threads = []
 
         # Start a new thread for each command
         for cmd in commands:
-            thread = threading.Thread(target=self.run_command, args=(cmd,))
+            thread = threading.Thread(target=run_and_track, args=(cmd,))
             thread.start()
             threads.append(thread)
 
@@ -60,7 +71,9 @@ class CommandExecutor:
         end_time = time.time()
         self.logger.log(f"Total time to run {len(commands)} commands: {end_time - start_time:.2f} seconds", 1)
 
-    def run_command(self, command: list[str]) -> None:
+        return all(results)
+
+    def run_command(self, command: list[str]) -> bool:
         """
         Executes a specified shell command and logs its execution details.
 
@@ -110,7 +123,9 @@ class CommandExecutor:
         
         # Check for errors
         if process.returncode != 0:
-            self.logger.log(f"ERRORS OCCURRED: Process exited with code {process.returncode}", 2)
+            self.logger.log(f"ERROR: Command failed with exit code {process.returncode}: {command[0]}", 0)
+            return False
+        return True
 
     def _stream_output(self, process: subprocess.Popen) -> None:
         """
@@ -157,7 +172,7 @@ class CommandExecutor:
         stdout_thread.join()
         stderr_thread.join()
 
-    def run_topp(self, tool: str, input_output: dict, custom_params: dict = {}) -> None:
+    def run_topp(self, tool: str, input_output: dict, custom_params: dict = {}) -> bool:
         """
         Constructs and executes commands for the specified tool OpenMS TOPP tool based on the given
         input and output configurations. Ensures that all input/output file lists
@@ -175,6 +190,9 @@ class CommandExecutor:
             tool (str): The executable name or path of the tool.
             input_output (dict): A dictionary specifying the input/output parameter names (as key) and their corresponding file paths (as value).
             custom_params (dict): A dictionary of custom parameters to pass to the tool.
+
+        Returns:
+            bool: True if all commands succeeded, False if any failed.
 
         Raises:
             ValueError: If the lengths of input/output file lists are inconsistent,
@@ -240,9 +258,9 @@ class CommandExecutor:
 
         # Run command(s)
         if len(commands) == 1:
-            self.run_command(commands[0])
+            return self.run_command(commands[0])
         elif len(commands) > 1:
-            self.run_multiple_commands(commands)
+            return self.run_multiple_commands(commands)
         else:
             raise Exception("No commands to execute.")
 
