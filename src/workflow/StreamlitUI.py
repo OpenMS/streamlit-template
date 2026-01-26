@@ -1188,13 +1188,19 @@ class StreamlitUI:
                 f"**Workflow log file: {datetime.fromtimestamp(log_path.stat().st_ctime).strftime('%Y-%m-%d %H:%M')} CET**"
             )
             with open(log_path, "r", encoding="utf-8") as f:
-                content = f.read()
+                lines = f.readlines()
+            content = "".join(lines)
             # Check if workflow finished successfully
             if "WORKFLOW FINISHED" in content:
                 st.success("**Workflow completed successfully.**")
             else:
                 st.error("**Errors occurred, check log file.**")
-            st.code(content, language="neon", line_numbers=False)
+            # Apply line limit to static display
+            if log_lines_count == "all":
+                display_lines = lines
+            else:
+                display_lines = lines[-st.session_state.log_lines_count:]
+            st.code("".join(display_lines), language="neon", line_numbers=False)
 
     def _show_queue_status(self, status: dict) -> None:
         """Display queue job status for online mode"""
