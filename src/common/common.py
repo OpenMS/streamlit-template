@@ -26,6 +26,123 @@ from src.common.captcha_ import captcha_control
 OS_PLATFORM = sys.platform
 
 
+def is_safe_workspace_name(name: str) -> bool:
+    """
+    Check if a workspace name is safe (no path traversal characters).
+
+    Args:
+        name: The workspace name to validate.
+
+    Returns:
+        bool: True if safe, False if contains path separators or parent references.
+    """
+    if not name:
+        return False
+    # Reject path separators and parent directory references
+    return "/" not in name and "\\" not in name and name not in ("..", ".")
+
+
+def get_demo_source_dirs() -> list[Path]:
+    """
+    Get list of demo workspace source directories from settings.
+
+    Supports both legacy 'source_dir' (string) and new 'source_dirs' (array) formats.
+    Non-existent directories are silently skipped.
+
+    Returns:
+        list[Path]: List of existing source directory paths.
+    """
+    settings = st.session_state.get("settings", {})
+    demo_config = settings.get("demo_workspaces", {})
+
+    if not demo_config.get("enabled", False):
+        return []
+
+    # Support both source_dirs (array) and source_dir (string) for backward compatibility
+    if "source_dirs" in demo_config:
+        dirs = demo_config["source_dirs"]
+        if isinstance(dirs, str):
+            dirs = [dirs]
+    elif "source_dir" in demo_config:
+        dirs = [demo_config["source_dir"]]
+    else:
+        dirs = ["example-data/workspaces"]
+
+    # Return only existing directories
+    return [Path(d) for d in dirs if Path(d).exists()]
+
+
+def get_available_demo_workspaces() -> list[str]:
+    """
+    Get a list of available demo workspaces from all configured source directories.
+
+    When the same demo name exists in multiple directories, the first occurrence wins.
+
+    Returns:
+        list[str]: List of unique demo workspace names.
+    """
+    seen = set()
+    demos = []
+
+    for source_dir in get_demo_source_dirs():
+        for p in source_dir.iterdir():
+            if p.is_dir() and p.name not in seen:
+                seen.add(p.name)
+                demos.append(p.name)
+
+    return demos
+
+
+def find_demo_workspace_path(demo_name: str) -> Path | None:
+    """
+    Find the source path for a demo workspace by searching all configured directories.
+
+    Directories are searched in order; the first match is returned.
+
+    Args:
+        demo_name: Name of the demo workspace to find.
+
+    Returns:
+        Path to the demo workspace, or None if not found or name is unsafe.
+    """
+    # Validate against path traversal attacks
+    if not is_safe_workspace_name(demo_name):
+        return None
+
+    for source_dir in get_demo_source_dirs():
+        demo_path = source_dir / demo_name
+        if demo_path.exists() and demo_path.is_dir():
+            return demo_path
+    return None
+
+
+def copy_demo_workspace(demo_name: str, target_path: Path) -> bool:
+    """
+    Copy a demo workspace to the target path.
+
+    Searches all configured source directories for the demo (first match wins).
+
+    Args:
+        demo_name: Name of the demo workspace to copy.
+        target_path: Destination path for the workspace.
+
+    Returns:
+        bool: True if copy was successful, False otherwise.
+    """
+    demo_path = find_demo_workspace_path(demo_name)
+
+    if demo_path is None:
+        return False
+
+    try:
+        if target_path.exists():
+            shutil.rmtree(target_path)
+        shutil.copytree(demo_path, target_path)
+        return True
+    except Exception:
+        return False
+
+
 @st.fragment(run_every=5)
 def monitor_hardware():
     cpu_progress = psutil.cpu_percent(interval=None) / 100
@@ -281,10 +398,30 @@ def page_setup(page: str = "") -> dict[str, Any]:
 
         # Check if workspace logic is enabled
         if st.session_state.settings["enable_workspaces"]:
+            # Get available demo workspaces using helper function
+            available_demos = get_available_demo_workspaces()
+
             if "workspace" in st.query_params:
-                st.session_state.workspace = Path(
-                    workspaces_dir, st.query_params.workspace
-                )
+                requested_workspace = st.query_params.workspace
+
+                # Validate workspace name against path traversal
+                if not is_safe_workspace_name(requested_workspace):
+                    # Invalid workspace name - fall back to new UUID workspace
+                    workspace_id = str(uuid.uuid1())
+                    st.session_state.workspace = Path(workspaces_dir, workspace_id)
+                    st.query_params.workspace = workspace_id
+                # Check if the requested workspace is a demo workspace (online mode)
+                elif st.session_state.location == "online" and requested_workspace in available_demos:
+                    # Create a new UUID workspace and copy demo contents
+                    workspace_id = str(uuid.uuid1())
+                    st.session_state.workspace = Path(workspaces_dir, workspace_id)
+                    st.query_params.workspace = workspace_id
+                    # Copy demo workspace contents using helper function
+                    copy_demo_workspace(requested_workspace, st.session_state.workspace)
+                else:
+                    st.session_state.workspace = Path(
+                        workspaces_dir, requested_workspace
+                    )
             elif st.session_state.location == "online":
                 workspace_id = str(uuid.uuid1())
                 st.session_state.workspace = Path(workspaces_dir, workspace_id)
@@ -296,6 +433,12 @@ def page_setup(page: str = "") -> dict[str, Any]:
         else:
             # Use default workspace when workspace feature is disabled
             st.session_state.workspace = Path(workspaces_dir, "default")
+
+            # For local mode with workspaces disabled, copy demo workspaces if they don't exist
+            for demo_name in get_available_demo_workspaces():
+                target = Path(workspaces_dir, demo_name)
+                if not target.exists():
+                    copy_demo_workspace(demo_name, target)
 
         if st.session_state.location != "online":
             # not any captcha so, controllo should be true
@@ -409,6 +552,33 @@ def render_sidebar(page: str = "") -> None:
                             st.session_state.workspace = Path(workspaces_dir, "default")
                             st.query_params.workspace = "default"
                             st.rerun()
+
+            # Demo workspace loader for online mode
+            if st.session_state.location == "online":
+                available_demos = get_available_demo_workspaces()
+                if available_demos:
+                    with st.expander("🎮 **Demo Data**"):
+                        st.caption("Load example data to explore the app")
+                        selected_demo = st.selectbox(
+                            "Select demo dataset",
+                            available_demos,
+                            key="selected-demo-workspace"
+                        )
+                        if st.button("Load Demo Data"):
+                            demo_path = find_demo_workspace_path(selected_demo)
+                            if demo_path:
+                                # Copy demo files to current workspace
+                                for item in demo_path.iterdir():
+                                    target = st.session_state.workspace / item.name
+                                    if item.is_dir():
+                                        if target.exists():
+                                            shutil.rmtree(target)
+                                        shutil.copytree(item, target)
+                                    else:
+                                        shutil.copy2(item, target)
+                                st.success(f"Demo data '{selected_demo}' loaded!")
+                                time.sleep(1)
+                                st.rerun()
 
         # All pages have settings, workflow indicator and logo
         with st.expander("⚙️ **Settings**"):
