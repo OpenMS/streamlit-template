@@ -869,13 +869,25 @@ class StreamlitUI:
                         if len(p['valid_strings']) > 0:
                             # Filter current values to only include valid options
                             current_values = [v for v in p["value"] if v in p['valid_strings']]
+
+                            # Use a display key for multiselect (stores list), sync to main key (stores string)
+                            display_key = f"{key}_display"
+
+                            def on_multiselect_change(dk=display_key, tk=key):
+                                st.session_state[tk] = "\n".join(st.session_state[dk])
+
                             cols[i].multiselect(
                                 name,
                                 options=sorted(p['valid_strings']),
                                 default=current_values,
                                 help=p["description"],
-                                key=key,
+                                key=display_key,
+                                on_change=on_multiselect_change,
                             )
+
+                            # Ensure main key has string value for ParameterManager
+                            if key not in st.session_state:
+                                st.session_state[key] = "\n".join(current_values)
                         else:
                             # Fall back to text_area for freeform list input
                             cols[i].text_area(
