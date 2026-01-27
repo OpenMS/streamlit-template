@@ -62,6 +62,9 @@ class ParameterManager:
             # get all session state param keys and values for this tool
             for key, value in st.session_state.items():
                 if key.startswith(f"{self.topp_param_prefix}{tool}:1:"):
+                    # Skip display keys used by multiselect widgets
+                    if key.endswith("_display"):
+                        continue
                     # get ini_key
                     ini_key = key.replace(self.topp_param_prefix, "").encode()
                     # get ini (default) value by ini_key
