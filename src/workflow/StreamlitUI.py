@@ -869,13 +869,30 @@ class StreamlitUI:
                         if len(p['valid_strings']) > 0:
                             # Filter current values to only include valid options
                             current_values = [v for v in p["value"] if v in p['valid_strings']]
+
+                            # Create a temporary key for multiselect, then convert to newline string
+                            multiselect_key = f"{key}_multiselect"
+
+                            # Initialize multiselect key from the main key if needed
+                            if multiselect_key not in st.session_state:
+                                st.session_state[multiselect_key] = current_values
+
+                            # Define callback to sync multiselect list to newline-separated string
+                            def sync_multiselect_to_string(ms_key=multiselect_key, target_key=key):
+                                st.session_state[target_key] = "\n".join(st.session_state[ms_key])
+
                             cols[i].multiselect(
                                 name,
                                 options=sorted(p['valid_strings']),
-                                default=current_values,
+                                default=None,  # Use session state
                                 help=p["description"],
-                                key=key,
+                                key=multiselect_key,
+                                on_change=sync_multiselect_to_string,
                             )
+
+                            # Initialize the string key if not present
+                            if key not in st.session_state:
+                                st.session_state[key] = "\n".join(current_values)
                         else:
                             # Fall back to text_area for freeform list input
                             cols[i].text_area(
