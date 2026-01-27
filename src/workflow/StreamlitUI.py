@@ -870,27 +870,22 @@ class StreamlitUI:
                             # Filter current values to only include valid options
                             current_values = [v for v in p["value"] if v in p['valid_strings']]
 
-                            # Create a temporary key for multiselect, then convert to newline string
-                            multiselect_key = f"{key}_multiselect"
+                            # Use a display key for multiselect (stores list), sync to main key (stores string)
+                            display_key = f"{key}_display"
 
-                            # Initialize multiselect key from the main key if needed
-                            if multiselect_key not in st.session_state:
-                                st.session_state[multiselect_key] = current_values
-
-                            # Define callback to sync multiselect list to newline-separated string
-                            def sync_multiselect_to_string(ms_key=multiselect_key, target_key=key):
-                                st.session_state[target_key] = "\n".join(st.session_state[ms_key])
+                            def on_multiselect_change(dk=display_key, tk=key):
+                                st.session_state[tk] = "\n".join(st.session_state[dk])
 
                             cols[i].multiselect(
                                 name,
                                 options=sorted(p['valid_strings']),
-                                default=None,  # Use session state
+                                default=current_values,
                                 help=p["description"],
-                                key=multiselect_key,
-                                on_change=sync_multiselect_to_string,
+                                key=display_key,
+                                on_change=on_multiselect_change,
                             )
 
-                            # Initialize the string key if not present
+                            # Ensure main key has string value for ParameterManager
                             if key not in st.session_state:
                                 st.session_state[key] = "\n".join(current_values)
                         else:
