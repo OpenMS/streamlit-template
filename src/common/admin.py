@@ -10,8 +10,6 @@ from pathlib import Path
 
 import streamlit as st
 
-from src.common.common import is_safe_workspace_name
-
 
 def is_admin_configured() -> bool:
     """
@@ -109,6 +107,9 @@ def save_workspace_as_demo(workspace_path: Path, demo_name: str) -> tuple[bool, 
     Returns:
         tuple[bool, str]: (success, message) tuple indicating result.
     """
+    # Deferred import to avoid circular dependency with common.py
+    from src.common.common import is_safe_workspace_name
+
     # Validate demo name
     if not demo_name:
         return False, "Demo name cannot be empty."
