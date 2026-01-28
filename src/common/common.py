@@ -21,6 +21,12 @@ except ImportError:
     TK_AVAILABLE = False
 
 from src.common.captcha_ import captcha_control
+from src.common.admin import (
+    is_admin_configured,
+    verify_admin_password,
+    demo_exists,
+    save_workspace_as_demo,
+)
 
 # Detect system platform
 OS_PLATFORM = sys.platform
@@ -622,6 +628,74 @@ def render_sidebar(page: str = "") -> None:
                                             shutil.copy2(item, target)
                                 st.success(f"Demo data '{selected_demo}' loaded!")
                                 time.sleep(1)
+                                st.rerun()
+
+                # Save as Demo section (online mode only)
+                with st.expander("💾 **Save as Demo**"):
+                    st.caption("Save current workspace as a demo for others to use")
+
+                    demo_name_input = st.text_input(
+                        "Demo name",
+                        key="save-demo-name",
+                        placeholder="e.g., workshop-2024",
+                        help="Name for the demo workspace (no spaces or special characters)"
+                    )
+
+                    # Check if demo already exists
+                    demo_name_clean = demo_name_input.strip() if demo_name_input else ""
+                    existing_demo = demo_exists(demo_name_clean) if demo_name_clean else False
+
+                    if existing_demo:
+                        st.warning(f"Demo '{demo_name_clean}' already exists and will be overwritten.")
+                        confirm_overwrite = st.checkbox(
+                            "Confirm overwrite",
+                            key="confirm-demo-overwrite"
+                        )
+                    else:
+                        confirm_overwrite = True  # No confirmation needed for new demos
+
+                    if st.button("Save as Demo", key="save-demo-btn", disabled=not demo_name_clean):
+                        if not is_admin_configured():
+                            st.error(
+                                "Admin not configured. Create `.streamlit/secrets.toml` with "
+                                "an `[admin]` section containing `password = \"your-password\"`"
+                            )
+                        elif existing_demo and not confirm_overwrite:
+                            st.error("Please confirm overwrite to continue.")
+                        else:
+                            # Show password dialog
+                            st.session_state["show_admin_password_dialog"] = True
+
+                    # Password dialog (shown after clicking Save as Demo)
+                    if st.session_state.get("show_admin_password_dialog", False):
+                        admin_password = st.text_input(
+                            "Admin password",
+                            type="password",
+                            key="admin-password-input",
+                            help="Enter the admin password to save this workspace as a demo"
+                        )
+
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            if st.button("Confirm", key="confirm-save-demo"):
+                                if verify_admin_password(admin_password):
+                                    success, message = save_workspace_as_demo(
+                                        st.session_state.workspace,
+                                        demo_name_clean
+                                    )
+                                    if success:
+                                        st.success(message)
+                                        st.session_state["show_admin_password_dialog"] = False
+                                        time.sleep(1)
+                                        st.rerun()
+                                    else:
+                                        st.error(message)
+                                else:
+                                    st.error("Invalid admin password.")
+
+                        with col2:
+                            if st.button("Cancel", key="cancel-save-demo"):
+                                st.session_state["show_admin_password_dialog"] = False
                                 st.rerun()
 
         # All pages have settings, workflow indicator and logo
