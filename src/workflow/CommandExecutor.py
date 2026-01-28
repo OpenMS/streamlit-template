@@ -153,7 +153,7 @@ class CommandExecutor:
             try:
                 for line in iter(process.stderr.readline, ''):
                     if line:
-                        self.logger.log(f"STDERR: {line.rstrip()}", 2)
+                        self.logger.log(f"STDERR: {line.rstrip()}", 0)
                     if process.poll() is not None:
                         break
             except Exception as e:
