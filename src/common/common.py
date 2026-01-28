@@ -122,6 +122,7 @@ def _symlink_tree(source: Path, target: Path) -> None:
 
     Creates real directories but symlinks individual files, allowing users to
     add new files to workspace directories without affecting the original.
+    params.json is copied instead of symlinked so it can be modified independently.
 
     Args:
         source: Source directory path.
@@ -132,6 +133,9 @@ def _symlink_tree(source: Path, target: Path) -> None:
         target_item = target / item.name
         if item.is_dir():
             _symlink_tree(item, target_item)
+        elif item.name == "params.json":
+            # Copy params.json so it can be modified independently
+            shutil.copy2(item, target_item)
         else:
             # Create symlink to the source file
             target_item.symlink_to(item.resolve())
@@ -610,7 +614,8 @@ def render_sidebar(page: str = "") -> None:
                                     else:
                                         if target.exists():
                                             target.unlink()
-                                        if OS_PLATFORM == "linux":
+                                        # Copy params.json so it can be modified independently
+                                        if OS_PLATFORM == "linux" and item.name != "params.json":
                                             target.symlink_to(item.resolve())
                                         else:
                                             shutil.copy2(item, target)
