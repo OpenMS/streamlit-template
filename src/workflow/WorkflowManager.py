@@ -19,7 +19,12 @@ class WorkflowManager:
         self.file_manager = FileManager(self.workflow_dir)
         self.logger = Logger(self.workflow_dir)
         self.parameter_manager = ParameterManager(self.workflow_dir, workflow_name=name)
-        self.executor = CommandExecutor(self.workflow_dir, self.logger, self.parameter_manager)
+        self.executor = CommandExecutor(
+            self.workflow_dir,
+            self.logger,
+            self.parameter_manager,
+            max_threads=self._get_max_threads()
+        )
         self.ui = StreamlitUI(self.workflow_dir, self.logger, self.executor, self.parameter_manager)
         self.params = self.parameter_manager.get_parameters_from_json()
 
@@ -31,6 +36,28 @@ class WorkflowManager:
     def _is_online_mode(self) -> bool:
         """Check if running in online deployment mode"""
         return st.session_state.get("settings", {}).get("online_deployment", False)
+
+    def _get_max_threads(self) -> Optional[int]:
+        """
+        Get the maximum number of parallel threads based on deployment mode.
+
+        Returns the configured thread limit from settings.json, using the appropriate
+        value for local or online deployment. Returns None if thread_limits is not
+        configured, which means unlimited threads.
+
+        Returns:
+            Optional[int]: Maximum number of threads, or None for unlimited.
+        """
+        settings = st.session_state.get("settings", {})
+        thread_limits = settings.get("thread_limits", {})
+
+        if not thread_limits:
+            return None
+
+        if self._is_online_mode():
+            return thread_limits.get("online", 2)
+        else:
+            return thread_limits.get("local", 4)
 
     def _init_queue_manager(self) -> None:
         """Initialize queue manager for online mode"""

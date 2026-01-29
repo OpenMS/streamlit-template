@@ -3,7 +3,9 @@ import os
 import shutil
 import subprocess
 import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from typing import Optional
 from .Logger import Logger
 from .ParameterManager import ParameterManager
 import sys
@@ -20,20 +22,20 @@ class CommandExecutor:
     for execution.
     """
     # Methods for running commands and logging
-    def __init__(self, workflow_dir: Path, logger: Logger, parameter_manager: ParameterManager):
+    def __init__(self, workflow_dir: Path, logger: Logger, parameter_manager: ParameterManager, max_threads: Optional[int] = None):
         self.pid_dir = Path(workflow_dir, "pids")
         self.logger = logger
         self.parameter_manager = parameter_manager
+        self.max_threads = max_threads
 
     def run_multiple_commands(
         self, commands: list[str]
     ) -> bool:
         """
-        Executes multiple shell commands concurrently in separate threads.
+        Executes multiple shell commands concurrently with optional thread limiting.
 
-        This method leverages threading to run each command in parallel, improving
-        efficiency for batch command execution. Execution time and command results are
-        logged if specified.
+        Uses ThreadPoolExecutor to run commands in parallel while respecting the
+        configured maximum thread limit for the current deployment mode.
 
         Args:
             commands (list[str]): A list where each element is a list representing
@@ -42,30 +44,28 @@ class CommandExecutor:
         Returns:
             bool: True if all commands succeeded, False if any failed.
         """
+        # Determine max workers: use configured limit or fall back to command count (unlimited)
+        max_workers = self.max_threads if self.max_threads else len(commands)
+        thread_info = f"max threads: {self.max_threads}" if self.max_threads else "unlimited"
+
         # Log the start of command execution
-        self.logger.log(f"Running {len(commands)} commands in parallel...", 1)
+        self.logger.log(f"Running {len(commands)} commands in parallel ({thread_info})...", 1)
         start_time = time.time()
 
         results = []
-        lock = threading.Lock()
 
-        def run_and_track(cmd):
-            success = self.run_command(cmd)
-            with lock:
-                results.append(success)
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all commands to the pool
+            future_to_cmd = {executor.submit(self.run_command, cmd): cmd for cmd in commands}
 
-        # Initialize a list to keep track of threads
-        threads = []
-
-        # Start a new thread for each command
-        for cmd in commands:
-            thread = threading.Thread(target=run_and_track, args=(cmd,))
-            thread.start()
-            threads.append(thread)
-
-        # Wait for all threads to complete
-        for thread in threads:
-            thread.join()
+            # Collect results as they complete
+            for future in as_completed(future_to_cmd):
+                try:
+                    success = future.result()
+                    results.append(success)
+                except Exception as e:
+                    self.logger.log(f"ERROR: Command raised exception: {e}", 0)
+                    results.append(False)
 
         # Calculate and log the total execution time
         end_time = time.time()
