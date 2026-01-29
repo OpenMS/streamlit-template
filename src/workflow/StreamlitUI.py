@@ -641,12 +641,11 @@ class StreamlitUI:
 
         # write defaults ini files
         ini_file_path = Path(self.parameter_manager.ini_dir, f"{topp_tool_name}.ini")
-        if not ini_file_path.exists():
-            try:
-                subprocess.call([topp_tool_name, "-write_ini", str(ini_file_path)])
-            except FileNotFoundError:
-                st.error(f"TOPP tool **'{topp_tool_name}'** not found.")
-                return
+        ini_existed = ini_file_path.exists()
+        if not self.parameter_manager.create_ini(topp_tool_name):
+            st.error(f"TOPP tool **'{topp_tool_name}'** not found.")
+            return
+        if not ini_existed:
             # update custom defaults if necessary
             if custom_defaults:
                 param = poms.Param()

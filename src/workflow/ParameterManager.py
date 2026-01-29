@@ -1,6 +1,7 @@
 import pyopenms as poms
 import json
 import shutil
+import subprocess
 import streamlit as st
 from pathlib import Path
 
@@ -24,6 +25,25 @@ class ParameterManager:
         self.params_file = Path(workflow_dir, "params.json")
         self.param_prefix = f"{workflow_dir.stem}-param-"
         self.topp_param_prefix = f"{workflow_dir.stem}-TOPP-"
+
+    def create_ini(self, tool: str) -> bool:
+        """
+        Create an ini file for a TOPP tool if it doesn't exist.
+
+        Args:
+            tool: Name of the TOPP tool (e.g., "CometAdapter")
+
+        Returns:
+            True if ini file exists (created or already existed), False if creation failed
+        """
+        ini_path = Path(self.ini_dir, tool + ".ini")
+        if ini_path.exists():
+            return True
+        try:
+            subprocess.call([tool, "-write_ini", str(ini_path)])
+        except FileNotFoundError:
+            return False
+        return ini_path.exists()
 
     def save_parameters(self) -> None:
         """
@@ -54,11 +74,15 @@ class ParameterManager:
         )
         # for each TOPP tool, open the ini file
         for tool in current_topp_tools:
+            if not self.create_ini(tool):
+                # Could not create ini file - skip this tool
+                continue
+            ini_path = Path(self.ini_dir, f"{tool}.ini")
             if tool not in json_params:
                 json_params[tool] = {}
             # load the param object
             param = poms.Param()
-            poms.ParamXMLFile().load(str(Path(self.ini_dir, f"{tool}.ini")), param)
+            poms.ParamXMLFile().load(str(ini_path), param)
             # get all session state param keys and values for this tool
             for key, value in st.session_state.items():
                 if key.startswith(f"{self.topp_param_prefix}{tool}:1:"):
