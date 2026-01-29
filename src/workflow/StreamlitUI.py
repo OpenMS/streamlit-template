@@ -1061,6 +1061,45 @@ class StreamlitUI:
             use_container_width=True,
         )
 
+    def preset_buttons(self, num_cols: int = 4) -> None:
+        """
+        Renders a grid of preset buttons for the current workflow.
+
+        When a preset button is clicked, the preset parameters are applied to the
+        session state and saved to params.json, then the page is reloaded.
+
+        Args:
+            num_cols: Number of columns for the button grid. Defaults to 4.
+        """
+        preset_names = self.parameter_manager.get_preset_names()
+        if not preset_names:
+            return
+
+        st.markdown("---")
+        st.markdown("**Parameter Presets**")
+        st.caption("Click a preset to apply optimized parameters")
+
+        # Create button grid
+        cols = st.columns(num_cols)
+        for i, preset_name in enumerate(preset_names):
+            col_idx = i % num_cols
+            description = self.parameter_manager.get_preset_description(preset_name)
+            with cols[col_idx]:
+                if st.button(
+                    preset_name,
+                    key=f"preset_{preset_name}",
+                    help=description if description else None,
+                    use_container_width=True,
+                ):
+                    if self.parameter_manager.apply_preset(preset_name):
+                        st.success(f"Applied preset: {preset_name}")
+                        streamlit_js_eval(js_expressions="parent.window.location.reload()")
+                    else:
+                        st.error(f"Failed to apply preset: {preset_name}")
+            # Start new row if needed
+            if col_idx == num_cols - 1 and i < len(preset_names) - 1:
+                cols = st.columns(num_cols)
+
     def file_upload_section(self, custom_upload_function) -> None:
         custom_upload_function()
         c1, _ = st.columns(2)
@@ -1069,6 +1108,9 @@ class StreamlitUI:
 
     def parameter_section(self, custom_parameter_function) -> None:
         st.toggle("Show advanced parameters", value=False, key="advanced")
+
+        # Display preset buttons if presets are available for this workflow
+        self.preset_buttons()
 
         custom_parameter_function()
 

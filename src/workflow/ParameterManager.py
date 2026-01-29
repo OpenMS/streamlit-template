@@ -168,3 +168,97 @@ class ParameterManager:
         """
         # Delete custom params json file
         self.params_file.unlink(missing_ok=True)
+
+    def load_presets(self) -> dict:
+        """
+        Load preset definitions from presets.json file.
+
+        Returns:
+            dict: Dictionary of presets for the current workflow, or empty dict if
+                  presets.json doesn't exist or has no presets for this workflow.
+        """
+        presets_file = Path("presets.json")
+        if not presets_file.exists():
+            return {}
+
+        try:
+            with open(presets_file, "r", encoding="utf-8") as f:
+                all_presets = json.load(f)
+        except (json.JSONDecodeError, IOError):
+            return {}
+
+        # Get workflow name from the workflow directory stem
+        workflow_name = self.ini_dir.parent.stem
+        return all_presets.get(workflow_name, {})
+
+    def get_preset_names(self) -> list:
+        """
+        Get list of available preset names for the current workflow.
+
+        Returns:
+            list: List of preset names (strings), excluding special keys like _description.
+        """
+        presets = self.load_presets()
+        return [name for name in presets.keys() if not name.startswith("_")]
+
+    def get_preset_description(self, preset_name: str) -> str:
+        """
+        Get the description for a specific preset.
+
+        Args:
+            preset_name: Name of the preset
+
+        Returns:
+            str: Description text for the preset, or empty string if not found.
+        """
+        presets = self.load_presets()
+        preset = presets.get(preset_name, {})
+        return preset.get("_description", "")
+
+    def apply_preset(self, preset_name: str) -> bool:
+        """
+        Apply a preset to the current session state and save to params.json.
+
+        This method updates session state keys for both TOPP tool parameters and
+        general workflow parameters based on the preset definition.
+
+        Args:
+            preset_name: Name of the preset to apply
+
+        Returns:
+            bool: True if preset was applied successfully, False otherwise.
+        """
+        presets = self.load_presets()
+        preset = presets.get(preset_name)
+        if not preset:
+            return False
+
+        # Load existing parameters
+        current_params = self.get_parameters_from_json()
+
+        for key, value in preset.items():
+            # Skip description key
+            if key == "_description":
+                continue
+
+            if key == "_general":
+                # Handle general workflow parameters
+                for param_name, param_value in value.items():
+                    session_key = f"{self.param_prefix}{param_name}"
+                    st.session_state[session_key] = param_value
+                    current_params[param_name] = param_value
+            elif isinstance(value, dict) and not key.startswith("_"):
+                # Handle TOPP tool parameters
+                tool_name = key
+                if tool_name not in current_params:
+                    current_params[tool_name] = {}
+                for param_name, param_value in value.items():
+                    session_key = f"{self.topp_param_prefix}{tool_name}:1:{param_name}"
+                    st.session_state[session_key] = param_value
+                    current_params[tool_name][param_name] = param_value
+
+        # Save updated parameters
+        with open(self.params_file, "w", encoding="utf-8") as f:
+            json.dump(current_params, f, indent=4)
+
+        return True

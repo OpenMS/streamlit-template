@@ -1,0 +1,45 @@
+{
+    "topp-workflow": {
+        "High Sensitivity": {
+            "_description": "Optimized for detecting low-abundance features with higher noise tolerance",
+            "FeatureFinderMetabo": {
+                "algorithm:common:noise_threshold_int": 500.0,
+                "algorithm:common:chrom_peak_snr": 2.0,
+                "algorithm:mtd:mass_error_ppm": 15.0
+            }
+        },
+        "High Specificity": {
+            "_description": "Strict parameters for high-confidence feature detection",
+            "FeatureFinderMetabo": {
+                "algorithm:common:noise_threshold_int": 5000.0,
+                "algorithm:common:chrom_peak_snr": 5.0,
+                "algorithm:mtd:mass_error_ppm": 5.0
+            }
+        },
+        "Fast Analysis": {
+            "_description": "Faster processing with relaxed parameters for quick exploration",
+            "FeatureFinderMetabo": {
+                "algorithm:common:noise_threshold_int": 2000.0,
+                "algorithm:ffm:isotope_filtering_model": "none"
+            },
+            "FeatureLinkerUnlabeledKD": {
+                "algorithm:link:rt_tol": 60.0,
+                "algorithm:link:mz_tol": 15.0
+            }
+        },
+        "Metabolomics Default": {
+            "_description": "Balanced parameters for general metabolomics analysis",
+            "FeatureFinderMetabo": {
+                "algorithm:common:noise_threshold_int": 1000.0,
+                "algorithm:common:chrom_peak_snr": 3.0,
+                "algorithm:mtd:mass_error_ppm": 10.0,
+                "algorithm:ffm:charge_lower_bound": 1,
+                "algorithm:ffm:charge_upper_bound": 3
+            },
+            "FeatureLinkerUnlabeledKD": {
+                "algorithm:link:rt_tol": 30.0,
+                "algorithm:link:mz_tol": 10.0
+            }
+        }
+    }
+}
