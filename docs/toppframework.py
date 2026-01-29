@@ -3,6 +3,7 @@ from src.Workflow import Workflow
 from src.workflow.StreamlitUI import StreamlitUI
 from src.workflow.FileManager import FileManager
 from src.workflow.CommandExecutor import CommandExecutor
+from src.workflow.ParameterManager import ParameterManager
 from inspect import getsource
 
 def content():
@@ -136,6 +137,52 @@ Takes the obligatory **script_file** argument. The default location for the Pyth
         st.help(StreamlitUI.select_input_file)
         st.help(StreamlitUI.input_TOPP)
         st.help(StreamlitUI.input_python)
+
+    st.markdown(
+        """
+## Parameter Presets
+
+Presets provide a way to offer users quick parameter configuration options for common analysis scenarios.
+
+### Enabling Presets
+
+1. Create a `presets.json` file at the repository root
+2. Add preset definitions for your workflow (workflow name must be normalized: lowercase with hyphens)
+3. Presets automatically appear in the parameter section via `self.ui.preset_buttons()`
+
+### presets.json Structure
+
+```json
+{
+  "your-workflow-name": {
+    "Preset Display Name": {
+      "_description": "Tooltip text for the button",
+      "TOPPToolName": {
+        "algorithm:param:path": value
+      },
+      "_general": {
+        "custom_widget_key": value
+      }
+    }
+  }
+}
+```
+
+### Key Points
+
+- **Workflow matching**: Workflow name is normalized (lowercase, hyphens for spaces). "TOPP Workflow" → "topp-workflow"
+- **TOPP parameters**: Use the full parameter path (e.g., `algorithm:common:noise_threshold_int`)
+- **General parameters**: Use `_general` for custom `input_widget` parameters
+- **Descriptions**: Keys prefixed with `_` are metadata (not applied as parameters)
+- **Opt-in feature**: No `presets.json` = no buttons shown (backward compatible)
+"""
+    )
+
+    with st.expander("**Code documentation**", expanded=True):
+        st.help(StreamlitUI.preset_buttons)
+        st.help(ParameterManager.load_presets)
+        st.help(ParameterManager.apply_preset)
+
     st.markdown(
         """
 ## Building the Workflow

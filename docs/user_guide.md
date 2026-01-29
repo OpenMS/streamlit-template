@@ -56,3 +56,22 @@ To get started:
 5. View and download your results.
 
 For more detailed information on each step, refer to the specific sections of this guide.
+
+## Parameter Presets
+
+Parameter presets allow you to quickly apply optimized parameter configurations for common analysis scenarios. When available, preset buttons appear on the parameter configuration page.
+
+### Using Presets
+
+1. Navigate to the parameter configuration page
+2. Look for the **Parameter Presets** section below the "Show advanced parameters" toggle
+3. Hover over a preset button to see its description
+4. Click a preset to apply its optimized parameters
+5. A confirmation message will appear when the preset is applied
+
+### What Presets Do
+
+- Presets override specific tool parameters with pre-configured values
+- Only the parameters defined in the preset are changed; other parameters remain at their current values
+- You can still modify individual parameters after applying a preset
+- Use **Load default parameters** to reset all parameters to their original defaults

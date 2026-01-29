@@ -18,7 +18,7 @@ class WorkflowManager:
         self.workflow_dir = Path(workspace, name.replace(" ", "-").lower())
         self.file_manager = FileManager(self.workflow_dir)
         self.logger = Logger(self.workflow_dir)
-        self.parameter_manager = ParameterManager(self.workflow_dir)
+        self.parameter_manager = ParameterManager(self.workflow_dir, workflow_name=name)
         self.executor = CommandExecutor(self.workflow_dir, self.logger, self.parameter_manager)
         self.ui = StreamlitUI(self.workflow_dir, self.logger, self.executor, self.parameter_manager)
         self.params = self.parameter_manager.get_parameters_from_json()

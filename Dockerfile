@@ -141,6 +141,7 @@ COPY utils/ /app/utils
 COPY app.py /app/app.py
 COPY settings.json /app/settings.json
 COPY default-parameters.json /app/default-parameters.json
+COPY presets.json /app/presets.json
 
 # For streamlit configuration
 COPY .streamlit/ /app/.streamlit/
