@@ -1,0 +1,353 @@
+# Docker Compose configuration for Redis Cluster deployment
+#
+# This configuration demonstrates how to deploy the application with an external
+# Redis cluster for horizontal scaling and high availability.
+#
+# Three deployment options are provided:
+# 1. Redis Cluster (multiple shards) - for horizontal scaling
+# 2. Redis Sentinel (master-replica with failover) - for high availability
+# 3. External Managed Redis (AWS ElastiCache, Azure Cache, etc.)
+#
+# Usage:
+#   # Start with Redis Cluster (development/testing)
+#   docker-compose -f docker-compose.cluster.yml --profile cluster up
+#
+#   # Start with Redis Sentinel (high availability)
+#   docker-compose -f docker-compose.cluster.yml --profile sentinel up
+#
+#   # Start app only (connect to external managed Redis)
+#   docker-compose -f docker-compose.cluster.yml up openms-app
+#
+# For production, consider using managed Redis services like:
+# - AWS ElastiCache for Redis (Cluster Mode or Replication Group)
+# - Azure Cache for Redis (Cluster or Premium tier)
+# - Google Cloud Memorystore for Redis
+# - Redis Cloud (redis.com)
+
+services:
+  # =============================================================================
+  # Main Application
+  # =============================================================================
+  openms-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        GITHUB_TOKEN: ${GITHUB_TOKEN}
+    image: openms_streamlit_template_cluster
+    container_name: openms-app
+    restart: always
+    ports:
+      - "8501:8501"
+    volumes:
+      - workspaces:/workspaces-streamlit-template
+    environment:
+      # Redis configuration - choose ONE of the following configurations:
+      #
+      # Option 1: Redis Cluster (set REDIS_MODE=cluster)
+      - REDIS_MODE=${REDIS_MODE:-standalone}
+      - REDIS_CLUSTER_NODES=${REDIS_CLUSTER_NODES:-}
+      #
+      # Option 2: Redis Sentinel (set REDIS_MODE=sentinel)
+      - REDIS_SENTINEL_HOSTS=${REDIS_SENTINEL_HOSTS:-}
+      - REDIS_SENTINEL_MASTER=${REDIS_SENTINEL_MASTER:-mymaster}
+      #
+      # Option 3: External standalone Redis
+      - REDIS_URL=${REDIS_URL:-redis://localhost:6379/0}
+      - REDIS_EXTERNAL=${REDIS_EXTERNAL:-false}
+      #
+      # Common settings
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      - REDIS_SSL=${REDIS_SSL:-false}
+      - REDIS_POOL_MAX_CONNECTIONS=${REDIS_POOL_MAX_CONNECTIONS:-10}
+      #
+      # Worker configuration
+      - RQ_WORKER_COUNT=${RQ_WORKER_COUNT:-2}
+    depends_on:
+      redis-cluster-init:
+        condition: service_completed_successfully
+        required: false
+      redis-sentinel-1:
+        condition: service_healthy
+        required: false
+
+  # =============================================================================
+  # Redis Cluster Setup (6 nodes: 3 masters + 3 replicas)
+  # Use with: docker-compose --profile cluster up
+  # =============================================================================
+  redis-cluster-1:
+    image: redis:7-alpine
+    profiles: ["cluster"]
+    container_name: redis-cluster-1
+    command: redis-server --port 7001 --cluster-enabled yes --cluster-config-file nodes.conf --cluster-node-timeout 5000 --appendonly yes
+    ports:
+      - "7001:7001"
+    volumes:
+      - redis-cluster-1:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "7001", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis-cluster-2:
+    image: redis:7-alpine
+    profiles: ["cluster"]
+    container_name: redis-cluster-2
+    command: redis-server --port 7002 --cluster-enabled yes --cluster-config-file nodes.conf --cluster-node-timeout 5000 --appendonly yes
+    ports:
+      - "7002:7002"
+    volumes:
+      - redis-cluster-2:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "7002", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis-cluster-3:
+    image: redis:7-alpine
+    profiles: ["cluster"]
+    container_name: redis-cluster-3
+    command: redis-server --port 7003 --cluster-enabled yes --cluster-config-file nodes.conf --cluster-node-timeout 5000 --appendonly yes
+    ports:
+      - "7003:7003"
+    volumes:
+      - redis-cluster-3:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "7003", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis-cluster-4:
+    image: redis:7-alpine
+    profiles: ["cluster"]
+    container_name: redis-cluster-4
+    command: redis-server --port 7004 --cluster-enabled yes --cluster-config-file nodes.conf --cluster-node-timeout 5000 --appendonly yes
+    ports:
+      - "7004:7004"
+    volumes:
+      - redis-cluster-4:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "7004", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis-cluster-5:
+    image: redis:7-alpine
+    profiles: ["cluster"]
+    container_name: redis-cluster-5
+    command: redis-server --port 7005 --cluster-enabled yes --cluster-config-file nodes.conf --cluster-node-timeout 5000 --appendonly yes
+    ports:
+      - "7005:7005"
+    volumes:
+      - redis-cluster-5:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "7005", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis-cluster-6:
+    image: redis:7-alpine
+    profiles: ["cluster"]
+    container_name: redis-cluster-6
+    command: redis-server --port 7006 --cluster-enabled yes --cluster-config-file nodes.conf --cluster-node-timeout 5000 --appendonly yes
+    ports:
+      - "7006:7006"
+    volumes:
+      - redis-cluster-6:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "7006", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Cluster initialization service
+  redis-cluster-init:
+    image: redis:7-alpine
+    profiles: ["cluster"]
+    container_name: redis-cluster-init
+    depends_on:
+      redis-cluster-1:
+        condition: service_healthy
+      redis-cluster-2:
+        condition: service_healthy
+      redis-cluster-3:
+        condition: service_healthy
+      redis-cluster-4:
+        condition: service_healthy
+      redis-cluster-5:
+        condition: service_healthy
+      redis-cluster-6:
+        condition: service_healthy
+    command: >
+      sh -c "
+        echo 'Initializing Redis Cluster...'
+        sleep 2
+        redis-cli --cluster create
+          redis-cluster-1:7001
+          redis-cluster-2:7002
+          redis-cluster-3:7003
+          redis-cluster-4:7004
+          redis-cluster-5:7005
+          redis-cluster-6:7006
+          --cluster-replicas 1 --cluster-yes
+        echo 'Redis Cluster initialized!'
+        redis-cli -h redis-cluster-1 -p 7001 cluster info
+      "
+
+  # =============================================================================
+  # Redis Sentinel Setup (1 master + 2 replicas + 3 sentinels)
+  # Use with: docker-compose --profile sentinel up
+  # =============================================================================
+  redis-master:
+    image: redis:7-alpine
+    profiles: ["sentinel"]
+    container_name: redis-master
+    command: redis-server --port 6379 --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-master:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis-replica-1:
+    image: redis:7-alpine
+    profiles: ["sentinel"]
+    container_name: redis-replica-1
+    command: redis-server --port 6380 --replicaof redis-master 6379 --appendonly yes
+    ports:
+      - "6380:6380"
+    volumes:
+      - redis-replica-1:/data
+    depends_on:
+      redis-master:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "6380", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis-replica-2:
+    image: redis:7-alpine
+    profiles: ["sentinel"]
+    container_name: redis-replica-2
+    command: redis-server --port 6381 --replicaof redis-master 6379 --appendonly yes
+    ports:
+      - "6381:6381"
+    volumes:
+      - redis-replica-2:/data
+    depends_on:
+      redis-master:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "6381", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis-sentinel-1:
+    image: redis:7-alpine
+    profiles: ["sentinel"]
+    container_name: redis-sentinel-1
+    command: >
+      sh -c "
+        mkdir -p /etc/redis
+        echo 'sentinel monitor mymaster redis-master 6379 2' > /etc/redis/sentinel.conf
+        echo 'sentinel down-after-milliseconds mymaster 5000' >> /etc/redis/sentinel.conf
+        echo 'sentinel failover-timeout mymaster 60000' >> /etc/redis/sentinel.conf
+        echo 'sentinel parallel-syncs mymaster 1' >> /etc/redis/sentinel.conf
+        redis-sentinel /etc/redis/sentinel.conf --port 26379
+      "
+    ports:
+      - "26379:26379"
+    depends_on:
+      redis-master:
+        condition: service_healthy
+      redis-replica-1:
+        condition: service_healthy
+      redis-replica-2:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "26379", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis-sentinel-2:
+    image: redis:7-alpine
+    profiles: ["sentinel"]
+    container_name: redis-sentinel-2
+    command: >
+      sh -c "
+        mkdir -p /etc/redis
+        echo 'sentinel monitor mymaster redis-master 6379 2' > /etc/redis/sentinel.conf
+        echo 'sentinel down-after-milliseconds mymaster 5000' >> /etc/redis/sentinel.conf
+        echo 'sentinel failover-timeout mymaster 60000' >> /etc/redis/sentinel.conf
+        echo 'sentinel parallel-syncs mymaster 1' >> /etc/redis/sentinel.conf
+        redis-sentinel /etc/redis/sentinel.conf --port 26380
+      "
+    ports:
+      - "26380:26380"
+    depends_on:
+      redis-master:
+        condition: service_healthy
+      redis-replica-1:
+        condition: service_healthy
+      redis-replica-2:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "26380", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis-sentinel-3:
+    image: redis:7-alpine
+    profiles: ["sentinel"]
+    container_name: redis-sentinel-3
+    command: >
+      sh -c "
+        mkdir -p /etc/redis
+        echo 'sentinel monitor mymaster redis-master 6379 2' > /etc/redis/sentinel.conf
+        echo 'sentinel down-after-milliseconds mymaster 5000' >> /etc/redis/sentinel.conf
+        echo 'sentinel failover-timeout mymaster 60000' >> /etc/redis/sentinel.conf
+        echo 'sentinel parallel-syncs mymaster 1' >> /etc/redis/sentinel.conf
+        redis-sentinel /etc/redis/sentinel.conf --port 26381
+      "
+    ports:
+      - "26381:26381"
+    depends_on:
+      redis-master:
+        condition: service_healthy
+      redis-replica-1:
+        condition: service_healthy
+      redis-replica-2:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "26381", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  workspaces:
+  # Cluster volumes
+  redis-cluster-1:
+  redis-cluster-2:
+  redis-cluster-3:
+  redis-cluster-4:
+  redis-cluster-5:
+  redis-cluster-6:
+  # Sentinel volumes
+  redis-master:
+  redis-replica-1:
+  redis-replica-2:

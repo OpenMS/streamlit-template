@@ -4,14 +4,23 @@ Redis Queue Manager for Online Mode Workflow Execution
 This module provides job queueing functionality for online deployments,
 replacing the multiprocessing approach with Redis-backed job queues.
 Only activates when running in online mode with Redis available.
+
+Supports multiple Redis deployment modes:
+- standalone: Single Redis instance (default, backward compatible)
+- cluster: Redis Cluster for horizontal scaling
+- sentinel: Redis Sentinel for high availability
 """
 
 import os
 import json
+import logging
 from typing import Optional, Callable, Any
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
+
+
+logger = logging.getLogger(__name__)
 
 
 class JobStatus(Enum):
@@ -45,16 +54,23 @@ class QueueManager:
     Manages Redis Queue operations for workflow execution.
 
     Only active in online mode. Falls back to direct execution in local mode.
-    Redis runs on localhost within the same container.
+
+    Supports multiple Redis deployment modes via environment variables:
+    - REDIS_MODE: 'standalone' | 'cluster' | 'sentinel' (default: 'standalone')
+    - REDIS_URL: Connection URL for standalone mode
+    - REDIS_CLUSTER_NODES: Comma-separated nodes for cluster mode
+    - REDIS_SENTINEL_HOSTS: Comma-separated hosts for sentinel mode
+    - REDIS_SENTINEL_MASTER: Master name for sentinel mode
+
+    See RedisConnection.py for full configuration options.
     """
 
     QUEUE_NAME = "openms-workflows"
-    # Redis runs locally in the same container
-    REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
 
     def __init__(self):
         self._redis = None
         self._queue = None
+        self._connection_factory = None
         self._is_online = self._check_online_mode()
         self._init_attempted = False
 
@@ -64,7 +80,7 @@ class QueueManager:
     def _check_online_mode(self) -> bool:
         """Check if running in online mode"""
         # Check environment variable first (set in Docker)
-        if os.environ.get("REDIS_URL"):
+        if os.environ.get("REDIS_URL") or os.environ.get("REDIS_CLUSTER_NODES") or os.environ.get("REDIS_SENTINEL_HOSTS"):
             return True
 
         # Fallback: check settings file
@@ -76,31 +92,55 @@ class QueueManager:
             return False
 
     def _init_redis(self) -> None:
-        """Initialize Redis connection and queue"""
+        """Initialize Redis connection and queue using the connection factory"""
         if self._init_attempted:
             return
         self._init_attempted = True
 
         try:
-            from redis import Redis
             from rq import Queue
+            from .RedisConnection import RedisConnectionFactory, RedisMode
 
-            self._redis = Redis.from_url(self.REDIS_URL)
-            self._redis.ping()  # Test connection
+            # Use the connection factory for cluster-aware connections
+            self._connection_factory = RedisConnectionFactory()
+            self._redis = self._connection_factory.get_connection()
+
+            # RQ Queue works with all Redis connection types
             self._queue = Queue(self.QUEUE_NAME, connection=self._redis)
-        except ImportError:
+
+            mode = self._connection_factory.config.mode
+            logger.info(f"QueueManager initialized with Redis mode: {mode.value}")
+
+        except ImportError as e:
             # Redis/RQ packages not installed
+            logger.warning(f"Redis packages not installed: {e}")
             self._redis = None
             self._queue = None
-        except Exception:
+            self._connection_factory = None
+        except Exception as e:
             # Redis server not available
+            logger.warning(f"Redis connection failed: {e}")
             self._redis = None
             self._queue = None
+            self._connection_factory = None
 
     @property
     def is_available(self) -> bool:
         """Check if queue system is available"""
         return self._is_online and self._queue is not None
+
+    @property
+    def redis_mode(self) -> Optional[str]:
+        """Get the current Redis deployment mode"""
+        if self._connection_factory:
+            return self._connection_factory.config.mode.value
+        return None
+
+    def get_redis_health(self) -> dict:
+        """Get Redis health information including cluster/sentinel status"""
+        if self._connection_factory:
+            return self._connection_factory.get_health_info()
+        return {"status": "unavailable", "error": "Not initialized"}
 
     def submit_job(
         self,
@@ -242,7 +282,7 @@ class QueueManager:
         Get queue statistics.
 
         Returns:
-            Dictionary with queue stats
+            Dictionary with queue stats including Redis mode
         """
         if not self.is_available:
             return {}
@@ -253,7 +293,7 @@ class QueueManager:
             workers = Worker.all(connection=self._redis)
             busy_workers = len([w for w in workers if w.get_state() == "busy"])
 
-            return {
+            stats = {
                 "queued": len(self._queue),
                 "started": len(self._queue.started_job_registry),
                 "finished": len(self._queue.finished_job_registry),
@@ -261,7 +301,19 @@ class QueueManager:
                 "workers": len(workers),
                 "busy_workers": busy_workers,
                 "idle_workers": len(workers) - busy_workers,
+                "redis_mode": self.redis_mode,
             }
+
+            # Add cluster-specific info if in cluster mode
+            if self._connection_factory:
+                health = self._connection_factory.get_health_info()
+                if health.get("cluster_state"):
+                    stats["cluster_state"] = health["cluster_state"]
+                    stats["cluster_nodes"] = health.get("cluster_known_nodes", 0)
+                    stats["master_nodes"] = health.get("master_nodes", 0)
+                    stats["replica_nodes"] = health.get("replica_nodes", 0)
+
+            return stats
         except Exception:
             return {}
 

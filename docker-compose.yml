@@ -1,3 +1,24 @@
+# Basic Docker Compose configuration
+#
+# This runs the application with an embedded Redis server (default standalone mode).
+# For cluster deployments, see docker-compose.cluster.yml
+#
+# Usage:
+#   docker-compose up --build
+#
+# Redis Configuration:
+#   By default, Redis runs embedded in the container. To use external Redis:
+#   - Set REDIS_EXTERNAL=true and REDIS_URL to your Redis server
+#   - For Redis Cluster, use docker-compose.cluster.yml or set:
+#       REDIS_MODE=cluster
+#       REDIS_CLUSTER_NODES=host1:7000,host2:7001,host3:7002
+#   - For Redis Sentinel, set:
+#       REDIS_MODE=sentinel
+#       REDIS_SENTINEL_HOSTS=sentinel1:26379,sentinel2:26379
+#       REDIS_SENTINEL_MASTER=mymaster
+#
+# See .env.cluster.example for full configuration options.
+
 services:
   openms-streamlit-template:
     build:
@@ -12,6 +33,19 @@ services:
       - 8501:8501
     volumes:
       - workspaces-streamlit-template:/workspaces-streamlit-template
+    environment:
+      # Redis configuration (optional - defaults to embedded Redis)
+      - REDIS_MODE=${REDIS_MODE:-standalone}
+      - REDIS_URL=${REDIS_URL:-redis://localhost:6379/0}
+      - REDIS_EXTERNAL=${REDIS_EXTERNAL:-false}
+      - REDIS_CLUSTER_NODES=${REDIS_CLUSTER_NODES:-}
+      - REDIS_SENTINEL_HOSTS=${REDIS_SENTINEL_HOSTS:-}
+      - REDIS_SENTINEL_MASTER=${REDIS_SENTINEL_MASTER:-mymaster}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      - REDIS_SSL=${REDIS_SSL:-false}
+      - REDIS_POOL_MAX_CONNECTIONS=${REDIS_POOL_MAX_CONNECTIONS:-10}
+      # Worker configuration
+      - RQ_WORKER_COUNT=${RQ_WORKER_COUNT:-1}
     command: streamlit run openms-streamlit-template/app.py
 volumes:
   workspaces-streamlit-template:

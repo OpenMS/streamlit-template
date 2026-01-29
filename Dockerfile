@@ -152,8 +152,13 @@ RUN echo "0 3 * * * /root/miniforge3/envs/streamlit-env/bin/python /app/clean-up
 # Set default worker count (can be overridden via environment variable)
 ENV RQ_WORKER_COUNT=1
 ENV REDIS_URL=redis://localhost:6379/0
+# Redis mode: 'standalone' (default), 'cluster', or 'sentinel'
+ENV REDIS_MODE=standalone
+# Set to 'true' to use external Redis instead of embedded server
+ENV REDIS_EXTERNAL=false
 
 # create entrypoint script to start cron, Redis, RQ workers, and Streamlit
+# Supports both embedded Redis and external Redis (cluster/sentinel/standalone)
 RUN echo -e '#!/bin/bash\n\
 set -e\n\
 source /root/miniforge3/bin/activate streamlit-env\n\
@@ -161,20 +166,77 @@ source /root/miniforge3/bin/activate streamlit-env\n\
 # Start cron for workspace cleanup\n\
 service cron start\n\
 \n\
-# Start Redis server in background\n\
-echo "Starting Redis server..."\n\
-redis-server --daemonize yes --dir /var/lib/redis --appendonly no\n\
+# Check if using external Redis (cluster, sentinel, or external standalone)\n\
+USE_EXTERNAL_REDIS=false\n\
+if [ "${REDIS_EXTERNAL}" = "true" ]; then\n\
+    USE_EXTERNAL_REDIS=true\n\
+elif [ "${REDIS_MODE}" = "cluster" ] || [ "${REDIS_MODE}" = "sentinel" ]; then\n\
+    USE_EXTERNAL_REDIS=true\n\
+elif [ -n "${REDIS_CLUSTER_NODES}" ] || [ -n "${REDIS_SENTINEL_HOSTS}" ]; then\n\
+    USE_EXTERNAL_REDIS=true\n\
+fi\n\
 \n\
-# Wait for Redis to be ready\n\
-until redis-cli ping > /dev/null 2>&1; do\n\
-    echo "Waiting for Redis..."\n\
-    sleep 1\n\
-done\n\
-echo "Redis is ready"\n\
+if [ "$USE_EXTERNAL_REDIS" = "true" ]; then\n\
+    echo "Using external Redis (mode: ${REDIS_MODE:-standalone})"\n\
+    \n\
+    # Wait for external Redis to be ready\n\
+    REDIS_READY=false\n\
+    RETRY_COUNT=0\n\
+    MAX_RETRIES=30\n\
+    \n\
+    while [ "$REDIS_READY" = "false" ] && [ $RETRY_COUNT -lt $MAX_RETRIES ]; do\n\
+        if [ "${REDIS_MODE}" = "cluster" ] && [ -n "${REDIS_CLUSTER_NODES}" ]; then\n\
+            # For cluster, try connecting to first node\n\
+            FIRST_NODE=$(echo $REDIS_CLUSTER_NODES | cut -d"," -f1)\n\
+            HOST=$(echo $FIRST_NODE | cut -d":" -f1)\n\
+            PORT=$(echo $FIRST_NODE | cut -d":" -f2)\n\
+            if redis-cli -h $HOST -p $PORT ping > /dev/null 2>&1; then\n\
+                REDIS_READY=true\n\
+            fi\n\
+        elif [ "${REDIS_MODE}" = "sentinel" ] && [ -n "${REDIS_SENTINEL_HOSTS}" ]; then\n\
+            # For sentinel, try connecting to first sentinel\n\
+            FIRST_SENTINEL=$(echo $REDIS_SENTINEL_HOSTS | cut -d"," -f1)\n\
+            HOST=$(echo $FIRST_SENTINEL | cut -d":" -f1)\n\
+            PORT=$(echo $FIRST_SENTINEL | cut -d":" -f2)\n\
+            if redis-cli -h $HOST -p ${PORT:-26379} ping > /dev/null 2>&1; then\n\
+                REDIS_READY=true\n\
+            fi\n\
+        else\n\
+            # For external standalone, parse REDIS_URL\n\
+            if redis-cli -u $REDIS_URL ping > /dev/null 2>&1; then\n\
+                REDIS_READY=true\n\
+            fi\n\
+        fi\n\
+        \n\
+        if [ "$REDIS_READY" = "false" ]; then\n\
+            RETRY_COUNT=$((RETRY_COUNT + 1))\n\
+            echo "Waiting for external Redis... (attempt $RETRY_COUNT/$MAX_RETRIES)"\n\
+            sleep 2\n\
+        fi\n\
+    done\n\
+    \n\
+    if [ "$REDIS_READY" = "false" ]; then\n\
+        echo "WARNING: Could not connect to external Redis after $MAX_RETRIES attempts"\n\
+        echo "Workers will retry connection on startup"\n\
+    else\n\
+        echo "External Redis is ready"\n\
+    fi\n\
+else\n\
+    # Start embedded Redis server in background (standalone mode)\n\
+    echo "Starting embedded Redis server..."\n\
+    redis-server --daemonize yes --dir /var/lib/redis --appendonly no\n\
+    \n\
+    # Wait for Redis to be ready\n\
+    until redis-cli ping > /dev/null 2>&1; do\n\
+        echo "Waiting for Redis..."\n\
+        sleep 1\n\
+    done\n\
+    echo "Embedded Redis is ready"\n\
+fi\n\
 \n\
 # Start RQ worker(s) in background\n\
 WORKER_COUNT=${RQ_WORKER_COUNT:-1}\n\
-echo "Starting $WORKER_COUNT RQ worker(s)..."\n\
+echo "Starting $WORKER_COUNT RQ worker(s) (Redis mode: ${REDIS_MODE:-standalone})..."\n\
 for i in $(seq 1 $WORKER_COUNT); do\n\
     rq worker openms-workflows --url $REDIS_URL --name worker-$i &\n\
 done\n\
