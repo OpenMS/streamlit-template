@@ -182,33 +182,43 @@ class TestParameterManagerPresets:
 
         assert desc == ""
 
-    def test_apply_preset_updates_session_state(self, temp_workflow_dir, sample_presets, temp_cwd):
-        """Test that apply_preset correctly updates session state."""
+    def test_apply_preset_deletes_session_state_keys(self, temp_workflow_dir, sample_presets, temp_cwd):
+        """Test that apply_preset deletes session_state keys instead of setting them."""
         with open("presets.json", "w") as f:
             json.dump(sample_presets, f)
 
         pm = ParameterManager(temp_workflow_dir)
+
+        # Pre-populate session_state with old values
+        mock_streamlit.session_state[f"{pm.topp_param_prefix}ToolA:1:param1"] = 999.0
+        mock_streamlit.session_state[f"{pm.topp_param_prefix}ToolA:1:param2"] = "old_value"
+        mock_streamlit.session_state[f"{pm.topp_param_prefix}ToolB:1:param3"] = 999
+
         result = pm.apply_preset("Preset A")
 
         assert result is True
 
-        # Check TOPP tool parameters in session state
-        assert mock_streamlit.session_state[f"{pm.topp_param_prefix}ToolA:1:param1"] == 10.0
-        assert mock_streamlit.session_state[f"{pm.topp_param_prefix}ToolA:1:param2"] == "value2"
-        assert mock_streamlit.session_state[f"{pm.topp_param_prefix}ToolB:1:param3"] == 5
+        # Keys should be DELETED (not set to new values) so widgets re-initialize fresh
+        assert f"{pm.topp_param_prefix}ToolA:1:param1" not in mock_streamlit.session_state
+        assert f"{pm.topp_param_prefix}ToolA:1:param2" not in mock_streamlit.session_state
+        assert f"{pm.topp_param_prefix}ToolB:1:param3" not in mock_streamlit.session_state
 
-    def test_apply_preset_handles_general_params(self, temp_workflow_dir, sample_presets, temp_cwd):
-        """Test that apply_preset correctly handles _general parameters."""
+    def test_apply_preset_deletes_general_param_keys(self, temp_workflow_dir, sample_presets, temp_cwd):
+        """Test that apply_preset deletes _general parameter keys from session_state."""
         with open("presets.json", "w") as f:
             json.dump(sample_presets, f)
 
         pm = ParameterManager(temp_workflow_dir)
+
+        # Pre-populate session_state with old value
+        mock_streamlit.session_state[f"{pm.param_prefix}general_param"] = "old_value"
+
         result = pm.apply_preset("Preset B")
 
         assert result is True
 
-        # Check general parameter in session state
-        assert mock_streamlit.session_state[f"{pm.param_prefix}general_param"] == "general_value"
+        # Key should be DELETED so widget re-initializes fresh
+        assert f"{pm.param_prefix}general_param" not in mock_streamlit.session_state
 
     def test_apply_preset_saves_to_params_file(self, temp_workflow_dir, sample_presets, temp_cwd):
         """Test that apply_preset saves parameters to params.json."""
@@ -264,6 +274,33 @@ class TestParameterManagerPresets:
         assert saved_params["existing_param"] == "existing_value"
         # New params from preset should be added
         assert saved_params["ToolA"]["param1"] == 10.0
+
+    def test_clear_parameter_session_state(self, temp_workflow_dir):
+        """Test that clear_parameter_session_state removes all parameter keys."""
+        pm = ParameterManager(temp_workflow_dir)
+
+        # Add various keys to session_state
+        mock_streamlit.session_state[f"{pm.param_prefix}param1"] = "value1"
+        mock_streamlit.session_state[f"{pm.param_prefix}param2"] = "value2"
+        mock_streamlit.session_state[f"{pm.topp_param_prefix}Tool:1:param"] = 10.0
+        mock_streamlit.session_state["unrelated_key"] = "should_remain"
+
+        pm.clear_parameter_session_state()
+
+        # Parameter keys should be deleted
+        assert f"{pm.param_prefix}param1" not in mock_streamlit.session_state
+        assert f"{pm.param_prefix}param2" not in mock_streamlit.session_state
+        assert f"{pm.topp_param_prefix}Tool:1:param" not in mock_streamlit.session_state
+
+        # Unrelated keys should remain
+        assert mock_streamlit.session_state["unrelated_key"] == "should_remain"
+
+    def test_clear_parameter_session_state_empty(self, temp_workflow_dir):
+        """Test that clear_parameter_session_state handles empty session_state."""
+        pm = ParameterManager(temp_workflow_dir)
+
+        # Should not raise even with no matching keys
+        pm.clear_parameter_session_state()
 
 
 class TestWorkflowNameParameter:

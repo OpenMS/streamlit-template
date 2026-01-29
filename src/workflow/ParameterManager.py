@@ -220,10 +220,11 @@ class ParameterManager:
 
     def apply_preset(self, preset_name: str) -> bool:
         """
-        Apply a preset to the current session state and save to params.json.
+        Apply a preset by updating params.json and clearing relevant session_state keys.
 
-        This method updates session state keys for both TOPP tool parameters and
-        general workflow parameters based on the preset definition.
+        Uses the "delete-then-rerun" pattern: instead of overwriting session_state
+        values (which widgets may not reflect immediately due to fragment caching),
+        we delete the keys so widgets re-initialize fresh from params.json on rerun.
 
         Args:
             preset_name: Name of the preset to apply
@@ -239,6 +240,9 @@ class ParameterManager:
         # Load existing parameters
         current_params = self.get_parameters_from_json()
 
+        # Collect keys to delete from session_state
+        keys_to_delete = []
+
         for key, value in preset.items():
             # Skip description key
             if key == "_description":
@@ -248,7 +252,7 @@ class ParameterManager:
                 # Handle general workflow parameters
                 for param_name, param_value in value.items():
                     session_key = f"{self.param_prefix}{param_name}"
-                    st.session_state[session_key] = param_value
+                    keys_to_delete.append(session_key)
                     current_params[param_name] = param_value
             elif isinstance(value, dict) and not key.startswith("_"):
                 # Handle TOPP tool parameters
@@ -257,11 +261,30 @@ class ParameterManager:
                     current_params[tool_name] = {}
                 for param_name, param_value in value.items():
                     session_key = f"{self.topp_param_prefix}{tool_name}:1:{param_name}"
-                    st.session_state[session_key] = param_value
+                    keys_to_delete.append(session_key)
                     current_params[tool_name][param_name] = param_value
 
-        # Save updated parameters
+        # Delete affected keys from session_state so widgets re-initialize fresh
+        for session_key in keys_to_delete:
+            if session_key in st.session_state:
+                del st.session_state[session_key]
+
+        # Save updated parameters to file
         with open(self.params_file, "w", encoding="utf-8") as f:
             json.dump(current_params, f, indent=4)
 
         return True
+
+    def clear_parameter_session_state(self) -> None:
+        """
+        Clear all parameter-related keys from session_state.
+
+        This forces widgets to re-initialize from params.json or defaults
+        on the next rerun, rather than using potentially stale session_state values.
+        """
+        keys_to_delete = [
+            key for key in list(st.session_state.keys())
+            if key.startswith(self.param_prefix) or key.startswith(self.topp_param_prefix)
+        ]
+        for key in keys_to_delete:
+            del st.session_state[key]

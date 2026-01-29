@@ -12,7 +12,6 @@ import time
 from io import BytesIO
 import zipfile
 from datetime import datetime
-from streamlit_js_eval import streamlit_js_eval
 
 
 from src.common.common import (
@@ -1092,8 +1091,8 @@ class StreamlitUI:
                     use_container_width=True,
                 ):
                     if self.parameter_manager.apply_preset(preset_name):
-                        st.success(f"Applied preset: {preset_name}")
-                        streamlit_js_eval(js_expressions="parent.window.location.reload()")
+                        st.toast(f"Applied preset: {preset_name}")
+                        st.rerun()
                     else:
                         st.error(f"Failed to apply preset: {preset_name}")
             # Start new row if needed
@@ -1120,11 +1119,13 @@ class StreamlitUI:
         with cols[0]:
             if st.button(
                 "⚠️ Load default parameters",
-                help="Reset paramter section to default.",
+                help="Reset parameter section to default.",
                 use_container_width=True,
             ):
                 self.parameter_manager.reset_to_default_parameters()
-                streamlit_js_eval(js_expressions="parent.window.location.reload()")
+                self.parameter_manager.clear_parameter_session_state()
+                st.toast("Parameters reset to defaults")
+                st.rerun()
         with cols[1]:
             if self.parameter_manager.params_file.exists():
                 with open(self.parameter_manager.params_file, "rb") as f:
@@ -1148,12 +1149,16 @@ class StreamlitUI:
 
         with cols[2]:
             up = st.file_uploader(
-                "⬆️ Import parameters", help="Reset parameter section to default."
+                "⬆️ Import parameters",
+                help="Import previously exported parameters.",
+                key="param_import_uploader"
             )
             if up is not None:
                 with open(self.parameter_manager.params_file, "w") as f:
                     f.write(up.read().decode("utf-8"))
-                streamlit_js_eval(js_expressions="parent.window.location.reload()")
+                self.parameter_manager.clear_parameter_session_state()
+                st.toast("Parameters imported")
+                st.rerun()
 
     def execution_section(
         self,
