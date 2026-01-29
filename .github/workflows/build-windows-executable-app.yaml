@@ -235,18 +235,15 @@ jobs:
         cp $PYTHON_DIR/DLLs/tcl86t.dll $EMBED_DIR/
         cp $PYTHON_DIR/DLLs/tk86t.dll $EMBED_DIR/
 
-    - name: Install pip
-      run: |
-        curl -O https://bootstrap.pypa.io/get-pip.py
-        ./python-${{ env.PYTHON_VERSION }}/python get-pip.py --no-warn-script-location
-        rm get-pip.py
-
     - name: Uncomment 'import site' in python311._pth file
       run: |
         sed -i 's/#import site/import site/' python-${{ env.PYTHON_VERSION }}/python311._pth
 
     - name: Install Required Packages
-      run: .\python-${{ env.PYTHON_VERSION }}\python -m pip install --force-reinstall -r requirements.txt --no-warn-script-location
+      # Use system Python (which has development headers) to compile packages,
+      # installing into the embeddable Python's site-packages directory.
+      # The embeddable Python lacks Python.h headers needed for native extensions.
+      run: python -m pip install -r requirements.txt --target python-${{ env.PYTHON_VERSION }}/Lib/site-packages --upgrade --no-warn-script-location
 
     - name: Set to offline deployment
       run: |
