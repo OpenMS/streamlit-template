@@ -236,7 +236,9 @@ class CommandExecutor:
             if tool in params.keys():
                 for k, v in params[tool].items():
                     command += [f"-{k}"]
-                    if v:  # Skip empty values (pass flag with no value)
+                    # Skip only empty strings (pass flag with no value)
+                    # Note: 0 and 0.0 are valid values, so use explicit check
+                    if v != "" and v is not None:
                         if isinstance(v, str) and "\n" in v:
                             command += v.split("\n")
                         else:
@@ -244,7 +246,9 @@ class CommandExecutor:
             # Add custom parameters
             for k, v in custom_params.items():
                 command += [f"-{k}"]
-                if v:
+                # Skip only empty strings (pass flag with no value)
+                # Note: 0 and 0.0 are valid values, so use explicit check
+                if v != "" and v is not None:
                     if isinstance(v, list):
                         command += [str(x) for x in v]
                     else:
