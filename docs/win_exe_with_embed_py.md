@@ -3,6 +3,12 @@
 To create an executable for Streamlit app on Windows, we'll use an embeddable version of Python.</br>
 Here's a step-by-step guide:
 
+### Prerequisites
+
+You need a **system Python installation** (the regular Python installer from python.org) of the same version as the embeddable Python you'll download. This is required because the embeddable Python lacks development headers (`Python.h`) needed to compile native extensions.
+
+Install Python 3.11.9 from https://www.python.org/downloads/ if you don't have it already.
+
 ### Download and Extract Python Embeddable Version
 
 1. Download a suitable Python embeddable version. For example, let's download Python 3.11.9:
@@ -22,24 +28,6 @@ Here's a step-by-step guide:
    rm python-3.11.9-embed-amd64.zip
    ```
 
-### Install pip
-
-1. Download `get-pip.py`:
-
-   ```bash
-   # use curl command or manually download
-   curl -O https://bootstrap.pypa.io/get-pip.py
-   ```
-
-2. Install pip:
-
-   ```bash
-   ./python-3.11.9/python get-pip.py --no-warn-script-location
-
-   # no need anymore get-pip.py
-   rm get-pip.py
-   ```
-
 ### Configure Python Environment
 
 1. Uncomment 'import site' in the `._pth` file:
@@ -55,11 +43,19 @@ Here's a step-by-step guide:
 
 ### Install Required Packages
 
-Install all required packages from `requirements.txt`:
+Install all required packages from `requirements.txt` using the **system Python** with `--target` to install into the embeddable Python's site-packages:
 
 ```bash
-./python-3.11.9/python -m pip install -r requirements.txt --no-warn-script-location
+# Use system Python (which has development headers) to compile packages,
+# installing into the embeddable Python's site-packages directory.
+# The embeddable Python lacks Python.h headers needed for native extensions.
+python -m pip install -r requirements.txt --target python-3.11.9/Lib/site-packages --upgrade --no-warn-script-location
 ```
+
+> **Important**: Do NOT use `./python-3.11.9/python -m pip install ...` directly. The embeddable Python lacks the development headers required to compile native extensions (e.g., `Python.h`), which will cause builds to fail with errors like:
+> ```
+> fatal error C1083: Cannot open include file: 'Python.h': No such file or directory
+> ```
 
 ### Test and create `run_app.bat` file
 
