@@ -4,18 +4,11 @@ import shutil
 import subprocess
 import threading
 from pathlib import Path
-from typing import Callable, Optional
 from .Logger import Logger
 from .ParameterManager import ParameterManager
 import sys
 import importlib.util
 import json
-
-
-class WorkflowCancelled(Exception):
-    """Raised when a workflow is cancelled by the user."""
-    pass
-
 
 class CommandExecutor:
     """
@@ -31,27 +24,6 @@ class CommandExecutor:
         self.pid_dir = Path(workflow_dir, "pids")
         self.logger = logger
         self.parameter_manager = parameter_manager
-        self._should_stop: Optional[Callable[[], bool]] = None
-
-    def set_cancellation_check(self, should_stop_func: Callable[[], bool]) -> None:
-        """
-        Set a function that checks if the workflow should be cancelled.
-
-        Args:
-            should_stop_func: A callable that returns True if the workflow should stop.
-        """
-        self._should_stop = should_stop_func
-
-    def _check_cancellation(self) -> None:
-        """
-        Check if the workflow was cancelled and raise WorkflowCancelled if so.
-
-        This is called before each command execution to allow stopping workflows
-        between commands when running in Redis queue mode.
-        """
-        if self._should_stop and self._should_stop():
-            self.logger.log("Workflow cancelled by user")
-            raise WorkflowCancelled("Workflow was cancelled")
 
     def run_multiple_commands(
         self, commands: list[str]
@@ -109,12 +81,8 @@ class CommandExecutor:
             command (list[str]): The shell command to execute, provided as a list of strings.
 
         Raises:
-            WorkflowCancelled: If the workflow was cancelled by the user.
             Exception: If the command execution results in any errors.
         """
-        # Check for cancellation before starting the command
-        self._check_cancellation()
-
         # Ensure all command parts are strings
         command = [str(c) for c in command]
 
