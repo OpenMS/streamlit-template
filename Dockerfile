@@ -143,7 +143,7 @@ COPY settings.json /app/settings.json
 COPY default-parameters.json /app/default-parameters.json
 
 # For streamlit configuration
-COPY .streamlit/config.toml /app/.streamlit/config.toml
+COPY .streamlit/ /app/.streamlit/
 COPY clean-up-workspaces.py /app/clean-up-workspaces.py
 
 # add cron job to the crontab
