@@ -17,14 +17,17 @@ class ParameterManager:
         params_file (Path): Path to the JSON file where parameters are saved.
         param_prefix (str): Prefix for general parameter keys in Streamlit's session state.
         topp_param_prefix (str): Prefix for TOPP tool parameter keys in Streamlit's session state.
+        workflow_name (str): Name of the workflow, used for loading presets.
     """
     # Methods related to parameter handling
-    def __init__(self, workflow_dir: Path):
+    def __init__(self, workflow_dir: Path, workflow_name: str = None):
         self.ini_dir = Path(workflow_dir, "ini")
         self.ini_dir.mkdir(parents=True, exist_ok=True)
         self.params_file = Path(workflow_dir, "params.json")
         self.param_prefix = f"{workflow_dir.stem}-param-"
         self.topp_param_prefix = f"{workflow_dir.stem}-TOPP-"
+        # Store workflow name for preset loading; default to directory stem if not provided
+        self.workflow_name = workflow_name or workflow_dir.stem
 
     def create_ini(self, tool: str) -> bool:
         """
@@ -187,9 +190,9 @@ class ParameterManager:
         except (json.JSONDecodeError, IOError):
             return {}
 
-        # Get workflow name from the workflow directory stem
-        workflow_name = self.ini_dir.parent.stem
-        return all_presets.get(workflow_name, {})
+        # Normalize workflow name to match preset keys (lowercase with hyphens)
+        workflow_key = self.workflow_name.replace(" ", "-").lower()
+        return all_presets.get(workflow_key, {})
 
     def get_preset_names(self) -> list:
         """

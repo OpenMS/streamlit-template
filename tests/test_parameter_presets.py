@@ -266,6 +266,56 @@ class TestParameterManagerPresets:
         assert saved_params["ToolA"]["param1"] == 10.0
 
 
+class TestWorkflowNameParameter:
+    """Tests for the workflow_name parameter in ParameterManager."""
+
+    def test_workflow_name_defaults_to_directory_stem(self, temp_workflow_dir):
+        """Test that workflow_name defaults to the directory stem when not provided."""
+        pm = ParameterManager(temp_workflow_dir)
+        assert pm.workflow_name == "test-workflow"
+
+    def test_workflow_name_can_be_explicitly_set(self, temp_workflow_dir):
+        """Test that workflow_name can be explicitly set."""
+        pm = ParameterManager(temp_workflow_dir, workflow_name="My Custom Workflow")
+        assert pm.workflow_name == "My Custom Workflow"
+
+    def test_load_presets_normalizes_workflow_name(self, temp_workflow_dir, temp_cwd):
+        """Test that load_presets normalizes the workflow name for lookup."""
+        # Create presets with normalized key
+        presets = {
+            "my-custom-workflow": {
+                "Test Preset": {
+                    "_description": "A test preset"
+                }
+            }
+        }
+        with open("presets.json", "w") as f:
+            json.dump(presets, f)
+
+        # Pass workflow name with spaces and mixed case
+        pm = ParameterManager(temp_workflow_dir, workflow_name="My Custom Workflow")
+        preset_names = pm.get_preset_names()
+
+        assert "Test Preset" in preset_names
+
+    def test_load_presets_with_original_name_format(self, temp_workflow_dir, temp_cwd):
+        """Test that presets can use the same format as WorkflowManager normalization."""
+        # This simulates how WorkflowManager passes the name
+        presets = {
+            "topp-workflow": {
+                "Preset X": {"_description": "Test"}
+            }
+        }
+        with open("presets.json", "w") as f:
+            json.dump(presets, f)
+
+        # Simulating WorkflowManager passing "TOPP Workflow"
+        pm = ParameterManager(temp_workflow_dir, workflow_name="TOPP Workflow")
+        preset_names = pm.get_preset_names()
+
+        assert "Preset X" in preset_names
+
+
 class TestPresetsJsonFormat:
     """Tests for the presets.json format validation."""
 
