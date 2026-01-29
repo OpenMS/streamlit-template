@@ -22,6 +22,73 @@ value=params["example-y-dimension"], step=1, key="example-y-dimension")
 save_params()
 ```
 
+- **Parameter Presets**
+: Presets provide quick configuration options for workflows. Define presets in `presets.json` at the repository root. Presets are automatically displayed as buttons in the parameter section when defined for a workflow.
+
+## Parameter Presets
+
+Presets allow users to quickly apply optimized parameter configurations. They are defined in `presets.json` at the repository root.
+
+### presets.json Format
+
+```json
+{
+  "workflow-name": {
+    "Preset Name": {
+      "_description": "Tooltip description shown on hover",
+      "TOPPToolName": {
+        "algorithm:section:param_name": value
+      },
+      "_general": {
+        "custom_param_key": value
+      }
+    }
+  }
+}
+```
+
+### Structure Details
+
+| Key | Description |
+|-----|-------------|
+| `workflow-name` | Must match the workflow name (lowercase, hyphens instead of spaces). E.g., "TOPP Workflow" → "topp-workflow" |
+| `Preset Name` | Display name for the preset button |
+| `_description` | Optional tooltip text (keys prefixed with `_` are metadata) |
+| `TOPPToolName` | Dictionary of TOPP tool parameters to override |
+| `_general` | Dictionary of general workflow parameters (custom `input_widget` keys) |
+
+### Example
+
+```json
+{
+  "topp-workflow": {
+    "High Sensitivity": {
+      "_description": "Optimized for detecting low-abundance features",
+      "FeatureFinderMetabo": {
+        "algorithm:common:noise_threshold_int": 500.0,
+        "algorithm:common:chrom_peak_snr": 2.0
+      }
+    },
+    "Fast Analysis": {
+      "_description": "Quick processing with relaxed parameters",
+      "FeatureFinderMetabo": {
+        "algorithm:common:noise_threshold_int": 2000.0
+      },
+      "FeatureLinkerUnlabeledKD": {
+        "algorithm:link:rt_tol": 60.0
+      }
+    }
+  }
+}
+```
+
+### How It Works
+
+1. Preset buttons automatically appear in `parameter_section()` via `StreamlitUI.preset_buttons()`
+2. Only presets matching the current workflow name are displayed
+3. Clicking a preset updates `params.json` and refreshes the UI
+4. If no `presets.json` exists or no presets match the workflow, no buttons are shown
+
 ## Code structure
 - The main file `app.py` defines page layout.
 - **Pages** must be placed in the `content` directory.
