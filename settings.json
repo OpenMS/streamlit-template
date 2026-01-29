@@ -26,5 +26,9 @@
         "source_dirs": [
             "example-data/workspaces"
         ]
+    },
+    "max_threads": {
+        "local": 4,
+        "online": 2
     }
 }

@@ -32,8 +32,9 @@ class CommandExecutor:
         Executes multiple shell commands concurrently in separate threads.
 
         This method leverages threading to run each command in parallel, improving
-        efficiency for batch command execution. Execution time and command results are
-        logged if specified.
+        efficiency for batch command execution. The number of concurrent commands
+        is limited by the max_threads setting, which is distributed between
+        parallel command execution and per-tool thread allocation.
 
         Args:
             commands (list[str]): A list where each element is a list representing
@@ -42,17 +43,26 @@ class CommandExecutor:
         Returns:
             bool: True if all commands succeeded, False if any failed.
         """
+        from src.common.common import get_max_threads
+
+        # Get thread settings and calculate distribution
+        max_threads = get_max_threads()
+        num_commands = len(commands)
+        parallel_commands = min(num_commands, max_threads)
+
         # Log the start of command execution
-        self.logger.log(f"Running {len(commands)} commands in parallel...", 1)
+        self.logger.log(f"Running {num_commands} commands (max {parallel_commands} parallel, {max_threads} total threads)...", 1)
         start_time = time.time()
 
         results = []
         lock = threading.Lock()
+        semaphore = threading.Semaphore(parallel_commands)
 
         def run_and_track(cmd):
-            success = self.run_command(cmd)
-            with lock:
-                results.append(success)
+            with semaphore:
+                success = self.run_command(cmd)
+                with lock:
+                    results.append(success)
 
         # Initialize a list to keep track of threads
         threads = []
@@ -69,7 +79,7 @@ class CommandExecutor:
 
         # Calculate and log the total execution time
         end_time = time.time()
-        self.logger.log(f"Total time to run {len(commands)} commands: {end_time - start_time:.2f} seconds", 1)
+        self.logger.log(f"Total time to run {num_commands} commands: {end_time - start_time:.2f} seconds", 1)
 
         return all(results)
 
@@ -210,6 +220,12 @@ class CommandExecutor:
         else:
             n_processes = max(io_lengths)
 
+        # Calculate threads per command based on max_threads setting
+        from src.common.common import get_max_threads
+        max_threads = get_max_threads()
+        parallel_commands = min(n_processes, max_threads)
+        threads_per_command = max(1, max_threads // parallel_commands)
+
         commands = []
 
         # Load parameters for non-defaults
@@ -253,6 +269,8 @@ class CommandExecutor:
                         command += [str(x) for x in v]
                     else:
                         command += [str(v)]
+            # Add threads parameter for TOPP tools
+            command += ["-threads", str(threads_per_command)]
             commands.append(command)
 
             # check if a ini file has been written, if yes use it (contains custom defaults)
