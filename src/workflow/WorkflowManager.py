@@ -184,7 +184,8 @@ class WorkflowManager:
             if job_id:
                 success = self._queue_manager.cancel_job(job_id)
                 if success:
-                    self._queue_manager.clear_job_id(self.workflow_dir)
+                    # Don't clear job_id here - let get_workflow_status() see the
+                    # "canceled" state. The file is cleaned up when the job expires.
                     return True
 
         # Fallback: stop local process
