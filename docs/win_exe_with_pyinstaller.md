@@ -102,7 +102,7 @@ cp -r pages dist/pages
 cp -r src dist/src
 cp -r assets dist/assets
 cp app.py dist/
-
+cp presets.json dist/
 ``` 
 
 
