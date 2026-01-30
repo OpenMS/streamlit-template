@@ -1110,12 +1110,13 @@ class StreamlitUI:
 
         # Display threads configuration for local mode only
         if not st.session_state.settings.get("online_deployment", False):
-            max_threads_config = st.session_state.settings.get("max_threads", {})
-            default_threads = max_threads_config.get("local", 4)
+            # Initialize session state with default if not set
+            if "max_threads_override" not in st.session_state:
+                max_threads_config = st.session_state.settings.get("max_threads", {})
+                st.session_state.max_threads_override = max_threads_config.get("local", 4)
             st.number_input(
                 "Threads",
                 min_value=1,
-                value=default_threads,
                 key="max_threads_override",
                 help="Maximum threads for parallel processing. Threads are distributed between parallel commands and per-tool thread allocation."
             )
