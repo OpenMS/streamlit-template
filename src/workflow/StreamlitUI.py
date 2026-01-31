@@ -1110,16 +1110,20 @@ class StreamlitUI:
 
         # Display threads configuration for local mode only
         if not st.session_state.settings.get("online_deployment", False):
-            # Initialize session state with default if not set
-            if "max_threads_override" not in st.session_state:
-                max_threads_config = st.session_state.settings.get("max_threads", {})
-                st.session_state.max_threads_override = max_threads_config.get("local", 4)
-            st.number_input(
-                "Threads",
+            max_threads_config = st.session_state.settings.get("max_threads", {})
+            default_threads = max_threads_config.get("local", 4)
+            self.input_widget(
+                key="max_threads",
+                default=default_threads,
+                name="Threads",
+                widget_type="number",
                 min_value=1,
-                key="max_threads_override",
                 help="Maximum threads for parallel processing. Threads are distributed between parallel commands and per-tool thread allocation."
             )
+            # Copy to session state for get_max_threads() to access
+            prefixed_key = f"{self.parameter_manager.param_prefix}max_threads"
+            if prefixed_key in st.session_state:
+                st.session_state.max_threads_override = st.session_state[prefixed_key]
 
         # Display preset buttons if presets are available for this workflow
         self.preset_buttons()
