@@ -46,7 +46,7 @@ class CommandExecutor:
         from src.common.common import get_max_threads
 
         # Get thread settings and calculate distribution
-        max_threads = get_max_threads()
+        max_threads = get_max_threads(self.parameter_manager)
         num_commands = len(commands)
         parallel_commands = min(num_commands, max_threads)
 
@@ -235,7 +235,7 @@ class CommandExecutor:
 
         # Calculate threads per command based on max_threads setting
         from src.common.common import get_max_threads
-        max_threads = get_max_threads()
+        max_threads = get_max_threads(self.parameter_manager)
         parallel_commands = min(n_processes, max_threads)
         threads_per_command = max(1, max_threads // parallel_commands)
 

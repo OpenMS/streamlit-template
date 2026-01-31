@@ -1120,10 +1120,6 @@ class StreamlitUI:
                 min_value=1,
                 help="Maximum threads for parallel processing. Threads are distributed between parallel commands and per-tool thread allocation."
             )
-            # Copy to session state for get_max_threads() to access
-            prefixed_key = f"{self.parameter_manager.param_prefix}max_threads"
-            if prefixed_key in st.session_state:
-                st.session_state.max_threads_override = st.session_state[prefixed_key]
 
         # Display preset buttons if presets are available for this workflow
         self.preset_buttons()

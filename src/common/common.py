@@ -32,12 +32,15 @@ from src.common.admin import (
 OS_PLATFORM = sys.platform
 
 
-def get_max_threads() -> int:
+def get_max_threads(parameter_manager=None) -> int:
     """
     Get max threads for current deployment mode.
 
-    In local mode, checks for UI override in session state.
-    In online mode, uses the configured value directly.
+    In local mode, reads from parameter manager (persisted params.json).
+    In online mode, uses the configured value directly from settings.
+
+    Args:
+        parameter_manager: Optional ParameterManager instance for reading persisted params.
 
     Returns:
         int: Maximum number of threads to use for parallel processing.
@@ -48,11 +51,12 @@ def get_max_threads() -> int:
     if settings.get("online_deployment", False):
         return max_threads_config.get("online", 2)
     else:
-        # Local mode: check for UI override, fallback to config default
-        return st.session_state.get(
-            "max_threads_override",
-            max_threads_config.get("local", 4)
-        )
+        # Local mode: read from parameter manager if available
+        default = max_threads_config.get("local", 4)
+        if parameter_manager is not None:
+            params = parameter_manager.get_parameters_from_json()
+            return params.get("max_threads", default)
+        return default
 
 
 def is_safe_workspace_name(name: str) -> bool:
