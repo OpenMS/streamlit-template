@@ -49,9 +49,13 @@ class CommandExecutor:
         # Validate: coerce to int and clamp to minimum of 1
         try:
             value = int(value)
+            if value < 1:
+                self.logger.log(f"WARNING: Invalid max_threads value ({value}), using 1", 0)
+                value = 1
         except (TypeError, ValueError):
+            self.logger.log(f"WARNING: Invalid max_threads value ({value}), using 1", 0)
             value = 1
-        return max(1, value)
+        return value
 
     def run_multiple_commands(
         self, commands: list[str]
