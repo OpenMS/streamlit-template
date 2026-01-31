@@ -33,18 +33,25 @@ class CommandExecutor:
         In online mode, uses the configured value directly from settings.
 
         Returns:
-            int: Maximum number of threads to use for parallel processing.
+            int: Maximum number of threads to use for parallel processing (minimum 1).
         """
         import streamlit as st
         settings = st.session_state.get("settings", {})
         max_threads_config = settings.get("max_threads", {"local": 4, "online": 2})
 
         if settings.get("online_deployment", False):
-            return max_threads_config.get("online", 2)
+            value = max_threads_config.get("online", 2)
         else:
             default = max_threads_config.get("local", 4)
             params = self.parameter_manager.get_parameters_from_json()
-            return params.get("max_threads", default)
+            value = params.get("max_threads", default)
+
+        # Validate: coerce to int and clamp to minimum of 1
+        try:
+            value = int(value)
+        except (TypeError, ValueError):
+            value = 1
+        return max(1, value)
 
     def run_multiple_commands(
         self, commands: list[str]
