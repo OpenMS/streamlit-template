@@ -245,6 +245,21 @@ jobs:
       # The embeddable Python lacks Python.h headers needed for native extensions.
       run: python -m pip install -r requirements.txt --target python-${{ env.PYTHON_VERSION }}/Lib/site-packages --upgrade --no-warn-script-location
 
+    - name: Clean up unnecessary Python files
+      shell: pwsh
+      run: |
+        $sitePkgs = "py/Lib/site-packages"
+
+        # Remove __pycache__ directories
+        Get-ChildItem -Path $sitePkgs -Recurse -Directory -Filter "__pycache__" | Remove-Item -Recurse -Force
+
+        # Remove test directories
+        Get-ChildItem -Path $sitePkgs -Recurse -Directory | Where-Object { $_.Name -match "^tests?$" } | Remove-Item -Recurse -Force
+
+        # Count remaining files
+        $count = (Get-ChildItem -Path $sitePkgs -Recurse -File).Count
+        Write-Host "Remaining files in site-packages: $count"
+
     - name: Set to offline deployment
       run: |
         $content = Get-Content -Raw settings.json | ConvertFrom-Json
@@ -354,7 +369,7 @@ jobs:
         <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
           <Product Id="*" Name="${{ env.APP_NAME }}" Language="1033" Version="1.0.0.0" Codepage="1252" Manufacturer="OpenMS Developer Team" UpgradeCode="${{ env.APP_UpgradeCode }}">
             <Package Id="*" InstallerVersion="300" Compressed="yes" InstallPrivileges="elevated" Platform="x64" />
-            <Media Id="1" Cabinet="streamlit.cab" EmbedCab="yes" />
+            <MediaTemplate EmbedCab="yes" MaximumUncompressedMediaSize="200" CabinetTemplate="data{0}.cab" />
         
             <!-- Folder structure -->
             <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
