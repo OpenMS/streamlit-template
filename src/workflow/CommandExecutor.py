@@ -46,12 +46,7 @@ class CommandExecutor:
             params = self.parameter_manager.get_parameters_from_json()
             value = params.get("max_threads", default)
 
-        # Validate: coerce to int and clamp to minimum of 1
-        try:
-            value = max(1, int(value))
-        except (TypeError, ValueError):
-            value = 1
-        return value
+        return max(1, int(value))
 
     def run_multiple_commands(
         self, commands: list[str]
