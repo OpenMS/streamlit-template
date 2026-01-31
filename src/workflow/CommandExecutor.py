@@ -115,35 +115,45 @@ class CommandExecutor:
         # User can close the Streamlit app and return to a running workflow later
         pid_file_path = self.pid_dir / str(child_pid)
         pid_file_path.touch()
-        
+
+        # Buffer for stderr - will only be written to minimal log if process fails
+        stderr_buffer: list[str] = []
+
         # Real-time output capture
-        self._stream_output(process)
-        
+        self._stream_output(process, stderr_buffer)
+
         # Wait for process completion
         process.wait()
-        
+
         # Cleanup PID file
         pid_file_path.unlink()
 
         end_time = time.time()
         execution_time = end_time - start_time
-        
+
         # Log completion
         self.logger.log(f"Process finished:\n"+' '.join(command)+f"\nTotal time to run command: {execution_time:.2f} seconds", 1)
-        
+
         # Check for errors
         if process.returncode != 0:
+            # Write buffered stderr to minimal log only on failure
+            for line in stderr_buffer:
+                self.logger.log(f"STDERR: {line}", 0)
             self.logger.log(f"ERROR: Command failed with exit code {process.returncode}: {command[0]}", 0)
             return False
         return True
 
-    def _stream_output(self, process: subprocess.Popen) -> None:
+    def _stream_output(self, process: subprocess.Popen, stderr_buffer: list[str]) -> None:
         """
         Streams stdout and stderr from a running process in real-time to the logger.
         This method runs in the workflow process, not the GUI thread, so it's safe to block.
-        
+
+        Stderr is buffered and only logged to the detailed log (level 2) during execution.
+        The caller is responsible for writing buffered stderr to minimal log if the process fails.
+
         Args:
             process: The subprocess.Popen object to stream from
+            stderr_buffer: A list to accumulate stderr lines for conditional logging
         """
         def read_stdout():
             """Read stdout in real-time"""
@@ -157,27 +167,30 @@ class CommandExecutor:
                 self.logger.log(f"Error reading stdout: {e}", 2)
             finally:
                 process.stdout.close()
-        
+
         def read_stderr():
-            """Read stderr in real-time"""
+            """Read stderr in real-time, buffering for conditional minimal log output"""
             try:
                 for line in iter(process.stderr.readline, ''):
                     if line:
-                        self.logger.log(f"STDERR: {line.rstrip()}", 0)
+                        stderr_line = line.rstrip()
+                        stderr_buffer.append(stderr_line)
+                        # Log to detailed log only during execution
+                        self.logger.log(f"STDERR: {stderr_line}", 2)
                     if process.poll() is not None:
                         break
             except Exception as e:
                 self.logger.log(f"Error reading stderr: {e}", 2)
             finally:
                 process.stderr.close()
-        
+
         # Start threads to read stdout and stderr simultaneously
         stdout_thread = threading.Thread(target=read_stdout, daemon=True)
         stderr_thread = threading.Thread(target=read_stderr, daemon=True)
-        
+
         stdout_thread.start()
         stderr_thread.start()
-        
+
         # Wait for both threads to complete
         stdout_thread.join()
         stderr_thread.join()
