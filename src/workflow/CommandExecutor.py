@@ -25,6 +25,27 @@ class CommandExecutor:
         self.logger = logger
         self.parameter_manager = parameter_manager
 
+    def _get_max_threads(self) -> int:
+        """
+        Get max threads for current deployment mode.
+
+        In local mode, reads from parameter manager (persisted params.json).
+        In online mode, uses the configured value directly from settings.
+
+        Returns:
+            int: Maximum number of threads to use for parallel processing.
+        """
+        import streamlit as st
+        settings = st.session_state.get("settings", {})
+        max_threads_config = settings.get("max_threads", {"local": 4, "online": 2})
+
+        if settings.get("online_deployment", False):
+            return max_threads_config.get("online", 2)
+        else:
+            default = max_threads_config.get("local", 4)
+            params = self.parameter_manager.get_parameters_from_json()
+            return params.get("max_threads", default)
+
     def run_multiple_commands(
         self, commands: list[str]
     ) -> bool:
@@ -43,10 +64,8 @@ class CommandExecutor:
         Returns:
             bool: True if all commands succeeded, False if any failed.
         """
-        from src.common.common import get_max_threads
-
         # Get thread settings and calculate distribution
-        max_threads = get_max_threads(self.parameter_manager)
+        max_threads = self._get_max_threads()
         num_commands = len(commands)
         parallel_commands = min(num_commands, max_threads)
 
@@ -234,8 +253,7 @@ class CommandExecutor:
             n_processes = max(io_lengths)
 
         # Calculate threads per command based on max_threads setting
-        from src.common.common import get_max_threads
-        max_threads = get_max_threads(self.parameter_manager)
+        max_threads = self._get_max_threads()
         parallel_commands = min(n_processes, max_threads)
         threads_per_command = max(1, max_threads // parallel_commands)
 
