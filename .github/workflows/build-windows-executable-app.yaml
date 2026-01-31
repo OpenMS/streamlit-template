@@ -256,12 +256,6 @@ jobs:
         # Remove test directories
         Get-ChildItem -Path $sitePkgs -Recurse -Directory | Where-Object { $_.Name -match "^tests?$" } | Remove-Item -Recurse -Force
 
-        # Remove docs and examples
-        Get-ChildItem -Path $sitePkgs -Recurse -Directory | Where-Object { $_.Name -match "^(docs?|examples?)$" } | Remove-Item -Recurse -Force
-
-        # Remove .pyc and .pyo files
-        Get-ChildItem -Path $sitePkgs -Recurse -Include "*.pyc","*.pyo" | Remove-Item -Force
-
         # Count remaining files
         $count = (Get-ChildItem -Path $sitePkgs -Recurse -File).Count
         Write-Host "Remaining files in site-packages: $count"
