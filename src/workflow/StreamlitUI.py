@@ -1112,11 +1112,12 @@ class StreamlitUI:
         if not st.session_state.settings.get("online_deployment", False):
             max_threads_config = st.session_state.settings.get("max_threads", {})
             default_threads = max_threads_config.get("local", 4)
-            st.number_input(
-                "Threads",
+            self.input_widget(
+                key="max_threads",
+                default=default_threads,
+                name="Threads",
+                widget_type="number",
                 min_value=1,
-                value=default_threads,
-                key="max_threads_override",
                 help="Maximum threads for parallel processing. Threads are distributed between parallel commands and per-tool thread allocation."
             )
 

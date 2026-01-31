@@ -9,6 +9,7 @@ from .ParameterManager import ParameterManager
 import sys
 import importlib.util
 import json
+import streamlit as st
 
 class CommandExecutor:
     """
@@ -24,6 +25,28 @@ class CommandExecutor:
         self.pid_dir = Path(workflow_dir, "pids")
         self.logger = logger
         self.parameter_manager = parameter_manager
+
+    def _get_max_threads(self) -> int:
+        """
+        Get max threads for current deployment mode.
+
+        In local mode, reads from parameter manager (persisted params.json).
+        In online mode, uses the configured value directly from settings.
+
+        Returns:
+            int: Maximum number of threads to use for parallel processing (minimum 1).
+        """
+        settings = st.session_state.get("settings", {})
+        max_threads_config = settings.get("max_threads", {"local": 4, "online": 2})
+
+        if settings.get("online_deployment", False):
+            value = max_threads_config.get("online", 2)
+        else:
+            default = max_threads_config.get("local", 4)
+            params = self.parameter_manager.get_parameters_from_json()
+            value = params.get("max_threads", default)
+
+        return max(1, int(value))
 
     def run_multiple_commands(
         self, commands: list[str]
@@ -43,10 +66,8 @@ class CommandExecutor:
         Returns:
             bool: True if all commands succeeded, False if any failed.
         """
-        from src.common.common import get_max_threads
-
         # Get thread settings and calculate distribution
-        max_threads = get_max_threads()
+        max_threads = self._get_max_threads()
         num_commands = len(commands)
         parallel_commands = min(num_commands, max_threads)
 
@@ -234,8 +255,7 @@ class CommandExecutor:
             n_processes = max(io_lengths)
 
         # Calculate threads per command based on max_threads setting
-        from src.common.common import get_max_threads
-        max_threads = get_max_threads()
+        max_threads = self._get_max_threads()
         parallel_commands = min(n_processes, max_threads)
         threads_per_command = max(1, max_threads // parallel_commands)
 
