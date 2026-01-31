@@ -48,12 +48,8 @@ class CommandExecutor:
 
         # Validate: coerce to int and clamp to minimum of 1
         try:
-            value = int(value)
-            if value < 1:
-                self.logger.log(f"WARNING: Invalid max_threads value ({value}), using 1", 0)
-                value = 1
+            value = max(1, int(value))
         except (TypeError, ValueError):
-            self.logger.log(f"WARNING: Invalid max_threads value ({value}), using 1", 0)
             value = 1
         return value
 
