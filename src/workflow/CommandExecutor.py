@@ -9,6 +9,7 @@ from .ParameterManager import ParameterManager
 import sys
 import importlib.util
 import json
+import streamlit as st
 
 class CommandExecutor:
     """
@@ -35,7 +36,6 @@ class CommandExecutor:
         Returns:
             int: Maximum number of threads to use for parallel processing (minimum 1).
         """
-        import streamlit as st
         settings = st.session_state.get("settings", {})
         max_threads_config = settings.get("max_threads", {"local": 4, "online": 2})
 
