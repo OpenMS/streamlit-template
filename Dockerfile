@@ -119,8 +119,8 @@ RUN rm -rf openms-build
 # Prepare and run streamlit app.
 FROM compile-openms AS run-app
 
-# Install Redis server for job queue
-RUN apt-get update && apt-get install -y --no-install-recommends redis-server \
+# Install Redis server for job queue and nginx for load balancing
+RUN apt-get update && apt-get install -y --no-install-recommends redis-server nginx \
     && rm -rf /var/lib/apt/lists/*
 
 # Create Redis data directory
@@ -154,6 +154,10 @@ RUN echo "0 3 * * * /root/miniforge3/envs/streamlit-env/bin/python /app/clean-up
 ENV RQ_WORKER_COUNT=1
 ENV REDIS_URL=redis://localhost:6379/0
 
+# Number of Streamlit server instances for load balancing (default: 1 = no load balancer)
+# Set to >1 to enable nginx load balancer with multiple Streamlit instances
+ENV STREAMLIT_SERVER_COUNT=1
+
 # create entrypoint script to start cron, Redis, RQ workers, and Streamlit
 RUN echo -e '#!/bin/bash\n\
 set -e\n\
@@ -180,9 +184,39 @@ for i in $(seq 1 $WORKER_COUNT); do\n\
     rq worker openms-workflows --url $REDIS_URL --name worker-$i &\n\
 done\n\
 \n\
-# Start Streamlit (foreground - main process)\n\
-echo "Starting Streamlit app..."\n\
-exec streamlit run app.py\n\
+# Load balancer setup\n\
+SERVER_COUNT=${STREAMLIT_SERVER_COUNT:-1}\n\
+\n\
+if [ "$SERVER_COUNT" -gt 1 ]; then\n\
+    echo "Starting $SERVER_COUNT Streamlit instances with nginx load balancer..."\n\
+\n\
+    # Generate nginx upstream block\n\
+    UPSTREAM_SERVERS=""\n\
+    BASE_PORT=8510\n\
+    for i in $(seq 0 $((SERVER_COUNT - 1))); do\n\
+        PORT=$((BASE_PORT + i))\n\
+        UPSTREAM_SERVERS="${UPSTREAM_SERVERS}        server 127.0.0.1:${PORT};\\n"\n\
+    done\n\
+\n\
+    # Write nginx config\n\
+    mkdir -p /etc/nginx\n\
+    echo -e "worker_processes auto;\\npid /run/nginx.pid;\\n\\nevents {\\n    worker_connections 1024;\\n}\\n\\nhttp {\\n    client_max_body_size 0;\\n\\n    map \\$cookie_stroute \\$route_key {\\n        \\x22\\x22      \\$request_id;\\n        default \\$cookie_stroute;\\n    }\\n\\n    upstream streamlit_backend {\\n        hash \\$route_key consistent;\\n${UPSTREAM_SERVERS}    }\\n\\n    map \\$http_upgrade \\$connection_upgrade {\\n        default upgrade;\\n        \\x27\\x27 close;\\n    }\\n\\n    server {\\n        listen 8501;\\n\\n        location / {\\n            proxy_pass http://streamlit_backend;\\n            proxy_http_version 1.1;\\n            proxy_set_header Upgrade \\$http_upgrade;\\n            proxy_set_header Connection \\$connection_upgrade;\\n            proxy_set_header Host \\$host;\\n            proxy_set_header X-Real-IP \\$remote_addr;\\n            proxy_set_header X-Forwarded-For \\$proxy_add_x_forwarded_for;\\n            proxy_set_header X-Forwarded-Proto \\$scheme;\\n            proxy_read_timeout 86400;\\n            proxy_send_timeout 86400;\\n            proxy_buffering off;\\n            add_header Set-Cookie \\x22stroute=\\$route_key; Path=/; HttpOnly; SameSite=Lax\\x22 always;\\n        }\\n    }\\n}" > /etc/nginx/nginx.conf\n\
+\n\
+    # Start Streamlit instances on internal ports (localhost only)\n\
+    for i in $(seq 0 $((SERVER_COUNT - 1))); do\n\
+        PORT=$((BASE_PORT + i))\n\
+        echo "Starting Streamlit instance on port $PORT..."\n\
+        streamlit run app.py --server.port $PORT --server.address 127.0.0.1 &\n\
+    done\n\
+\n\
+    sleep 2\n\
+    echo "Starting nginx load balancer on port 8501..."\n\
+    exec /usr/sbin/nginx -g "daemon off;"\n\
+else\n\
+    # Single instance mode (default) - run Streamlit directly on port 8501\n\
+    echo "Starting Streamlit app..."\n\
+    exec streamlit run app.py\n\
+fi\n\
 ' > /app/entrypoint.sh
 # make the script executable
 RUN chmod +x /app/entrypoint.sh
