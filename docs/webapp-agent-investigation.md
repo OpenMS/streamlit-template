@@ -84,8 +84,54 @@ df.plot(kind="mobilogram")     # Ion mobility
 ```
 Outputs standard Plotly/Bokeh/matplotlib figures compatible with `st.plotly_chart()`.
 
-### openms-insight
-Not found as a public repository or package. May be planned/unreleased or known by a different name. The closest analogues are the existing OpenMS WebApps (TOPPView Lite, StreamSage, UmetaFlow, etc.). **Clarification from the team is needed** on what this refers to.
+### openms-insight (v0.1.13+)
+[GitHub: t0mdavid-m/openms-insight](https://github.com/t0mdavid-m/openms-insight) — A Python library providing **interactive Vue.js-based Streamlit custom components** for mass spectrometry data visualization. Created by Tom David Muller (Kohlbacher Lab, co-lead author of the OpenMS WebApps paper). Installable via `pip install openms-insight`.
+
+**Five visualization components:**
+
+| Component | Technology | Purpose |
+|-----------|-----------|---------|
+| **Table** | Tabulator.js | Server-side paginated, filterable, sortable tables with CSV export and custom formatters (scientific, signed, badge) |
+| **LinePlot** | Plotly.js | Stick-style mass spectrum visualization with peak highlighting, selection, annotations, and SVG export |
+| **Heatmap** | Plotly scattergl | 2D scatter plots with multi-resolution cascading downsampling, categorical coloring, zoom-based level selection |
+| **VolcanoPlot** | Plotly.js | Differential expression visualization with adjustable significance thresholds, three-category coloring |
+| **SequenceView** | Custom Vue | Peptide sequence display with fragment ion matching (uses pyopenms `TheoreticalSpectrumGenerator`), amino acid modification rendering |
+
+**Key architectural features:**
+- **Cross-component linked selection** via `StateManager` — clicking a row in a Table highlights the corresponding point in a Heatmap or LinePlot
+- **Declarative filter/interactivity mapping** — components declare `filters={"key": "column"}` and `interactivity={"key": "column"}` for linkage
+- **Multi-resolution downsampling** — cascading spatial binning for million-point heatmaps (smooth zooming)
+- **Server-side pagination** — only current page sent to browser, enabling millions-of-rows tables
+- **Subprocess preprocessing** — heavy computation in spawned processes so memory is freed
+- **Automatic disk caching** — preprocessed data saved to Parquet with config-hash invalidation
+- **Cache reconstruction** — components reinstantiated from cache without re-specifying data
+
+**Tech stack:** Python + Polars (backend preprocessing) → Vue 3 + Pinia + Vuetify + Plotly.js + Tabulator.js (frontend)
+
+**Usage pattern:**
+```python
+from openms_insight import Table, Heatmap, LinePlot, StateManager
+import polars as pl
+
+data = pl.scan_parquet("features.parquet")
+state = StateManager()
+
+table = Table(
+    cache_id="feature_table", data=data,
+    filters={"selected": "feature_id"},
+    interactivity={"selected": "feature_id"},
+)
+heatmap = Heatmap(
+    cache_id="feature_map", data=data,
+    filters={"selected": "feature_id"},
+    x_col="RT", y_col="mz", value_col="intensity",
+)
+
+table()    # Render table
+heatmap()  # Render heatmap — linked to table selections
+```
+
+**Relationship to pyopenms-viz:** While pyopenms-viz provides single-line DataFrame plotting (matplotlib/Plotly/Bokeh backends), openms-insight provides richer interactive components with cross-component state, server-side pagination, and caching. They are complementary — pyopenms-viz for quick static/simple interactive plots, openms-insight for complex interactive dashboards with large datasets.
 
 ---
 
@@ -190,8 +236,10 @@ async for message in query(
 │   └── SKILL.md          # How to create TOPP-based workflows
 ├── pyopenms-tools/
 │   └── SKILL.md          # How to use pyopenms in Streamlit
-└── visualization/
-    └── SKILL.md          # How to use pyopenms-viz
+├── visualization/
+│   └── SKILL.md          # How to use pyopenms-viz
+└── openms-insight/
+    └── SKILL.md          # How to use openms-insight interactive components
 ```
 
 ### Approach B: Streamlit Chat Interface with LLM Backend
@@ -315,6 +363,11 @@ Placed in `.claude/skills/` for progressive disclosure:
 
 ### Visualization with pyopenms-viz
 [Examples using ms_plotly backend with st.plotly_chart()]
+
+### Interactive Dashboards with openms-insight
+[Examples using Table, Heatmap, LinePlot, VolcanoPlot, SequenceView]
+[StateManager for cross-component linked selection]
+[When to use openms-insight vs pyopenms-viz]
 ```
 
 ### 5.3 Tool Parameter Database
@@ -426,9 +479,10 @@ pytest tests/
 **Deliverables**:
 1. `.claude/skills/openms-webapp-builder/SKILL.md` — Core patterns and rules
 2. `.claude/skills/topp-tools/SKILL.md` — TOPP tool reference with parameters
-3. `.claude/skills/pyopenms-viz/SKILL.md` — Visualization patterns
-4. `tools/topp_tool_registry.json` — Machine-readable TOPP tool database
-5. `tools/workflow_templates/` — Example workflow specifications
+3. `.claude/skills/pyopenms-viz/SKILL.md` — Visualization patterns (simple/quick plots)
+4. `.claude/skills/openms-insight/SKILL.md` — Interactive component patterns (complex dashboards)
+5. `tools/topp_tool_registry.json` — Machine-readable TOPP tool database
+6. `tools/workflow_templates/` — Example workflow specifications
 
 ### Phase 2: Agent Prototype — Single-Agent with Claude Agent SDK
 
@@ -484,20 +538,20 @@ Agent: Your app is ready! It includes:
 
 ### Open Questions
 
-1. **What is "openms-insight"?** Not found as a public tool. Needs clarification — is it planned, internal, or known by another name?
+1. **Target users**: Are the end users bioinformaticians comfortable with CLI, or do they need a fully web-based experience? This determines whether Approach A (SDK) or Approach C (hybrid) is better.
 
-2. **Target users**: Are the end users bioinformaticians comfortable with CLI, or do they need a fully web-based experience? This determines whether Approach A (SDK) or Approach C (hybrid) is better.
+2. **Deployment model**: Will generated apps run locally, in Docker, or on a shared server? This affects the preview/testing strategy.
 
-3. **Deployment model**: Will generated apps run locally, in Docker, or on a shared server? This affects the preview/testing strategy.
+3. **TOPP tool availability**: The agent needs access to TOPP tool binaries to generate `.ini` files and test workflows. This requires the full Docker image (`Dockerfile`, not `Dockerfile_simple`).
 
-4. **TOPP tool availability**: The agent needs access to TOPP tool binaries to generate `.ini` files and test workflows. This requires the full Docker image (`Dockerfile`, not `Dockerfile_simple`).
-
-5. **Scope of generation**: Should the agent generate:
+4. **Scope of generation**: Should the agent generate:
    - (a) Complete standalone apps from scratch?
    - (b) New workflows/pages within the existing template?
    - (c) Both, depending on complexity?
 
-6. **Model selection**: Claude Opus for planning/reviewing, Claude Sonnet for code generation (faster, cheaper), Claude Haiku for simple validation tasks?
+5. **Model selection**: Claude Opus for planning/reviewing, Claude Sonnet for code generation (faster, cheaper), Claude Haiku for simple validation tasks?
+
+6. **Visualization library choice**: When should generated apps use pyopenms-viz (simple, single-line plots) vs openms-insight (interactive dashboards with linked components, large dataset support)? The agent needs clear heuristics — e.g., use openms-insight when the app needs cross-component selection, server-side pagination, or million-point heatmaps.
 
 ### Risks
 
@@ -505,6 +559,7 @@ Agent: Your app is ready! It includes:
 |------|------------|
 | Generated code has incorrect TOPP tool parameters | Validate against `.ini` files; use `get_topp_params` tool |
 | Hallucinated pyopenms API calls | Skill files with verified examples; reviewer agent checks |
+| Incorrect openms-insight component config | Validate filter/interactivity mappings against DataFrame columns |
 | Streamlit session state conflicts | Template enforces naming conventions; validation checks |
 | Context window exhaustion on complex apps | Claude Agent SDK context compaction; break into sub-tasks |
 | Preview launch failures | Headless mode; error capture; fallback to syntax-only check |
@@ -516,7 +571,8 @@ Agent: Your app is ready! It includes:
 - **Anthropic API key**: Required for agent operation
 - **OpenMS TOPP tools**: Required for `.ini` generation and workflow testing
 - **pyopenms**: Required for parameter validation
-- **pyopenms-viz**: Required for visualization code generation
+- **pyopenms-viz**: Required for simple visualization code generation
+- **openms-insight**: Required for interactive dashboard generation (`pip install openms-insight`)
 
 ---
 
@@ -551,3 +607,18 @@ These serve as reference implementations the agent can learn from:
 - **NuXL** — Cross-linking analysis
 - **NASEWEIS** — Oligonucleotide MS analysis
 - **MHCQuant** — Immunopeptidomics
+
+## Appendix D: Visualization Library Decision Guide
+
+| Criterion | pyopenms-viz | openms-insight |
+|-----------|-------------|----------------|
+| **Complexity** | Single-line `.plot()` calls | Component instantiation with config |
+| **Interactivity** | Basic (Plotly zoom/pan) | Rich (cross-component linking, selection) |
+| **Large datasets** | Limited by browser memory | Multi-resolution downsampling, server-side pagination |
+| **Plot types** | Chromatogram, spectrum, peakmap, mobilogram | Table, LinePlot, Heatmap, VolcanoPlot, SequenceView |
+| **Backend** | Plotly, Bokeh, matplotlib | Vue.js + Plotly.js + Tabulator.js |
+| **State management** | None | StateManager with cross-component sync |
+| **Caching** | None | Automatic disk caching with hash invalidation |
+| **Best for** | Quick exploratory plots, simple apps | Interactive dashboards, production apps, large datasets |
+
+**Agent heuristic**: Default to pyopenms-viz for simple visualization pages. Switch to openms-insight when the user needs: (a) linked selection across components, (b) tables with >10K rows, (c) heatmaps with >100K points, (d) peptide sequence/fragment visualization, or (e) differential expression volcano plots.
