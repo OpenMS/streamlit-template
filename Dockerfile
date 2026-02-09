@@ -211,7 +211,7 @@ if [ "$SERVER_COUNT" -gt 1 ]; then\n\
 \n\
     sleep 2\n\
     echo "Starting nginx load balancer on port 8501..."\n\
-    exec nginx -g "daemon off;"\n\
+    exec /usr/sbin/nginx -g "daemon off;"\n\
 else\n\
     # Single instance mode (default) - run Streamlit directly on port 8501\n\
     echo "Starting Streamlit app..."\n\
