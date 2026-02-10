@@ -206,7 +206,7 @@ if [ "$SERVER_COUNT" -gt 1 ]; then\n\
     for i in $(seq 0 $((SERVER_COUNT - 1))); do\n\
         PORT=$((BASE_PORT + i))\n\
         echo "Starting Streamlit instance on port $PORT..."\n\
-        streamlit run app.py --server.port $PORT --server.address 0.0.0.0 &\n\
+        streamlit run app.py --server.port $PORT --server.address 0.0.0.0 --server.fileWatcherType none &\n\
     done\n\
 \n\
     sleep 2\n\
@@ -215,7 +215,7 @@ if [ "$SERVER_COUNT" -gt 1 ]; then\n\
 else\n\
     # Single instance mode (default) - run Streamlit directly on port 8501\n\
     echo "Starting Streamlit app..."\n\
-    exec streamlit run app.py --server.address 0.0.0.0\n\
+    exec streamlit run app.py --server.address 0.0.0.0 --server.fileWatcherType none\n\
 fi\n\
 ' > /app/entrypoint.sh
 # make the script executable
