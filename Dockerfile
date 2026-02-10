@@ -215,7 +215,7 @@ if [ "$SERVER_COUNT" -gt 1 ]; then\n\
 else\n\
     # Single instance mode (default) - run Streamlit directly on port 8501\n\
     echo "Starting Streamlit app..."\n\
-    exec streamlit run app.py\n\
+    exec streamlit run app.py --server.address 0.0.0.0\n\
 fi\n\
 ' > /app/entrypoint.sh
 # make the script executable
