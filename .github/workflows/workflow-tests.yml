@@ -19,6 +19,7 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
+        pip install pyopenms
         pip install pytest
     - name: Running test cases
       run: |
