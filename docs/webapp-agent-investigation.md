@@ -534,26 +534,66 @@ Agent: Your app is ready! It includes:
 
 ---
 
-## 8. Open Questions & Risks
+## 8. Resolved Decisions
 
-### Open Questions
+| Question | Decision | Implication |
+|----------|----------|-------------|
+| **Target users** | CLI-comfortable developers/bioinformaticians | Use **Approach A: Claude Agent SDK** directly — no web UI needed for the builder itself |
+| **Scope of generation** | Both standalone apps and pages within existing template | Agent needs two modes: scaffold-from-template and add-page-to-existing |
+| **TOPP tool availability** | Flexible — compile from source or provide precompiled binaries | Include TOPP binaries in the agent's environment (Docker image or local install) |
+| **Visualization default** | openms-insight first, pyopenms-viz as fallback | Agent defaults to openms-insight components; only falls back to pyopenms-viz for plot types openms-insight doesn't cover (chromatogram, mobilogram, peakmap 3D) |
 
-1. **Target users**: Are the end users bioinformaticians comfortable with CLI, or do they need a fully web-based experience? This determines whether Approach A (SDK) or Approach C (hybrid) is better.
+---
 
-2. **Deployment model**: Will generated apps run locally, in Docker, or on a shared server? This affects the preview/testing strategy.
+## 9. Open Question: Repository Location
 
-3. **TOPP tool availability**: The agent needs access to TOPP tool binaries to generate `.ini` files and test workflows. This requires the full Docker image (`Dockerfile`, not `Dockerfile_simple`).
+### Option A: Inside this `streamlit-template` repo
 
-4. **Scope of generation**: Should the agent generate:
-   - (a) Complete standalone apps from scratch?
-   - (b) New workflows/pages within the existing template?
-   - (c) Both, depending on complexity?
+**For:**
+- Agent lives next to the code it generates — zero-friction access to template patterns, example workflows, and framework source
+- Skill files (`.claude/skills/`) are repo-scoped by design, so they naturally belong here
+- Contributors to the template can also contribute to the agent
+- Single CI/CD pipeline; agent tests can verify generated code against the real template
+- The template IS the agent's primary knowledge source — co-location keeps them in sync
 
-5. **Model selection**: Claude Opus for planning/reviewing, Claude Sonnet for code generation (faster, cheaper), Claude Haiku for simple validation tasks?
+**Against:**
+- Bloats the template repo with agent infrastructure (`agent/`, MCP tools, system prompts, test fixtures)
+- Template users who just want to build webapps manually must carry agent code they don't use
+- Different release cadences — agent may iterate faster than the template framework
+- Muddies the repo's purpose: is it a template or an agent?
 
-6. **Visualization library choice**: When should generated apps use pyopenms-viz (simple, single-line plots) vs openms-insight (interactive dashboards with linked components, large dataset support)? The agent needs clear heuristics — e.g., use openms-insight when the app needs cross-component selection, server-side pagination, or million-point heatmaps.
+### Option B: Separate repo (e.g., `OpenMS/openms-webapp-agent`)
 
-### Risks
+**For:**
+- Clean separation of concerns — template is the "library", agent is the "consumer"
+- Independent versioning and release cycles
+- Agent repo can pin a specific template version, avoiding breakage from template changes
+- Easier to add other agent capabilities later (e.g., generating non-Streamlit apps, batch processing scripts)
+- Lighter template repo stays focused on its core purpose
+
+**Against:**
+- Cross-repo synchronization burden — template pattern changes must be manually propagated to agent skill files
+- Skill files can't be repo-scoped (would need to be copied or symlinked)
+- Two repos to clone, two CI pipelines to maintain
+- The agent needs the template source code at generation time anyway — so it will either clone it or vendor it, adding complexity
+
+### Recommendation
+
+**Start inside this repo** (as `agent/` + `.claude/skills/`), with the expectation of extracting to a separate repo if/when the agent grows beyond simple code generation. The skill files *must* live here regardless (they're repo-scoped Claude Code config), so starting co-located avoids premature indirection.
+
+---
+
+## 10. Remaining Open Questions
+
+1. **Model selection**: Claude Opus for planning/reviewing, Claude Sonnet for code generation (faster, cheaper), Claude Haiku for simple validation tasks? Or single model throughout?
+
+2. **pyopenms-viz fallback scope**: openms-insight doesn't cover chromatogram, mobilogram, or 3D peakmap plot types. Should the agent use pyopenms-viz for these, or should we request these as openms-insight features?
+
+3. **Existing app migration**: Should the agent be able to refactor existing OpenMS webapps (e.g., adding openms-insight components to an app currently using raw Plotly)?
+
+---
+
+## 11. Risks
 
 | Risk | Mitigation |
 |------|------------|
