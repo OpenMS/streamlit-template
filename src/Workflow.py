@@ -37,6 +37,15 @@ class Workflow(WorkflowManager):
         )
         with t[0]:
             # Parameters for FeatureFinderMetabo TOPP tool.
+            # Example of conditional_sections: Show algorithm:mtd section only when
+            # algorithm:common:chrom_fwhm has a specific value. The controlling parameter
+            # must NOT be inside the section it controls.
+            # conditional_sections={
+            #     "algorithm:mtd": {
+            #         "param": "algorithm:common:chrom_fwhm",
+            #         "value": [5.0, 10.0]  # Show section when param matches any value
+            #     }
+            # }
             self.ui.input_TOPP(
                 "FeatureFinderMetabo",
                 custom_defaults={"algorithm:common:noise_threshold_int": 1000.0},

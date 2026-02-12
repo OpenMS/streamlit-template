@@ -616,6 +616,7 @@ class StreamlitUI:
         display_subsections: bool = True,
         display_subsection_tabs: bool = False,
         custom_defaults: dict = {},
+        conditional_sections: dict = {},
     ) -> None:
         """
         Generates input widgets for TOPP tool parameters dynamically based on the tool's
@@ -631,6 +632,12 @@ class StreamlitUI:
             display_subsections (bool, optional): Whether to split parameters into subsections based on the prefix. Defaults to True.
             display_subsection_tabs (bool, optional): Whether to display main subsections in separate tabs (if more than one main section). Defaults to False.
             custom_defaults (dict, optional): Dictionary of custom defaults to use. Defaults to an empty dict.
+            conditional_sections (dict, optional): Dictionary controlling section visibility based on parameter values.
+                Keys are section names (or prefixes that match subsections). Values are dicts with:
+                - "param": The controlling parameter name (must NOT be inside the controlled section).
+                - "value": Value or list of values that make the section visible.
+                Example: {"algorithm:mtd": {"param": "algorithm:common:enable_mtd", "value": "true"}}
+                Sections not in this dict are always displayed normally.
         """
 
         if not display_subsections:
@@ -798,6 +805,84 @@ class StreamlitUI:
                     ),
                 )
 
+        def get_param_value(param_name: str):
+            """Get the current value of a parameter by its short name (e.g., 'algorithm:common:param')."""
+            for p in params:
+                short_name = p["key"].decode().split(":1:")[1]
+                if short_name == param_name:
+                    return p["value"]
+            return None
+
+        def get_controlling_section(section: str) -> dict | None:
+            """
+            Check if a section (or its parent) is controlled by conditional_sections.
+            Returns the control config dict if found, None otherwise.
+            """
+            if not conditional_sections:
+                return None
+            # Check exact match first
+            if section in conditional_sections:
+                return conditional_sections[section]
+            # Check prefix matches (e.g., "algorithm" controls "algorithm:common")
+            for controlled_section in conditional_sections:
+                if section.startswith(controlled_section + ":"):
+                    return conditional_sections[controlled_section]
+            return None
+
+        def should_show_section(section: str) -> tuple[bool, bool]:
+            """
+            Determine if a section should be shown and whether to use an expander.
+
+            Returns:
+                (should_show, use_expander)
+                - (True, True): Show in expander (controlled section, value matches)
+                - (True, False): Show normally (not controlled)
+                - (False, False): Hide entirely (controlled section, value doesn't match)
+            """
+            control = get_controlling_section(section)
+            if control is None:
+                return (True, False)  # Not controlled, show normally
+
+            controlling_param = control.get("param")
+            expected_values = control.get("value")
+
+            # Normalize expected_values to a list
+            if not isinstance(expected_values, list):
+                expected_values = [expected_values]
+
+            current_value = get_param_value(controlling_param)
+
+            # Check if current value matches any expected value
+            if current_value in expected_values:
+                return (True, True)  # Show in expander
+            # Handle string comparison for booleans
+            if str(current_value).lower() in [str(v).lower() for v in expected_values]:
+                return (True, True)
+
+            return (False, False)  # Hide entirely
+
+        def get_section_label(section: str) -> str:
+            """Create a formatted label for expander from section name."""
+            if not section or section == "all":
+                return "Parameters"
+            parts = section.split(":")
+            return ":".join(parts[:-1]) + (":" if len(parts) > 1 else "") + f"**{parts[-1]}**"
+
+        # Validate that controlling parameters are not inside their controlled sections
+        if conditional_sections:
+            for controlled_section, control in conditional_sections.items():
+                controlling_param = control.get("param", "")
+                # Extract section from controlling param (e.g., "algorithm:common:param" -> "algorithm:common")
+                controlling_param_section = ":".join(controlling_param.split(":")[:-1])
+                # Check if controlling param is inside the controlled section
+                if (controlling_param_section == controlled_section or
+                    controlling_param_section.startswith(controlled_section + ":")):
+                    st.error(
+                        f"Configuration error: Controlling parameter '{controlling_param}' "
+                        f"cannot be inside the section it controls ('{controlled_section}')."
+                    )
+                    return
+
         def display_TOPP_params(params: dict, num_cols):
             """Displays individual TOPP parameters in given number of columns"""
             cols = st.columns(num_cols)
@@ -905,16 +990,33 @@ class StreamlitUI:
                     print('Error parsing "' + p["name"] + '": ' + str(e))
 
 
-        for section, params in param_sections.items():
+        for section, section_params in param_sections.items():
+            should_show, use_expander = should_show_section(section)
+
+            if not should_show:
+                continue  # Hide section entirely
+
             if tabs is None:
-                show_subsection_header(section, display_subsections)
-                display_TOPP_params(params, num_cols)
+                if use_expander:
+                    label = get_section_label(section)
+                    help_text = section_descriptions.get(section)
+                    with st.expander(label, expanded=True, help=help_text):
+                        display_TOPP_params(section_params, num_cols)
+                else:
+                    show_subsection_header(section, display_subsections)
+                    display_TOPP_params(section_params, num_cols)
             else:
                 tab_name = section.split(":")[0]
                 with tabs[tab_names.index(tab_name)]:
-                    show_subsection_header(section, display_subsections)
-                    display_TOPP_params(params, num_cols)
-        
+                    if use_expander:
+                        label = get_section_label(section)
+                        help_text = section_descriptions.get(section)
+                        with st.expander(label, expanded=True, help=help_text):
+                            display_TOPP_params(section_params, num_cols)
+                    else:
+                        show_subsection_header(section, display_subsections)
+                        display_TOPP_params(section_params, num_cols)
+
         self.parameter_manager.save_parameters()
             
 
