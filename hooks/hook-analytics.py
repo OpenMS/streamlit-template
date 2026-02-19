@@ -56,6 +56,22 @@ def piwik_pro_body(piwik_tag):
     """
 
 
+def matomo_head(matomo_url, matomo_tag):
+    return f"""
+    <!-- Matomo Tag Manager -->
+    <script type="text/javascript">
+    window._mtm = window._mtm || [];
+    window._mtm.push({{'mtm.startTime': (new Date().getTime()), 'event': 'mtm.Start'}});
+    (function() {{
+        var d=document, g=d.createElement('script'), s=d.getElementsByTagName('script')[0];
+        g.async=true; g.src='{matomo_url}/js/container_{matomo_tag}.js';
+        s.parentNode.insertBefore(g,s);
+    }})();
+    </script>
+    <!-- End Matomo Tag Manager -->
+    """
+
+
 if __name__ == '__main__':
     
     # Load configuration
@@ -79,6 +95,12 @@ if __name__ == '__main__':
         piwik_tag = settings['analytics']['piwik-pro']['tag']
         index = patch_body(index, piwik_pro_body(piwik_tag))
     
+    # Configure matomo tag manager
+    if settings['analytics']['matomo']['enabled']:
+        matomo_url = settings['analytics']['matomo']['url']
+        matomo_tag = settings['analytics']['matomo']['tag']
+        index = patch_head(index, matomo_head(matomo_url, matomo_tag))
+
     # Save index.html
     with open(index_path, 'w') as f:
         f.write(index)
