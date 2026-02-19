@@ -14,7 +14,8 @@
         },
         "matomo": {
             "enabled": false,
-            "url": ""
+            "url": "",
+            "tag": ""
         }
     },
     "online_deployment": false,
