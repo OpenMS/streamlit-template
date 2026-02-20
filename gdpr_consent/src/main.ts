@@ -114,6 +114,16 @@ function onRender(event: Event): void {
             }
         )
     }
+    if (data.args['matomo']) {
+        klaroConfig.services.push(
+            {
+                name: 'matomo',
+                purposes: ['analytics'],
+                onAccept: callback,
+                onDecline: callback,
+            }
+        )
+    }
 
     // Create a new script element
     var script = document.createElement('script')

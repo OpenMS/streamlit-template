@@ -9,8 +9,13 @@
             "tag": ""
         },
         "piwik-pro": {
+            "enabled": false,
+            "tag": ""
+        },
+        "matomo": {
             "enabled": true,
-            "tag": "57690c44-d635-43b0-ab43-f8bd3064ca06"
+            "url": "https://cdn.matomo.cloud/openms.matomo.cloud",
+            "tag": "yDGK8bfY"
         }
     },
     "online_deployment": false,

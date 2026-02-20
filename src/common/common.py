@@ -405,6 +405,23 @@ def page_setup(page: str = "") -> dict[str, Any]:
                 width=1,
                 height=1,
             )
+        if (st.session_state.settings["analytics"]["matomo"]["enabled"]) and (
+            st.session_state.tracking_consent["matomo"] == True
+        ):
+            html(
+                """
+                <!DOCTYPE html>
+                <html lang="en">
+                    <head></head>
+                    <body><script>
+                    window.parent._mtm = window.parent._mtm || [];
+                    window.parent._mtm.push(['MTMSetConsentGiven']);
+                    </script></body>
+                </html>
+                """,
+                width=1,
+                height=1,
+            )
 
     # Determine the workspace for the current session
     if ("workspace" not in st.session_state) or (
