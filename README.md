@@ -51,20 +51,25 @@ This repository contains two Dockerfiles.
 2. `Dockerfile_simple`: This Dockerfile builds only the Python packages. Recommended for simple apps using pyOpenMS only.
 3. **Install Docker**
   Install Docker from the [official Docker installation guide](https://docs.docker.com/engine/install/)
+   <details> <summary>Click to expand</summary> 
   ```bash
   # Remove older Docker versions (if any)
   for pkg in docker.io docker-doc docker-compose docker-compose-v2 podman-docker containerd runc; do sudo apt-get remove -y $pkg; done
+
   ```
+   </details>
 4. **Test Docker**
   Verify that Docker is working.
   ```bash
   docker run hello-world
+
   ```
   When running this command, you should see a hello world message from Docker.
 5. **Clone the repository**
   ```bash
   git clone https://github.com/OpenMS/streamlit-template.git
   cd streamlit-template
+
   ```
 6. **Specify GitHub token (to download Windows executables).**
   Create a temporary `.env` file with your Github token.
@@ -74,12 +79,14 @@ This repository contains two Dockerfiles.
   To build and start the containers. From the project root directory:
   ```bash
   docker-compose up -d --build
+
   ```
   At the end, you should see this:
   ```
   [+] Running 2/2
    ✔ openms-streamlit-template            Built      
    ✔ Container openms-streamlit-template  Started  
+
   ```
   To make sure server started successfully, run `docker compose ps`. You should see `Up` status:
   ```
