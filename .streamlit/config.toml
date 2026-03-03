@@ -8,7 +8,6 @@ developmentMode = false
 address = "0.0.0.0"
 maxUploadSize =  200 #MB
 port = 8501 # should be same as configured in deployment repo
-address = "0.0.0.0"
 enableCORS = false
 enableXsrfProtection = false
 
