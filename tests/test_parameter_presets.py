@@ -19,15 +19,41 @@ sys.path.append(PROJECT_ROOT)
 # Create mock for streamlit before importing ParameterManager
 mock_streamlit = MagicMock()
 mock_streamlit.session_state = {}
-sys.modules['streamlit'] = mock_streamlit
 
 # Create mock for pyopenms
 mock_pyopenms = MagicMock()
 mock_pyopenms.__version__ = "2.9.1"
+
+# Save original modules so we can restore them after import to avoid polluting
+# sys.modules for other tests (e.g., test_gui.py AppTest tests that need real streamlit)
+_original_streamlit = sys.modules.get('streamlit')
+_original_pyopenms = sys.modules.get('pyopenms')
+
+sys.modules['streamlit'] = mock_streamlit
 sys.modules['pyopenms'] = mock_pyopenms
 
 # Now import after mocks are set up
 from src.workflow.ParameterManager import ParameterManager
+
+# Restore original modules so that other test files (e.g., test_gui.py) that rely on
+# the real streamlit package are not affected by the mock set above.
+# ParameterManager already has a reference to mock_streamlit (captured at import time),
+# so the parameter preset tests continue to work correctly with the mock.
+if _original_streamlit is not None:
+    sys.modules['streamlit'] = _original_streamlit
+else:
+    sys.modules.pop('streamlit', None)
+
+if _original_pyopenms is not None:
+    sys.modules['pyopenms'] = _original_pyopenms
+else:
+    sys.modules.pop('pyopenms', None)
+
+# Remove cached src.workflow modules that were imported with mocked dependencies so
+# that AppTest (in test_gui.py) re-imports them fresh with the real packages.
+for _key in list(sys.modules.keys()):
+    if _key.startswith('src.workflow'):
+        sys.modules.pop(_key, None)
 
 
 @pytest.fixture
