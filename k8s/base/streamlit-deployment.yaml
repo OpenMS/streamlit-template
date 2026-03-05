@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: streamlit
+  labels:
+    component: streamlit
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      component: streamlit
+  template:
+    metadata:
+      labels:
+        component: streamlit
+    spec:
+      containers:
+        - name: streamlit
+          image: openms-streamlit
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              source /root/miniforge3/bin/activate streamlit-env
+              exec streamlit run app.py --server.address 0.0.0.0
+          ports:
+            - containerPort: 8501
+          env:
+            - name: REDIS_URL
+              value: "redis://redis:6379/0"
+          volumeMounts:
+            - name: workspaces
+              mountPath: /workspaces-streamlit-template
+            - name: config
+              mountPath: /app/settings.json
+              subPath: settings.json
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /_stcore/health
+              port: 8501
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /_stcore/health
+              port: 8501
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          resources:
+            requests:
+              memory: "4Gi"
+              cpu: "2"
+            limits:
+              memory: "32Gi"
+              cpu: "8"
+      volumes:
+        - name: workspaces
+          persistentVolumeClaim:
+            claimName: workspaces-pvc
+        - name: config
+          configMap:
+            name: streamlit-config

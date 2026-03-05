@@ -1,0 +1,24 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+namePrefix: template-app-
+
+commonLabels:
+  app: template-app
+
+images:
+  - name: openms-streamlit
+    newName: ghcr.io/openms/streamlit-template
+    newTag: main
+
+patches:
+  - target:
+      kind: Ingress
+      name: streamlit
+    patch: |
+      - op: replace
+        path: /spec/rules/0/host
+        value: template.openms.example.de
