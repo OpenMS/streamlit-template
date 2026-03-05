@@ -38,42 +38,67 @@ jobs:
   integration-test:
     runs-on: ubuntu-latest
     needs: validate-manifests
+    strategy:
+      fail-fast: false
+      matrix:
+        dockerfile:
+          - Dockerfile_simple
+          - Dockerfile
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build Docker image from current code
+      - name: Check if Dockerfile exists
+        id: check
         run: |
-          docker build -t openms-streamlit:test -f Dockerfile_simple .
+          if [ -f "${{ matrix.dockerfile }}" ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Found ${{ matrix.dockerfile }}, will run integration test"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping: ${{ matrix.dockerfile }} not found"
+          fi
+
+      - name: Build Docker image from current code
+        if: steps.check.outputs.exists == 'true'
+        run: |
+          docker build -t openms-streamlit:test -f ${{ matrix.dockerfile }} .
 
       - name: Create kind cluster
+        if: steps.check.outputs.exists == 'true'
         uses: helm/kind-action@v1
         with:
           cluster_name: test-cluster
 
       - name: Load image into kind cluster
+        if: steps.check.outputs.exists == 'true'
         run: |
           kind load docker-image openms-streamlit:test --name test-cluster
 
       - name: Install nginx ingress controller
+        if: steps.check.outputs.exists == 'true'
         run: |
           kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
           kubectl wait --namespace ingress-nginx --for=condition=ready pod --selector=app.kubernetes.io/component=controller --timeout=90s
 
       - name: Deploy with Kustomize
+        if: steps.check.outputs.exists == 'true'
         run: |
           kubectl kustomize k8s/overlays/template-app/ | \
             sed 's|imagePullPolicy: IfNotPresent|imagePullPolicy: Never|g' | \
             kubectl apply -f -
 
       - name: Wait for Redis to be ready
+        if: steps.check.outputs.exists == 'true'
         run: |
           kubectl wait --for=condition=ready pod -l app=template-app,component=redis --timeout=60s
 
       - name: Verify Redis Service is reachable
+        if: steps.check.outputs.exists == 'true'
         run: |
           kubectl run redis-test --image=redis:7-alpine --rm -i --restart=Never -- redis-cli -h template-app-redis ping
 
       - name: Verify all deployments are available
+        if: steps.check.outputs.exists == 'true'
         run: |
           kubectl wait --for=condition=available deployment -l app=template-app --timeout=120s || true
           kubectl get pods -l app=template-app
