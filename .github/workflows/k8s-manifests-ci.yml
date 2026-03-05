@@ -21,7 +21,7 @@ jobs:
 
       - name: Validate K8s manifests (base)
         run: |
-          kubeconform -summary -strict -kubernetes-version 1.28.0 k8s/base/*.yaml
+          kubeconform -summary -strict -kubernetes-version 1.28.0 -ignore-filename-pattern 'kustomization.yaml' k8s/base/*.yaml
 
       - name: Install kubectl
         uses: azure/setup-kubectl@v3
