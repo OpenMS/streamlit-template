@@ -284,14 +284,21 @@ class CommandExecutor:
             # Add non-default TOPP tool parameters
             if tool in params.keys():
                 for k, v in params[tool].items():
-                    command += [f"-{k}"]
-                    # Skip only empty strings (pass flag with no value)
-                    # Note: 0 and 0.0 are valid values, so use explicit check
-                    if v != "" and v is not None:
-                        if isinstance(v, str) and "\n" in v:
-                            command += v.split("\n")
-                        else:
-                            command += [str(v)]
+                    # Handle boolean flag parameters:
+                    # 'true' → emit -flag only, 'false' → skip entirely
+                    if isinstance(v, str) and v.lower() == "true":
+                        command += [f"-{k}"]
+                    elif isinstance(v, str) and v.lower() == "false":
+                        continue
+                    else:
+                        command += [f"-{k}"]
+                        # Skip only empty strings (pass flag with no value)
+                        # Note: 0 and 0.0 are valid values, so use explicit check
+                        if v != "" and v is not None:
+                            if isinstance(v, str) and "\n" in v:
+                                command += v.split("\n")
+                            else:
+                                command += [str(v)]
             # Add custom parameters
             for k, v in custom_params.items():
                 command += [f"-{k}"]
