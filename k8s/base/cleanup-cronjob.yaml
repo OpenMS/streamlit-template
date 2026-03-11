@@ -15,8 +15,19 @@ spec:
         metadata:
           labels:
             component: cleanup
+            volume-group: workspaces
         spec:
           restartPolicy: OnFailure
+          affinity:
+            podAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchExpressions:
+                      - key: volume-group
+                        operator: In
+                        values:
+                          - workspaces
+                  topologyKey: kubernetes.io/hostname
           containers:
             - name: cleanup
               image: openms-streamlit
