@@ -248,7 +248,7 @@ jobs:
     - name: Clean up unnecessary Python files
       shell: pwsh
       run: |
-        $sitePkgs = "py/Lib/site-packages"
+        $sitePkgs = "python-${{ env.PYTHON_VERSION }}/Lib/site-packages"
 
         # Remove __pycache__ directories
         Get-ChildItem -Path $sitePkgs -Recurse -Directory -Filter "__pycache__" | Remove-Item -Recurse -Force
