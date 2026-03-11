@@ -4,7 +4,8 @@ metadata:
   name: workspaces-pvc
 spec:
   accessModes:
-    - ReadWriteMany
+    - ReadWriteOnce
+  storageClassName: cinder-csi
   resources:
     requests:
-      storage: 100Gi
+      storage: 500Gi
