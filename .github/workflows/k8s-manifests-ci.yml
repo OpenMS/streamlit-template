@@ -79,6 +79,16 @@ jobs:
         run: |
           kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
           kubectl wait --namespace ingress-nginx --for=condition=ready pod --selector=app.kubernetes.io/component=controller --timeout=90s
+          # Wait for the admission webhook to be ready to accept connections
+          echo "Waiting for ingress-nginx admission webhook..."
+          for i in $(seq 1 30); do
+            if kubectl get endpoints -n ingress-nginx ingress-nginx-controller-admission -o jsonpath='{.subsets[0].addresses[0].ip}' 2>/dev/null | grep -q .; then
+              echo "Webhook endpoint ready"
+              break
+            fi
+            echo "  attempt $i/30 - waiting..."
+            sleep 2
+          done
 
       - name: Deploy with Kustomize
         if: steps.check.outputs.exists == 'true'
