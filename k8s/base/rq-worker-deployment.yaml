@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rq-worker
+  labels:
+    component: rq-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      component: rq-worker
+  template:
+    metadata:
+      labels:
+        component: rq-worker
+        volume-group: workspaces
+    spec:
+      affinity:
+        podAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: volume-group
+                    operator: In
+                    values:
+                      - workspaces
+              topologyKey: kubernetes.io/hostname
+      containers:
+        - name: rq-worker
+          image: openms-streamlit
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              source /root/miniforge3/bin/activate streamlit-env
+              exec rq worker openms-workflows --url $REDIS_URL
+          env:
+            - name: REDIS_URL
+              value: "redis://redis:6379/0"
+          volumeMounts:
+            - name: workspaces
+              mountPath: /workspaces-streamlit-template
+            - name: config
+              mountPath: /app/settings.json
+              subPath: settings.json
+              readOnly: true
+          resources:
+            requests:
+              memory: "1Gi"
+              cpu: "500m"
+            limits:
+              memory: "8Gi"
+              cpu: "4"
+      volumes:
+        - name: workspaces
+          persistentVolumeClaim:
+            claimName: workspaces-pvc
+        - name: config
+          configMap:
+            name: streamlit-config
