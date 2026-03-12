@@ -57,6 +57,16 @@ jobs:
         # https://github.com/actions/runner-images/blob/main/images/win/scripts/Installers/Install-GitHub-CLI.ps1
         echo "C:/Program Files (x86)/GitHub CLI" >> $GITHUB_PATH
 
+    - name: Set up Python for pyOpenMS build
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install pyOpenMS build dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install setuptools wheel "cython>=3.0.0" "autowrap<=0.24" "numpy>=1.24.0" pandas pytest
+
     - name: Extract branch/PR infos
       shell: bash
       run: |
@@ -132,20 +142,28 @@ jobs:
       env:
           OPENMS_CONTRIB_LIBS: "${{ github.workspace }}/OpenMS/contrib"
           CI_PROVIDER: "GitHub-Actions"
-          CMAKE_GENERATOR: "Ninja"
+          CMAKE_GENERATOR: "Visual Studio 17 2022"
+          CMAKE_GENERATOR_PLATFORM: "x64"
           SOURCE_DIRECTORY: "${{ github.workspace }}/OpenMS"
           BUILD_NAME: "${{ env.RUN_NAME }}-Win64-class-topp-${{ github.run_number }}"
           ENABLE_STYLE_TESTING: "OFF"
           ENABLE_TOPP_TESTING: "ON"
           ENABLE_CLASS_TESTING: "ON"
           WITH_GUI: "OFF"
-          WITH_PARQUET: "OFF"
+          WITH_PARQUET: "ON"
           ADDRESS_SANITIZER: "Off"
           BUILD_TYPE: "Release"
           OPENMP: "Off"
           USE_STATIC_BOOST: "On"
-          #  BUILD_FLAGS: "-p:CL_MPCount=2" # For VS Generator and MSBuild
-          BUILD_FLAGS: "-j2" # Ninja will otherwise use all cores (doesn't go well in GHA)
+          # pyOpenMS build settings
+          PYOPENMS: "ON"
+          PY_NUM_THREADS: "2"
+          PY_MEMLEAK_DISABLE: "On"
+          PY_NO_OPTIMIZATION: "ON"
+          Python_ROOT_DIR: "${{ runner.tool_cache }}/Python/${{ env.PYTHON_VERSION }}/x64"
+          PYTHON_EXECUTABLE: "${{ runner.tool_cache }}/Python/${{ env.PYTHON_VERSION }}/x64/python.exe"
+          Python_FIND_STRATEGY: "LOCATION"
+          BUILD_FLAGS: "-p:CL_MPCount=2"
           CMAKE_CCACHE_EXE: "ccache"
           CCACHE_BASEDIR: ${{ github.workspace }}
           CCACHE_DIR: ${{ github.workspace }}/.ccache
@@ -160,6 +178,23 @@ jobs:
           SOURCE_DIRECTORY: "${{ github.workspace }}/OpenMS"
           CI_PROVIDER: "GitHub-Actions"
           BUILD_NAME: "${{ env.RUN_NAME }}-Win64-class-topp-${{ github.run_number }}"
+          BUILD_TYPE: "Release"
+          CTEST_CONFIGURATION_TYPE: "Release"
+
+    - name: Build pyOpenMS
+      shell: bash
+      run: |
+        cd $GITHUB_WORKSPACE/OpenMS/bld
+        cmake --build . --target pyopenms --config Release -- /p:CL_MPCount=2 /m:2
+
+    - name: Test pyOpenMS
+      shell: bash
+      run: |
+        cd $GITHUB_WORKSPACE/OpenMS/bld/pyOpenMS
+        pip install dist/*.whl
+        python -c "import pyopenms; print(f'pyOpenMS version: {pyopenms.__version__}')"
+        # Run basic tests (skip tutorial tests which may require additional data)
+        pytest tests/ -v --ignore=tests/test_tutorial.py -x -q 2>&1 | head -100
 
     - name: Package
       shell: bash
@@ -177,6 +212,12 @@ jobs:
       with:
         name: openms-package
         path: ${{ github.workspace }}/OpenMS/bld/*.zip
+
+    - name: Upload pyOpenMS wheel as artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: pyopenms-wheel
+        path: ${{ github.workspace }}/OpenMS/bld/pyOpenMS/dist/*.whl
 
   build-executable:
     runs-on: windows-2022
@@ -198,6 +239,12 @@ jobs:
       with:
         name: openms-package
         path: openms-package
+
+    - name: Download pyOpenMS wheel
+      uses: actions/download-artifact@v4
+      with:
+        name: pyopenms-wheel
+        path: pyopenms-wheel
 
     - name: Extract bin and share from package
       run: |
@@ -259,6 +306,12 @@ jobs:
         # Count remaining files
         $count = (Get-ChildItem -Path $sitePkgs -Recurse -File).Count
         Write-Host "Remaining files in site-packages: $count"
+
+    - name: Install locally built pyOpenMS wheel
+      run: |
+        $wheel = Get-ChildItem -Path pyopenms-wheel -Filter "*.whl" | Select-Object -First 1
+        Write-Host "Installing pyOpenMS wheel: $($wheel.FullName)"
+        .\python-${{ env.PYTHON_VERSION }}\python -m pip install $wheel.FullName --no-warn-script-location
 
     - name: Set to offline deployment
       run: |
