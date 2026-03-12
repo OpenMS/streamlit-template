@@ -3,6 +3,7 @@ import json
 import shutil
 import subprocess
 import streamlit as st
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 class ParameterManager:
@@ -288,3 +289,32 @@ class ParameterManager:
         ]
         for key in keys_to_delete:
             del st.session_state[key]
+
+    def get_boolean_parameters(self, tool: str) -> list:
+        """
+        Parses the tool's .ini XML file to find all parameters explicitly defined as type 'bool'.
+        This bypasses the pyOpenMS internal mapping which loses the boolean type definition.
+
+        Args:
+            tool: Name of the TOPP tool (e.g., "FeatureFinderMetabo")
+
+        Returns:
+            list: A list of parameter names (strings) that are strictly booleans.
+        """
+        ini_path = Path(self.ini_dir, f"{tool}.ini")
+        if not ini_path.exists():
+            return []
+
+        bool_params = []
+        try:
+            tree = ET.parse(ini_path)
+            root = tree.getroot()
+            # Recursively find all ITEM tags in the XML tree with type="bool"
+            for item in root.findall(".//ITEM[@type='bool']"):
+                name = item.get("name")
+                if name:
+                    bool_params.append(name)
+        except Exception:
+            pass  # Safely return empty list if XML parsing fails
+
+        return bool_params
