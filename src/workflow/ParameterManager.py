@@ -301,9 +301,11 @@ class ParameterManager:
         Returns:
             list: A list of parameter names (strings) that are strictly booleans.
         """
-        ini_path = Path(self.ini_dir, f"{tool}.ini")
-        if not ini_path.exists():
+        # SELF-HEALING FIX: Force generate the .ini file if it doesn't exist yet
+        if not self.create_ini(tool):
             return []
+
+        ini_path = Path(self.ini_dir, f"{tool}.ini")
 
         bool_params = []
         try:
