@@ -299,7 +299,8 @@ class ParameterManager:
             tool: Name of the TOPP tool (e.g., "FeatureFinderMetabo")
 
         Returns:
-            list: A list of parameter names (strings) that are strictly booleans.
+            list: A list of parameter names (strings) that are strictly booleans, 
+                  including their full hierarchical paths (e.g., 'algorithm:epd:masstrace_snr_filtering').
         """
         # SELF-HEALING FIX: Force generate the .ini file if it doesn't exist yet
         if not self.create_ini(tool):
@@ -311,12 +312,34 @@ class ParameterManager:
         try:
             tree = ET.parse(ini_path)
             root = tree.getroot()
-            # Recursively find all ITEM tags in the XML tree with type="bool"
-            for item in root.findall(".//ITEM[@type='bool']"):
-                name = item.get("name")
-                if name:
-                    bool_params.append(name)
-        except Exception:
-            pass  # Safely return empty list if XML parsing fails
 
-        return bool_params
+            # Recursive function to build the hierarchical path from XML nodes
+            def traverse(node, current_path):
+                for child in node:
+                    if child.tag == "ITEM" and child.get("type") == "bool":
+                        name = child.get("name")
+                        if name:
+                            bool_params.append(current_path + name)
+                    elif child.tag == "NODE":
+                        name = child.get("name")
+                        if name:
+                            # Append the node name and a colon to the path
+                            traverse(child, current_path + name + ":")
+
+            # Start traversal from the XML root
+            traverse(root, "")
+
+            # OpenMS INI files usually encapsulate everything in a top-level <NODE name="ToolName">.
+            # We must strip this prefix so the keys perfectly match the JSON session state keys.
+            tool_prefix = f"{tool}:"
+            cleaned_params = [
+                p[len(tool_prefix):] if p.startswith(tool_prefix) else p 
+                for p in bool_params
+            ]
+
+            return cleaned_params
+
+        except Exception:
+            pass # Safely return empty list if XML parsing fails
+
+        return []
