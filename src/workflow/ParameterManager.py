@@ -331,7 +331,7 @@ class ParameterManager:
 
             # OpenMS INI files usually encapsulate everything in a top-level <NODE name="ToolName">.
             # We must strip this prefix so the keys perfectly match the JSON session state keys.
-            tool_prefix = f"{tool}:"
+            tool_prefix = f"{tool}:1:"
             cleaned_params = [
                 p[len(tool_prefix):] if p.startswith(tool_prefix) else p 
                 for p in bool_params
@@ -339,7 +339,7 @@ class ParameterManager:
 
             return cleaned_params
 
-        except Exception:
+        except Exception as e:
+            print(f"Error parsing boolean parameters for {tool}: {e}")
             pass # Safely return empty list if XML parsing fails
-
         return []
