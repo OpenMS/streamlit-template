@@ -3,6 +3,7 @@ import json
 import shutil
 import subprocess
 import streamlit as st
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 class ParameterManager:
@@ -288,3 +289,57 @@ class ParameterManager:
         ]
         for key in keys_to_delete:
             del st.session_state[key]
+
+    def get_boolean_parameters(self, tool: str) -> list:
+        """
+        Parses the tool's .ini XML file to find all parameters explicitly defined as type 'bool'.
+        This bypasses the pyOpenMS internal mapping which loses the boolean type definition.
+
+        Args:
+            tool: Name of the TOPP tool (e.g., "FeatureFinderMetabo")
+
+        Returns:
+            list: A list of parameter names (strings) that are strictly booleans, 
+                  including their full hierarchical paths (e.g., 'algorithm:epd:masstrace_snr_filtering').
+        """
+        # SELF-HEALING FIX: Force generate the .ini file if it doesn't exist yet
+        if not self.create_ini(tool):
+            return []
+
+        ini_path = Path(self.ini_dir, f"{tool}.ini")
+
+        bool_params = []
+        try:
+            tree = ET.parse(ini_path)
+            root = tree.getroot()
+
+            # Recursive function to build the hierarchical path from XML nodes
+            def traverse(node, current_path):
+                for child in node:
+                    if child.tag == "ITEM" and child.get("type") == "bool":
+                        name = child.get("name")
+                        if name:
+                            bool_params.append(current_path + name)
+                    elif child.tag == "NODE":
+                        name = child.get("name")
+                        if name:
+                            # Append the node name and a colon to the path
+                            traverse(child, current_path + name + ":")
+
+            # Start traversal from the XML root
+            traverse(root, "")
+
+            # OpenMS INI files usually encapsulate everything in a top-level <NODE name="ToolName">.
+            # We must strip this prefix so the keys perfectly match the JSON session state keys.
+            tool_prefix = f"{tool}:1:"
+            cleaned_params = [
+                p[len(tool_prefix):] if p.startswith(tool_prefix) else p 
+                for p in bool_params
+            ]
+
+            return cleaned_params
+
+        except Exception as e:
+            print(f"Error parsing boolean parameters for {tool}: {e}")
+            pass # Safely return empty list if XML parsing fails
+        return []
