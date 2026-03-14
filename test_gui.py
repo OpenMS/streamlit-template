@@ -93,7 +93,10 @@ def test_view_raw_ms_data(launch, example):
 
     # Copy files from example-data/mzML to workspace mzML directory, add to selected files
     for f in Path("example-data", "mzML").glob("*.mzML"):
-        shutil.copy(f, mzML_dir)
+        try:
+            shutil.copy(f, mzML_dir)
+        except shutil.SameFileError:
+            pass  # File already exists as a symlink to the same source (on Linux)
     launch.run()
 
     ## TODO: Figure out a way to select a spectrum to be displayed
@@ -119,7 +122,10 @@ def test_run_workflow(launch, example):
 
     # Copy files from example-data/mzML to workspace mzML directory, add to selected files
     for f in Path("example-data", "mzML").glob("*.mzML"):
-        shutil.copy(f, mzML_dir)
+        try:
+            shutil.copy(f, mzML_dir)
+        except shutil.SameFileError:
+            pass  # File already exists as a symlink to the same source (on Linux)
     launch.run()
 
     ## Select experiments to process
