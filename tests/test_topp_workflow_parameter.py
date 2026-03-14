@@ -14,11 +14,6 @@ from unittest.mock import patch, MagicMock
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(PROJECT_ROOT)
 
-# Create mock for pyopenms to avoid dependency on actual OpenMS installation
-mock_pyopenms = MagicMock()
-mock_pyopenms.__version__ = "2.9.1"  # Mock version for testing
-sys.modules['pyopenms'] = mock_pyopenms
-
 @pytest.fixture
 def mock_streamlit():
     """Mock essential Streamlit components for testing parameter display."""
@@ -45,12 +40,6 @@ def mock_streamlit():
             'text_input': mock_text_input,
             'markdown': mock_markdown
         }
-
-
-def test_mock_pyopenms():
-    """Verify that pyopenms mock is working correctly."""
-    import pyopenms
-    assert hasattr(pyopenms, '__version__')
 
 
 def test_topp_parameter_correctness():

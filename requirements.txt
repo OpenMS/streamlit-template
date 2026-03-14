@@ -137,3 +137,7 @@ urllib3==2.3.0
 watchdog==6.0.0
     # via streamlit
 xlsxwriter
+
+# Redis Queue dependencies (for online mode)
+redis>=5.0.0
+rq>=1.16.0

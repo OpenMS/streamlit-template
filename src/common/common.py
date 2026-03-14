@@ -21,9 +21,166 @@ except ImportError:
     TK_AVAILABLE = False
 
 from src.common.captcha_ import captcha_control
+from src.common.admin import (
+    is_admin_configured,
+    verify_admin_password,
+    demo_exists,
+    save_workspace_as_demo,
+)
 
 # Detect system platform
 OS_PLATFORM = sys.platform
+
+
+def is_safe_workspace_name(name: str) -> bool:
+    """
+    Check if a workspace name is safe (no path traversal characters).
+
+    Args:
+        name: The workspace name to validate.
+
+    Returns:
+        bool: True if safe, False if contains path separators or parent references.
+    """
+    if not name:
+        return False
+    # Reject path separators and parent directory references
+    return "/" not in name and "\\" not in name and name not in ("..", ".")
+
+
+def get_demo_source_dirs() -> list[Path]:
+    """
+    Get list of demo workspace source directories from settings.
+
+    Supports both legacy 'source_dir' (string) and new 'source_dirs' (array) formats.
+    Non-existent directories are silently skipped.
+
+    Returns:
+        list[Path]: List of existing source directory paths.
+    """
+    settings = st.session_state.get("settings", {})
+    demo_config = settings.get("demo_workspaces", {})
+
+    if not demo_config.get("enabled", False):
+        return []
+
+    # Support both source_dirs (array) and source_dir (string) for backward compatibility
+    if "source_dirs" in demo_config:
+        dirs = demo_config["source_dirs"]
+        if isinstance(dirs, str):
+            dirs = [dirs]
+    elif "source_dir" in demo_config:
+        dirs = [demo_config["source_dir"]]
+    else:
+        dirs = ["example-data/workspaces"]
+
+    # Return only existing directories
+    return [Path(d) for d in dirs if Path(d).exists()]
+
+
+def get_available_demo_workspaces() -> list[str]:
+    """
+    Get a list of available demo workspaces from all configured source directories.
+
+    When the same demo name exists in multiple directories, the first occurrence wins.
+
+    Returns:
+        list[str]: List of unique demo workspace names.
+    """
+    seen = set()
+    demos = []
+
+    for source_dir in get_demo_source_dirs():
+        for p in source_dir.iterdir():
+            if p.is_dir() and p.name not in seen:
+                seen.add(p.name)
+                demos.append(p.name)
+
+    return demos
+
+
+def find_demo_workspace_path(demo_name: str) -> Path | None:
+    """
+    Find the source path for a demo workspace by searching all configured directories.
+
+    Directories are searched in order; the first match is returned.
+
+    Args:
+        demo_name: Name of the demo workspace to find.
+
+    Returns:
+        Path to the demo workspace, or None if not found or name is unsafe.
+    """
+    # Validate against path traversal attacks
+    if not is_safe_workspace_name(demo_name):
+        return None
+
+    for source_dir in get_demo_source_dirs():
+        demo_path = source_dir / demo_name
+        if demo_path.exists() and demo_path.is_dir():
+            return demo_path
+    return None
+
+
+def _symlink_tree(source: Path, target: Path) -> None:
+    """
+    Recursively create directory structure and symlink files from source to target.
+
+    Creates real directories but symlinks individual files, allowing users to
+    add new files to workspace directories without affecting the original.
+    params.json and .ini files are copied instead of symlinked so they can be
+    modified independently.
+
+    Args:
+        source: Source directory path.
+        target: Target directory path.
+    """
+    target.mkdir(parents=True, exist_ok=True)
+    for item in source.iterdir():
+        target_item = target / item.name
+        if item.is_dir():
+            _symlink_tree(item, target_item)
+        elif item.name == "params.json" or item.suffix == ".ini":
+            # Copy config files so they can be modified independently
+            shutil.copy2(item, target_item)
+        else:
+            # Create symlink to the source file
+            target_item.symlink_to(item.resolve())
+
+
+def copy_demo_workspace(demo_name: str, target_path: Path) -> bool:
+    """
+    Copy a demo workspace to the target path.
+
+    On Linux, creates symlinks to demo files instead of copying them.
+    On other platforms, copies files normally.
+
+    Searches all configured source directories for the demo (first match wins).
+
+    Args:
+        demo_name: Name of the demo workspace to copy.
+        target_path: Destination path for the workspace.
+
+    Returns:
+        bool: True if copy was successful, False otherwise.
+    """
+    demo_path = find_demo_workspace_path(demo_name)
+
+    if demo_path is None:
+        return False
+
+    try:
+        if target_path.exists():
+            shutil.rmtree(target_path)
+
+        # Use symlinks on Linux for efficiency
+        if OS_PLATFORM == "linux":
+            _symlink_tree(demo_path, target_path)
+        else:
+            shutil.copytree(demo_path, target_path)
+        return True
+    except Exception:
+        return False
 
 
 @st.fragment(run_every=5)
@@ -38,6 +195,50 @@ def monitor_hardware():
     st.progress(cpu_progress)
 
     st.caption(f"Last fetched at: {time.strftime('%H:%M:%S')}")
+
+
+@st.fragment(run_every=5)
+def monitor_queue():
+    """Display queue metrics in sidebar (online mode only)"""
+    try:
+        from src.workflow.health import get_queue_metrics
+
+        metrics = get_queue_metrics()
+        if not metrics.get("available", False):
+            return
+
+        st.markdown("---")
+        st.markdown("**Queue Status**")
+
+        total_workers = metrics.get("total_workers", 0)
+        busy_workers = metrics.get("busy_workers", 0)
+        queued_jobs = metrics.get("queued_jobs", 0)
+
+        col1, col2 = st.columns(2)
+        col1.metric(
+            "Workers",
+            f"{busy_workers}/{total_workers}",
+            help="Busy workers / Total workers"
+        )
+        col2.metric(
+            "Queued",
+            queued_jobs,
+            help="Jobs waiting in queue"
+        )
+
+        # Utilization progress bar
+        if total_workers > 0:
+            utilization = busy_workers / total_workers
+            st.progress(utilization, text=f"{int(utilization * 100)}% utilized")
+
+        # Warning if queue is backing up
+        if queued_jobs > total_workers * 2 and total_workers > 0:
+            st.warning(f"High queue depth: {queued_jobs} jobs waiting")
+
+        st.caption(f"Last fetched at: {time.strftime('%H:%M:%S')}")
+
+    except Exception:
+        pass  # Silently fail if queue not available
 
 
 def load_params(default: bool = False) -> dict[str, Any]:
@@ -204,6 +405,23 @@ def page_setup(page: str = "") -> dict[str, Any]:
                 width=1,
                 height=1,
             )
+        if (st.session_state.settings["analytics"]["matomo"]["enabled"]) and (
+            st.session_state.tracking_consent["matomo"] == True
+        ):
+            html(
+                """
+                <!DOCTYPE html>
+                <html lang="en">
+                    <head></head>
+                    <body><script>
+                    window.parent._mtm = window.parent._mtm || [];
+                    window.parent._mtm.push(['MTMSetConsentGiven']);
+                    </script></body>
+                </html>
+                """,
+                width=1,
+                height=1,
+            )
 
     # Determine the workspace for the current session
     if ("workspace" not in st.session_state) or (
@@ -237,10 +455,30 @@ def page_setup(page: str = "") -> dict[str, Any]:
 
         # Check if workspace logic is enabled
         if st.session_state.settings["enable_workspaces"]:
+            # Get available demo workspaces using helper function
+            available_demos = get_available_demo_workspaces()
+
             if "workspace" in st.query_params:
-                st.session_state.workspace = Path(
-                    workspaces_dir, st.query_params.workspace
-                )
+                requested_workspace = st.query_params.workspace
+
+                # Validate workspace name against path traversal
+                if not is_safe_workspace_name(requested_workspace):
+                    # Invalid workspace name - fall back to new UUID workspace
+                    workspace_id = str(uuid.uuid1())
+                    st.session_state.workspace = Path(workspaces_dir, workspace_id)
+                    st.query_params.workspace = workspace_id
+                # Check if the requested workspace is a demo workspace (online mode)
+                elif st.session_state.location == "online" and requested_workspace in available_demos:
+                    # Create a new UUID workspace and copy demo contents
+                    workspace_id = str(uuid.uuid1())
+                    st.session_state.workspace = Path(workspaces_dir, workspace_id)
+                    st.query_params.workspace = workspace_id
+                    # Copy demo workspace contents using helper function
+                    copy_demo_workspace(requested_workspace, st.session_state.workspace)
+                else:
+                    st.session_state.workspace = Path(
+                        workspaces_dir, requested_workspace
+                    )
             elif st.session_state.location == "online":
                 workspace_id = str(uuid.uuid1())
                 st.session_state.workspace = Path(workspaces_dir, workspace_id)
@@ -252,6 +490,12 @@ def page_setup(page: str = "") -> dict[str, Any]:
         else:
             # Use default workspace when workspace feature is disabled
             st.session_state.workspace = Path(workspaces_dir, "default")
+
+            # For local mode with workspaces disabled, copy demo workspaces if they don't exist
+            for demo_name in get_available_demo_workspaces():
+                target = Path(workspaces_dir, demo_name)
+                if not target.exists():
+                    copy_demo_workspace(demo_name, target)
 
         if st.session_state.location != "online":
             # not any captcha so, controllo should be true
@@ -366,6 +610,111 @@ def render_sidebar(page: str = "") -> None:
                             st.query_params.workspace = "default"
                             st.rerun()
 
+            # Demo workspace loader for online mode
+            if st.session_state.location == "online":
+                available_demos = get_available_demo_workspaces()
+                if available_demos:
+                    with st.expander("🎮 **Demo Data**"):
+                        st.caption("Load example data to explore the app")
+                        selected_demo = st.selectbox(
+                            "Select demo dataset",
+                            available_demos,
+                            key="selected-demo-workspace"
+                        )
+                        if st.button("Load Demo Data"):
+                            demo_path = find_demo_workspace_path(selected_demo)
+                            if demo_path:
+                                # Link or copy demo files to current workspace
+                                for item in demo_path.iterdir():
+                                    target = st.session_state.workspace / item.name
+                                    if item.is_dir():
+                                        if target.exists():
+                                            shutil.rmtree(target)
+                                        # Use symlinks on Linux for efficiency
+                                        if OS_PLATFORM == "linux":
+                                            _symlink_tree(item, target)
+                                        else:
+                                            shutil.copytree(item, target)
+                                    else:
+                                        if target.exists():
+                                            target.unlink()
+                                        # Copy config files so they can be modified independently
+                                        if OS_PLATFORM == "linux" and item.name != "params.json" and item.suffix != ".ini":
+                                            target.symlink_to(item.resolve())
+                                        else:
+                                            shutil.copy2(item, target)
+                                st.success(f"Demo data '{selected_demo}' loaded!")
+                                time.sleep(1)
+                                st.rerun()
+
+                # Save as Demo section (online mode only)
+                with st.expander("💾 **Save as Demo**"):
+                    st.caption("Save current workspace as a demo for others to use")
+
+                    demo_name_input = st.text_input(
+                        "Demo name",
+                        key="save-demo-name",
+                        placeholder="e.g., workshop-2024",
+                        help="Name for the demo workspace (no spaces or special characters)"
+                    )
+
+                    # Check if demo already exists
+                    demo_name_clean = demo_name_input.strip() if demo_name_input else ""
+                    existing_demo = demo_exists(demo_name_clean) if demo_name_clean else False
+
+                    if existing_demo:
+                        st.warning(f"Demo '{demo_name_clean}' already exists and will be overwritten.")
+                        confirm_overwrite = st.checkbox(
+                            "Confirm overwrite",
+                            key="confirm-demo-overwrite"
+                        )
+                    else:
+                        confirm_overwrite = True  # No confirmation needed for new demos
+
+                    if st.button("Save as Demo", key="save-demo-btn", disabled=not demo_name_clean):
+                        if not is_admin_configured():
+                            st.error(
+                                "Admin not configured. Create `.streamlit/secrets.toml` with "
+                                "an `[admin]` section containing `password = \"your-password\"`"
+                            )
+                        elif existing_demo and not confirm_overwrite:
+                            st.error("Please confirm overwrite to continue.")
+                        else:
+                            # Show password dialog
+                            st.session_state["show_admin_password_dialog"] = True
+
+                    # Password dialog (shown after clicking Save as Demo)
+                    if st.session_state.get("show_admin_password_dialog", False):
+                        admin_password = st.text_input(
+                            "Admin password",
+                            type="password",
+                            key="admin-password-input",
+                            help="Enter the admin password to save this workspace as a demo"
+                        )
+
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            if st.button("Confirm", key="confirm-save-demo"):
+                                if verify_admin_password(admin_password):
+                                    success, message = save_workspace_as_demo(
+                                        st.session_state.workspace,
+                                        demo_name_clean
+                                    )
+                                    if success:
+                                        st.success(message)
+                                        st.session_state["show_admin_password_dialog"] = False
+                                        time.sleep(1)
+                                        st.rerun()
+                                    else:
+                                        st.error(message)
+                                else:
+                                    st.error("Invalid admin password.")
+
+                        with col2:
+                            if st.button("Cancel", key="cancel-save-demo"):
+                                st.session_state["show_admin_password_dialog"] = False
+                                st.rerun()
+
         # All pages have settings, workflow indicator and logo
         with st.expander("⚙️ **Settings**"):
             img_formats = ["svg", "png", "jpeg", "webp"]
@@ -386,6 +735,9 @@ def render_sidebar(page: str = "") -> None:
 
         with st.expander("📊 **Resource Utilization**"):
             monitor_hardware()
+            # Show queue metrics in online mode
+            if st.session_state.settings.get("online_deployment", False):
+                monitor_queue()
 
         # Display OpenMS WebApp Template Version from settings.json
         with st.container():

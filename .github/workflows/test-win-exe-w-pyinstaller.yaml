@@ -68,13 +68,14 @@ jobs:
 
     - name: Copy everything to dist directory
       shell: bash
-      run: | 
+      run: |
         cp -r .streamlit dist/.streamlit
         cp -r content dist/content
         cp -r src dist/src
         cp -r example-data dist/example-data
         cp -r assets dist/assets
         cp app.py dist/
+        cp presets.json dist/
 
     - name: Modify .spec file
       shell: bash

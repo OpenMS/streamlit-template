@@ -11,3 +11,4 @@ python*
 **/__pycache__/
 gdpr_consent/node_modules/
 *~
+.streamlit/secrets.toml

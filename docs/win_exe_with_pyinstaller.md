@@ -102,7 +102,13 @@ cp -r pages dist/pages
 cp -r src dist/src
 cp -r assets dist/assets
 cp app.py dist/
+cp presets.json dist/
+```
 
+Remove the server address from the bundled config so Streamlit uses `localhost` (default) instead of `0.0.0.0`, which doesn't work as a connect address on Windows:
+
+```powershell
+(Get-Content dist/.streamlit/config.toml) -notmatch '^address' | Set-Content dist/.streamlit/config.toml
 ``` 
 
 

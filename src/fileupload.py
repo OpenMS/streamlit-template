@@ -3,7 +3,7 @@ from pathlib import Path
 
 import streamlit as st
 
-from src.common.common import reset_directory
+from src.common.common import reset_directory, OS_PLATFORM
 
 
 @st.cache_data
@@ -73,6 +73,8 @@ def load_example_mzML_files() -> None:
     """
     Copies example mzML files to the mzML directory.
 
+    On Linux, creates symlinks to example files instead of copying them.
+
     Args:
         None
 
@@ -80,9 +82,15 @@ def load_example_mzML_files() -> None:
         None
     """
     mzML_dir = Path(st.session_state.workspace, "mzML-files")
-    # Copy files from example-data/mzML to workspace mzML directory, add to selected files
+    # Copy or symlink files from example-data/mzML to workspace mzML directory
     for f in Path("example-data", "mzML").glob("*.mzML"):
-        shutil.copy(f, mzML_dir)
+        target = mzML_dir / f.name
+        if OS_PLATFORM == "linux":
+            if target.exists():
+                target.unlink()
+            target.symlink_to(f.resolve())
+        else:
+            shutil.copy(f, mzML_dir)
     st.success("Example mzML files loaded!")
 
 
