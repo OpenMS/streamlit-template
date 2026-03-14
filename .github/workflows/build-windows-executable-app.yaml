@@ -311,6 +311,10 @@ jobs:
           Copy-Item "openms-bin/${file}.exe" -Destination "streamlit_exe/${file}.exe"
         }
 
+    - name: Remove server address for local Windows deployment
+      run: |
+        (Get-Content streamlit_exe/.streamlit/config.toml) -notmatch '^address' | Set-Content streamlit_exe/.streamlit/config.toml
+
     - name: Generate Readme.txt
       shell: bash
       run: |
