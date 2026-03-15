@@ -3,7 +3,7 @@ import json
 import shutil
 import subprocess
 import streamlit as st
-import xml.etree.ElementTree as ET
+import defusedxml.ElementTree as ET
 from pathlib import Path
 
 class ParameterManager:
@@ -292,24 +292,32 @@ class ParameterManager:
 
     def get_boolean_parameters(self, tool: str) -> list:
         """
-        Parses the tool's .ini XML file to find all parameters explicitly defined as type 'bool'.
-        This bypasses the pyOpenMS internal mapping which loses the boolean type definition.
+        Parses the tool's generated .ini (XML) file to discover strictly boolean parameters.
+        This prevents implicit booleans from being passed as strings to the command line.
 
         Args:
-            tool: Name of the TOPP tool (e.g., "FeatureFinderMetabo")
+            tool (str): The name of the TOPP tool (e.g., 'FeatureFinderMetabo').
 
         Returns:
-            list: A list of parameter names (strings) that are strictly booleans, 
-                  including their full hierarchical paths (e.g., 'algorithm:epd:masstrace_snr_filtering').
+            list: A list of hierarchical parameter keys that are explicitly typed as 'bool'.
+
+        Raises:
+            FileNotFoundError: If the .ini file does not exist.
+            RuntimeError: If the .ini file fails to generate.
+            ET.ParseError: If the XML parsing fails.
         """
-        # SELF-HEALING FIX: Force generate the .ini file if it doesn't exist yet
         if not self.create_ini(tool):
-            return []
+            # CodeRabbit Fix: Raise an explicit error instead of silently returning []
+            raise RuntimeError(f"Failed to generate .ini file for TOPP tool: {tool}")
 
         ini_path = Path(self.ini_dir, f"{tool}.ini")
+        if not ini_path.exists():
+            # CodeRabbit Fix: Raise an explicit error instead of silently returning []
+            raise FileNotFoundError(f"Missing expected .ini file for TOPP tool at: {ini_path}")
 
         bool_params = []
         try:
+            # CodeRabbit Fix: Use defusedxml (imported as ET) to safely parse the file
             tree = ET.parse(ini_path)
             root = tree.getroot()
 
@@ -339,7 +347,8 @@ class ParameterManager:
 
             return cleaned_params
 
-        except Exception as e:
+        except ET.ParseError as e: 
+            logger.error(f"XML parsing failed for {tool}: {e}"); raise
             print(f"Error parsing boolean parameters for {tool}: {e}")
             pass # Safely return empty list if XML parsing fails
         return []
