@@ -263,6 +263,10 @@ class CommandExecutor:
 
         # Load parameters for non-defaults
         params = self.parameter_manager.get_parameters_from_json()
+
+        # NEW LOGIC: Ask the ParameterManager which keys are strictly booleans
+        bool_params = self.parameter_manager.get_boolean_parameters(tool)
+
         # Construct commands for each process
         for i in range(n_processes):
             command = [tool]
@@ -281,27 +285,38 @@ class CommandExecutor:
                 # standard case, files was a list of strings, take the file name at index
                 else:
                     command += [value[i]]
+
             # Add non-default TOPP tool parameters
             if tool in params.keys():
                 for k, v in params[tool].items():
-                    command += [f"-{k}"]
-                    # Skip only empty strings (pass flag with no value)
-                    # Note: 0 and 0.0 are valid values, so use explicit check
-                    if v != "" and v is not None:
-                        if isinstance(v, str) and "\n" in v:
-                            command += v.split("\n")
-                        else:
-                            command += [str(v)]
+                    # NEW LOGIC: Intercept boolean flags
+                    if k in bool_params:
+                        # Only add the implicit flag if True. If False, omit entirely.
+                        if str(v).lower() == "true":
+                            command += [f"-{k}"]
+                    else:
+                        # Existing logic for strings, ints, floats
+                        command += [f"-{k}"]
+                        if v != "" and v is not None:
+                            if isinstance(v, str) and "\n" in v:
+                                command += v.split("\n")
+                            else:
+                                command += [str(v)]
+
             # Add custom parameters
             for k, v in custom_params.items():
-                command += [f"-{k}"]
-                # Skip only empty strings (pass flag with no value)
-                # Note: 0 and 0.0 are valid values, so use explicit check
-                if v != "" and v is not None:
-                    if isinstance(v, list):
-                        command += [str(x) for x in v]
-                    else:
-                        command += [str(v)]
+                # NEW LOGIC: Intercept custom boolean flags
+                if k in bool_params:
+                    if str(v).lower() == "true":
+                        command += [f"-{k}"]
+                else:
+                    command += [f"-{k}"]
+                    if v != "" and v is not None:
+                        if isinstance(v, list):
+                            command += [str(x) for x in v]
+                        else:
+                            command += [str(v)]
+
             # Add threads parameter for TOPP tools
             command += ["-threads", str(threads_per_command)]
             commands.append(command)
