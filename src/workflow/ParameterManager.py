@@ -347,8 +347,9 @@ class ParameterManager:
 
             return cleaned_params
 
-        except ET.ParseError as e: 
-            logger.error(f"XML parsing failed for {tool}: {e}"); raise
+        except ET.ParseError as e:
+            st.error(f"XML parsing failed for {tool}: {e}")
+            raise
             print(f"Error parsing boolean parameters for {tool}: {e}")
             pass # Safely return empty list if XML parsing fails
         return []
