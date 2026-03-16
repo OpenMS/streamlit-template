@@ -1,0 +1,56 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: workspace-cleanup
+  labels:
+    component: cleanup
+spec:
+  schedule: "0 3 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            component: cleanup
+            volume-group: workspaces
+        spec:
+          restartPolicy: OnFailure
+          affinity:
+            podAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchExpressions:
+                      - key: volume-group
+                        operator: In
+                        values:
+                          - workspaces
+                  topologyKey: kubernetes.io/hostname
+          containers:
+            - name: cleanup
+              image: openms-streamlit
+              imagePullPolicy: IfNotPresent
+              command: ["/bin/bash", "-c"]
+              args:
+                - |
+                  source /root/miniforge3/bin/activate streamlit-env
+                  exec python clean-up-workspaces.py
+              env:
+                - name: WORKSPACES_DIR
+                  value: "/workspaces-streamlit-template"
+              volumeMounts:
+                - name: workspaces
+                  mountPath: /workspaces-streamlit-template
+              resources:
+                requests:
+                  memory: "256Mi"
+                  cpu: "100m"
+                limits:
+                  memory: "512Mi"
+                  cpu: "500m"
+          volumes:
+            - name: workspaces
+              persistentVolumeClaim:
+                claimName: workspaces-pvc
