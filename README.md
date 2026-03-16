@@ -29,15 +29,18 @@ To run the app locally:
    ```
 
 2. **Install dependencies**
-   
+
    Make sure you can run ```pip``` commands.
-   
+
    Install all dependencies with:
    ```bash
    pip install -r requirements.txt
+   pip install pyopenms
    ```
 
-4. **Launch the app**
+   > ℹ️ **Note:** `pyopenms` is not included in `requirements.txt` because it is built from source for Docker and Windows executable distributions. For local development, install it separately via pip as shown above.
+
+3. **Launch the app**
    ```bash
    streamlit run app.py
    ```
