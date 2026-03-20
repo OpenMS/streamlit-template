@@ -13,15 +13,33 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
     - name: Build the full Docker image
-      run: docker build . --file Dockerfile --tag streamlitapp:latest
+      uses: docker/build-push-action@v6
+      with:
+        context: .
+        file: Dockerfile
+        tags: streamlitapp:latest
+        load: true
+        cache-from: type=gha,scope=full-app
+        cache-to: type=gha,mode=max,scope=full-app
 
   build-simple-app:
 
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
     - name: Build the Docker image (pyOpenMS only)
-      run: docker build . --file Dockerfile_simple --tag streamlitapp-simple:latest
+      uses: docker/build-push-action@v6
+      with:
+        context: .
+        file: Dockerfile_simple
+        tags: streamlitapp-simple:latest
+        load: true
+        cache-from: type=gha,scope=simple-app
+        cache-to: type=gha,mode=max,scope=simple-app
