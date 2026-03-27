@@ -1,15 +1,18 @@
 # Create a TOPP Workflow
 
-Create a complete TOPP workflow: a WorkflowManager subclass and its 4 associated content pages.
+Create a complete mass spectrometry data processing workflow: a WorkflowManager subclass and its 4 associated content pages.
+
+This is how MS analysis pipelines (proteomics quantification, metabolomics feature detection, peptide identification, etc.) are built as web applications in the OpenMS ecosystem.
 
 ## Instructions
 
 1. **Ask the user** for:
-   - Workflow name (e.g., "Metabolite Quantification")
-   - TOPP tools to use in the pipeline (e.g., FeatureFinderMetabo, FeatureLinkerUnlabeledKD)
-   - Input file type(s) (e.g., mzML, featureXML)
-   - Any custom Python tools needed
-   - What results to display
+   - Workflow name (e.g., "Metabolite Quantification", "Peptide Identification")
+   - Scientific purpose (e.g., label-free quantification, untargeted metabolomics, spectral library search)
+   - TOPP tools to chain in the pipeline (e.g., FeatureFinderMetabo → FeatureLinkerUnlabeledKD, or MSGFPlusAdapter → FidoAdapter)
+   - Input file type(s): mzML (raw spectra), featureXML (features), idXML (identifications), fasta (protein databases), etc.
+   - Any custom Python analysis tools needed
+   - What results to display (feature tables, spectra, chromatograms, statistical plots)
 
 2. **Create the workflow class** at `src/<WorkflowName>.py`:
 

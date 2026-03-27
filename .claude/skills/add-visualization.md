@@ -1,6 +1,8 @@
-# Add Visualization
+# Add MS Data Visualization
 
-Add MS data visualizations using pyopenms-viz or OpenMS-Insight components.
+Add mass spectrometry data visualizations using pyopenms-viz or OpenMS-Insight components.
+
+MS data has specialized visualization needs: mass spectra (m/z vs intensity stick plots), chromatograms (RT vs intensity), 2D peak maps (RT vs m/z heatmaps), isotope patterns, fragment ion annotations, and statistical plots like volcano plots for differential expression.
 
 ## Instructions
 

@@ -1,6 +1,8 @@
 # Add a Python Analysis Tool
 
-Add a custom Python analysis script to `src/python-tools/` with auto-generated UI.
+Add a custom Python analysis script for MS data processing to `src/python-tools/` with auto-generated UI.
+
+Python tools handle analysis steps that aren't covered by TOPP tools — e.g., exporting consensus features to DataFrames, computing differential expression statistics, custom metabolite annotation, or post-processing identification results.
 
 ## Instructions
 
