@@ -22,3 +22,17 @@ patches:
       - op: replace
         path: /spec/rules/0/host
         value: template.openms.example.de
+  - target:
+      kind: Deployment
+      name: streamlit
+    patch: |
+      - op: replace
+        path: /spec/template/spec/containers/0/env/0/value
+        value: "redis://template-app-redis:6379/0"
+  - target:
+      kind: Deployment
+      name: rq-worker
+    patch: |
+      - op: replace
+        path: /spec/template/spec/containers/0/env/0/value
+        value: "redis://template-app-redis:6379/0"
