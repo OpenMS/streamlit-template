@@ -21,7 +21,10 @@ jobs:
 
       - name: Validate K8s manifests (base)
         run: |
-          kubeconform -summary -strict -kubernetes-version 1.28.0 -ignore-filename-pattern 'kustomization.yaml' k8s/base/*.yaml
+          kubeconform -summary -strict -kubernetes-version 1.28.0 \
+            -ignore-filename-pattern 'kustomization.yaml' \
+            -ignore-filename-pattern 'traefik-ingressroute.yaml' \
+            k8s/base/*.yaml
 
       - name: Install kubectl
         uses: azure/setup-kubectl@v3
@@ -33,7 +36,7 @@ jobs:
 
       - name: Validate kustomized output
         run: |
-          kubectl kustomize k8s/overlays/template-app/ | kubeconform -summary -strict -kubernetes-version 1.28.0
+          kubectl kustomize k8s/overlays/template-app/ | kubeconform -summary -strict -kubernetes-version 1.28.0 -skip IngressRoute
 
   integration-test:
     runs-on: ubuntu-latest
@@ -83,7 +86,9 @@ jobs:
       - name: Deploy with Kustomize
         if: steps.check.outputs.exists == 'true'
         run: |
+          # Filter out Traefik CRDs (kind cluster uses nginx, not Traefik)
           kubectl kustomize k8s/overlays/template-app/ | \
+            yq 'select(.kind != "IngressRoute")' | \
             sed 's|imagePullPolicy: IfNotPresent|imagePullPolicy: Never|g' > /tmp/manifests.yaml
           for i in 1 2 3 4 5; do
             if kubectl apply -f /tmp/manifests.yaml; then
