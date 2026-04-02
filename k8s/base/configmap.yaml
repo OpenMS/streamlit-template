@@ -1,0 +1,39 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: streamlit-config
+data:
+  settings.json: |
+    {
+      "app-name": "OpenMS WebApp Template",
+      "online_deployment": true,
+      "enable_workspaces": true,
+      "workspaces_dir": "..",
+      "queue_settings": {
+        "default_timeout": 7200,
+        "result_ttl": 86400
+      },
+      "demo_workspaces": {
+        "enabled": true,
+        "source_dirs": ["example-data/workspaces"]
+      },
+      "max_threads": {
+        "local": 4,
+        "online": 2
+      },
+      "analytics": {
+        "matomo": {
+          "enabled": true,
+          "url": "https://cdn.matomo.cloud/openms.matomo.cloud",
+          "tag": "yDGK8bfY"
+        },
+        "google-analytics": {
+          "enabled": false,
+          "tag": ""
+        },
+        "piwik-pro": {
+          "enabled": false,
+          "tag": ""
+        }
+      }
+    }
