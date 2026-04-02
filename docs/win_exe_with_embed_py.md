@@ -96,6 +96,12 @@ python -m pip install -r requirements.txt --target python-3.11.9/Lib/site-packag
    cp app.py ../streamlit_exe
    ```
 
+3. Remove the server address from the bundled config to use `localhost` (default) instead of `0.0.0.0`, which doesn't work as a connect address on Windows:
+
+   ```powershell
+   (Get-Content streamlit_exe/.streamlit/config.toml) -notmatch '^address' | Set-Content streamlit_exe/.streamlit/config.toml
+   ```
+
 #### 🚀 After successfully completing all these steps, the Streamlit app will be available by running the run_app.bat file.
 
 :pencil: You can still change the configuration of Streamlit app with .streamlit/config.toml file, e.g., provide a different port, change upload size, etc.
