@@ -32,6 +32,7 @@ spec:
           command: ["/bin/bash", "-c"]
           args:
             - |
+              set -euo pipefail
               source /root/miniforge3/bin/activate streamlit-env
               jq -s '.[0] * .[1]' /app/settings.json /app/settings-overrides.json > /tmp/settings-merged.json && mv /tmp/settings-merged.json /app/settings.json
               exec streamlit run app.py --server.address 0.0.0.0
