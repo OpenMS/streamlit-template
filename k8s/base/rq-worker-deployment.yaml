@@ -33,6 +33,7 @@ spec:
           args:
             - |
               source /root/miniforge3/bin/activate streamlit-env
+              jq -s '.[0] * .[1]' /app/settings.json /app/settings-overrides.json > /tmp/settings-merged.json && mv /tmp/settings-merged.json /app/settings.json
               exec rq worker openms-workflows --url $REDIS_URL
           env:
             - name: REDIS_URL
@@ -41,8 +42,8 @@ spec:
             - name: workspaces
               mountPath: /workspaces-streamlit-template
             - name: config
-              mountPath: /app/settings.json
-              subPath: settings.json
+              mountPath: /app/settings-overrides.json
+              subPath: settings-overrides.json
               readOnly: true
           resources:
             requests:
