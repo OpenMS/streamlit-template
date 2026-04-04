@@ -28,7 +28,7 @@ spec:
       containers:
         - name: rq-worker
           image: openms-streamlit
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
           command: ["/bin/bash", "-c"]
           args:
             - |

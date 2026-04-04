@@ -28,7 +28,7 @@ spec:
       containers:
         - name: streamlit
           image: openms-streamlit
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
           command: ["/bin/bash", "-c"]
           args:
             - |
