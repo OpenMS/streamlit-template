@@ -216,7 +216,7 @@ class CommandExecutor:
         stdout_thread.join()
         stderr_thread.join()
 
-    def run_topp(self, tool: str, input_output: dict, custom_params: dict = {}) -> bool:
+    def run_topp(self, tool: str, input_output: dict, custom_params: dict = {}, tool_instance_name: str = None) -> bool:
         """
         Constructs and executes commands for the specified tool OpenMS TOPP tool based on the given
         input and output configurations. Ensures that all input/output file lists
@@ -234,6 +234,9 @@ class CommandExecutor:
             tool (str): The executable name or path of the tool.
             input_output (dict): A dictionary specifying the input/output parameter names (as key) and their corresponding file paths (as value).
             custom_params (dict): A dictionary of custom parameters to pass to the tool.
+            tool_instance_name (str, optional): A unique instance name for this tool
+                invocation, used for parameter lookup when multiple instances of the
+                same tool exist. If not provided, defaults to the tool name.
 
         Returns:
             bool: True if all commands succeeded, False if any failed.
@@ -242,6 +245,8 @@ class CommandExecutor:
             ValueError: If the lengths of input/output file lists are inconsistent,
                         except for single string inputs.
         """
+        # Use tool_instance_name for parameter lookup, fall back to tool name
+        params_key = tool_instance_name if tool_instance_name else tool
         # check input: any input lists must be same length, other items can be a single string
         # e.g. input_mzML : [list of n mzML files], output_featureXML : [list of n featureXML files], input_database : database.tsv
         io_lengths = [len(v) for v in input_output.values() if len(v) > 1]
@@ -261,8 +266,8 @@ class CommandExecutor:
 
         commands = []
 
-        # Load parameters for non-defaults
-        params = self.parameter_manager.get_parameters_from_json()
+        # Load merged parameters (_defaults + user overrides) for this tool instance
+        merged_params = self.parameter_manager.get_merged_params(params_key)
         # Construct commands for each process
         for i in range(n_processes):
             command = [tool]
@@ -281,17 +286,16 @@ class CommandExecutor:
                 # standard case, files was a list of strings, take the file name at index
                 else:
                     command += [value[i]]
-            # Add non-default TOPP tool parameters
-            if tool in params.keys():
-                for k, v in params[tool].items():
-                    command += [f"-{k}"]
-                    # Skip only empty strings (pass flag with no value)
-                    # Note: 0 and 0.0 are valid values, so use explicit check
-                    if v != "" and v is not None:
-                        if isinstance(v, str) and "\n" in v:
-                            command += v.split("\n")
-                        else:
-                            command += [str(v)]
+            # Add merged TOPP tool parameters (_defaults + user overrides)
+            for k, v in merged_params.items():
+                command += [f"-{k}"]
+                # Skip only empty strings (pass flag with no value)
+                # Note: 0 and 0.0 are valid values, so use explicit check
+                if v != "" and v is not None:
+                    if isinstance(v, str) and "\n" in v:
+                        command += v.split("\n")
+                    else:
+                        command += [str(v)]
             # Add custom parameters
             for k, v in custom_params.items():
                 command += [f"-{k}"]
@@ -305,11 +309,6 @@ class CommandExecutor:
             # Add threads parameter for TOPP tools
             command += ["-threads", str(threads_per_command)]
             commands.append(command)
-
-            # check if a ini file has been written, if yes use it (contains custom defaults)
-            ini_path = Path(self.parameter_manager.ini_dir, tool + ".ini")
-            if ini_path.exists():
-                command += ["-ini", str(ini_path)]
 
         # Run command(s)
         if len(commands) == 1:

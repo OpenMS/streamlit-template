@@ -616,6 +616,7 @@ class StreamlitUI:
         display_subsections: bool = True,
         display_subsection_tabs: bool = False,
         custom_defaults: dict = {},
+        tool_instance_name: str = None,
     ) -> None:
         """
         Generates input widgets for TOPP tool parameters dynamically based on the tool's
@@ -631,29 +632,43 @@ class StreamlitUI:
             display_subsections (bool, optional): Whether to split parameters into subsections based on the prefix. Defaults to True.
             display_subsection_tabs (bool, optional): Whether to display main subsections in separate tabs (if more than one main section). Defaults to False.
             custom_defaults (dict, optional): Dictionary of custom defaults to use. Defaults to an empty dict.
+            tool_instance_name (str, optional): A unique instance name for this tool
+                invocation. Allows multiple instances of the same TOPP tool with
+                independent parameters (e.g., two IDFilter calls). If not provided,
+                defaults to topp_tool_name. The instance name is used for session
+                state keys and parameter storage, while topp_tool_name is used for
+                the actual tool executable and ini file creation.
         """
+        # Default instance name to the tool name when not provided
+        if tool_instance_name is None:
+            tool_instance_name = topp_tool_name
+
+        # Register instance-name → real-tool-name mapping in session state
+        if "_topp_tool_instance_map" not in st.session_state:
+            st.session_state["_topp_tool_instance_map"] = {}
+        st.session_state["_topp_tool_instance_map"][tool_instance_name] = topp_tool_name
 
         if not display_subsections:
             display_subsection_tabs = False
         if display_subsection_tabs:
             display_subsections = True
 
-        # write defaults ini files
+        # Create pristine ini file (never mutated with custom defaults)
         ini_file_path = Path(self.parameter_manager.ini_dir, f"{topp_tool_name}.ini")
-        ini_existed = ini_file_path.exists()
         if not self.parameter_manager.create_ini(topp_tool_name):
             st.error(f"TOPP tool **'{topp_tool_name}'** not found.")
             return
-        if not ini_existed:
-            # update custom defaults if necessary
-            if custom_defaults:
-                param = poms.Param()
-                poms.ParamXMLFile().load(str(ini_file_path), param)
-                for key, value in custom_defaults.items():
-                    encoded_key = f"{topp_tool_name}:1:{key}".encode()
-                    if encoded_key in param.keys():
-                        param.setValue(encoded_key, value)
-                poms.ParamXMLFile().store(str(ini_file_path), param)
+
+        # Seed custom defaults into params.json under _defaults key
+        if custom_defaults:
+            params = self.parameter_manager.get_parameters_from_json()
+            if "_defaults" not in params:
+                params["_defaults"] = {}
+            params["_defaults"][tool_instance_name] = custom_defaults
+            with open(self.parameter_manager.params_file, "w", encoding="utf-8") as f:
+                json.dump(params, f, indent=4)
+            # Refresh self.params so widget resolution sees _defaults
+            self.params = self.parameter_manager.get_parameters_from_json()
 
         # read into Param object
         param = poms.Param()
@@ -730,18 +745,18 @@ class StreamlitUI:
                 )
             params.append(p)
 
-        # for each parameter in params_decoded
-        # if a parameter with custom default value exists, use that value
-        # else check if the parameter is already in self.params, if yes take the value from self.params
+        # Build ini_params dict for three-layer merge
+        ini_params = {}
         for p in params:
             name = p["key"].decode().split(":1:")[1]
-            if topp_tool_name in self.params:
-                if name in self.params[topp_tool_name]:
-                    p["value"] = self.params[topp_tool_name][name]
-                elif name in custom_defaults:
-                    p["value"] = custom_defaults[name]
-            elif name in custom_defaults:
-                p["value"] = custom_defaults[name]
+            ini_params[name] = p["value"]
+
+        # Resolve effective values: ini < _defaults < user overrides
+        merged = self.parameter_manager.get_merged_params(tool_instance_name, ini_params=ini_params)
+        for p in params:
+            name = p["key"].decode().split(":1:")[1]
+            if name in merged:
+                p["value"] = merged[name]
             # Ensure list parameters stay as lists after loading from JSON
             # (JSON may store single-item lists as strings)
             if p["original_is_list"] and isinstance(p["value"], str):
@@ -775,7 +790,7 @@ class StreamlitUI:
 
         # Display tool name if required
         if display_tool_name:
-            st.markdown(f"**{topp_tool_name}**")
+            st.markdown(f"**{tool_instance_name}**")
 
         tab_names = [k for k in param_sections.keys() if ":" not in k]
         tabs = None
@@ -803,8 +818,11 @@ class StreamlitUI:
             cols = st.columns(num_cols)
             i = 0
             for p in params:
-                # get key and name
-                key = f"{self.parameter_manager.topp_param_prefix}{p['key'].decode()}"
+                # get key and name – use tool_instance_name in session state key
+                key_str = p['key'].decode()
+                if tool_instance_name != topp_tool_name:
+                    key_str = key_str.replace(f"{topp_tool_name}:1:", f"{tool_instance_name}:1:", 1)
+                key = f"{self.parameter_manager.topp_param_prefix}{key_str}"
                 name = p["name"]
                 try:
                     # sometimes strings with newline, handle as list
@@ -1371,7 +1389,8 @@ Started: {status.get('started_at', 'N/A')}""")
         general = {}
 
         for k, v in params.items():
-            # skip if v is a file path
+            if k == "_defaults":
+                continue
             if isinstance(v, dict):
                 topp[k] = v
             elif ".py" in k:
@@ -1381,6 +1400,13 @@ Started: {status.get('started_at', 'N/A')}""")
                 python[script][k.split(".py")[1][1:]] = v
             else:
                 general[k] = v
+
+        # Merge _defaults into topp so summary shows custom defaults + user overrides
+        defaults = params.get("_defaults", {})
+        for tool_name, default_vals in defaults.items():
+            if tool_name not in topp:
+                topp[tool_name] = {}
+            topp[tool_name] = {**default_vals, **topp.get(tool_name, {})}
 
         markdown = []
 
