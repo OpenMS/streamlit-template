@@ -310,11 +310,6 @@ class CommandExecutor:
             command += ["-threads", str(threads_per_command)]
             commands.append(command)
 
-            # check if a ini file has been written, if yes use it (contains custom defaults)
-            ini_path = Path(self.parameter_manager.ini_dir, tool + ".ini")
-            if ini_path.exists():
-                command += ["-ini", str(ini_path)]
-
         # Run command(s)
         if len(commands) == 1:
             return self.run_command(commands[0])
