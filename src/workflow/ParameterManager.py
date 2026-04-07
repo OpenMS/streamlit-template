@@ -65,7 +65,7 @@ class ParameterManager:
         # Advanced parameters are only in session state if the view is active
         json_params = self.get_parameters_from_json() | json_params
 
-        # get a list of TOPP tools which are in session state
+        # get a list of TOPP tools (or tool instance names) which are in session state
         current_topp_tools = list(
             set(
                 [
@@ -75,12 +75,16 @@ class ParameterManager:
                 ]
             )
         )
-        # for each TOPP tool, open the ini file
+        # Retrieve the instance-name → real-tool-name mapping (set by input_TOPP)
+        tool_instance_map = st.session_state.get("_topp_tool_instance_map", {})
+        # for each TOPP tool (or instance name), open the ini file
         for tool in current_topp_tools:
-            if not self.create_ini(tool):
+            # Resolve instance name to real tool name for create_ini / ini loading
+            real_tool = tool_instance_map.get(tool, tool)
+            if not self.create_ini(real_tool):
                 # Could not create ini file - skip this tool
                 continue
-            ini_path = Path(self.ini_dir, f"{tool}.ini")
+            ini_path = Path(self.ini_dir, f"{real_tool}.ini")
             if tool not in json_params:
                 json_params[tool] = {}
             # load the param object
@@ -92,19 +96,26 @@ class ParameterManager:
                     # Skip display keys used by multiselect widgets
                     if key.endswith("_display"):
                         continue
-                    # get ini_key
-                    ini_key = key.replace(self.topp_param_prefix, "").encode()
+                    # get ini_key – map instance name back to real tool name
+                    ini_key = key.replace(self.topp_param_prefix, "")
+                    if tool != real_tool:
+                        ini_key = ini_key.replace(f"{tool}:1:", f"{real_tool}:1:", 1)
+                    ini_key = ini_key.encode()
                     # get ini (default) value by ini_key
                     ini_value = param.getValue(ini_key)
                     is_list_param = isinstance(ini_value, list)
-                    # check if value is different from default OR is an empty list parameter
+                    # Effective default: _defaults value if present, else ini value
+                    short_key = key.split(":1:")[1]
+                    defaults = json_params.get("_defaults", {}).get(tool, {})
+                    default_value = defaults.get(short_key, ini_value)
+                    # check if value is different from effective default OR is an empty list parameter
                     if (
-                        (ini_value != value)
-                        or (key.split(":1:")[1] in json_params[tool])
+                        (default_value != value)
+                        or (short_key in json_params[tool])
                         or (is_list_param and not value)  # Always save empty list params
                     ):
                         # store non-default value
-                        json_params[tool][key.split(":1:")[1]] = value
+                        json_params[tool][short_key] = value
         # Save to json file
         with open(self.params_file, "w", encoding="utf-8") as f:
             json.dump(json_params, f, indent=4)
@@ -130,17 +141,44 @@ class ParameterManager:
                 st.error("**ERROR**: Attempting to load an invalid JSON parameter file. Reset to defaults.")
                 return {}
 
-    def get_topp_parameters(self, tool: str) -> dict:
+    def get_merged_params(self, tool_instance_name: str, ini_params: dict = None) -> dict:
+        """
+        Three-layer parameter merge: ini defaults < _defaults < user overrides.
+
+        Args:
+            tool_instance_name: Instance name (or tool name) to look up in params.json.
+            ini_params: Base parameters from the .ini file. Optional — callers that
+                don't need the ini layer (e.g., run_topp, which passes -ini separately)
+                can omit this.
+
+        Returns:
+            Merged dict with the effective value for each parameter.
+        """
+        params = self.get_parameters_from_json()
+        defaults = params.get("_defaults", {}).get(tool_instance_name, {})
+        user = params.get(tool_instance_name, {})
+
+        merged = {}
+        if ini_params:
+            merged.update(ini_params)
+        merged.update(defaults)
+        merged.update(user)
+        return merged
+
+    def get_topp_parameters(self, tool: str, tool_instance_name: str = None) -> dict:
         """
         Get all parameters for a TOPP tool, merging defaults with user values.
 
         Args:
-            tool: Name of the TOPP tool (e.g., "CometAdapter")
+            tool: Name of the TOPP tool executable (e.g., "CometAdapter")
+            tool_instance_name: Optional instance name used for parameter storage
+                (e.g., "IDFilter_step1"). If not provided, defaults to tool name.
 
         Returns:
             Dict with parameter names as keys (without tool prefix) and their values.
             Returns empty dict if ini file doesn't exist.
         """
+        instance_name = tool_instance_name or tool
         ini_path = Path(self.ini_dir, f"{tool}.ini")
         if not ini_path.exists():
             return {}
@@ -151,18 +189,14 @@ class ParameterManager:
 
         # Build dict from ini (extract short key names)
         prefix = f"{tool}:1:"
-        full_params = {}
+        ini_params = {}
         for key in param.keys():
             key_str = key.decode() if isinstance(key, bytes) else str(key)
             if prefix in key_str:
                 short_key = key_str.split(prefix, 1)[1]
-                full_params[short_key] = param.getValue(key)
+                ini_params[short_key] = param.getValue(key)
 
-        # Override with user-modified values from JSON
-        user_params = self.get_parameters_from_json().get(tool, {})
-        full_params.update(user_params)
-
-        return full_params
+        return self.get_merged_params(instance_name, ini_params=ini_params)
 
     def reset_to_default_parameters(self) -> None:
         """
