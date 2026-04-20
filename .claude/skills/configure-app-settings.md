@@ -1,6 +1,6 @@
-# Configure Deployment
+# Configure App Settings
 
-Set up Docker, settings, and CI/CD configuration for a new or forked app.
+Set up app-level configuration (settings, Dockerfile, README) for a new or forked OpenMS streamlit app. Run before `configure-docker-compose-deployment` or `configure-k8s-deployment`.
 
 ## Instructions
 
@@ -12,18 +12,18 @@ Set up Docker, settings, and CI/CD configuration for a new or forked app.
 
 2. **Update `settings.json`**:
 
-```json
-{
-    "app-name": "Your App Name",
-    "github-user": "YourGitHubUser",
-    "repository-name": "your-repo-name",
-    "version": "0.1.0",
-    "online_deployment": false,
-    "enable_workspaces": true
-}
-```
+    ```json
+    {
+        "app-name": "Your App Name",
+        "github-user": "YourGitHubUser",
+        "repository-name": "your-repo-name",
+        "version": "0.1.0",
+        "online_deployment": false,
+        "enable_workspaces": true
+    }
+    ```
 
-Key fields: `app-name`, `github-user`, `repository-name`, `version`, `online_deployment`, `max_threads`.
+    Key fields: `app-name`, `github-user`, `repository-name`, `version`, `online_deployment`, `enable_workspaces`. `max_threads` (a nested object with `local`/`online` keys in `settings.json`) caps worker parallelism — tune it if your cluster or host has specific CPU constraints.
 
 3. **Choose and update Dockerfile**:
 
@@ -36,30 +36,7 @@ Key fields: `app-name`, `github-user`, `repository-name`, `version`, `online_dep
      - `GITHUB_USER` and `GITHUB_REPO` environment variables
      - Python dependencies in `requirements.txt`
 
-4. **Update `docker-compose.yml`**:
-
-```yaml
-services:
-  your-app-name:
-    build: .
-    ports:
-      - "8501:8501"
-    volumes:
-      - workspaces-your-repo-name:/workspaces-your-repo-name
-
-volumes:
-  workspaces-your-repo-name:
-```
-
-Service name and volume name should use the repository name.
-
-5. **Update `clean-up-workspaces.py`**:
-
-```python
-workspaces_directory = Path("/workspaces-your-repo-name")
-```
-
-6. **Update `README.md`** with the new app name, description, and instructions.
+4. **Update `README.md`** with the new app name, description, and instructions.
 
 ## Dockerfile Decision Guide
 
@@ -72,11 +49,8 @@ workspaces_directory = Path("/workspaces-your-repo-name")
 ## Reference Files
 
 - App settings: `settings.json`
-- Docker: `Dockerfile`, `Dockerfile_simple`, `docker-compose.yml`
+- Docker: `Dockerfile`, `Dockerfile_simple`
 - Build docs: `docs/build_app.md`
-- Deployment docs: `docs/deployment.md`
-- CI/CD: `.github/workflows/` (Docker build, Windows exe, linting, tests)
-- Workspace cleanup: `clean-up-workspaces.py`
 
 ## Real-World Examples
 
@@ -87,8 +61,10 @@ workspaces_directory = Path("/workspaces-your-repo-name")
 ## Checklist
 
 - [ ] `settings.json` updated with app name, GitHub user/repo, version
-- [ ] Correct Dockerfile chosen and configured (GITHUB_USER, GITHUB_REPO)
-- [ ] `docker-compose.yml` updated with service name and volume
-- [ ] `clean-up-workspaces.py` updated with workspace directory path
+- [ ] Correct Dockerfile chosen and configured (`GITHUB_USER`, `GITHUB_REPO`)
 - [ ] `requirements.txt` or `environment.yml` updated with dependencies
 - [ ] `README.md` updated
+
+## Next Steps
+
+Run `configure-docker-compose-deployment` and/or `configure-k8s-deployment` to set up the deployment path(s).
