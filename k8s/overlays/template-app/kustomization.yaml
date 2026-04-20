@@ -12,7 +12,7 @@ commonLabels:
 images:
   - name: openms-streamlit
     newName: ghcr.io/openms/streamlit-template
-    newTag: main
+    newTag: main-full
 
 patches:
   - target:
