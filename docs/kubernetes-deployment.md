@@ -221,4 +221,4 @@ If you are using Claude Code, two skills automate this entire flow end-to-end:
   - Creates a kind cluster, loads the image, installs the nginx ingress controller.
   - Applies the kustomized manifests with the Traefik IngressRoute filtered out (the kind cluster does not have Traefik CRDs).
   - Waits for Redis and the deployments to become available.
-- **PR behavior:** both jobs run on pull requests; an integration-test failure blocks merge.
+- **PR behavior:** both jobs run on pull requests. If branch protection requires these checks, a failure will block merge; otherwise the check failure is surfaced but non-blocking.
