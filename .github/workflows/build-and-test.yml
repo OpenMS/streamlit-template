@@ -87,9 +87,7 @@ jobs:
           file: ${{ matrix.dockerfile }}
           load: true
           push: ${{ github.event_name != 'pull_request' }}
-          tags: |
-            ${{ steps.meta.outputs.tags }}
-            openms-streamlit:${{ matrix.variant }}-test
+          tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME_LC }}/cache:${{ matrix.variant }}
           cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref={0}/{1}/cache:{2},mode=max', env.REGISTRY, env.IMAGE_NAME_LC, matrix.variant) || '' }}
@@ -97,7 +95,11 @@ jobs:
             GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}
 
       - name: Retag for kind (stable local tag)
-        run: docker tag openms-streamlit:${{ matrix.variant }}-test openms-streamlit:test
+        run: |
+          # load:true above loaded all meta-action tags into local docker.
+          # Retag the first one to the stable name the kustomize overlay expects.
+          FIRST_TAG=$(printf '%s\n' "${{ steps.meta.outputs.tags }}" | head -n 1)
+          docker tag "$FIRST_TAG" openms-streamlit:test
 
       - name: Create kind cluster
         uses: helm/kind-action@v1
