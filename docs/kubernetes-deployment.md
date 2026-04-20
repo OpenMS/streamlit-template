@@ -84,7 +84,7 @@ Co-location is a placement constraint, not a replica cap. The Streamlit deployme
 
 ### Ingress
 
-Production deployments use the Traefik `IngressRoute`. The nginx `Ingress` is kept in `k8s/base/` because the CI integration test (`.github/workflows/k8s-manifests-ci.yml`) uses a kind cluster with an nginx ingress controller and filters out Traefik CRDs at apply time.
+Production deployments use the Traefik `IngressRoute`. The nginx `Ingress` is kept in `k8s/base/` because the CI integration test inside `.github/workflows/build-and-test.yml` uses a kind cluster with an nginx ingress controller and filters out Traefik CRDs at apply time.
 
 ## 3. Manifest reference (`k8s/base/`)
 
@@ -153,7 +153,7 @@ Update `settings.json`, choose a Dockerfile, and update `README.md`. If you are 
 
 ### Step 2 — Let CI build the image
 
-Push your changes to `main` or create a tag. The workflow `.github/workflows/build-and-push-image.yml` builds the image from `Dockerfile` and pushes it to `ghcr.io/<your-org>/<your-repo>` with tags derived from the branch, semver, and commit SHA.
+Push your changes to `main` or create a tag. The workflow `.github/workflows/build-and-test.yml` builds both the full (`Dockerfile`) and lightweight (`Dockerfile_simple`) variants and pushes each to `ghcr.io/<your-org>/<your-repo>` with variant-suffixed tags: `<branch>-full` / `<branch>-simple`, `v<version>-full` / `v<version>-simple`, and `<sha>-full` / `<sha>-simple`. The unsuffixed `latest` tag tracks the full variant on `main`.
 
 ### Step 3 — Create your overlay
 
@@ -170,7 +170,7 @@ Open `k8s/overlays/<your-app-name>/kustomization.yaml` and change the following 
 | `namePrefix` | `<your-app-name>-` (trailing dash) |
 | `commonLabels.app` | `<your-app-name>` |
 | `images[0].newName` | `ghcr.io/<your-org>/<your-repo>` |
-| `images[0].newTag` | `main` or a specific version tag |
+| `images[0].newTag` | `main-full` for the latest `main` build, or `v<version>-full` / `v<version>-simple` to pin a release. Use `-simple` variants if your app does not need the full TOPP toolchain. |
 | Hostname inside the IngressRoute `match` expression's `Host(...)` | your deployment hostname (e.g. `myapp.webapps.openms.de`) |
 | IngressRoute service name reference (`template-app-streamlit`) | `<your-app-name>-streamlit` |
 | Redis URL in both Deployment patches (`redis://template-app-redis:6379/0`) | `redis://<your-app-name>-redis:6379/0` |
@@ -201,24 +201,28 @@ If you are using Claude Code, two skills automate this entire flow end-to-end:
 
 ## 5. CI/CD pipeline
 
-### `build-and-push-image.yml`
+### `build-and-test.yml`
 
-- **Trigger:** push to `main`, push of a `v*` tag, or manual workflow dispatch.
-- **Image name:** `ghcr.io/${{ github.repository }}`.
-- **Dockerfile:** `Dockerfile` (full build with TOPP tools).
-- **Tags:** branch name, semver (when a tag is pushed), short commit SHA.
-- **Auth:** uses the workflow's `GITHUB_TOKEN` for GHCR login; also passes it as a build argument for in-image private-resource access.
+One unified workflow owns manifest lint, Docker build, push, and kind integration.
 
-### `k8s-manifests-ci.yml`
-
-- **Trigger:** any push or pull request that touches `k8s/**`.
-- **Job 1 — `validate-manifests`:**
+- **Trigger:** pull request to `main`, push to `main`, push of a `v*` tag, or manual workflow dispatch.
+- **Job 1 — `lint-manifests`:**
   - `kubeconform` runs against `k8s/base/*.yaml` with strict mode and Kubernetes 1.28 schemas (excluding `kustomization.yaml` and the Traefik CRD `traefik-ingressroute.yaml`).
-  - `kubectl kustomize k8s/overlays/template-app/` must succeed.
-  - The kustomized output is re-validated through `kubeconform` (with `IngressRoute` skipped, since it is a CRD).
-- **Job 2 — `integration-test`** (matrix over the two Dockerfile variants):
-  - Builds the image from `Dockerfile` or `Dockerfile_simple`.
-  - Creates a kind cluster, loads the image, installs the nginx ingress controller.
-  - Applies the kustomized manifests with the Traefik IngressRoute filtered out (the kind cluster does not have Traefik CRDs).
-  - Waits for Redis and the deployments to become available.
-- **PR behavior:** both jobs run on pull requests. If branch protection requires these checks, a failure will block merge; otherwise the check failure is surfaced but non-blocking.
+  - `kubectl kustomize k8s/overlays/template-app/` must succeed; the kustomized output is re-validated through `kubeconform` (with `IngressRoute` skipped).
+  - Takes ~30s. Fails fast so manifest typos never trigger the hours-long full Docker build.
+- **Job 2 — `build`** (`needs: lint-manifests`, matrix over `[full, simple]`):
+  - Builds `Dockerfile` (full, includes TOPP tools) or `Dockerfile_simple` (pyOpenMS only) depending on the matrix leg.
+  - **Buildx registry cache** (`type=registry,…,mode=max`) stored at `ghcr.io/<repo>/cache:full` and `:simple`. A `cache-from` read is attempted on every event; `cache-to` write only on push/tag/workflow_dispatch (fork PRs can't write). Repeat builds with an unchanged Dockerfile finish in minutes.
+  - **Push** on push/tag/workflow_dispatch events (not on PRs). Tags: `<branch>-full` / `<branch>-simple`, `v<version>-full` / `v<version>-simple`, `<sha>-full` / `<sha>-simple`. `latest` is emitted only for the full variant on push to `main`.
+  - **Kind integration** runs per variant: creates a kind cluster, loads the just-built image, installs the nginx ingress controller, applies the kustomized `template-app` overlay (filtering Traefik `IngressRoute`, forcing `imagePullPolicy: Never`), and asserts Redis + deployments become ready.
+- **Auth:** uses the workflow's `GITHUB_TOKEN` for GHCR login and as a build argument for in-image private-resource access. Fork PRs skip login (their `GITHUB_TOKEN` is read-only) but can still read the public cache.
+- **PR behavior:** both jobs run on pull requests. No tags are pushed and no cache is written. The kind integration still runs, exercising manifests end-to-end. If branch protection requires these checks, a failure blocks merge.
+
+### `ghcr-cleanup.yml`
+
+Scheduled retention policy that keeps GHCR tidy.
+
+- **Trigger:** Sundays 03:00 UTC (cron), plus manual `workflow_dispatch` with a `dry-run` input (default `false`; set to `true` to preview deletions without acting).
+- **Policy (`ghcr.io/<repo>`):** delete `<sha>-full` / `<sha>-simple` tags older than 30 days. Preserve `v*-full` / `v*-simple`, `main-full` / `main-simple`, and `latest` indefinitely. Delete untagged manifests older than 7 days.
+- **Policy (`ghcr.io/<repo>/cache`):** delete untagged cache manifests older than 7 days. The active `full` and `simple` cache tags are never deleted (buildx overwrites them in place).
+- **Failure isolation:** not in `needs:` of any other workflow. Cleanup failures never block merges. The job uses `snok/container-retention-policy@v3`.
