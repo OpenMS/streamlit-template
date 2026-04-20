@@ -23,7 +23,7 @@ Set up app-level configuration (settings, Dockerfile, README) for a new or forke
     }
     ```
 
-    Key fields: `app-name`, `github-user`, `repository-name`, `version`, `online_deployment`, `max_threads`.
+    Key fields: `app-name`, `github-user`, `repository-name`, `version`, `online_deployment`, `enable_workspaces`. `max_threads` (a nested object with `local`/`online` keys in `settings.json`) caps worker parallelism — tune it if your cluster or host has specific CPU constraints.
 
 3. **Choose and update Dockerfile**:
 
