@@ -92,3 +92,48 @@ jobs:
           cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref={0}/{1}/cache:{2},mode=max', env.REGISTRY, env.IMAGE_NAME, matrix.variant) || '' }}
           build-args: |
             GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}
+
+      - name: Retag for kind (stable local tag)
+        run: docker tag openms-streamlit:${{ matrix.variant }}-test openms-streamlit:test
+
+      - name: Create kind cluster
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: test-cluster
+
+      - name: Load image into kind cluster
+        run: kind load docker-image openms-streamlit:test --name test-cluster
+
+      - name: Install nginx ingress controller
+        run: |
+          kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
+          kubectl wait --namespace ingress-nginx --for=condition=ready pod --selector=app.kubernetes.io/component=controller --timeout=90s
+
+      - name: Deploy with Kustomize
+        run: |
+          # Filter out Traefik IngressRoute (kind cluster uses nginx) and force imagePullPolicy=Never
+          kubectl kustomize k8s/overlays/template-app/ | \
+            yq 'select(.kind != "IngressRoute")' | \
+            sed 's|imagePullPolicy: IfNotPresent|imagePullPolicy: Never|g' > /tmp/manifests.yaml
+          for i in 1 2 3 4 5; do
+            if kubectl apply -f /tmp/manifests.yaml; then
+              echo "Deploy succeeded on attempt $i"
+              break
+            fi
+            echo "Attempt $i failed, retrying in ${i}0s..."
+            sleep "${i}0"
+          done
+
+      - name: Wait for Redis to be ready
+        run: |
+          kubectl wait -n openms --for=condition=ready pod -l app=template-app,component=redis --timeout=60s
+
+      - name: Verify Redis Service is reachable
+        run: |
+          kubectl run redis-test -n openms --image=redis:7-alpine --rm -i --restart=Never -- redis-cli -h template-app-redis.openms.svc.cluster.local ping
+
+      - name: Verify all deployments are available
+        run: |
+          kubectl wait -n openms --for=condition=available deployment -l app=template-app --timeout=120s || true
+          kubectl get pods -n openms -l app=template-app
+          kubectl get services -n openms -l app=template-app
