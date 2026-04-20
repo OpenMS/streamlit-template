@@ -65,3 +65,30 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch,suffix=-${{ matrix.variant }}
+            type=ref,event=tag,suffix=-${{ matrix.variant }}
+            type=sha,prefix=,suffix=-${{ matrix.variant }}
+            type=raw,value=latest,enable=${{ matrix.variant == 'full' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+
+      - name: Build and conditionally push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          load: true
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: |
+            ${{ steps.meta.outputs.tags }}
+            openms-streamlit:${{ matrix.variant }}-test
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/cache:${{ matrix.variant }}
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref={0}/{1}/cache:{2},mode=max', env.REGISTRY, env.IMAGE_NAME, matrix.variant) || '' }}
+          build-args: |
+            GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}
