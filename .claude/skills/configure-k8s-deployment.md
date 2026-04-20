@@ -18,7 +18,7 @@ Run `configure-app-settings` first. This skill assumes `settings.json`, the Dock
 
 1. **Let CI build and push the image.**
 
-   Push your changes to `main` or create a tag. The workflow `.github/workflows/build-and-push-image.yml` publishes the image to `ghcr.io/<your-org>/<your-repo>:<tag>`.
+   Push your changes to `main` or create a tag. The workflow `.github/workflows/build-and-test.yml` builds both the full and lightweight (`-simple`) variants and publishes them to `ghcr.io/<your-org>/<your-repo>:<tag>-full` and `:<tag>-simple` respectively. The unsuffixed `latest` tag tracks the full variant on the `main` branch.
 
 2. **Copy the template overlay.**
 
@@ -65,7 +65,7 @@ Run `configure-app-settings` first. This skill assumes `settings.json`, the Dock
 
 - Overlay template: `k8s/overlays/template-app/kustomization.yaml`
 - Base manifests: `k8s/base/*.yaml`
-- CI: `.github/workflows/build-and-push-image.yml`, `.github/workflows/k8s-manifests-ci.yml`
+- CI: `.github/workflows/build-and-test.yml` (unified build + lint + kind integration), `.github/workflows/ghcr-cleanup.yml` (scheduled tag retention)
 - Full reference: see the "Developers Guide: Kubernetes Deployment" Documentation page in the running Streamlit app.
 
 ## Checklist
