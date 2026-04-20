@@ -198,3 +198,27 @@ If you are using Claude Code, two skills automate this entire flow end-to-end:
 
 - `configure-app-settings` — `settings.json`, Dockerfile, README.
 - `configure-k8s-deployment` — the overlay + `kubectl apply` steps above.
+
+## 5. CI/CD pipeline
+
+### `build-and-push-image.yml`
+
+- **Trigger:** push to `main`, push of a `v*` tag, or manual workflow dispatch.
+- **Image name:** `ghcr.io/${{ github.repository }}`.
+- **Dockerfile:** `Dockerfile` (full build with TOPP tools).
+- **Tags:** branch name, semver (when a tag is pushed), short commit SHA.
+- **Auth:** uses the workflow's `GITHUB_TOKEN` for GHCR login; also passes it as a build argument for in-image private-resource access.
+
+### `k8s-manifests-ci.yml`
+
+- **Trigger:** any push or pull request that touches `k8s/**`.
+- **Job 1 — `validate-manifests`:**
+  - `kubeconform` runs against `k8s/base/*.yaml` with strict mode and Kubernetes 1.28 schemas (excluding `kustomization.yaml` and the Traefik CRD `traefik-ingressroute.yaml`).
+  - `kubectl kustomize k8s/overlays/template-app/` must succeed.
+  - The kustomized output is re-validated through `kubeconform` (with `IngressRoute` skipped, since it is a CRD).
+- **Job 2 — `integration-test`** (matrix over the two Dockerfile variants):
+  - Builds the image from `Dockerfile` or `Dockerfile_simple`.
+  - Creates a kind cluster, loads the image, installs the nginx ingress controller.
+  - Applies the kustomized manifests with the Traefik IngressRoute filtered out (the kind cluster does not have Traefik CRDs).
+  - Waits for Redis and the deployments to become available.
+- **PR behavior:** both jobs run on pull requests; an integration-test failure blocks merge.
