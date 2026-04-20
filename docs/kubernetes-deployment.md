@@ -85,3 +85,54 @@ Co-location is a placement constraint, not a replica cap. The Streamlit deployme
 ### Ingress
 
 Production deployments use the Traefik `IngressRoute`. The nginx `Ingress` is kept in `k8s/base/` because the CI integration test (`.github/workflows/k8s-manifests-ci.yml`) uses a kind cluster with an nginx ingress controller and filters out Traefik CRDs at apply time.
+
+## 3. Manifest reference (`k8s/base/`)
+
+### `namespace.yaml`
+Creates the `openms` namespace. All resources deploy into it.
+
+### `configmap.yaml`
+`streamlit-config` ConfigMap holding `settings-overrides.json`, merged into the app's `settings.json` at pod startup. Currently sets `online_deployment: true`.
+
+### `redis.yaml`
+Redis 7 Deployment (1 replica) + ClusterIP Service on port 6379. Backs the RQ job queue. Low resource requests (64Mi / 50m CPU).
+
+### `workspace-pvc.yaml`
+PersistentVolumeClaim `workspaces-pvc`:
+- `accessModes: [ReadWriteOnce]`
+- `storageClassName: cinder-csi`
+- `resources.requests.storage: 500Gi`
+
+### `streamlit-deployment.yaml`
+Main Streamlit Deployment. Key fields:
+- `replicas: 2` (scales to N)
+- `image: openms-streamlit` — replaced per app via Kustomize image transformer
+- Env: `REDIS_URL`, `WORKSPACES_DIR`
+- Mounts the workspace PVC at `/workspaces-streamlit-template`
+- Mounts `settings-overrides.json` from the ConfigMap as a `subPath`
+- Readiness and liveness probes hit `/_stcore/health`
+- Pod affinity: `volume-group: workspaces`
+
+### `streamlit-service.yaml`
+ClusterIP Service exposing Streamlit on port 8501.
+
+### `rq-worker-deployment.yaml`
+RQ worker Deployment (1 replica). Runs `rq worker openms-workflows --url $REDIS_URL`. Shares the workspace PVC via the same `volume-group: workspaces` affinity rule.
+
+### `cleanup-cronjob.yaml`
+CronJob that runs `python clean-up-workspaces.py` nightly at 03:00 UTC. Uses `concurrencyPolicy: Forbid`, retains 3 successful and 3 failed jobs. Shares the workspace PVC.
+
+### `ingress.yaml`
+nginx `Ingress` with:
+- WebSocket support (required by Streamlit)
+- Sticky sessions via the `stroute` cookie
+- Unlimited upload body size
+- Disabled proxy buffering
+
+Used by the kind CI integration test. Production overlays do not typically patch this.
+
+### `traefik-ingressroute.yaml`
+Traefik `IngressRoute` CRD. The default rule matches `PathPrefix('/')` (all paths) on the `web` entryPoint with a sticky `stroute` cookie. Overlays patch the `Host()` match expression and the service name to scope the route to a particular app.
+
+### `kustomization.yaml`
+Lists all base resources under the `openms` namespace.
