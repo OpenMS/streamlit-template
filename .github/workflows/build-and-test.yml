@@ -1,0 +1,39 @@
+name: Build and Test
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  lint-manifests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install kubeconform
+        run: |
+          curl -sSL https://github.com/yannh/kubeconform/releases/latest/download/kubeconform-linux-amd64.tar.gz | tar xz
+          sudo mv kubeconform /usr/local/bin/
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v3
+
+      - name: Validate base manifests
+        run: |
+          kubeconform -summary -strict -kubernetes-version 1.28.0 \
+            -ignore-filename-pattern 'kustomization.yaml' \
+            -ignore-filename-pattern 'traefik-ingressroute.yaml' \
+            k8s/base/*.yaml
+
+      - name: Validate kustomized overlay output
+        run: |
+          kubectl kustomize k8s/overlays/template-app/ | \
+            kubeconform -summary -strict -kubernetes-version 1.28.0 -skip IngressRoute
