@@ -136,3 +136,65 @@ Traefik `IngressRoute` CRD. The default rule matches `PathPrefix('/')` (all path
 
 ### `kustomization.yaml`
 Lists all base resources under the `openms` namespace.
+
+## 4. Fork-and-deploy guide
+
+### Prerequisites
+
+- `kubectl` configured for the target cluster
+- A storage class that supports `ReadWriteOnce` volumes (de.NBI uses `cinder-csi`)
+- An ingress controller (Traefik, or nginx if you patch the nginx Ingress instead)
+- Read access to GHCR for pulling the app image
+- A DNS record pointing to the cluster's ingress load balancer
+
+### Step 1 — App-level configuration
+
+Update `settings.json`, choose a Dockerfile, and update `README.md`. If you are using Claude Code, the `configure-app-settings` skill automates these steps.
+
+### Step 2 — Let CI build the image
+
+Push your changes to `main` or create a tag. The workflow `.github/workflows/build-and-push-image.yml` builds the image from `Dockerfile` and pushes it to `ghcr.io/<your-org>/<your-repo>` with tags derived from the branch, semver, and commit SHA.
+
+### Step 3 — Create your overlay
+
+```bash
+cp -r k8s/overlays/template-app k8s/overlays/<your-app-name>
+```
+
+### Step 4 — Edit `kustomization.yaml`
+
+Open `k8s/overlays/<your-app-name>/kustomization.yaml` and change the following fields:
+
+| Field | Set to |
+|-------|--------|
+| `namePrefix` | `<your-app-name>-` (trailing dash) |
+| `commonLabels.app` | `<your-app-name>` |
+| `images[0].newName` | `ghcr.io/<your-org>/<your-repo>` |
+| `images[0].newTag` | `main` or a specific version tag |
+| Hostname inside the IngressRoute `match` expression's `Host(...)` | your deployment hostname (e.g. `myapp.webapps.openms.de`) |
+| IngressRoute service name reference (`template-app-streamlit`) | `<your-app-name>-streamlit` |
+| Redis URL in both Deployment patches (`redis://template-app-redis:6379/0`) | `redis://<your-app-name>-redis:6379/0` |
+
+The overlay leaves the nginx `Ingress` unpatched because Traefik is the production ingress. If you are deploying to an nginx-only cluster, substitute an Ingress host patch for the IngressRoute patch.
+
+### Step 5 — Deploy
+
+```bash
+kubectl apply -k k8s/overlays/<your-app-name>/
+```
+
+### Step 6 — Verify
+
+```bash
+kubectl -n openms get pods -l app=<your-app-name>
+kubectl -n openms rollout status deployment/<your-app-name>-streamlit --timeout=120s
+```
+
+Smoke-test the ingress URL in a browser — the app should load, a session cookie `stroute` should be set, and uploading a file should work.
+
+### Automation with Claude skills
+
+If you are using Claude Code, two skills automate this entire flow end-to-end:
+
+- `configure-app-settings` — `settings.json`, Dockerfile, README.
+- `configure-k8s-deployment` — the overlay + `kubectl apply` steps above.
