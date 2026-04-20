@@ -11,6 +11,5 @@ resources:
   - streamlit-deployment.yaml
   - streamlit-service.yaml
   - rq-worker-deployment.yaml
-  - ingress.yaml
   - traefik-ingressroute.yaml
   - cleanup-cronjob.yaml
