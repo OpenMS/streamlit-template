@@ -41,6 +41,8 @@ spec:
           env:
             - name: REDIS_URL
               value: "redis://redis:6379/0"
+            - name: WORKSPACES_DIR
+              value: "/workspaces-streamlit-template"
           volumeMounts:
             - name: workspaces
               mountPath: /workspaces-streamlit-template

@@ -47,6 +47,10 @@ class WorkflowManager:
         Online mode: Submits to Redis queue
         Local mode: Spawns multiprocessing.Process (existing behavior)
         """
+        # Flush the latest session state to params.json so the worker
+        # (queued) or the forked child (local) sees the values the user
+        # just selected, not stale disk state from a previous fragment run.
+        self.parameter_manager.save_parameters()
         if self._queue_manager and self._queue_manager.is_available:
             self._start_workflow_queued()
         else:

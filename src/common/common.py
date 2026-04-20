@@ -450,6 +450,10 @@ def page_setup(page: str = "") -> dict[str, Any]:
                 st.session_state.settings["workspaces_dir"],
                 "workspaces-" + st.session_state.settings["repository-name"],
             )
+        elif st.session_state.location == "online":
+            workspaces_dir = Path(
+                os.environ.get("WORKSPACES_DIR", "/workspaces-streamlit-template")
+            )
         else:
             workspaces_dir = ".."
 
