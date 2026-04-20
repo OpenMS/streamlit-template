@@ -6,7 +6,7 @@ spec:
   entryPoints:
     - web
   routes:
-    - match: Host(`REPLACE_ME_HOSTNAME`) && PathPrefix(`/`)
+    - match: PathPrefix(`/`)
       kind: Rule
       services:
         - name: streamlit
