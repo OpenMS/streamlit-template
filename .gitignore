@@ -12,3 +12,4 @@ python*
 gdpr_consent/node_modules/
 *~
 .streamlit/secrets.toml
+docs/superpowers/
