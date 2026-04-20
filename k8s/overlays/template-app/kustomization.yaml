@@ -16,7 +16,17 @@ images:
 
 patches:
   - target:
-      kind: Ingress
+      kind: IngressRoute
+      name: streamlit-traefik
+    patch: |
+      - op: replace
+        path: /spec/routes/0/match
+        value: Host(`template.webapps.openms.de`) && PathPrefix(`/`)
+      - op: replace
+        path: /spec/routes/0/services/0/name
+        value: template-app-streamlit
+  - target:
+      kind: Deployment
       name: streamlit
     patch: |
       - op: replace
