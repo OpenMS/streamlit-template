@@ -1,0 +1,53 @@
+name: GHCR Cleanup
+
+on:
+  # schedule:
+  #   - cron: '0 3 * * 0'   # Sundays 03:00 UTC — uncomment in Phase 4
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: 'Dry run (preview deletions without executing)'
+        type: boolean
+        default: true
+
+jobs:
+  cleanup-app-images:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - name: Delete old commit-tagged images (keep semver + main + latest)
+        uses: snok/container-retention-policy@v3
+        with:
+          account: ${{ github.repository_owner }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          image-names: ${{ github.event.repository.name }}
+          image-tags: "!v*-full !v*-simple !main-full !main-simple !latest"
+          tag-selection: tagged
+          cut-off: 30d
+          dry-run: ${{ github.event.inputs.dry-run || 'false' }}
+
+      - name: Delete untagged app image manifests
+        uses: snok/container-retention-policy@v3
+        with:
+          account: ${{ github.repository_owner }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          image-names: ${{ github.event.repository.name }}
+          tag-selection: untagged
+          cut-off: 7d
+          dry-run: ${{ github.event.inputs.dry-run || 'false' }}
+
+  cleanup-cache-images:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - name: Delete untagged buildx cache manifests
+        uses: snok/container-retention-policy@v3
+        with:
+          account: ${{ github.repository_owner }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          image-names: ${{ github.event.repository.name }}/cache
+          tag-selection: untagged
+          cut-off: 7d
+          dry-run: ${{ github.event.inputs.dry-run || 'false' }}
