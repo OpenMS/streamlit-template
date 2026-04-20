@@ -32,7 +32,7 @@ Run `configure-app-settings` first. This skill assumes `settings.json`, the Dock
    - Change `commonLabels.app` from `template-app` to `<your-app-name>`
    - Change `images[0].newName` to `ghcr.io/<your-org>/<your-repo>`
    - In the IngressRoute patch, update:
-     - the `Host(\`...\`)` match to your hostname
+     - the `Host(...)` match — change the quoted hostname to your own
      - the service name reference from `template-app-streamlit` to `<your-app-name>-streamlit`
    - In both Deployment patches (`streamlit` and `rq-worker`), update the Redis URL from `redis://template-app-redis:6379/0` to `redis://<your-app-name>-redis:6379/0`
 
