@@ -21,7 +21,7 @@ patches:
     patch: |
       - op: replace
         path: /spec/routes/0/match
-        value: Host(`template.webapps.openms.de`) && PathPrefix(`/`)
+        value: (Host(`template.webapps.openms.de`) || Host(`template.webapps.openms.org`)) && PathPrefix(`/`)
       - op: replace
         path: /spec/routes/0/services/0/name
         value: template-app-streamlit
