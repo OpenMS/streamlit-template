@@ -11,9 +11,9 @@ FROM ubuntu:22.04 AS stage1
 ARG OPENMS_REPO=https://github.com/OpenMS/OpenMS.git
 ARG OPENMS_BRANCH=develop
 ARG PORT=8501
-# Streamlit app Gihub user name (to download artifact from).
+# Streamlit app GitHub user name (to download artifact from).
 ARG GITHUB_USER=OpenMS
-# Streamlit app Gihub repository name (to download artifact from).
+# Streamlit app GitHub repository name (to download artifact from).
 ARG GITHUB_REPO=streamlit-template
 
 
