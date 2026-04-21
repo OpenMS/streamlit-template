@@ -1,14 +1,14 @@
 name: GHCR Cleanup
 
 on:
-  # schedule:
-  #   - cron: '0 3 * * 0'   # Sundays 03:00 UTC — uncomment in Phase 4
+  schedule:
+    - cron: '0 3 * * 0'   # Sundays 03:00 UTC
   workflow_dispatch:
     inputs:
       dry-run:
         description: 'Dry run (preview deletions without executing)'
         type: boolean
-        default: true
+        default: false
 
 jobs:
   cleanup-app-images:
