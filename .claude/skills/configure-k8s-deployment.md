@@ -32,11 +32,11 @@ Run `configure-app-settings` first. This skill assumes `settings.json`, the Dock
    - Change `commonLabels.app` from `template-app` to `<your-app-name>`
    - Change `images[0].newName` to `ghcr.io/<your-org>/<your-repo>`
    - In the IngressRoute patch, update:
-     - the `Host(...)` match — change the quoted hostname to your own
+     - the match expression — change **both** `Host(\`…\`)` hostnames from `template.webapps.openms.de` / `template.webapps.openms.org` to `<your-app-name>.webapps.openms.de` / `<your-app-name>.webapps.openms.org`. The `||` keeps the app reachable on both TLDs.
      - the service name reference from `template-app-streamlit` to `<your-app-name>-streamlit`
    - In both Deployment patches (`streamlit` and `rq-worker`), update the Redis URL from `redis://template-app-redis:6379/0` to `redis://<your-app-name>-redis:6379/0`
 
-   The overlay leaves the nginx `Ingress` unpatched because production deployments use Traefik. If you are deploying to an nginx-only cluster, substitute an Ingress host patch for the IngressRoute patch.
+   The overlay leaves the nginx `Ingress` unpatched because production deployments use Traefik. If you are deploying to an nginx-only cluster, patch both `rules[].host` entries in the base `Ingress` (same `.de` / `.org` pattern) instead of the IngressRoute.
 
 4. **Validate the overlay builds.**
 
@@ -73,9 +73,9 @@ Run `configure-app-settings` first. This skill assumes `settings.json`, the Dock
 - [ ] Image built and pushed to GHCR (via CI or manual push to `main`/tag)
 - [ ] Overlay copied to `k8s/overlays/<your-app-name>/`
 - [ ] `namePrefix`, `commonLabels.app`, `images[0].newName` updated
-- [ ] IngressRoute patch updated (host + service reference)
+- [ ] IngressRoute patch updated (both hostnames + service reference)
 - [ ] Redis URL updated in both Deployment patches
 - [ ] `kubectl kustomize` succeeds
 - [ ] `kubectl apply -k` succeeds
 - [ ] All pods Running, `rollout status` succeeds
-- [ ] App accessible via the ingress hostname
+- [ ] App accessible via both `.de` and `.org` ingress hostnames
