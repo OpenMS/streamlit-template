@@ -20,7 +20,7 @@ Every production OpenMS webapp (quantms-web, umetaflow, FLASHApp) deploys via th
 ```
                               ┌────────────────────────┐
                               │  Traefik IngressRoute  │
-                              │  Host(<your-hostname>) │
+                              │ Host(.de) || Host(.org)│
                               │  (sticky cookie)       │
                               └───────────┬────────────┘
                                           │
@@ -84,7 +84,11 @@ Co-location is a placement constraint, not a replica cap. The Streamlit deployme
 
 ### Ingress
 
-Production deployments use the Traefik `IngressRoute`. The nginx `Ingress` is kept in `k8s/base/` because the CI integration test inside `.github/workflows/build-and-test.yml` uses a kind cluster with an nginx ingress controller and filters out Traefik CRDs at apply time.
+Production deployments use the Traefik `IngressRoute`. The nginx `Ingress` is kept in `k8s/base/` for forks deploying to nginx-only clusters and is exercised by the nginx-side kind integration test inside `.github/workflows/build-and-test.yml`. A separate `traefik-integration` job brings up Traefik in a second kind cluster and exercises the IngressRoute end-to-end.
+
+#### Sticky cookie behaviour across hosts
+
+Both Traefik and nginx attach a per-host `stroute` sticky cookie to bind a user to a specific Streamlit pod. Because cookies are scoped to the host that set them, a user who switches mid-session from `<app>.webapps.openms.de` to `<app>.webapps.openms.org` will be re-stuck to a (potentially different) pod. This is harmless: workspace and queue state live in Redis and the shared workspace PVC, so the new pod sees the same data. Pod affinity exists to keep the WebSocket warm and reuse Streamlit's in-process script cache, not for correctness.
 
 ## 3. Manifest reference (`k8s/base/`)
 
@@ -129,10 +133,10 @@ nginx `Ingress` with:
 - Unlimited upload body size
 - Disabled proxy buffering
 
-Used by the kind CI integration test. Production overlays do not typically patch this.
+Ships with two parallel `rules[]` entries (`streamlit.openms.example.de` / `.org`) so forks deploying to nginx get the same dual-host shape as the Traefik production path. Used by the nginx-side kind CI integration test. Production overlays do not typically patch this.
 
 ### `traefik-ingressroute.yaml`
-Traefik `IngressRoute` CRD. The default rule matches `PathPrefix('/')` (all paths) on the `web` entryPoint with a sticky `stroute` cookie. Overlays patch the `Host()` match expression and the service name to scope the route to a particular app.
+Traefik `IngressRoute` CRD. The default rule matches `PathPrefix('/')` (all paths) on the `web` entryPoint with a sticky `stroute` cookie. Overlays patch the match expression to gate the route by host. The template default is ``(Host(`<app>.webapps.openms.de`) || Host(`<app>.webapps.openms.org`)) && PathPrefix(`/`)`` — outer parens are required because Traefik's `&&` binds tighter than `||`. To serve only one TLD, drop the alternative `Host()` and the surrounding parens.
 
 ### `kustomization.yaml`
 Lists all base resources under the `openms` namespace.
@@ -171,11 +175,11 @@ Open `k8s/overlays/<your-app-name>/kustomization.yaml` and change the following 
 | `commonLabels.app` | `<your-app-name>` |
 | `images[0].newName` | `ghcr.io/<your-org>/<your-repo>` |
 | `images[0].newTag` | `main-full` for the latest `main` build, or `v<version>-full` / `v<version>-simple` to pin a release. Use `-simple` variants if your app does not need the full TOPP toolchain. |
-| Hostname inside the IngressRoute `match` expression's `Host(...)` | your deployment hostname (e.g. `myapp.webapps.openms.de`) |
+| Both `Host(...)` hostnames inside the IngressRoute `match` expression | your deployment hostnames on both TLDs: `<app>.webapps.openms.de` and `<app>.webapps.openms.org` |
 | IngressRoute service name reference (`template-app-streamlit`) | `<your-app-name>-streamlit` |
 | Redis URL in both Deployment patches (`redis://template-app-redis:6379/0`) | `redis://<your-app-name>-redis:6379/0` |
 
-The overlay leaves the nginx `Ingress` unpatched because Traefik is the production ingress. If you are deploying to an nginx-only cluster, substitute an Ingress host patch for the IngressRoute patch.
+The overlay leaves the nginx `Ingress` unpatched because Traefik is the production ingress. If you are deploying to an nginx-only cluster, add an overlay patch for both `rules[].host` entries in the base `Ingress` (same `.de` / `.org` pattern) instead of the IngressRoute patch.
 
 ### Step 5 — Deploy
 
@@ -214,7 +218,8 @@ One unified workflow owns manifest lint, Docker build, push, and kind integratio
   - Builds `Dockerfile` (full, includes TOPP tools) or `Dockerfile_simple` (pyOpenMS only) depending on the matrix leg.
   - **Buildx registry cache** (`type=registry,…,mode=max`) stored at `ghcr.io/<repo>/cache:full` and `:simple`. A `cache-from` read is attempted on every event; `cache-to` write only on push/tag/workflow_dispatch (fork PRs can't write). Repeat builds with an unchanged Dockerfile finish in minutes.
   - **Push** on push/tag/workflow_dispatch events (not on PRs). Tags: `<branch>-full` / `<branch>-simple`, `v<version>-full` / `v<version>-simple`, `<sha>-full` / `<sha>-simple`. `latest` is emitted only for the full variant on push to `main`.
-  - **Kind integration** runs per variant: creates a kind cluster, loads the just-built image, installs the nginx ingress controller, applies the kustomized `template-app` overlay (filtering Traefik `IngressRoute`, forcing `imagePullPolicy: Never`), and asserts Redis + deployments become ready.
+  - **Kind integration** runs per variant: creates a kind cluster, loads the just-built image, installs the nginx ingress controller, applies the kustomized `template-app` overlay (filtering Traefik `IngressRoute`, forcing `imagePullPolicy: Never` and `storageClassName: standard`), asserts Redis + deployments become ready, and curls both `.de` and `.org` hostnames through the nginx ingress to verify dual-host routing.
+- **Job 3 — `traefik-integration`** (`needs: lint-manifests`, runs once on `Dockerfile_simple`): builds the simple image, brings up a second kind cluster, installs Traefik via Helm (`service.type=ClusterIP`), applies the full kustomized overlay without filtering the `IngressRoute`, and curls both hostnames through Traefik. Catches IngressRoute-syntax regressions that the nginx-side test cannot.
 - **Auth:** uses the workflow's `GITHUB_TOKEN` for GHCR login and as a build argument for in-image private-resource access. Fork PRs skip login (their `GITHUB_TOKEN` is read-only) but can still read the public cache.
 - **PR behavior:** both jobs run on pull requests. No tags are pushed and no cache is written. The kind integration still runs, exercising manifests end-to-end. If branch protection requires these checks, a failure blocks merge.
 
