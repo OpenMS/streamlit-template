@@ -152,12 +152,12 @@ jobs:
           trap 'kill "$PF_PID" 2>/dev/null || true' EXIT
           for i in 1 2 3 4 5; do
             sleep 2
-            if curl -fsSo /dev/null --max-time 2 http://127.0.0.1:8080/_stcore/health -H "Host: template.webapps.openms.de"; then
+            if curl -fsSo /dev/null --max-time 2 http://127.0.0.1:8080/_stcore/health -H "Host: streamlit.openms.example.de"; then
               break
             fi
             echo "port-forward not ready yet, retry $i"
           done
-          for host in template.webapps.openms.de template.webapps.openms.org; do
+          for host in streamlit.openms.example.de streamlit.openms.example.org; do
             curl -fsS --resolve "$host:8080:127.0.0.1" "http://$host:8080/_stcore/health"
             echo ""
             echo "$host -> 200 OK"
