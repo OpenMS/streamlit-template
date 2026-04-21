@@ -119,7 +119,8 @@ jobs:
           # Filter out Traefik IngressRoute (kind cluster uses nginx) and force imagePullPolicy=Never
           kubectl kustomize k8s/overlays/template-app/ | \
             yq 'select(.kind != "IngressRoute")' | \
-            sed 's|imagePullPolicy: IfNotPresent|imagePullPolicy: Never|g' > /tmp/manifests.yaml
+            sed 's|imagePullPolicy: IfNotPresent|imagePullPolicy: Never|g' | \
+            sed 's|storageClassName: cinder-csi|storageClassName: standard|g' > /tmp/manifests.yaml
           for i in 1 2 3 4 5; do
             if kubectl apply -f /tmp/manifests.yaml; then
               echo "Deploy succeeded on attempt $i"
@@ -148,6 +149,7 @@ jobs:
           NGINX_POD=$(kubectl -n ingress-nginx get pod -l app.kubernetes.io/component=controller -o name | head -n 1)
           kubectl -n ingress-nginx port-forward "$NGINX_POD" 8080:80 &
           PF_PID=$!
+          trap 'kill "$PF_PID" 2>/dev/null || true' EXIT
           for i in 1 2 3 4 5; do
             sleep 2
             if curl -fsSo /dev/null --max-time 2 http://127.0.0.1:8080/_stcore/health -H "Host: template.webapps.openms.de"; then
@@ -160,7 +162,6 @@ jobs:
             echo ""
             echo "$host -> 200 OK"
           done
-          kill "$PF_PID" 2>/dev/null || true
 
   traefik-integration:
     needs: lint-manifests
@@ -194,7 +195,8 @@ jobs:
       - name: Deploy with Kustomize (full manifests, no filter)
         run: |
           kubectl kustomize k8s/overlays/template-app/ | \
-            sed 's|imagePullPolicy: IfNotPresent|imagePullPolicy: Never|g' > /tmp/manifests.yaml
+            sed 's|imagePullPolicy: IfNotPresent|imagePullPolicy: Never|g' | \
+            sed 's|storageClassName: cinder-csi|storageClassName: standard|g' > /tmp/manifests.yaml
           for i in 1 2 3 4 5; do
             if kubectl apply -f /tmp/manifests.yaml; then
               echo "Deploy succeeded on attempt $i"
@@ -214,6 +216,7 @@ jobs:
         run: |
           kubectl -n traefik port-forward svc/traefik 8080:80 &
           PF_PID=$!
+          trap 'kill "$PF_PID" 2>/dev/null || true' EXIT
           for i in 1 2 3 4 5; do
             sleep 2
             if curl -fsSo /dev/null --max-time 2 http://127.0.0.1:8080/_stcore/health -H "Host: template.webapps.openms.de"; then
@@ -226,4 +229,3 @@ jobs:
             echo ""
             echo "$host -> 200 OK"
           done
-          kill "$PF_PID" 2>/dev/null || true
