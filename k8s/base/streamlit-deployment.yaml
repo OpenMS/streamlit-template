@@ -50,6 +50,10 @@ spec:
               mountPath: /app/settings-overrides.json
               subPath: settings-overrides.json
               readOnly: true
+            - name: admin-secrets
+              mountPath: /app/.streamlit/secrets.toml
+              subPath: secrets.toml
+              readOnly: true
           readinessProbe:
             httpGet:
               path: /_stcore/health
@@ -76,3 +80,10 @@ spec:
         - name: config
           configMap:
             name: streamlit-config
+        - name: admin-secrets
+          secret:
+            secretName: streamlit-secrets
+            optional: true
+            items:
+              - key: secrets.toml
+                path: secrets.toml
