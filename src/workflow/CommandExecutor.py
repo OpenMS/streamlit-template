@@ -284,6 +284,12 @@ class CommandExecutor:
             # Add non-default TOPP tool parameters
             if tool in params.keys():
                 for k, v in params[tool].items():
+                    # Boolean flag handling (from registerFlag_ params):
+                    # True -> emit flag only, False -> skip entirely
+                    if isinstance(v, bool):
+                        if v:
+                            command += [f"-{k}"]
+                        continue
                     command += [f"-{k}"]
                     # Skip only empty strings (pass flag with no value)
                     # Note: 0 and 0.0 are valid values, so use explicit check
