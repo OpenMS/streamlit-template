@@ -311,7 +311,8 @@ NS"""
                 
             except Exception as e:
                 progress_bar.empty()
-                st.exception(f"❌ An error occurred during digest: {str(e)}")
+                st.error(f"❌ An error occurred during digest: {str(e)}")
+                st.exception(e)
                 st.error("Please check your input and try again. If the problem persists, try with a simpler enzyme like Trypsin.")
 
 
