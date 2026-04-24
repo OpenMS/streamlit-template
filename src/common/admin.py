@@ -9,6 +9,7 @@ import shutil
 from pathlib import Path
 
 import streamlit as st
+from streamlit.errors import StreamlitSecretNotFoundError
 
 
 def is_admin_configured() -> bool:
@@ -20,7 +21,9 @@ def is_admin_configured() -> bool:
     """
     try:
         return bool(st.secrets.get("admin", {}).get("password"))
-    except (FileNotFoundError, KeyError):
+    except (FileNotFoundError, KeyError, StreamlitSecretNotFoundError):
+        return False
+    except Exception:
         return False
 
 
