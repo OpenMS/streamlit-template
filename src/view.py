@@ -25,8 +25,14 @@ def get_df(file: Union[str, Path]) -> pd.DataFrame:
     """
     exp = poms.MSExperiment()
     poms.MzMLFile().load(str(file), exp)
-    df_spectra = exp.get_df()
-    df_spectra["MS level"] = [spec.getMSLevel() for spec in exp]
+    df_spectra = exp.to_df()
+    # Rename columns for backward compatibility with develop-branch pyOpenMS
+    df_spectra.rename(columns={
+        'rt': 'RT',
+        'ms_level': 'MS level',
+        'mz_array': 'mzarray',
+        'intensity_array': 'intarray',
+    }, inplace=True)
     precs = []
     for spec in exp:
         p = spec.getPrecursors()
@@ -53,12 +59,13 @@ def get_df(file: Union[str, Path]) -> pd.DataFrame:
             exp_ms1.addSpectrum(spec)
         elif spec.getMSLevel() == 2:
             exp_ms2.addSpectrum(spec)
+    _long_rename = {'rt': 'RT', 'intensity': 'inty'}
     if not exp_ms1.empty():
-        st.session_state["view_ms1"] = exp_ms1.get_df(long=True)
+        st.session_state["view_ms1"] = exp_ms1.to_df(long_format=True).rename(columns=_long_rename)
     else:
         st.session_state["view_ms1"] = pd.DataFrame(columns=['RT', 'mz', 'inty'])
     if not exp_ms2.empty():
-        st.session_state["view_ms2"] = exp_ms2.get_df(long=True)
+        st.session_state["view_ms2"] = exp_ms2.to_df(long_format=True).rename(columns=_long_rename)
     else:
         st.session_state["view_ms2"] = pd.DataFrame(columns=['RT', 'mz', 'inty'])
 
