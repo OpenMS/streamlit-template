@@ -141,6 +141,9 @@ Traefik `IngressRoute` CRD. The default rule matches `PathPrefix('/')` (all path
 ### `kustomization.yaml`
 Lists all base resources under the `openms` namespace.
 
+### `streamlit-secrets.yaml.example`
+Reference manifest for the optional `streamlit-secrets` Secret consumed by the Streamlit Deployment (mounted as a directory at `/app/admin-secrets/`; `.streamlit/config.toml` registers that path under `[secrets].files` so `st.secrets` picks it up — currently used for the admin password that gates the "Save as Demo" feature). Intentionally **not** in `k8s/base/kustomization.yaml`: the Secret is created out-of-band so no password is ever committed. See "Configuring the admin password" below.
+
 ## 4. Fork-and-deploy guide
 
 ### Prerequisites
@@ -181,13 +184,50 @@ Open `k8s/overlays/<your-app-name>/kustomization.yaml` and change the following 
 
 The overlay leaves the nginx `Ingress` unpatched because Traefik is the production ingress. If you are deploying to an nginx-only cluster, add an overlay patch for both `rules[].host` entries in the base `Ingress` (same `.de` / `.org` pattern) instead of the IngressRoute patch.
 
-### Step 5 — Deploy
+### Step 5 — Configure the admin password (optional)
+
+Skip this step if you don't need the "Save as Demo" feature. The Streamlit Deployment mounts the `streamlit-secrets` Secret with `optional: true`, so the pod starts either way — the admin UI simply reports "Admin not configured" when the Secret is absent.
+
+**Recommended — imperative, nothing on disk:**
+
+```bash
+kubectl -n openms create secret generic streamlit-secrets \
+  --from-literal=secrets.toml='[admin]
+password = "<your-strong-password>"'
+```
+
+The password never leaves the cluster. Rotate the same way:
+
+```bash
+kubectl -n openms create secret generic streamlit-secrets \
+  --from-literal=secrets.toml='[admin]
+password = "<new-password>"' \
+  --dry-run=client -o yaml | kubectl apply -f -
+kubectl -n openms rollout restart deployment/<your-app-name>-streamlit
+```
+
+Because the Secret is created outside Kustomize, the overlay's `namePrefix` does **not** apply to it — the Deployment references the literal name `streamlit-secrets`, so create it with exactly that name.
+
+**Alternative — manifest in the overlay:**
+
+Copy the template and fill it in:
+
+```bash
+cp k8s/base/streamlit-secrets.yaml.example k8s/overlays/<your-app-name>/streamlit-secrets.yaml
+# edit the password
+```
+
+Add `- streamlit-secrets.yaml` to the `resources:` list in `k8s/overlays/<your-app-name>/kustomization.yaml`. The filename `streamlit-secrets.yaml` is gitignored (`.gitignore`: `k8s/**/streamlit-secrets.yaml`); always confirm with `git status` before committing — never commit a filled-in copy.
+
+When the Secret is managed through Kustomize, the overlay's `namePrefix` rewrites both the Secret name and the Deployment reference, so no manual renaming is needed.
+
+### Step 6 — Deploy
 
 ```bash
 kubectl apply -k k8s/overlays/<your-app-name>/
 ```
 
-### Step 6 — Verify
+### Step 7 — Verify
 
 ```bash
 kubectl -n openms get pods -l app=<your-app-name>
