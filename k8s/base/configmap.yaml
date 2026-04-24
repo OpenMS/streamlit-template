@@ -5,5 +5,9 @@ metadata:
 data:
   settings-overrides.json: |
     {
-      "online_deployment": true
+      "online_deployment": true,
+      "demo_workspaces": {
+        "enabled": true,
+        "source_dirs": ["/workspaces-streamlit-template/.demos"]
+      }
     }

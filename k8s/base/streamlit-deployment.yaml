@@ -25,6 +25,19 @@ spec:
                     values:
                       - workspaces
               topologyKey: kubernetes.io/hostname
+      initContainers:
+        - name: seed-demos
+          image: openms-streamlit
+          imagePullPolicy: Always
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+              mkdir -p /workspaces-streamlit-template/.demos
+              cp -rn /app/example-data/workspaces/. /workspaces-streamlit-template/.demos/
+          volumeMounts:
+            - name: workspaces
+              mountPath: /workspaces-streamlit-template
       containers:
         - name: streamlit
           image: openms-streamlit

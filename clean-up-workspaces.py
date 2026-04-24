@@ -23,6 +23,9 @@ print(
 remaining_directories = []
 # Iterate through directories in workspaces_directory
 for directory in workspaces_directory.iterdir():
+    # Skip hidden top-level directories (e.g. .demos/ holds seeded demo workspaces)
+    if directory.name.startswith("."):
+        continue
     # Check if it's a directory
     if directory.is_dir():
         # Get the directory's modification time

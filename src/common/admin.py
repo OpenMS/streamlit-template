@@ -51,10 +51,25 @@ def get_demo_target_dir() -> Path:
     """
     Get the directory where demo workspaces are stored.
 
+    Reads from settings.demo_workspaces.source_dirs (first entry wins),
+    supporting both the list form and the legacy string form. Falls back
+    to example-data/workspaces when settings are unavailable (e.g. in tests).
+
     Returns:
         Path: The demo workspaces directory.
     """
-    return Path("example-data/workspaces")
+    default = Path("example-data/workspaces")
+    try:
+        demo_config = st.session_state.settings.get("demo_workspaces", {})
+    except (AttributeError, KeyError):
+        return default
+
+    dirs = demo_config.get("source_dirs", demo_config.get("source_dir"))
+    if isinstance(dirs, str):
+        return Path(dirs)
+    if isinstance(dirs, list) and dirs:
+        return Path(dirs[0])
+    return default
 
 
 def demo_exists(demo_name: str) -> bool:
