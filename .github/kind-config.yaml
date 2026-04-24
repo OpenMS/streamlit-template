@@ -7,6 +7,16 @@ apiVersion: kind.x-k8s.io/v1alpha4
 # single kind node.
 nodes:
   - role: control-plane
+    # Multi-node kind clusters taint the control-plane with
+    # node-role.kubernetes.io/control-plane:NoSchedule. Clear it so
+    # app pods with nodeSelector memory-tier=low can actually land
+    # here (single-node kind had no such taint, hence the original
+    # workflow passed without this patch).
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          taints: []
     labels:
       openms.de/memory-tier: low
       # ingress-ready is required by the kind variant of the
