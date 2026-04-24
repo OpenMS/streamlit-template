@@ -107,6 +107,21 @@ PersistentVolumeClaim `workspaces-pvc`:
 - `storageClassName: cinder-csi`
 - `resources.requests.storage: 500Gi`
 
+Demo workspaces live under a hidden `.demos/` subdirectory of this PVC (see [Demo workspaces](#demo-workspaces) below). User workspaces live at the PVC root, one directory per session UUID.
+
+### Demo workspaces
+Demo workspaces are seeded onto the `workspaces-pvc` at `/workspaces-streamlit-template/.demos/` by the `seed-demos` initContainer on the Streamlit Deployment. The init runs `cp -rn /app/example-data/workspaces/. /workspaces-streamlit-template/.demos/` — new demos shipped in an image appear after redeploy, but existing entries on the PV (including admin-saved demos and edits) are preserved.
+
+The ConfigMap override points `demo_workspaces.source_dirs` at `/workspaces-streamlit-template/.demos`, so both Streamlit pods and RQ workers read demos from the PV. The "Save as Demo" admin flow writes to the same path.
+
+To force a re-seed of a specific demo, delete it on the PV and restart the Streamlit Deployment:
+```
+kubectl exec deploy/streamlit -- rm -rf /workspaces-streamlit-template/.demos/<name>
+kubectl rollout restart deploy/streamlit
+```
+
+`clean-up-workspaces.py` skips any top-level directory whose name starts with `.`, so the nightly cleanup cron does not touch `.demos/`.
+
 ### `streamlit-deployment.yaml`
 Main Streamlit Deployment. Key fields:
 - `replicas: 2` (scales to N)
@@ -116,6 +131,7 @@ Main Streamlit Deployment. Key fields:
 - Mounts `settings-overrides.json` from the ConfigMap as a `subPath`
 - Readiness and liveness probes hit `/_stcore/health`
 - Pod affinity: `volume-group: workspaces`
+- `seed-demos` initContainer merges image-shipped demos into `.demos/` on the PVC (see [Demo workspaces](#demo-workspaces))
 
 ### `streamlit-service.yaml`
 ClusterIP Service exposing Streamlit on port 8501.
