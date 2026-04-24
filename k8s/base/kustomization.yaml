@@ -14,3 +14,4 @@ resources:
   - ingress.yaml
   - traefik-ingressroute.yaml
   - cleanup-cronjob.yaml
+  - limitrange.yaml

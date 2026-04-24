@@ -162,15 +162,13 @@ Update `settings.json`, choose a Dockerfile, and update `README.md`. If you are 
 
 Push your changes to `main` or create a tag. The workflow `.github/workflows/build-and-test.yml` builds both the full (`Dockerfile`) and lightweight (`Dockerfile_simple`) variants and pushes each to `ghcr.io/<your-org>/<your-repo>` with variant-suffixed tags: `<branch>-full` / `<branch>-simple`, `v<version>-full` / `v<version>-simple`, and `<sha>-full` / `<sha>-simple`. The unsuffixed `latest` tag tracks the full variant on `main`.
 
-### Step 3 — Create your overlay
+### Step 3 — Edit the production overlay
 
-```bash
-cp -r k8s/overlays/template-app k8s/overlays/<your-app-name>
-```
+Each fork ships a single production overlay at `k8s/overlays/prod/`. Edit this file in place — the forked repository itself identifies the app, so no per-app overlay subdirectory is created.
 
 ### Step 4 — Edit `kustomization.yaml`
 
-Open `k8s/overlays/<your-app-name>/kustomization.yaml` and change the following fields:
+Open `k8s/overlays/prod/kustomization.yaml` and change the following fields:
 
 | Field | Set to |
 |-------|--------|
@@ -183,6 +181,19 @@ Open `k8s/overlays/<your-app-name>/kustomization.yaml` and change the following 
 | Redis URL in both Deployment patches (`redis://template-app-redis:6379/0`) | `redis://<your-app-name>-redis:6379/0` |
 
 The overlay leaves the nginx `Ingress` unpatched because Traefik is the production ingress. If you are deploying to an nginx-only cluster, add an overlay patch for both `rules[].host` entries in the base `Ingress` (same `.de` / `.org` pattern) instead of the IngressRoute patch.
+
+### Step 4b — Select a memory tier
+
+The overlay pulls in one of two Kustomize components under `components:`:
+
+```yaml
+components:
+  - ../../components/memory-tier-low    # default: light app on low-mem node
+  # OR
+  - ../../components/memory-tier-high   # memory-intensive app on high-mem node
+```
+
+`memory-tier-low` is the right choice for most apps. Switch to `memory-tier-high` only if the workload genuinely needs tens of GB of RAM (DIA spectral-library + OpenSwath peak picking, DIA-LFQ). The tier component adds the matching `nodeSelector: openms.de/memory-tier=<tier>` plus `requests`/`limits` sized for that node, so cluster nodes must already be labelled `openms.de/memory-tier=low` / `...=high`.
 
 ### Step 5 — Configure the admin password (optional)
 
@@ -213,18 +224,18 @@ Because the Secret is created outside Kustomize, the overlay's `namePrefix` does
 Copy the template and fill it in:
 
 ```bash
-cp k8s/base/streamlit-secrets.yaml.example k8s/overlays/<your-app-name>/streamlit-secrets.yaml
+cp k8s/base/streamlit-secrets.yaml.example k8s/overlays/prod/streamlit-secrets.yaml
 # edit the password
 ```
 
-Add `- streamlit-secrets.yaml` to the `resources:` list in `k8s/overlays/<your-app-name>/kustomization.yaml`. The filename `streamlit-secrets.yaml` is gitignored (`.gitignore`: `k8s/**/streamlit-secrets.yaml`); always confirm with `git status` before committing — never commit a filled-in copy.
+Add `- streamlit-secrets.yaml` to the `resources:` list in `k8s/overlays/prod/kustomization.yaml`. The filename `streamlit-secrets.yaml` is gitignored (`.gitignore`: `k8s/**/streamlit-secrets.yaml`); always confirm with `git status` before committing — never commit a filled-in copy.
 
 When the Secret is managed through Kustomize, the overlay's `namePrefix` rewrites both the Secret name and the Deployment reference, so no manual renaming is needed.
 
 ### Step 6 — Deploy
 
 ```bash
-kubectl apply -k k8s/overlays/<your-app-name>/
+kubectl apply -k k8s/overlays/prod/
 ```
 
 ### Step 7 — Verify
@@ -252,13 +263,13 @@ One unified workflow owns manifest lint, Docker build, push, and kind integratio
 - **Trigger:** pull request to `main`, push to `main`, push of a `v*` tag, or manual workflow dispatch.
 - **Job 1 — `lint-manifests`:**
   - `kubeconform` runs against `k8s/base/*.yaml` with strict mode and Kubernetes 1.28 schemas (excluding `kustomization.yaml` and the Traefik CRD `traefik-ingressroute.yaml`).
-  - `kubectl kustomize k8s/overlays/template-app/` must succeed; the kustomized output is re-validated through `kubeconform` (with `IngressRoute` skipped).
+  - `kubectl kustomize k8s/overlays/prod/` must succeed; the kustomized output is re-validated through `kubeconform` (with `IngressRoute` skipped).
   - Takes ~30s. Fails fast so manifest typos never trigger the hours-long full Docker build.
 - **Job 2 — `build`** (`needs: lint-manifests`, matrix over `[full, simple]`):
   - Builds `Dockerfile` (full, includes TOPP tools) or `Dockerfile_simple` (pyOpenMS only) depending on the matrix leg.
   - **Buildx registry cache** (`type=registry,…,mode=max`) stored at `ghcr.io/<repo>/cache:full` and `:simple`. A `cache-from` read is attempted on every event; `cache-to` write only on push/tag/workflow_dispatch (fork PRs can't write). Repeat builds with an unchanged Dockerfile finish in minutes.
   - **Push** on push/tag/workflow_dispatch events (not on PRs). Tags: `<branch>-full` / `<branch>-simple`, `v<version>-full` / `v<version>-simple`, `<sha>-full` / `<sha>-simple`. `latest` is emitted only for the full variant on push to `main`.
-  - **Kind integration** runs per variant: creates a kind cluster, loads the just-built image, installs the nginx ingress controller, applies the kustomized `template-app` overlay (filtering Traefik `IngressRoute`, forcing `imagePullPolicy: Never` and `storageClassName: standard`), asserts Redis + deployments become ready, and curls both `.de` and `.org` hostnames through the nginx ingress to verify dual-host routing.
+  - **Kind integration** runs per variant: creates a kind cluster, loads the just-built image, installs the nginx ingress controller, applies the kustomized `prod` overlay (filtering Traefik `IngressRoute`, forcing `imagePullPolicy: Never` and `storageClassName: standard`), asserts Redis + deployments become ready, and curls both `.de` and `.org` hostnames through the nginx ingress to verify dual-host routing.
 - **Job 3 — `traefik-integration`** (`needs: lint-manifests`, runs once on `Dockerfile_simple`): builds the simple image, brings up a second kind cluster, installs Traefik via Helm (`service.type=ClusterIP`), applies the full kustomized overlay without filtering the `IngressRoute` (still patching `imagePullPolicy: Never` and `storageClassName: standard` for kind compatibility), and curls both hostnames through Traefik. Catches IngressRoute-syntax regressions that the nginx-side test cannot.
 - **Auth:** uses the workflow's `GITHUB_TOKEN` for GHCR login and as a build argument for in-image private-resource access. Fork PRs skip login (their `GITHUB_TOKEN` is read-only) but can still read the public cache.
 - **PR behavior:** all three jobs run on pull requests. No tags are pushed and no cache is written. The kind integration still runs, exercising manifests end-to-end. If branch protection requires these checks, a failure blocks merge.

@@ -21,11 +21,11 @@ spec:
             - containerPort: 6379
           resources:
             requests:
-              memory: "64Mi"
-              cpu: "50m"
+              memory: "256Mi"
+              cpu: "100m"
             limits:
               memory: "256Mi"
-              cpu: "250m"
+              cpu: "100m"
           readinessProbe:
             exec:
               command: ["redis-cli", "ping"]

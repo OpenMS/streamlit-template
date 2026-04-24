@@ -1,0 +1,16 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rq-worker
+spec:
+  template:
+    spec:
+      containers:
+        - name: rq-worker
+          resources:
+            requests:
+              memory: "1Gi"
+              cpu: "500m"
+            limits:
+              memory: "16Gi"
+              cpu: "4"
