@@ -105,6 +105,7 @@ jobs:
         uses: helm/kind-action@v1
         with:
           cluster_name: test-cluster
+          config: .github/kind-config.yaml
 
       - name: Load image into kind cluster
         run: kind load docker-image openms-streamlit:test --name test-cluster
@@ -113,9 +114,6 @@ jobs:
         run: |
           kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
           kubectl wait --namespace ingress-nginx --for=condition=ready pod --selector=app.kubernetes.io/component=controller --timeout=90s
-
-      - name: Label kind node with the tier the overlay expects
-        run: kubectl label nodes --all openms.de/memory-tier=low --overwrite
 
       - name: Deploy with Kustomize
         run: |
@@ -179,6 +177,7 @@ jobs:
         uses: helm/kind-action@v1
         with:
           cluster_name: traefik-test
+          config: .github/kind-config.yaml
 
       - name: Load image into kind cluster
         run: kind load docker-image openms-streamlit:test --name traefik-test
@@ -194,9 +193,6 @@ jobs:
             --namespace traefik --create-namespace \
             --set service.type=ClusterIP
           kubectl -n traefik wait --for=condition=available deployment/traefik --timeout=120s
-
-      - name: Label kind node with the tier the overlay expects
-        run: kubectl label nodes --all openms.de/memory-tier=low --overwrite
 
       - name: Deploy with Kustomize (full manifests, no filter)
         run: |

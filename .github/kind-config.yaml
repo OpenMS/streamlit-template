@@ -1,0 +1,17 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+# Two-node cluster that mirrors the production memory-tier topology, so
+# the Build-and-Test job passes regardless of which tier a fork selects
+# in its overlay (memory-tier-low or memory-tier-high). Without both
+# labels present, flipping the overlay would leave pods Pending on the
+# single kind node.
+nodes:
+  - role: control-plane
+    labels:
+      openms.de/memory-tier: low
+      # ingress-ready is required by the kind variant of the
+      # ingress-nginx deploy manifest applied in CI.
+      ingress-ready: "true"
+  - role: worker
+    labels:
+      openms.de/memory-tier: high
