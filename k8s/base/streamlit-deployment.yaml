@@ -51,8 +51,7 @@ spec:
               subPath: settings-overrides.json
               readOnly: true
             - name: admin-secrets
-              mountPath: /app/.streamlit/secrets.toml
-              subPath: secrets.toml
+              mountPath: /app/admin-secrets
               readOnly: true
           readinessProbe:
             httpGet:
@@ -84,6 +83,3 @@ spec:
           secret:
             secretName: streamlit-secrets
             optional: true
-            items:
-              - key: secrets.toml
-                path: secrets.toml

@@ -142,7 +142,7 @@ Traefik `IngressRoute` CRD. The default rule matches `PathPrefix('/')` (all path
 Lists all base resources under the `openms` namespace.
 
 ### `streamlit-secrets.yaml.example`
-Reference manifest for the optional `streamlit-secrets` Secret consumed by the Streamlit Deployment (mounted at `/app/.streamlit/secrets.toml`, which backs `st.secrets` — currently used for the admin password that gates the "Save as Demo" feature). Intentionally **not** in `k8s/base/kustomization.yaml`: the Secret is created out-of-band so no password is ever committed. See "Configuring the admin password" below.
+Reference manifest for the optional `streamlit-secrets` Secret consumed by the Streamlit Deployment (mounted as a directory at `/app/admin-secrets/`; `.streamlit/config.toml` registers that path under `[secrets].files` so `st.secrets` picks it up — currently used for the admin password that gates the "Save as Demo" feature). Intentionally **not** in `k8s/base/kustomization.yaml`: the Secret is created out-of-band so no password is ever committed. See "Configuring the admin password" below.
 
 ## 4. Fork-and-deploy guide
 
