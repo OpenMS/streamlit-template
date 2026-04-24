@@ -8,6 +8,7 @@ resources:
   - configmap.yaml
   - redis.yaml
   - workspace-pvc.yaml
+  - streamlit-secrets.yaml
   - streamlit-deployment.yaml
   - streamlit-service.yaml
   - rq-worker-deployment.yaml

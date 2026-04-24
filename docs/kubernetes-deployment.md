@@ -157,8 +157,8 @@ Traefik `IngressRoute` CRD. The default rule matches `PathPrefix('/')` (all path
 ### `kustomization.yaml`
 Lists all base resources under the `openms` namespace.
 
-### `streamlit-secrets.yaml.example`
-Reference manifest for the optional `streamlit-secrets` Secret consumed by the Streamlit Deployment (mounted as a directory at `/app/admin-secrets/`; `.streamlit/config.toml` registers that path under `[secrets].files` so `st.secrets` picks it up — currently used for the admin password that gates the "Save as Demo" feature). Intentionally **not** in `k8s/base/kustomization.yaml`: the Secret is created out-of-band so no password is ever committed. See "Configuring the admin password" below.
+### `streamlit-secrets.yaml`
+Ships with an empty admin password by default and is included in `k8s/base/kustomization.yaml`, so `kubectl apply -k` always creates the `streamlit-secrets` Secret. The Streamlit Deployment mounts it at `/app/admin-secrets/`, and `.streamlit/config.toml` registers that path under `[secrets].files` so `st.secrets` picks it up. The admin password gates the "Save as Demo" feature — when empty (default), that UI is hidden entirely; set a password to enable it. The volume mount keeps `optional: true` so forks that inject the Secret out-of-band (Vault, External Secrets Operator) or rename it still boot. See "Configuring the admin password" below.
 
 ## 4. Fork-and-deploy guide
 
@@ -213,40 +213,30 @@ components:
 
 ### Step 5 — Configure the admin password (optional)
 
-Skip this step if you don't need the "Save as Demo" feature. The Streamlit Deployment mounts the `streamlit-secrets` Secret with `optional: true`, so the pod starts either way — the admin UI simply reports "Admin not configured" when the Secret is absent.
+Skip this step if you don't need the "Save as Demo" feature. `k8s/base/streamlit-secrets.yaml` already ships the `streamlit-secrets` Secret with an empty password, so `kubectl apply -k` always creates it. While the password is empty, the Save-as-Demo UI is hidden entirely — no error, no button. Setting a non-empty password is what enables the feature.
 
-**Recommended — imperative, nothing on disk:**
+The overlay's `namePrefix` rewrites the Secret's name and the Deployment's reference together, so both paths below target `<your-app-name>-streamlit-secrets`.
 
-```bash
-kubectl -n openms create secret generic streamlit-secrets \
-  --from-literal=secrets.toml='[admin]
-password = "<your-strong-password>"'
-```
-
-The password never leaves the cluster. Rotate the same way:
+**Recommended — patch the live Secret, nothing on disk:**
 
 ```bash
-kubectl -n openms create secret generic streamlit-secrets \
-  --from-literal=secrets.toml='[admin]
-password = "<new-password>"' \
-  --dry-run=client -o yaml | kubectl apply -f -
+kubectl -n openms patch secret <your-app-name>-streamlit-secrets \
+  --type=merge -p '{"stringData":{"secrets.toml":"[admin]\npassword = \"<your-strong-password>\""}}'
 kubectl -n openms rollout restart deployment/<your-app-name>-streamlit
 ```
 
-Because the Secret is created outside Kustomize, the overlay's `namePrefix` does **not** apply to it — the Deployment references the literal name `streamlit-secrets`, so create it with exactly that name.
+Streamlit only re-reads `[secrets].files` at process start, so the rollout restart is required. Rotate the same way (same `patch` + `rollout restart`).
 
-**Alternative — manifest in the overlay:**
-
-Copy the template and fill it in:
+**Alternative — edit the committed file locally, tell git to ignore the change:**
 
 ```bash
-cp k8s/base/streamlit-secrets.yaml.example k8s/overlays/prod/streamlit-secrets.yaml
-# edit the password
+git update-index --skip-worktree k8s/base/streamlit-secrets.yaml
+# now edit password = "" to your real password, then:
+kubectl apply -k k8s/overlays/prod
+kubectl -n openms rollout restart deployment/<your-app-name>-streamlit
 ```
 
-Add `- streamlit-secrets.yaml` to the `resources:` list in `k8s/overlays/prod/kustomization.yaml`. The filename `streamlit-secrets.yaml` is gitignored (`.gitignore`: `k8s/**/streamlit-secrets.yaml`); always confirm with `git status` before committing — never commit a filled-in copy.
-
-When the Secret is managed through Kustomize, the overlay's `namePrefix` rewrites both the Secret name and the Deployment reference, so no manual renaming is needed.
+`skip-worktree` is a per-clone flag that makes git ignore further edits to that file; the password never shows up in `git status`, so you cannot accidentally commit it. Undo with `git update-index --no-skip-worktree k8s/base/streamlit-secrets.yaml`. A plain `.gitignore` entry would **not** work here — `.gitignore` only applies to untracked files, and this Secret is tracked.
 
 ### Step 6 — Deploy
 
