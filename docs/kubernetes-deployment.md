@@ -159,15 +159,13 @@ Update `settings.json`, choose a Dockerfile, and update `README.md`. If you are 
 
 Push your changes to `main` or create a tag. The workflow `.github/workflows/build-and-test.yml` builds both the full (`Dockerfile`) and lightweight (`Dockerfile_simple`) variants and pushes each to `ghcr.io/<your-org>/<your-repo>` with variant-suffixed tags: `<branch>-full` / `<branch>-simple`, `v<version>-full` / `v<version>-simple`, and `<sha>-full` / `<sha>-simple`. The unsuffixed `latest` tag tracks the full variant on `main`.
 
-### Step 3 — Create your overlay
+### Step 3 — Edit the production overlay
 
-```bash
-cp -r k8s/overlays/template-app k8s/overlays/<your-app-name>
-```
+Each fork ships a single production overlay at `k8s/overlays/prod/`. Edit this file in place — the forked repository itself identifies the app, so no per-app overlay subdirectory is created.
 
 ### Step 4 — Edit `kustomization.yaml`
 
-Open `k8s/overlays/<your-app-name>/kustomization.yaml` and change the following fields:
+Open `k8s/overlays/prod/kustomization.yaml` and change the following fields:
 
 | Field | Set to |
 |-------|--------|
@@ -181,10 +179,23 @@ Open `k8s/overlays/<your-app-name>/kustomization.yaml` and change the following 
 
 The overlay leaves the nginx `Ingress` unpatched because Traefik is the production ingress. If you are deploying to an nginx-only cluster, add an overlay patch for both `rules[].host` entries in the base `Ingress` (same `.de` / `.org` pattern) instead of the IngressRoute patch.
 
+### Step 4b — Select a memory tier
+
+The overlay pulls in one of two Kustomize components under `components:`:
+
+```yaml
+components:
+  - ../../components/memory-tier-low    # default: light app on low-mem node
+  # OR
+  - ../../components/memory-tier-high   # memory-intensive app on high-mem node
+```
+
+`memory-tier-low` is the right choice for most apps. Switch to `memory-tier-high` only if the workload genuinely needs tens of GB of RAM (DIA spectral-library + OpenSwath peak picking, DIA-LFQ). The tier component adds the matching `nodeSelector: openms.de/memory-tier=<tier>` plus `requests`/`limits` sized for that node, so cluster nodes must already be labelled `openms.de/memory-tier=low` / `...=high`.
+
 ### Step 5 — Deploy
 
 ```bash
-kubectl apply -k k8s/overlays/<your-app-name>/
+kubectl apply -k k8s/overlays/prod/
 ```
 
 ### Step 6 — Verify
@@ -212,7 +223,7 @@ One unified workflow owns manifest lint, Docker build, push, and kind integratio
 - **Trigger:** pull request to `main`, push to `main`, push of a `v*` tag, or manual workflow dispatch.
 - **Job 1 — `lint-manifests`:**
   - `kubeconform` runs against `k8s/base/*.yaml` with strict mode and Kubernetes 1.28 schemas (excluding `kustomization.yaml` and the Traefik CRD `traefik-ingressroute.yaml`).
-  - `kubectl kustomize k8s/overlays/template-app/` must succeed; the kustomized output is re-validated through `kubeconform` (with `IngressRoute` skipped).
+  - `kubectl kustomize k8s/overlays/prod/` must succeed; the kustomized output is re-validated through `kubeconform` (with `IngressRoute` skipped).
   - Takes ~30s. Fails fast so manifest typos never trigger the hours-long full Docker build.
 - **Job 2 — `build`** (`needs: lint-manifests`, matrix over `[full, simple]`):
   - Builds `Dockerfile` (full, includes TOPP tools) or `Dockerfile_simple` (pyOpenMS only) depending on the matrix leg.

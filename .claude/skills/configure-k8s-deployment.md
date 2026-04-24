@@ -20,13 +20,9 @@ Run `configure-app-settings` first. This skill assumes `settings.json`, the Dock
 
    Push your changes to `main` or create a tag. The workflow `.github/workflows/build-and-test.yml` builds both the full and lightweight (`-simple`) variants and publishes them to `ghcr.io/<your-org>/<your-repo>:<tag>-full` and `:<tag>-simple` respectively. The unsuffixed `latest` tag tracks the full variant on the `main` branch.
 
-2. **Copy the template overlay.**
+2. **Edit `k8s/overlays/prod/kustomization.yaml` in place.**
 
-    ```bash
-    cp -r k8s/overlays/template-app k8s/overlays/<your-app-name>
-    ```
-
-3. **Edit `k8s/overlays/<your-app-name>/kustomization.yaml`**:
+   Each fork ships a single production overlay at `k8s/overlays/prod/`. Edit the existing file rather than copying — the repo itself identifies the app, so there is no per-app overlay subdirectory.
 
    - Change `namePrefix` from `template-app-` to `<your-app-name>-`
    - Change `commonLabels.app` from `template-app` to `<your-app-name>`
@@ -38,10 +34,23 @@ Run `configure-app-settings` first. This skill assumes `settings.json`, the Dock
 
    The overlay leaves the nginx `Ingress` unpatched because production deployments use Traefik. If you are deploying to an nginx-only cluster, add an overlay patch for both `rules[].host` entries in the base `Ingress` (same `.de` / `.org` pattern) instead of the IngressRoute.
 
+3. **Select a memory tier.**
+
+   The overlay pulls in one of two Kustomize components under `components:`. The default `memory-tier-low` pins the app to the low-mem node (~64 GB) with modest resource requests/limits — correct for most template-based apps. Switch to `memory-tier-high` only if the workload genuinely needs the large-memory node (DIA spectral-library construction, OpenSwath peak picking, DIA-LFQ):
+
+   ```yaml
+   components:
+     - ../../components/memory-tier-low    # default: light app
+     # OR
+     - ../../components/memory-tier-high   # memory-intensive app
+   ```
+
+   The cluster node labels `openms.de/memory-tier=low` and `openms.de/memory-tier=high` must already exist; the tier component adds the matching `nodeSelector`.
+
 4. **Validate the overlay builds.**
 
     ```bash
-    kubectl kustomize k8s/overlays/<your-app-name>/
+    kubectl kustomize k8s/overlays/prod/
     ```
 
     Should print the rendered manifests with no errors.
@@ -49,7 +58,7 @@ Run `configure-app-settings` first. This skill assumes `settings.json`, the Dock
 5. **Deploy.**
 
     ```bash
-    kubectl apply -k k8s/overlays/<your-app-name>/
+    kubectl apply -k k8s/overlays/prod/
     ```
 
 6. **Verify.**
@@ -63,7 +72,8 @@ Run `configure-app-settings` first. This skill assumes `settings.json`, the Dock
 
 ## Reference Files
 
-- Overlay template: `k8s/overlays/template-app/kustomization.yaml`
+- Overlay: `k8s/overlays/prod/kustomization.yaml`
+- Memory-tier components: `k8s/components/memory-tier-{low,high}/`
 - Base manifests: `k8s/base/*.yaml`
 - CI: `.github/workflows/build-and-test.yml` (unified build + lint + kind integration), `.github/workflows/ghcr-cleanup.yml` (scheduled tag retention)
 - Full reference: see the "Developers Guide: Kubernetes Deployment" Documentation page in the running Streamlit app.
@@ -71,10 +81,10 @@ Run `configure-app-settings` first. This skill assumes `settings.json`, the Dock
 ## Checklist
 
 - [ ] Image built and pushed to GHCR (via CI or manual push to `main`/tag)
-- [ ] Overlay copied to `k8s/overlays/<your-app-name>/`
-- [ ] `namePrefix`, `commonLabels.app`, `images[0].newName` updated
+- [ ] `namePrefix`, `commonLabels.app`, `images[0].newName` updated in `k8s/overlays/prod/kustomization.yaml`
 - [ ] IngressRoute patch updated (both hostnames + service reference)
 - [ ] Redis URL updated in both Deployment patches
+- [ ] Memory tier selected (`memory-tier-low` or `memory-tier-high`)
 - [ ] `kubectl kustomize` succeeds
 - [ ] `kubectl apply -k` succeeds
 - [ ] All pods Running, `rollout status` succeeds

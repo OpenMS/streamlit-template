@@ -48,13 +48,6 @@ spec:
               mountPath: /app/settings-overrides.json
               subPath: settings-overrides.json
               readOnly: true
-          resources:
-            requests:
-              memory: "1Gi"
-              cpu: "500m"
-            limits:
-              memory: "8Gi"
-              cpu: "4"
       volumes:
         - name: workspaces
           persistentVolumeClaim:
