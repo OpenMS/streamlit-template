@@ -12,5 +12,5 @@ spec:
         memory: "2Gi"
         cpu: "2"
       max:
-        memory: "64Gi"
-        cpu: "16"
+        memory: "200Gi"
+        cpu: "20"

@@ -114,6 +114,9 @@ jobs:
           kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
           kubectl wait --namespace ingress-nginx --for=condition=ready pod --selector=app.kubernetes.io/component=controller --timeout=90s
 
+      - name: Label kind node with the tier the overlay expects
+        run: kubectl label nodes --all openms.de/memory-tier=low --overwrite
+
       - name: Deploy with Kustomize
         run: |
           # Filter out Traefik IngressRoute (kind cluster uses nginx) and force imagePullPolicy=Never
@@ -191,6 +194,9 @@ jobs:
             --namespace traefik --create-namespace \
             --set service.type=ClusterIP
           kubectl -n traefik wait --for=condition=available deployment/traefik --timeout=120s
+
+      - name: Label kind node with the tier the overlay expects
+        run: kubectl label nodes --all openms.de/memory-tier=low --overwrite
 
       - name: Deploy with Kustomize (full manifests, no filter)
         run: |
