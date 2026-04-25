@@ -101,6 +101,35 @@ jobs:
           FIRST_TAG=$(printf '%s\n' "${{ steps.meta.outputs.tags }}" | head -n 1)
           docker tag "$FIRST_TAG" openms-streamlit:test
 
+      - name: Save image as tar
+        run: docker save openms-streamlit:test -o /tmp/image.tar
+
+      - name: Upload image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: openms-streamlit-${{ matrix.variant }}-image
+          path: /tmp/image.tar
+          retention-days: 1
+
+  test-nginx:
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [full, simple]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: openms-streamlit-${{ matrix.variant }}-image
+          path: /tmp
+
+      - name: Load image into local docker
+        run: docker load -i /tmp/image.tar
+
       - name: Create kind cluster
         uses: helm/kind-action@v1
         with:
@@ -164,14 +193,24 @@ jobs:
             echo "$host -> 200 OK"
           done
 
-  traefik-integration:
-    needs: lint-manifests
+  test-traefik:
+    needs: build
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [full, simple]
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build image (simple variant; routing is image-agnostic)
-        run: docker build -t openms-streamlit:test -f Dockerfile_simple .
+      - name: Download image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: openms-streamlit-${{ matrix.variant }}-image
+          path: /tmp
+
+      - name: Load image into local docker
+        run: docker load -i /tmp/image.tar
 
       - name: Create kind cluster
         uses: helm/kind-action@v1
