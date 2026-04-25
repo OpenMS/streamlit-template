@@ -196,13 +196,17 @@ jobs:
   test-traefik:
     needs: build
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [full, simple]
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download simple image artifact
+      - name: Download image artifact
         uses: actions/download-artifact@v4
         with:
-          name: openms-streamlit-simple-image
+          name: openms-streamlit-${{ matrix.variant }}-image
           path: /tmp
 
       - name: Load image into local docker
