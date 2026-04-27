@@ -17,8 +17,10 @@ worker over Redis pubsub to interrupt the work-horse.
 import os
 import sys
 
-import fakeredis
 import pytest
+
+fakeredis = pytest.importorskip("fakeredis")
+rq = pytest.importorskip("rq")
 from rq import Queue
 from rq.job import Job, JobStatus
 
