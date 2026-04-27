@@ -55,25 +55,34 @@ class QueueManager:
     def __init__(self):
         self._redis = None
         self._queue = None
-        self._is_online = self._check_online_mode()
         self._init_attempted = False
+
+        settings = self._load_settings()
+        self._is_online = self._check_online_mode(settings)
+
+        queue_settings = settings.get("queue_settings", {})
+        self._default_timeout = queue_settings.get("default_timeout", 7200)
+        self._default_result_ttl = queue_settings.get("result_ttl", 86400)
 
         if self._is_online:
             self._init_redis()
 
-    def _check_online_mode(self) -> bool:
+    @staticmethod
+    def _load_settings() -> dict:
+        """Load settings.json once; return empty dict on failure."""
+        try:
+            with open("settings.json", "r") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+
+    def _check_online_mode(self, settings: dict) -> bool:
         """Check if running in online mode"""
         # Check environment variable first (set in Docker)
         if os.environ.get("REDIS_URL"):
             return True
 
-        # Fallback: check settings file
-        try:
-            with open("settings.json", "r") as f:
-                settings = json.load(f)
-                return settings.get("online_deployment", False)
-        except Exception:
-            return False
+        return settings.get("online_deployment", False)
 
     def _init_redis(self) -> None:
         """Initialize Redis connection and queue"""
@@ -108,8 +117,8 @@ class QueueManager:
         args: tuple = (),
         kwargs: dict = None,
         job_id: Optional[str] = None,
-        timeout: int = 7200,  # 2 hour default
-        result_ttl: int = 86400,  # 24 hours
+        timeout: Optional[int] = None,
+        result_ttl: Optional[int] = None,
         description: str = ""
     ) -> Optional[str]:
         """
@@ -120,8 +129,8 @@ class QueueManager:
             args: Positional arguments for the function
             kwargs: Keyword arguments for the function
             job_id: Optional custom job ID (defaults to UUID)
-            timeout: Job timeout in seconds
-            result_ttl: How long to keep results
+            timeout: Job timeout in seconds (defaults to settings.json queue_settings.default_timeout)
+            result_ttl: How long to keep results (defaults to settings.json queue_settings.result_ttl)
             description: Human-readable job description
 
         Returns:
@@ -131,6 +140,10 @@ class QueueManager:
             return None
 
         kwargs = kwargs or {}
+        if timeout is None:
+            timeout = self._default_timeout
+        if result_ttl is None:
+            result_ttl = self._default_result_ttl
 
         try:
             job = self._queue.enqueue(
