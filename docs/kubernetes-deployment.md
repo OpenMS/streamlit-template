@@ -35,8 +35,8 @@ Every production OpenMS webapp (quantms-web, umetaflow, FLASHApp) deploys via th
                 │        Streamlit Deployment             │
                 │        (N replicas, default 2)          │
                 │                                         │
-                │   [pod affinity: co-locate with         │
-                │    rq-worker + cleanup-cronjob pods]    │
+                │   [co-located with rq-worker +          │
+                │    cleanup pods via shared RWO PVC]     │
                 └────────┬────────────────────────┬───────┘
                          │ REDIS_URL              │
                          │                        │ /workspaces-...
@@ -76,9 +76,11 @@ Every production OpenMS webapp (quantms-web, umetaflow, FLASHApp) deploys via th
 | Traefik IngressRoute | External HTTP entrypoint with sticky sessions | — | — |
 | nginx Ingress | Alternative HTTP entrypoint used by the CI kind cluster | — | — |
 
-### Pod affinity
+### Pod co-location via the RWO PVC
 
-All workspace-using pods (Streamlit, RQ worker, Cleanup) carry a `volume-group: workspaces` label and a `requiredDuringSchedulingIgnoredDuringExecution` pod-affinity rule keyed on `kubernetes.io/hostname`. This forces every workspace-using pod onto the same node, so they can share the `ReadWriteOnce` PVC.
+All workspace-using pods (Streamlit, RQ worker, Cleanup) of a given fork mount the same `<slug>-workspaces-pvc` (`ReadWriteOnce`, `cinder-csi`). Once the first pod schedules, the volume is attached to that node and the kube-scheduler's `VolumeBinding` plugin pins every subsequent pod that mounts the same PVC to the same node. NodeSelector (`openms.de/memory-tier`) picks which set of nodes the fork is eligible for; the RWO mount picks the specific node within that set.
+
+There is no pod-affinity rule. Forks are isolated from each other — co-location applies within a fork (because they share a PVC), not across forks (each fork has its own PVC).
 
 Co-location is a placement constraint, not a replica cap. The Streamlit deployment can scale to N replicas — they all land on the same node alongside the worker.
 
@@ -130,14 +132,14 @@ Main Streamlit Deployment. Key fields:
 - Mounts the workspace PVC at `/workspaces-streamlit-template`
 - Mounts `settings-overrides.json` from the ConfigMap as a `subPath`
 - Readiness and liveness probes hit `/_stcore/health`
-- Pod affinity: `volume-group: workspaces`
+- Co-located with the RQ worker (and any cleanup Job) on the node the RWO `workspaces-pvc` is attached to
 - `seed-demos` initContainer merges image-shipped demos into `.demos/` on the PVC (see [Demo workspaces](#demo-workspaces))
 
 ### `streamlit-service.yaml`
 ClusterIP Service exposing Streamlit on port 8501.
 
 ### `rq-worker-deployment.yaml`
-RQ worker Deployment (1 replica). Runs `rq worker openms-workflows --url $REDIS_URL`. Shares the workspace PVC via the same `volume-group: workspaces` affinity rule.
+RQ worker Deployment (1 replica). Runs `rq worker openms-workflows --url $REDIS_URL`. Shares the workspace PVC, so it co-locates onto the same node as the Streamlit pods via the RWO mount.
 
 ### `cleanup-cronjob.yaml`
 CronJob that runs `python clean-up-workspaces.py` nightly at 03:00 UTC. Uses `concurrencyPolicy: Forbid`, retains 3 successful and 3 failed jobs. Shares the workspace PVC.
