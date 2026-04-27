@@ -13,18 +13,7 @@ spec:
     metadata:
       labels:
         component: streamlit
-        volume-group: workspaces
     spec:
-      affinity:
-        podAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            - labelSelector:
-                matchExpressions:
-                  - key: volume-group
-                    operator: In
-                    values:
-                      - workspaces
-              topologyKey: kubernetes.io/hostname
       initContainers:
         - name: seed-demos
           image: openms-streamlit
