@@ -164,7 +164,7 @@ Operator caveat (mention in handoff, not your job to verify): in-place expansion
 After committing the edits, tell the user the next steps belong to a human operator (or CI) and are out of scope for you:
 
 1. Open a PR with the overlay edits and have it reviewed.
-2. Merge to `main`. CI (`build-and-test.yml`) rebuilds and pushes the image to GHCR with the tag from Q3.
+2. Merge to `main`. CI (`build-and-test.yml`) rebuilds and pushes the image to GHCR with the tag from Q3. The kind integration jobs (`test-nginx`, `test-traefik`) auto-discover slug and Traefik hostnames from the overlay output, so no workflow edits are needed for fork-specific values.
 3. Cluster operator runs `kubectl apply -k k8s/overlays/prod/` against the OpenMS cluster.
 4. Operator verifies with `kubectl -n openms rollout status deployment/<slug>-streamlit` and a browser check on `https://<sub>.webapps.openms.de`.
 
@@ -185,4 +185,5 @@ After committing the edits, tell the user the next steps belong to a human opera
 - [ ] Redis URL written in both Deployment patches (`streamlit` and `rq-worker`)
 - [ ] Memory-tier component selected
 - [ ] Storage size in `k8s/base/workspace-pvc.yaml` updated only if the user picked a non-default size; PVC name and `claimName` untouched
+- [ ] `.github/workflows/build-and-test.yml` uses dynamic overlay discovery (no `template-app` / `template.webapps.openms.*` literals); patched in if the fork's workflow was on the old hardcoded shape
 - [ ] Changes committed on a feature branch (no PR opened unless the user asked for one)
