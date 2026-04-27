@@ -72,7 +72,6 @@ class WorkflowManager:
                 "workflow_module": self.__class__.__module__,
             },
             job_id=job_id,
-            timeout=7200,  # 2 hour timeout
             description=f"Workflow: {self.name}"
         )
 
