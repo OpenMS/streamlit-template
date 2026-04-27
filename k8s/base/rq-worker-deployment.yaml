@@ -13,17 +13,13 @@ spec:
     metadata:
       labels:
         component: rq-worker
-        volume-group: workspaces
     spec:
       affinity:
         podAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
             - labelSelector:
-                matchExpressions:
-                  - key: volume-group
-                    operator: In
-                    values:
-                      - workspaces
+                matchLabels:
+                  component: streamlit
               topologyKey: kubernetes.io/hostname
       containers:
         - name: rq-worker

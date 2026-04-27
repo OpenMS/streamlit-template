@@ -35,8 +35,8 @@ Every production OpenMS webapp (quantms-web, umetaflow, FLASHApp) deploys via th
                 │        Streamlit Deployment             │
                 │        (N replicas, default 2)          │
                 │                                         │
-                │   [pod affinity: co-locate with         │
-                │    rq-worker + cleanup-cronjob pods]    │
+                │   [no pod affinity — RWO PVC binding    │
+                │    co-locates replicas on one node]     │
                 └────────┬────────────────────────┬───────┘
                          │ REDIS_URL              │
                          │                        │ /workspaces-...
@@ -78,9 +78,16 @@ Every production OpenMS webapp (quantms-web, umetaflow, FLASHApp) deploys via th
 
 ### Pod affinity
 
-All workspace-using pods (Streamlit, RQ worker, Cleanup) carry a `volume-group: workspaces` label and a `requiredDuringSchedulingIgnoredDuringExecution` pod-affinity rule keyed on `kubernetes.io/hostname`. This forces every workspace-using pod onto the same node, so they can share the `ReadWriteOnce` PVC.
+The workspace PVC is `ReadWriteOnce`, so all pods that mount it must run on the same node. Two mechanisms ensure this without dragging unrelated forks onto each other:
 
-Co-location is a placement constraint, not a replica cap. The Streamlit deployment can scale to N replicas — they all land on the same node alongside the worker.
+- **Streamlit Deployment has no pod-affinity.** Replicas are co-located implicitly by the volume scheduler: the first replica binds the PVC to a node, and the scheduler then pins every subsequent replica using the same PVC to that node.
+- **RQ Worker Deployment and Cleanup CronJob have a `requiredDuringSchedulingIgnoredDuringExecution` pod-affinity rule** with `matchLabels: { component: streamlit }` and `topologyKey: kubernetes.io/hostname`. They follow whichever node Streamlit landed on.
+
+Per-fork scoping is automatic. Each overlay's `commonLabels: { app: <slug> }` is injected by Kustomize into the affinity `matchLabels`, so the effective selector is `{ app: <slug>, component: streamlit }` — pods only co-locate with their own fork's Streamlit, never with another fork sharing the namespace. (For the CronJob, the nested `spec/jobTemplate/...` paths aren't covered by Kustomize's default label-injection config, so the memory-tier components ship a small `labels-config.yaml` that extends the configuration. Every overlay uses one of those components, so this is automatic for forks.)
+
+Bootstrap of a fresh fork on an empty tier works without intervention: Streamlit has no required affinity, so its first replica schedules on any node matching the `nodeSelector` tier; the PVC binds; the second replica auto-pins to that node; RQ Worker and Cleanup follow.
+
+Tier selection is decoupled from co-location: the `openms.de/memory-tier: low|high` `nodeSelector` (added by the memory-tier components) is the sole knob for which class of node a fork lands on. Pod affinity carries no tier semantics.
 
 ### Ingress
 
@@ -130,14 +137,14 @@ Main Streamlit Deployment. Key fields:
 - Mounts the workspace PVC at `/workspaces-streamlit-template`
 - Mounts `settings-overrides.json` from the ConfigMap as a `subPath`
 - Readiness and liveness probes hit `/_stcore/health`
-- Pod affinity: `volume-group: workspaces`
+- No pod affinity (replicas co-locate via the RWO PVC binding; see [Pod affinity](#pod-affinity))
 - `seed-demos` initContainer merges image-shipped demos into `.demos/` on the PVC (see [Demo workspaces](#demo-workspaces))
 
 ### `streamlit-service.yaml`
 ClusterIP Service exposing Streamlit on port 8501.
 
 ### `rq-worker-deployment.yaml`
-RQ worker Deployment (1 replica). Runs `rq worker openms-workflows --url $REDIS_URL`. Shares the workspace PVC via the same `volume-group: workspaces` affinity rule.
+RQ worker Deployment (1 replica). Runs `rq worker openms-workflows --url $REDIS_URL`. Shares the workspace PVC; pod affinity (`matchLabels: { component: streamlit }`) co-locates it on the Streamlit node — see [Pod affinity](#pod-affinity).
 
 ### `cleanup-cronjob.yaml`
 CronJob that runs `python clean-up-workspaces.py` nightly at 03:00 UTC. Uses `concurrencyPolicy: Forbid`, retains 3 successful and 3 failed jobs. Shares the workspace PVC.

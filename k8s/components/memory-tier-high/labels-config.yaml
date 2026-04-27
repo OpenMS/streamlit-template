@@ -1,0 +1,14 @@
+commonLabels:
+  - path: spec/jobTemplate/spec/template/metadata/labels
+    create: true
+    kind: CronJob
+  - path: spec/jobTemplate/spec/template/spec/affinity/podAffinity/requiredDuringSchedulingIgnoredDuringExecution/labelSelector/matchLabels
+    kind: CronJob
+  - path: spec/jobTemplate/spec/template/spec/affinity/podAffinity/preferredDuringSchedulingIgnoredDuringExecution/podAffinityTerm/labelSelector/matchLabels
+    kind: CronJob
+  - path: spec/jobTemplate/spec/template/spec/affinity/podAntiAffinity/requiredDuringSchedulingIgnoredDuringExecution/labelSelector/matchLabels
+    kind: CronJob
+  - path: spec/jobTemplate/spec/template/spec/affinity/podAntiAffinity/preferredDuringSchedulingIgnoredDuringExecution/podAffinityTerm/labelSelector/matchLabels
+    kind: CronJob
+  - path: spec/jobTemplate/spec/template/spec/topologySpreadConstraints/labelSelector/matchLabels
+    kind: CronJob
