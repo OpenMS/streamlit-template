@@ -29,8 +29,8 @@ Before asking the user anything, read a small known set of files directly (do no
 3. `k8s/base/kustomization.yaml`, `k8s/base/streamlit-deployment.yaml`, `k8s/base/rq-worker-deployment.yaml`, `k8s/base/workspace-pvc.yaml` — confirm the layout still matches the template:
    - PVC `metadata.name` is `workspaces-pvc`.
    - Deployments reference `image: openms-streamlit` (the placeholder Kustomize swaps).
-   - `streamlit-deployment.yaml` has `claimName: workspaces-pvc` and `volume-group: workspaces` (both as a pod label and as the pod-affinity `matchExpressions` value).
-4. `.github/workflows/build-and-test.yml` — confirm which tags CI publishes (the OpenMS template publishes `<branch>-full`, `<branch>-simple`, `<tag>-full`, `<tag>-simple`, plus `latest` on `main`-full pushes). Also confirm the `test-nginx` and `test-traefik` jobs derive `SLUG` and `TRAEFIK_HOSTS` from the overlay (look for the `Discover overlay identity` step). If the fork is on an older workflow that hardcodes `template-app` or `template.webapps.openms.*` in `kubectl wait`/curl steps, stop and apply the dynamic-discovery patch from the upstream template before editing the overlay — otherwise the fork's first overlay PR will fail CI on `kubectl wait` returning "no matching resources found" (this is the bug that broke OpenMS/quantms-web PR #19).
+   - `streamlit-deployment.yaml` has `claimName: workspaces-pvc`. (Co-location of the workspace-using pods is enforced by the shared RWO PVC mount, not by a pod-affinity rule.)
+4. `.github/workflows/build-and-test.yml` — confirm which tags CI publishes (the OpenMS template publishes `<branch>-full`, `<branch>-simple`, `<tag>-full`, `<tag>-simple`, plus `latest` on `main`-full pushes).
 
 If any of those files are missing, renamed, or significantly restructured, stop and ask the user how to proceed. Do not pattern-match the standard answers onto an unknown layout.
 
@@ -155,7 +155,7 @@ spec:
       storage: <size>     # Q6: e.g. 100Gi, 1Ti, 3Ti
 ```
 
-Do **not** rename the PVC, the base `kustomization.yaml` resource list, the `claimName` in `streamlit-deployment.yaml`, or the `volume-group` pod-affinity label. Kustomize's `namePrefix` already gives the in-cluster PVC a unique per-fork name; renaming the base creates a 3-file cascade for no benefit.
+Do **not** rename the PVC, the base `kustomization.yaml` resource list, or the `claimName` in `streamlit-deployment.yaml`. Kustomize's `namePrefix` already gives the in-cluster PVC a unique per-fork name; renaming the base creates a 3-file cascade for no benefit.
 
 Operator caveat (mention in handoff, not your job to verify): in-place expansion of an *already-deployed* PVC requires the StorageClass to have `allowVolumeExpansion: true`. If the operator's `cinder-csi` class does not allow expansion, growing a live PVC requires recreation, not a manifest edit. Resizing on first deploy is unaffected.
 
