@@ -160,19 +160,24 @@ jobs:
             sleep "${i}0"
           done
 
+      - name: Discover overlay identity
+        run: |
+          SLUG=$(yq '.commonLabels.app' k8s/overlays/prod/kustomization.yaml)
+          echo "SLUG=$SLUG" >> "$GITHUB_ENV"
+
       - name: Wait for Redis to be ready
         run: |
-          kubectl wait -n openms --for=condition=ready pod -l app=template-app,component=redis --timeout=60s
+          kubectl wait -n openms --for=condition=ready pod -l app=${SLUG},component=redis --timeout=60s
 
       - name: Verify Redis Service is reachable
         run: |
-          kubectl run redis-test -n openms --image=redis:7-alpine --rm -i --restart=Never -- redis-cli -h template-app-redis.openms.svc.cluster.local ping
+          kubectl run redis-test -n openms --image=redis:7-alpine --rm -i --restart=Never -- redis-cli -h ${SLUG}-redis.openms.svc.cluster.local ping
 
       - name: Verify all deployments are available
         run: |
-          kubectl wait -n openms --for=condition=available deployment -l app=template-app --timeout=180s || true
-          kubectl get pods -n openms -l app=template-app
-          kubectl get services -n openms -l app=template-app
+          kubectl wait -n openms --for=condition=available deployment -l app=${SLUG} --timeout=180s || true
+          kubectl get pods -n openms -l app=${SLUG}
+          kubectl get services -n openms -l app=${SLUG}
 
       - name: Curl both hostnames via nginx ingress
         run: |
@@ -247,29 +252,39 @@ jobs:
             sleep "${i}0"
           done
 
+      - name: Discover overlay identity
+        run: |
+          SLUG=$(yq '.commonLabels.app' k8s/overlays/prod/kustomization.yaml)
+          TRAEFIK_HOSTS=$(kubectl kustomize k8s/overlays/prod/ \
+            | yq 'select(.kind == "IngressRoute") | .spec.routes[0].match' \
+            | grep -oP "Host\(\`\K[^\`]+" | tr '\n' ' ')
+          echo "SLUG=$SLUG" >> "$GITHUB_ENV"
+          echo "TRAEFIK_HOSTS=$TRAEFIK_HOSTS" >> "$GITHUB_ENV"
+
       - name: Wait for Redis to be ready
         run: |
-          kubectl wait -n openms --for=condition=ready pod -l app=template-app,component=redis --timeout=60s
+          kubectl wait -n openms --for=condition=ready pod -l app=${SLUG},component=redis --timeout=60s
 
       - name: Verify all deployments are available
         run: |
-          kubectl wait -n openms --for=condition=available deployment -l app=template-app --timeout=180s || true
-          kubectl get pods -n openms -l app=template-app
-          kubectl get services -n openms -l app=template-app
+          kubectl wait -n openms --for=condition=available deployment -l app=${SLUG} --timeout=180s || true
+          kubectl get pods -n openms -l app=${SLUG}
+          kubectl get services -n openms -l app=${SLUG}
 
       - name: Curl both hostnames via Traefik
         run: |
           kubectl -n traefik port-forward svc/traefik 8080:80 &
           PF_PID=$!
           trap 'kill "$PF_PID" 2>/dev/null || true' EXIT
+          FIRST_HOST=$(echo ${TRAEFIK_HOSTS} | awk '{print $1}')
           for i in $(seq 1 30); do
             sleep 2
-            if curl -fsSo /dev/null --max-time 2 http://127.0.0.1:8080/_stcore/health -H "Host: template.webapps.openms.de"; then
+            if curl -fsSo /dev/null --max-time 2 http://127.0.0.1:8080/_stcore/health -H "Host: ${FIRST_HOST}"; then
               break
             fi
             echo "port-forward / app not ready yet, retry $i"
           done
-          for host in template.webapps.openms.de template.webapps.openms.org; do
+          for host in ${TRAEFIK_HOSTS}; do
             curl -fsS --resolve "$host:8080:127.0.0.1" "http://$host:8080/_stcore/health"
             echo ""
             echo "$host -> 200 OK"

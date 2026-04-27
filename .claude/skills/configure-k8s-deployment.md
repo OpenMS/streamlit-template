@@ -30,7 +30,7 @@ Before asking the user anything, read a small known set of files directly (do no
    - PVC `metadata.name` is `workspaces-pvc`.
    - Deployments reference `image: openms-streamlit` (the placeholder Kustomize swaps).
    - `streamlit-deployment.yaml` has `claimName: workspaces-pvc` and `volume-group: workspaces` (both as a pod label and as the pod-affinity `matchExpressions` value).
-4. `.github/workflows/build-and-test.yml` — confirm which tags CI publishes (the OpenMS template publishes `<branch>-full`, `<branch>-simple`, `<tag>-full`, `<tag>-simple`, plus `latest` on `main`-full pushes).
+4. `.github/workflows/build-and-test.yml` — confirm which tags CI publishes (the OpenMS template publishes `<branch>-full`, `<branch>-simple`, `<tag>-full`, `<tag>-simple`, plus `latest` on `main`-full pushes). Also confirm the `test-nginx` and `test-traefik` jobs derive `SLUG` and `TRAEFIK_HOSTS` from the overlay (look for the `Discover overlay identity` step). If the fork is on an older workflow that hardcodes `template-app` or `template.webapps.openms.*` in `kubectl wait`/curl steps, stop and apply the dynamic-discovery patch from the upstream template before editing the overlay — otherwise the fork's first overlay PR will fail CI on `kubectl wait` returning "no matching resources found" (this is the bug that broke OpenMS/quantms-web PR #19).
 
 If any of those files are missing, renamed, or significantly restructured, stop and ask the user how to proceed. Do not pattern-match the standard answers onto an unknown layout.
 
@@ -164,7 +164,7 @@ Operator caveat (mention in handoff, not your job to verify): in-place expansion
 After committing the edits, tell the user the next steps belong to a human operator (or CI) and are out of scope for you:
 
 1. Open a PR with the overlay edits and have it reviewed.
-2. Merge to `main`. CI (`build-and-test.yml`) rebuilds and pushes the image to GHCR with the tag from Q3.
+2. Merge to `main`. CI (`build-and-test.yml`) rebuilds and pushes the image to GHCR with the tag from Q3. The kind integration jobs (`test-nginx`, `test-traefik`) auto-discover slug and Traefik hostnames from the overlay output, so no workflow edits are needed for fork-specific values.
 3. Cluster operator runs `kubectl apply -k k8s/overlays/prod/` against the OpenMS cluster.
 4. Operator verifies with `kubectl -n openms rollout status deployment/<slug>-streamlit` and a browser check on `https://<sub>.webapps.openms.de`.
 
@@ -185,4 +185,5 @@ After committing the edits, tell the user the next steps belong to a human opera
 - [ ] Redis URL written in both Deployment patches (`streamlit` and `rq-worker`)
 - [ ] Memory-tier component selected
 - [ ] Storage size in `k8s/base/workspace-pvc.yaml` updated only if the user picked a non-default size; PVC name and `claimName` untouched
+- [ ] `.github/workflows/build-and-test.yml` uses dynamic overlay discovery (no `template-app` / `template.webapps.openms.*` literals); patched in if the fork's workflow was on the old hardcoded shape
 - [ ] Changes committed on a feature branch (no PR opened unless the user asked for one)
