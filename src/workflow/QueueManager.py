@@ -178,7 +178,8 @@ class QueueManager:
 
             job = Job.fetch(job_id, connection=self._redis)
 
-            # Map RQ status to our enum
+            # 'stopped' is what RQ records after send_stop_job_command runs;
+            # surface it as CANCELED so the UI doesn't show stopped jobs as queued.
             status_map = {
                 "queued": JobStatus.QUEUED,
                 "started": JobStatus.STARTED,
@@ -186,6 +187,7 @@ class QueueManager:
                 "failed": JobStatus.FAILED,
                 "deferred": JobStatus.DEFERRED,
                 "canceled": JobStatus.CANCELED,
+                "stopped": JobStatus.CANCELED,
             }
 
             status = status_map.get(job.get_status(), JobStatus.QUEUED)
@@ -232,23 +234,60 @@ class QueueManager:
         """
         Cancel a queued or running job.
 
+        For queued jobs, this removes them from the queue. For jobs that are
+        already executing in a worker, Job.cancel() alone is not enough — it
+        only updates Redis registries while the worker keeps running the
+        workflow. We send a stop-job command to the worker so the work-horse
+        is actually interrupted.
+
         Args:
             job_id: The job ID to cancel
 
         Returns:
-            True if successfully canceled
+            True if the job is canceled (or already was), False otherwise.
         """
         if not self.is_available:
             return False
 
         try:
+            from rq.command import send_stop_job_command
+            from rq.exceptions import InvalidJobOperation, NoSuchJobError
             from rq.job import Job
+        except ImportError:
+            return False
 
+        try:
             job = Job.fetch(job_id, connection=self._redis)
-            job.cancel()
-            return True
+        except NoSuchJobError:
+            return False
         except Exception:
             return False
+
+        # Idempotent: a second Stop click (or rerun) should not surface an error.
+        if job.is_canceled or job.is_stopped:
+            return True
+
+        # Tell the worker to interrupt the work-horse before marking canceled.
+        if job.is_started and job.worker_name:
+            try:
+                send_stop_job_command(self._redis, job_id)
+            except InvalidJobOperation:
+                # The worker just finished or the job moved out of 'started';
+                # fall through to cancel() to settle registry state.
+                pass
+            except Exception:
+                pass
+
+        try:
+            job.cancel()
+        except InvalidJobOperation:
+            # Worker already transitioned the job (e.g. to 'stopped'); that
+            # satisfies the user's intent to stop.
+            pass
+        except Exception:
+            return False
+
+        return True
 
     def get_queue_stats(self) -> dict:
         """
