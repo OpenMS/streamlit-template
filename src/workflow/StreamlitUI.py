@@ -20,6 +20,7 @@ from src.common.common import (
     tk_directory_dialog,
     tk_file_dialog,
 )
+from src.workflow._log_status import classify_log_outcome
 
 
 class StreamlitUI:
@@ -1268,9 +1269,11 @@ class StreamlitUI:
             with open(log_path, "r", encoding="utf-8") as f:
                 lines = f.readlines()
             content = "".join(lines)
-            # Check if workflow finished successfully
-            if "WORKFLOW FINISHED" in content:
+            outcome = classify_log_outcome(content)
+            if outcome == "finished":
                 st.success("**Workflow completed successfully.**")
+            elif outcome == "cancelled":
+                st.warning("**Workflow was cancelled.**")
             else:
                 st.error("**Errors occurred, check log file.**")
             # Apply line limit to static display
@@ -1323,6 +1326,9 @@ class StreamlitUI:
             if job_error:
                 with st.expander("Error Details", expanded=True):
                     st.code(job_error)
+
+        elif job_status == "canceled":
+            st.warning(f"**Status: {label}** - Workflow was cancelled.")
 
         # Expandable job details
         with st.expander("Job Details", expanded=False):

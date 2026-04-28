@@ -178,16 +178,28 @@ class WorkflowManager:
         """
         Stop a running workflow.
 
+        Writes a "WORKFLOW CANCELLED" marker to the log so the static
+        run-page display can render a "Workflow was cancelled" message
+        instead of "Errors occurred". Cleans up the worker-side pid_dir
+        left behind when the RQ worker is force-stopped, so a subsequent
+        get_workflow_status does not flip running back to True via the
+        local-mode fallback.
+
+        .job_id is intentionally left in place: get_job_info will report
+        the canceled status to the UI so _show_queue_status can render the
+        Cancelled pill. Resubmission overwrites it; RQ's result_ttl
+        eventually evicts the job and get_workflow_status self-heals.
+
         Returns:
-            True if successfully stopped
+            True if a stop action was taken (queue cancel or local kill).
         """
         # Try to cancel queue job first (online mode)
         if self._queue_manager and self._queue_manager.is_available:
             job_id = self._queue_manager.load_job_id(self.workflow_dir)
             if job_id:
-                success = self._queue_manager.cancel_job(job_id)
-                if success:
-                    self._queue_manager.clear_job_id(self.workflow_dir)
+                if self._queue_manager.cancel_job(job_id):
+                    self.logger.log("WORKFLOW CANCELLED")
+                    shutil.rmtree(self.executor.pid_dir, ignore_errors=True)
                     return True
 
         # Fallback: stop local process
@@ -214,6 +226,8 @@ class WorkflowManager:
 
         # Clean up the pid directory
         shutil.rmtree(pid_dir, ignore_errors=True)
+        if stopped:
+            self.logger.log("WORKFLOW CANCELLED")
         return stopped
 
     def show_file_upload_section(self) -> None:
