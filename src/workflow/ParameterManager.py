@@ -3,6 +3,7 @@ import json
 import shutil
 import subprocess
 import streamlit as st
+import defusedxml.ElementTree as ET
 from pathlib import Path
 
 class ParameterManager:
@@ -288,3 +289,67 @@ class ParameterManager:
         ]
         for key in keys_to_delete:
             del st.session_state[key]
+
+    def get_boolean_parameters(self, tool: str) -> list:
+        """
+        Parses the tool's generated .ini (XML) file to discover strictly boolean parameters.
+        This prevents implicit booleans from being passed as strings to the command line.
+
+        Args:
+            tool (str): The name of the TOPP tool (e.g., 'FeatureFinderMetabo').
+
+        Returns:
+            list: A list of hierarchical parameter keys that are explicitly typed as 'bool'.
+
+        Raises:
+            FileNotFoundError: If the .ini file does not exist.
+            RuntimeError: If the .ini file fails to generate.
+            ET.ParseError: If the XML parsing fails.
+        """
+        if not self.create_ini(tool):
+            # CodeRabbit Fix: Raise an explicit error instead of silently returning []
+            raise RuntimeError(f"Failed to generate .ini file for TOPP tool: {tool}")
+
+        ini_path = Path(self.ini_dir, f"{tool}.ini")
+        if not ini_path.exists():
+            # CodeRabbit Fix: Raise an explicit error instead of silently returning []
+            raise FileNotFoundError(f"Missing expected .ini file for TOPP tool at: {ini_path}")
+
+        bool_params = []
+        try:
+            # CodeRabbit Fix: Use defusedxml (imported as ET) to safely parse the file
+            tree = ET.parse(ini_path)
+            root = tree.getroot()
+
+            # Recursive function to build the hierarchical path from XML nodes
+            def traverse(node, current_path):
+                for child in node:
+                    if child.tag == "ITEM" and child.get("type") == "bool":
+                        name = child.get("name")
+                        if name:
+                            bool_params.append(current_path + name)
+                    elif child.tag == "NODE":
+                        name = child.get("name")
+                        if name:
+                            # Append the node name and a colon to the path
+                            traverse(child, current_path + name + ":")
+
+            # Start traversal from the XML root
+            traverse(root, "")
+
+            # OpenMS INI files usually encapsulate everything in a top-level <NODE name="ToolName">.
+            # We must strip this prefix so the keys perfectly match the JSON session state keys.
+            tool_prefix = f"{tool}:1:"
+            cleaned_params = [
+                p[len(tool_prefix):] if p.startswith(tool_prefix) else p 
+                for p in bool_params
+            ]
+
+            return cleaned_params
+
+        except ET.ParseError as e:
+            st.error(f"XML parsing failed for {tool}: {e}")
+            raise
+            print(f"Error parsing boolean parameters for {tool}: {e}")
+            pass # Safely return empty list if XML parsing fails
+        return []
