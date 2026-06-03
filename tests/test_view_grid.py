@@ -274,7 +274,10 @@ def test_show_linked_grid_one_state_manager_per_experiment(mock_streamlit, cache
 
     def _make_fc(sink):
         def fc(self, key=None, state_manager=None, height=None):
-            sink.append(id(state_manager))
+            # Record the StateManager's stable session_key (not id(): unretained
+            # StateManagers can be GC'd and have their id() reused within a run,
+            # making an id-based set flaky in the full-session test order).
+            sink.append(state_manager._session_key)
             return None
 
         return fc
@@ -284,7 +287,9 @@ def test_show_linked_grid_one_state_manager_per_experiment(mock_streamlit, cache
         with ExitStack() as stack:
             _patch_component_calls(stack, _make_fc(seen))
             show_linked_grid(two_exp, builders, tool="demo", side_by_side=side_by_side)
-        assert len(set(seen)) == 2, f"side_by_side={side_by_side}"
+        # one StateManager per experiment -> two distinct session keys.
+        assert len(set(seen)) == 2, f"side_by_side={side_by_side}: {seen}"
+        assert set(seen) == {"demo__exp0", "demo__exp1"}, seen
 
 
 # --------------------------------------------------------------------------- #
