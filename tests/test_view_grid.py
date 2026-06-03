@@ -307,6 +307,16 @@ def test_layout_manager_trim_expand_validate(mock_streamlit):
     assert trimmed == [[["spectra_table", "spectrum_plot"]], [["peak_map"]]]
     assert lm.expand(trimmed) == [[["Spectrum table", "Spectrum plot"]], [["Peak map"]]]
 
+    # Upload path keeps a wholly-empty experiment (oracle parity): expand drops
+    # empty cells/rows but, with drop_empty_experiments=False, keeps the empty
+    # experiment as a [] stub so num_experiments == len(uploaded) and the upload
+    # is not wiped by the reset-on-count-mismatch.
+    uploaded = [[["spectra_table"]], []]
+    assert lm.expand(uploaded) == [[["Spectrum table"]]]  # default drops it
+    kept = lm.expand(uploaded, drop_empty_experiments=False)
+    assert kept == [[["Spectrum table"]], []]
+    assert len(kept) == len(uploaded)  # count matches -> no spurious reset
+
     assert lm.validate([[[""]]]) != ""  # empty rejected
     assert lm.validate(labels) == ""  # valid accepted
 

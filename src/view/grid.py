@@ -240,8 +240,15 @@ class LayoutManager:
                 trimmed.append(rows)
         return trimmed
 
-    def expand(self, trimmed: list) -> list:
-        """internal names -> labels, dropping empty cells/rows/experiments."""
+    def expand(self, trimmed: list, drop_empty_experiments: bool = True) -> list:
+        """internal names -> labels, dropping empty cells/rows.
+
+        ``drop_empty_experiments`` (default True, the edit-mode behavior) also drops
+        a wholly-empty experiment. The upload path passes False to match the oracle
+        ``handleSettingButtons``, whose inline expand keeps an empty experiment as a
+        ``[]`` stub so ``num_experiments`` stays ``len(uploaded)`` and the
+        reset-on-count-mismatch never fires (which would wipe the upload).
+        """
         expanded = []
         for exp in trimmed:
             rows = []
@@ -254,7 +261,7 @@ class LayoutManager:
                         )
                 if cols:
                     rows.append(cols)
-            if rows:
+            if rows or not drop_empty_experiments:
                 expanded.append(rows)
         return expanded
 
@@ -424,7 +431,11 @@ class LayoutManager:
             if validated != "":
                 st.session_state[self._k("component_error")] = validated
             else:
-                st.session_state[self._k("layout")] = self.expand(uploaded_layout)
+                # Keep empty experiments (oracle inline-expand) so num_experiments ==
+                # len(uploaded) and the reset-on-count-mismatch never wipes the upload.
+                st.session_state[self._k("layout")] = self.expand(
+                    uploaded_layout, drop_empty_experiments=False
+                )
                 st.session_state[self._k("num_experiments")] = len(uploaded_layout)
 
     def _handle_edit_and_save_buttons(self) -> None:
