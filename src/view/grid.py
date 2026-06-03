@@ -30,13 +30,11 @@ from __future__ import annotations
 
 import json
 from typing import (
-    Any,
     Callable,
     Dict,
     List,
     Optional,
     Protocol,
-    Sequence,
     Tuple,
     runtime_checkable,
 )
@@ -416,14 +414,18 @@ class LayoutManager:
         uploaded = st.session_state.get(self._k("uploaded_json"))
         if uploaded is not None:
             uploaded_layout = json.load(uploaded)
-            # uploaded layout is trimmed (internal names); expand to labels for validation/edit
-            expanded = self.expand(uploaded_layout)
-            validated = self.validate(expanded)
+            # Validate the uploaded (trimmed, internal-name) layout BEFORE expanding,
+            # matching the oracle handleSettingButtons: internal names never contain
+            # the "(... needed)" dependency labels, so only the empty-input check
+            # fires on upload (dependency validation happens later, at Save time).
+            # Validating the expanded labels here would wrongly reject hand-crafted
+            # uploads, diverging from the oracle.
+            validated = self.validate(uploaded_layout)
             if validated != "":
                 st.session_state[self._k("component_error")] = validated
             else:
-                st.session_state[self._k("layout")] = expanded
-                st.session_state[self._k("num_experiments")] = len(expanded)
+                st.session_state[self._k("layout")] = self.expand(uploaded_layout)
+                st.session_state[self._k("num_experiments")] = len(uploaded_layout)
 
     def _handle_edit_and_save_buttons(self) -> None:
         # "Edit" clicked: re-enter edit mode, seeded from the saved layout
