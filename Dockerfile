@@ -86,7 +86,8 @@ ADD https://api.github.com/repos/t0mdavid-m/openms-insight/git/refs/heads/${INSI
 RUN git clone -b ${INSIGHT_BRANCH} --single-branch ${INSIGHT_REPO} /openms-insight
 WORKDIR /openms-insight/js-component
 RUN npm install && npm run build
-RUN rm -rf /openms-insight/openms_insight/js-component/dist \
+RUN mkdir -p /openms-insight/openms_insight/js-component \
+    && rm -rf /openms-insight/openms_insight/js-component/dist \
     && cp -r /openms-insight/js-component/dist /openms-insight/openms_insight/js-component/dist \
     && rm -rf /openms-insight/js-component/node_modules
 
