@@ -87,7 +87,8 @@ RUN git clone -b ${INSIGHT_BRANCH} --single-branch ${INSIGHT_REPO} /openms-insig
 WORKDIR /openms-insight/js-component
 RUN npm install && npm run build
 RUN rm -rf /openms-insight/openms_insight/js-component/dist \
-    && cp -r /openms-insight/js-component/dist /openms-insight/openms_insight/js-component/dist
+    && cp -r /openms-insight/js-component/dist /openms-insight/openms_insight/js-component/dist \
+    && rm -rf /openms-insight/js-component/node_modules
 
 # Build OpenMS and pyOpenMS.
 FROM setup-build-system AS compile-openms

@@ -18,7 +18,8 @@ RUN git clone -b ${INSIGHT_BRANCH} --single-branch ${INSIGHT_REPO} /openms-insig
 WORKDIR /openms-insight/js-component
 RUN npm install && npm run build
 RUN rm -rf /openms-insight/openms_insight/js-component/dist \
-    && cp -r /openms-insight/js-component/dist /openms-insight/openms_insight/js-component/dist
+    && cp -r /openms-insight/js-component/dist /openms-insight/openms_insight/js-component/dist \
+    && rm -rf /openms-insight/js-component/node_modules
 
 FROM ubuntu:22.04 AS stage1
 ARG OPENMS_REPO=https://github.com/OpenMS/OpenMS.git
