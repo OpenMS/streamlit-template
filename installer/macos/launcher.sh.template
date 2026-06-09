@@ -1,0 +1,61 @@
+#!/bin/bash
+# Launcher for the macOS .app bundle (this file is CFBundleExecutable).
+# Double-clicking the app runs this script directly - no Terminal window appears,
+# and LSUIElement hides the Dock icon. It starts the bundled Streamlit server
+# from a WRITABLE working directory and opens the default browser.
+set -euo pipefail
+
+HERE="$(cd "$(dirname "$0")" && pwd)"          # .../Contents/MacOS
+RES="$(cd "$HERE/../Resources" && pwd)"        # .../Contents/Resources
+
+# The .app bundle is read-only (and code-signed), so we must NOT run the app or
+# write workspaces inside it. Use a per-user writable directory and symlink the
+# read-only app files into it. The app reads settings.json / assets relative to
+# the working directory, and local workspaces are written to "../" (see
+# src/common/common.py), i.e. "$WORK/workspaces-<repo>" - safely outside the bundle.
+WORK="$HOME/Library/Application Support/@APP_NAME@"
+APPDIR="$WORK/app"
+rm -rf "$APPDIR"
+mkdir -p "$APPDIR"
+while IFS= read -r item; do
+    name="$(basename "$item")"
+    [ "$name" = "python" ] && continue          # the interpreter stays in the bundle
+    ln -sfn "$item" "$APPDIR/$name"
+done < <(find "$RES" -mindepth 1 -maxdepth 1)
+
+# OpenMS / TOPP runtime environment (mirrors the Windows launcher .bat).
+export OPENMS_DATA_PATH="$RES/share/OpenMS"
+export PATH="$RES/bin:$PATH"
+if [ -d "$RES/share/OpenMS/THIRDPARTY" ]; then
+    for d in "$RES/share/OpenMS/THIRDPARTY"/*; do
+        [ -d "$d" ] && PATH="$PATH:$d"
+    done
+fi
+export PATH
+export DYLD_FALLBACK_LIBRARY_PATH="$RES/lib:${DYLD_FALLBACK_LIBRARY_PATH:-}"
+
+# Let us control the browser; also suppresses Streamlit's first-run email prompt.
+export STREAMLIT_SERVER_HEADLESS=true
+mkdir -p "$HOME/.streamlit"
+if [ -f "$RES/.streamlit/credentials.toml" ]; then
+    cp -f "$RES/.streamlit/credentials.toml" "$HOME/.streamlit/credentials.toml"
+else
+    printf '[general]\nemail = ""\n' > "$HOME/.streamlit/credentials.toml"
+fi
+
+cd "$APPDIR"
+
+# Start Streamlit in the background, then open the browser once the port is up.
+# Pass 'local' (NOT 'windows') so the Windows-only chdir hack in common.py is skipped.
+"$RES/python/bin/python3" -m streamlit run app.py local &
+ST_PID=$!
+cleanup() { kill "$ST_PID" 2>/dev/null || true; }
+trap cleanup EXIT INT TERM
+
+for _ in $(seq 1 60); do
+    curl -fsS "http://localhost:8501" >/dev/null 2>&1 && break
+    sleep 1
+done
+open "http://localhost:8501" || true
+
+wait "$ST_PID"

@@ -190,11 +190,8 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Set Version in settings.json
-      run: |
-        $VERSION="${{ github.event.release.tag_name }}"
-        $content = Get-Content -Raw settings.json | ConvertFrom-Json
-        $content.version = $VERSION
-        $content | ConvertTo-Json -Depth 100 | Set-Content settings.json
+      shell: bash
+      run: python installer/common/set_app_version.py --version "${{ github.event.release.tag_name }}"
 
     - name: Download package as artifact
       uses: actions/download-artifact@v4
@@ -249,25 +246,12 @@ jobs:
       run: python -m pip install -r requirements.txt --target python-${{ env.PYTHON_VERSION }}/Lib/site-packages --upgrade --no-warn-script-location
 
     - name: Clean up unnecessary Python files
-      shell: pwsh
-      run: |
-        $sitePkgs = "python-${{ env.PYTHON_VERSION }}/Lib/site-packages"
-
-        # Remove __pycache__ directories
-        Get-ChildItem -Path $sitePkgs -Recurse -Directory -Filter "__pycache__" | Remove-Item -Recurse -Force
-
-        # Remove test directories
-        Get-ChildItem -Path $sitePkgs -Recurse -Directory | Where-Object { $_.Name -match "^tests?$" } | Remove-Item -Recurse -Force
-
-        # Count remaining files
-        $count = (Get-ChildItem -Path $sitePkgs -Recurse -File).Count
-        Write-Host "Remaining files in site-packages: $count"
+      shell: bash
+      run: python installer/common/prune_site_packages.py "python-${{ env.PYTHON_VERSION }}/Lib/site-packages"
 
     - name: Set to offline deployment
-      run: |
-        $content = Get-Content -Raw settings.json | ConvertFrom-Json
-        $content.online_deployment = $false
-        $content | ConvertTo-Json -Depth 100 | Set-Content settings.json
+      shell: bash
+      run: python installer/common/set_app_version.py --offline
 
     - name: Create .bat file
       run: |
@@ -295,18 +279,14 @@ jobs:
         mkdir streamlit_exe
 
         mv python-${{ env.PYTHON_VERSION }} streamlit_exe
-        cp -r src streamlit_exe
-        cp -r utils streamlit_exe
-        cp -r content streamlit_exe
-        cp -r docs streamlit_exe
-        cp -r assets streamlit_exe
-        cp -r example-data streamlit_exe
+
+        # Copy the shared application payload (src, content, assets, app.py, ...)
+        # defined in installer/common/app_payload.txt, shared with the macOS build.
+        python installer/common/collect_payload.py streamlit_exe
+
+        # Windows-specific pieces: OpenMS runtime DLLs, data dir, launcher, TOPP tools.
         cp openms-bin/*.dll streamlit_exe
-        cp -r .streamlit streamlit_exe
         cp -r share streamlit_exe/share
-        cp app.py streamlit_exe
-        cp settings.json streamlit_exe
-        cp default-parameters.json streamlit_exe
         cp ${{ env.APP_NAME }}.bat streamlit_exe
 
         $files = $env:TOPP_TOOLS -split ' '

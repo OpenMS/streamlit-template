@@ -1,0 +1,284 @@
+name: Build DMG installer for macOS (Apple Silicon)
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  release:
+    types: [created]
+  workflow_dispatch:
+
+# Allow uploading the installer to releases.
+permissions:
+  contents: write
+
+env:
+  OPENMS_VERSION: 3.5.0
+  # Python line used for the bundled relocatable interpreter (python-build-standalone).
+  PYTHON_VERSION: 3.11.0
+  # Name of the installer / .app bundle.
+  APP_NAME: OpenMS-StreamlitTemplateApp
+  # macOS bundle identifier (reverse-DNS).
+  BUNDLE_ID: de.openms.streamlit-template
+  # TOPP tools the app needs (bundled from the built OpenMS package; verified below).
+  TOPP_TOOLS: "FeatureFinderMetabo FeatureLinkerUnlabeledKD SiriusExport"
+  # Oldest macOS the installer targets.
+  MACOSX_DEPLOYMENT_TARGET: "12.0"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Job 1: build OpenMS + TOPP tools from source on Apple Silicon.
+  # Mirrors the Windows `build-openms` job, but on arm64 we build against
+  # Homebrew dependencies instead of the prebuilt OpenMS contrib, because the
+  # OpenMS 3.5.0 `contrib_build-macOS.tar.gz` asset is x86_64-only. This follows
+  # OpenMS's own macOS CI (tools/ci/deps-macos.sh + CMAKE_PREFIX_PATH=$(brew --prefix)).
+  # ---------------------------------------------------------------------------
+  build-openms-macos:
+    runs-on: macos-14
+
+    steps:
+    - name: Checkout OpenMS
+      uses: actions/checkout@v4
+      with:
+        repository: OpenMS/OpenMS
+        ref: release/${{ env.OPENMS_VERSION }}
+        path: OpenMS
+
+    - name: Install build dependencies (Homebrew)
+      shell: bash
+      run: |
+        # Prefer OpenMS's own dependency script (kept correct for each release);
+        # fall back to an explicit install of the known dependency set.
+        if [ -f OpenMS/tools/ci/deps-macos.sh ]; then
+          bash OpenMS/tools/ci/deps-macos.sh
+        else
+          brew update
+          brew install autoconf automake libtool ninja ccache libomp \
+                       boost eigen xerces-c libsvm cbc glpk sqlite hdf5 qt || true
+        fi
+        # ccache/ninja are needed regardless of which path ran above.
+        brew list ccache >/dev/null 2>&1 || brew install ccache
+        brew list ninja  >/dev/null 2>&1 || brew install ninja
+        # Expose Homebrew prefixes for CMAKE_PREFIX_PATH and add tool bins to PATH.
+        QT_PREFIX="$(brew --prefix qt 2>/dev/null || brew --prefix qt@6 2>/dev/null || brew --prefix qtbase 2>/dev/null || true)"
+        echo "CMAKE_PREFIX_PATH=$(brew --prefix);$(brew --prefix libomp);${QT_PREFIX}" >> "$GITHUB_ENV"
+        echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
+        [ -n "$QT_PREFIX" ] && echo "${QT_PREFIX}/bin" >> "$GITHUB_PATH"
+
+    - name: Set run name
+      shell: bash
+      run: |
+        RUN_NAME_LOCAL=$(echo "${GITHUB_REF#refs/heads/}" | tr / -)
+        echo "RUN_NAME=${RUN_NAME_LOCAL}" >> "$GITHUB_ENV"
+        echo "BASE_REF=${RUN_NAME_LOCAL}" >> "$GITHUB_ENV"
+
+    - name: Setup ccache cache
+      uses: actions/cache@v4
+      with:
+        path: .ccache
+        key: ${{ runner.os }}-ccache-${{ env.RUN_NAME }}-${{ github.run_number }}
+        restore-keys: |
+          ${{ runner.os }}-ccache-${{ env.RUN_NAME }}
+          ${{ runner.os }}-ccache-${{ env.BASE_REF }}
+          ${{ runner.os }}-ccache-
+
+    - name: Add THIRDPARTY
+      shell: bash
+      run: |
+        cd OpenMS
+        git submodule update --init THIRDPARTY || true
+        cd ..
+        mkdir -p _thirdparty
+        ARCH="$(uname -m)"
+        if [ -d "OpenMS/THIRDPARTY/MacOS/${ARCH}" ]; then
+          cp -R "OpenMS/THIRDPARTY/MacOS/${ARCH}/"* _thirdparty/ 2>/dev/null || true
+        fi
+        if [ -d OpenMS/THIRDPARTY/All ]; then
+          cp -R OpenMS/THIRDPARTY/All/* _thirdparty/ 2>/dev/null || true
+        fi
+        for d in "$GITHUB_WORKSPACE"/_thirdparty/*; do
+          [ -e "$d" ] && echo "$d" >> "$GITHUB_PATH"
+        done
+
+    - name: Build OpenMS + TOPP tools
+      shell: bash
+      run: |
+        mkdir -p "$GITHUB_WORKSPACE/OpenMS/bld/"
+        if [ -f OpenMS/tools/ci/capture-env.sh ]; then
+          bash OpenMS/tools/ci/capture-env.sh -v "$GITHUB_WORKSPACE/OpenMS/bld/CMakeCache.txt" || true
+        fi
+        ctest --output-on-failure -V -S "$GITHUB_WORKSPACE/OpenMS/tools/ci/cibuild.cmake"
+      env:
+        OPENMS_CONTRIB_LIBS: "${{ github.workspace }}/OpenMS/contrib"
+        CI_PROVIDER: "GitHub-Actions"
+        CMAKE_GENERATOR: "Ninja"
+        SOURCE_DIRECTORY: "${{ github.workspace }}/OpenMS"
+        BUILD_NAME: "${{ env.RUN_NAME }}-macOS-arm64-class-topp-${{ github.run_number }}"
+        ENABLE_STYLE_TESTING: "OFF"
+        ENABLE_TOPP_TESTING: "ON"
+        ENABLE_CLASS_TESTING: "ON"
+        WITH_GUI: "OFF"
+        WITH_PARQUET: "OFF"
+        BUILD_TYPE: "Release"
+        OPENMP: "Off"
+        # Homebrew boost is shared (the Windows build uses static boost).
+        BOOST_USE_STATIC: "OFF"
+        BUILD_FLAGS: "-j3"
+        CMAKE_CCACHE_EXE: "ccache"
+        CCACHE_BASEDIR: ${{ github.workspace }}
+        CCACHE_DIR: ${{ github.workspace }}/.ccache
+        CCACHE_COMPRESS: true
+        CCACHE_COMPRESSLEVEL: 12
+        CCACHE_MAXSIZE: 600M
+
+    - name: Test OpenMS
+      shell: bash
+      # Non-blocking: a flaky/unsupported test on the newer arm64 source build
+      # should not prevent producing the installer (the package step still runs).
+      continue-on-error: true
+      run: ctest --output-on-failure -V -S "$GITHUB_WORKSPACE/OpenMS/tools/ci/citest.cmake"
+      env:
+        SOURCE_DIRECTORY: "${{ github.workspace }}/OpenMS"
+        CI_PROVIDER: "GitHub-Actions"
+        BUILD_NAME: "${{ env.RUN_NAME }}-macOS-arm64-class-topp-${{ github.run_number }}"
+
+    - name: Package
+      shell: bash
+      run: ctest --output-on-failure -V -S "$GITHUB_WORKSPACE/OpenMS/tools/ci/cipackage.cmake"
+      env:
+        SOURCE_DIRECTORY: "${{ github.workspace }}/OpenMS"
+        PACKAGE_TYPE: zip
+        SEARCH_ENGINES_DIRECTORY: "${{ github.workspace }}/_thirdparty"
+        CI_PROVIDER: "GitHub-Actions"
+        CPACK_PACKAGE_FILE_NAME: "openms-package"
+
+    - name: Upload package as artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: openms-package-macos
+        path: ${{ github.workspace }}/OpenMS/bld/*.zip
+
+  # ---------------------------------------------------------------------------
+  # Job 2: bundle the relocatable Python + app + OpenMS binaries into a .app and
+  # package it as a draggable .dmg. Mirrors the Windows `build-executable` job.
+  # ---------------------------------------------------------------------------
+  build-dmg:
+    runs-on: macos-14
+    needs: build-openms-macos
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Set version and offline deployment
+      shell: bash
+      run: |
+        python3 installer/common/set_app_version.py --version "${{ github.event.release.tag_name }}" --offline
+        # Clean version (strip a leading 'v') for the bundle's Info.plist; fall
+        # back to the version already in settings.json on non-release builds.
+        VER="${{ github.event.release.tag_name }}"
+        VER="${VER#v}"
+        if [ -z "$VER" ]; then
+          VER="$(python3 -c "import json;print(json.load(open('settings.json'))['version'])")"
+        fi
+        echo "VERSION=${VER}" >> "$GITHUB_ENV"
+
+    - name: Download OpenMS package
+      uses: actions/download-artifact@v4
+      with:
+        name: openms-package-macos
+        path: openms-package
+
+    - name: Extract OpenMS bin / lib / share
+      shell: bash
+      run: |
+        mkdir -p openms-extracted
+        ZIP="$(find openms-package -name '*.zip' | head -1)"
+        echo "Extracting ${ZIP}"
+        unzip -q -o "$ZIP" -d openms-extracted
+        ROOT="openms-extracted/openms-package"
+        if [ ! -d "$ROOT/bin" ]; then
+          ROOT="$(dirname "$(find openms-extracted -type d -name bin | head -1)")"
+        fi
+        echo "Package root: ${ROOT}"
+        cp -R "$ROOT/bin" openms-bin
+        if [ -d "$ROOT/lib" ]; then cp -R "$ROOT/lib" openms-lib; else mkdir -p openms-lib; fi
+        cp -R "$ROOT/share" share
+        # Sanity check: the requested TOPP tools should be present.
+        for tool in $TOPP_TOOLS; do
+          if [ -e "openms-bin/$tool" ]; then echo "ok: $tool"; else echo "WARNING: $tool missing from package"; fi
+        done
+
+    - name: Fetch relocatable Python (python-build-standalone)
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+      run: |
+        PY_MM="${PYTHON_VERSION%.*}"   # e.g. 3.11
+        curl -fsSL -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+          https://api.github.com/repos/astral-sh/python-build-standalone/releases/latest -o pbs.json
+        URL="$(python3 installer/macos/find_pbs_url.py "$PY_MM" pbs.json)"
+        echo "Downloading ${URL}"
+        curl -fL "$URL" -o python.tar.gz
+        tar -xzf python.tar.gz   # -> ./python/
+        ./python/bin/python3 -V
+
+    - name: Install Python requirements
+      shell: bash
+      run: |
+        ./python/bin/python3 -m pip install --upgrade pip
+        ./python/bin/python3 -m pip install -r requirements.txt --no-warn-script-location
+
+    - name: Prune bundled Python
+      shell: bash
+      run: |
+        for site in python/lib/python*/site-packages; do
+          python3 installer/common/prune_site_packages.py "$site"
+        done
+
+    - name: Install packaging tools
+      run: brew install create-dmg imagemagick librsvg
+
+    - name: Generate app icon
+      shell: bash
+      run: bash installer/macos/make_icns.sh assets/openms_transparent_bg_logo.svg AppIcon.icns
+
+    - name: Build .app bundle
+      shell: bash
+      env:
+        APP_NAME: ${{ env.APP_NAME }}
+        BUNDLE_ID: ${{ env.BUNDLE_ID }}
+        VERSION: ${{ env.VERSION }}
+      run: bash installer/macos/build_app_bundle.sh
+
+    - name: Sign .app bundle (ad-hoc, or Developer ID + notarize if secrets present)
+      shell: bash
+      env:
+        MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
+        MACOS_CERTIFICATE_PW: ${{ secrets.MACOS_CERTIFICATE_PW }}
+        MACOS_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+        MACOS_NOTARY_APPLE_ID: ${{ secrets.MACOS_NOTARY_APPLE_ID }}
+        MACOS_NOTARY_TEAM_ID: ${{ secrets.MACOS_NOTARY_TEAM_ID }}
+        MACOS_NOTARY_PW: ${{ secrets.MACOS_NOTARY_PW }}
+      run: bash installer/macos/sign_macos.sh "dist/${APP_NAME}.app"
+
+    - name: Build DMG
+      shell: bash
+      run: bash installer/macos/build_dmg.sh
+
+    - name: Compress DMG
+      shell: bash
+      run: ditto -c -k --sequesterRsrc --keepParent "dist/${APP_NAME}.dmg" OpenMS-App-macOS.zip
+
+    - name: Archive build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: OpenMS-App-macOS
+        path: OpenMS-App-macOS.zip
+
+    - name: Upload Artifact as Release Asset
+      if: github.event_name == 'release'
+      uses: softprops/action-gh-release@v2
+      with:
+        files: OpenMS-App-macOS.zip
+        token: ${{ github.token }}

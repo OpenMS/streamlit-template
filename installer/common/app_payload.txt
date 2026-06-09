@@ -1,0 +1,28 @@
+# Canonical list of application files and directories bundled into every
+# desktop installer (Windows .msi and macOS .dmg). One entry per line; blank
+# lines and lines starting with '#' are ignored. Paths are relative to the
+# repository root.
+#
+# This is the single source of truth shared by both installer workflows via
+# installer/common/collect_payload.py, so the Windows and macOS bundles never
+# drift apart. It deliberately matches the historical Windows payload exactly.
+#
+# Platform-specific pieces are NOT listed here and stay in each workflow:
+#   - the relocatable Python interpreter (python-<ver>/ or python/)
+#   - OpenMS binaries and runtime libraries (bin/, lib/, *.dll/*.dylib)
+#   - the OpenMS data directory (share/)
+#   - the launcher (the .bat on Windows / the .app launcher on macOS)
+#
+# If an app needs presets.json, gdpr_consent/ or hooks/ in the desktop build,
+# add them here - they will then be bundled by BOTH installers.
+
+src
+utils
+content
+docs
+assets
+example-data
+.streamlit
+app.py
+settings.json
+default-parameters.json
