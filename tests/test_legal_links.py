@@ -43,21 +43,43 @@ class FakeSessionState(dict):
 
 
 # Mock streamlit (with a SessionState-like session_state) and the other heavy
-# imports pulled in by src/common/common.py, so importing it here doesn't
-# require the full app runtime.
+# imports pulled in by src/common/common.py, so importing get_legal_links here
+# doesn't require a running Streamlit app context.
+#
+# IMPORTANT: these mocks are installed into sys.modules only for the duration of
+# the import below and then restored, so they don't leak into other test modules
+# (e.g. the AppTest-based tests that need the real `streamlit` package). This
+# mirrors the pattern in tests/test_parameter_presets.py.
 mock_streamlit = MagicMock()
 mock_streamlit.session_state = FakeSessionState()
-sys.modules["streamlit"] = mock_streamlit
-sys.modules["streamlit.components"] = MagicMock()
-sys.modules["streamlit.components.v1"] = MagicMock()
-sys.modules["streamlit.source_util"] = MagicMock()
-sys.modules["pandas"] = MagicMock()
-sys.modules["psutil"] = MagicMock()
-# Local submodules with their own heavy deps (e.g. the captcha image library).
-sys.modules["src.common.captcha_"] = MagicMock()
-sys.modules["src.common.admin"] = MagicMock()
+
+_MOCKED_MODULES = {
+    "streamlit": mock_streamlit,
+    "streamlit.components": MagicMock(),
+    "streamlit.components.v1": MagicMock(),
+    "streamlit.source_util": MagicMock(),
+    "pandas": MagicMock(),
+    "psutil": MagicMock(),
+    # Local submodules with their own heavy deps (e.g. the captcha image library).
+    "src.common.captcha_": MagicMock(),
+    "src.common.admin": MagicMock(),
+}
+_saved_modules = {name: sys.modules.get(name) for name in _MOCKED_MODULES}
+sys.modules.update(_MOCKED_MODULES)
 
 from src.common.common import get_legal_links, DEFAULT_LEGAL_LINKS  # noqa: E402
+
+# Restore the real modules (or remove ones that weren't present) so that other
+# test modules get the genuine packages.
+for _name, _orig in _saved_modules.items():
+    if _orig is None:
+        sys.modules.pop(_name, None)
+    else:
+        sys.modules[_name] = _orig
+# Drop the cached common module that was imported under the mocks so AppTest
+# re-imports it fresh with the real streamlit. get_legal_links keeps working: it
+# holds a reference to the same `mock_streamlit` object we mutate in the tests.
+sys.modules.pop("src.common.common", None)
 
 
 def setup_function(_):
