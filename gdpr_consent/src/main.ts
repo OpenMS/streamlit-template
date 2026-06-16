@@ -14,6 +14,7 @@ let klaroConfig: {
     mustConsent: boolean;
     acceptAll: boolean;
     services: Service[];
+    translations?: Record<string, any>;
 } = {
     mustConsent: true,
     acceptAll: true,
@@ -123,6 +124,18 @@ function onRender(event: Event): void {
                 onDecline: callback,
             }
         )
+    }
+
+    // Link the consent banner to the privacy policy. Setting privacyPolicyUrl
+    // on the 'zz' fallback language makes Klaro render its default
+    // "To learn more, please read our privacy policy." text with the URL,
+    // regardless of the browser locale.
+    if (data.args['privacy_policy']) {
+        klaroConfig.translations = {
+            zz: {
+                privacyPolicyUrl: data.args['privacy_policy']
+            }
+        }
     }
 
     // Create a new script element

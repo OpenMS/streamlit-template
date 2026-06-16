@@ -31,6 +31,37 @@ from src.common.admin import (
 # Detect system platform
 OS_PLATFORM = sys.platform
 
+# Default legal/GDPR page links. These point to the centrally maintained
+# official OpenMS pages. Forks that self-host should override them via the
+# "legal_links" key in settings.json (an Impressum must name the actual
+# operator). The defaults live here too — not only in settings.json — so that
+# downstream apps built from an older settings.json without a "legal_links"
+# key still inherit working legal links by default.
+DEFAULT_LEGAL_LINKS = {
+    "impressum": "https://openms.de/impressum",
+    "privacy": "https://openms.de/privacy",
+    "terms": "https://openms.de/terms",
+}
+
+
+def get_legal_links() -> dict[str, str]:
+    """
+    Return the legal page URLs (Impressum, Privacy Policy, Terms of Use).
+
+    Values from the "legal_links" object in settings.json override the
+    built-in OpenMS defaults. Empty override values are ignored so a blank
+    entry can't erase a default.
+
+    Returns:
+        dict[str, str]: Mapping of "impressum", "privacy" and "terms" to URLs.
+    """
+    overrides = (
+        st.session_state.settings.get("legal_links", {})
+        if "settings" in st.session_state
+        else {}
+    )
+    return {**DEFAULT_LEGAL_LINKS, **{k: v for k, v in overrides.items() if v}}
+
 
 def is_safe_workspace_name(name: str) -> bool:
     """
@@ -519,7 +550,7 @@ def page_setup(page: str = "") -> dict[str, Any]:
     # Render the sidebar
     params = render_sidebar(page)
 
-    captcha_control()
+    captcha_control(privacy_policy_url=get_legal_links()["privacy"])
 
     # If run in hosted mode, show captcha as long as it has not been solved
     # if not "local" in sys.argv:
@@ -532,7 +563,7 @@ def page_setup(page: str = "") -> dict[str, Any]:
         "controllo" in params.keys() and params["controllo"] == False
     ):
         # Apply captcha by calling the captcha_control function
-        captcha_control()
+        captcha_control(privacy_policy_url=get_legal_links()["privacy"])
 
     return params
 
@@ -764,6 +795,19 @@ def render_sidebar(page: str = "") -> None:
                 f'<div class="version-box">{app_name}<br>Version: {version_info}</div>',
                 unsafe_allow_html=True,
             )
+
+        # Legal links (Impressum, Privacy Policy, Terms of Use), shown on every
+        # page. URLs are configurable via "legal_links" in settings.json.
+        links = get_legal_links()
+        st.markdown(
+            '<div style="text-align:center; font-size:0.8rem; '
+            'margin-top:0.5rem; color:#a4a5ad;">'
+            f'<a href="{links["impressum"]}" target="_blank" rel="noopener">Impressum</a> &middot; '
+            f'<a href="{links["privacy"]}" target="_blank" rel="noopener">Privacy Policy</a> &middot; '
+            f'<a href="{links["terms"]}" target="_blank" rel="noopener">Terms of Use</a>'
+            "</div>",
+            unsafe_allow_html=True,
+        )
     return params
 
 

@@ -164,6 +164,27 @@ nginx config, PID files — to `/tmp/openms-runtime-$$`, which is always
 writable inside an apptainer container. The workspace cleanup cron job is
 skipped in this mode; rerun `clean-up-workspaces.py` manually if needed.
 
+## ⚖️ Legal pages (Impressum, Privacy Policy, Terms of Use)
+
+Every page shows **Impressum**, **Privacy Policy** and **Terms of Use** links at
+the bottom of the sidebar, and the GDPR consent banner links to the privacy
+policy. By default these point to the centrally maintained official OpenMS pages
+(`https://openms.de/impressum`, `/privacy`, `/terms`).
+
+If you self-host a fork, override them in `settings.json` — an Impressum must
+name the **actual operator**, not OpenMS:
+
+```json
+"legal_links": {
+    "impressum": "https://your-domain.example/impressum",
+    "privacy": "https://your-domain.example/privacy",
+    "terms": "https://your-domain.example/terms"
+}
+```
+
+Any link you omit falls back to its OpenMS default. The `privacy` URL is reused
+for the consent banner's privacy-policy link, so consent and policy stay in sync.
+
 ## Documentation
 
 Documentation for **users** and **developers** is included as pages in [this template app](https://abi-services.cs.uni-tuebingen.de/streamlit-template/), indicated by the 📖 icon.

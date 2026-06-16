@@ -186,7 +186,7 @@ height = 180
 
 
 # define the function for the captcha control
-def captcha_control():
+def captcha_control(privacy_policy_url: str = ""):
     """
     Control and verification of a CAPTCHA to ensure the user is not a robot.
 
@@ -198,6 +198,10 @@ def captcha_control():
     This function also handles user interactions and reruns the Streamlit app accordingly.
 
     The CAPTCHA text is generated as a session state and should not change during refreshes.
+
+    Args:
+        privacy_policy_url (str, optional): URL shown as the privacy policy link
+            in the GDPR consent banner. Defaults to "".
 
     Returns:
         None
@@ -214,7 +218,10 @@ def captcha_control():
             with st.spinner():
                 # Ask for consent
                 st.session_state.tracking_consent = consent_component(
-                    google_analytics=ga, piwik_pro=pp, matomo=mt
+                    google_analytics=ga,
+                    piwik_pro=pp,
+                    matomo=mt,
+                    privacy_policy=privacy_policy_url,
                 )
                 if st.session_state.tracking_consent is None:
                     # No response by user yet
