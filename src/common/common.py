@@ -802,9 +802,9 @@ def render_sidebar(page: str = "") -> None:
         st.markdown(
             '<div style="text-align:center; font-size:0.8rem; '
             'margin-top:0.5rem; color:#a4a5ad;">'
-            f'<a href="{links["impressum"]}" target="_blank" rel="noopener">Impressum</a> &middot; '
-            f'<a href="{links["privacy"]}" target="_blank" rel="noopener">Privacy Policy</a> &middot; '
-            f'<a href="{links["terms"]}" target="_blank" rel="noopener">Terms of Use</a>'
+            f'<a href="{links["impressum"]}" target="_blank" rel="noopener" style="white-space:nowrap">Impressum</a> &middot; '
+            f'<a href="{links["privacy"]}" target="_blank" rel="noopener" style="white-space:nowrap">Privacy Policy</a> &middot; '
+            f'<a href="{links["terms"]}" target="_blank" rel="noopener" style="white-space:nowrap">Terms of Use</a>'
             "</div>",
             unsafe_allow_html=True,
         )
