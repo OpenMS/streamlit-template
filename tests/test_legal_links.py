@@ -67,6 +67,11 @@ _MOCKED_MODULES = {
 _saved_modules = {name: sys.modules.get(name) for name in _MOCKED_MODULES}
 sys.modules.update(_MOCKED_MODULES)
 
+# Force a FRESH import of src.common.common under the streamlit mock, even if an
+# earlier test module (e.g. test_gui.py) already imported the real-streamlit-bound
+# version. Save whatever was cached first so we can restore it afterwards.
+_saved_common = sys.modules.pop("src.common.common", None)
+
 from src.common.common import get_legal_links, DEFAULT_LEGAL_LINKS  # noqa: E402
 
 # Restore the real modules (or remove ones that weren't present) so that other
@@ -76,10 +81,15 @@ for _name, _orig in _saved_modules.items():
         sys.modules.pop(_name, None)
     else:
         sys.modules[_name] = _orig
-# Drop the cached common module that was imported under the mocks so AppTest
-# re-imports it fresh with the real streamlit. get_legal_links keeps working: it
-# holds a reference to the same `mock_streamlit` object we mutate in the tests.
-sys.modules.pop("src.common.common", None)
+# Restore the original cached common module (the real-streamlit-bound one, if
+# any) so AppTest-based test modules keep getting the genuine package.
+# get_legal_links keeps working: it holds a reference to the freshly-imported
+# mock-bound module's globals (and the same `mock_streamlit` object the tests
+# mutate).
+if _saved_common is None:
+    sys.modules.pop("src.common.common", None)
+else:
+    sys.modules["src.common.common"] = _saved_common
 
 
 def setup_function(_):
