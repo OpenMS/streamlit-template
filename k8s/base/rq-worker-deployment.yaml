@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rq-worker
+  labels:
+    component: rq-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      component: rq-worker
+  template:
+    metadata:
+      labels:
+        component: rq-worker
+    spec:
+      containers:
+        - name: rq-worker
+          image: openms-streamlit
+          imagePullPolicy: Always
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              set -euo pipefail
+              source /root/miniforge3/bin/activate streamlit-env
+              jq -s '.[0] * .[1]' /app/settings.json /app/settings-overrides.json > /tmp/settings-merged.json && mv /tmp/settings-merged.json /app/settings.json
+              exec rq worker openms-workflows --url $REDIS_URL
+          env:
+            - name: REDIS_URL
+              value: "redis://redis:6379/0"
+            - name: WORKSPACES_DIR
+              value: "/workspaces-streamlit-template"
+          volumeMounts:
+            - name: workspaces
+              mountPath: /workspaces-streamlit-template
+            - name: config
+              mountPath: /app/settings-overrides.json
+              subPath: settings-overrides.json
+              readOnly: true
+      volumes:
+        - name: workspaces
+          persistentVolumeClaim:
+            claimName: workspaces-pvc
+        - name: config
+          configMap:
+            name: streamlit-config

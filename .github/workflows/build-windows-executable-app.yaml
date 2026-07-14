@@ -13,7 +13,10 @@ permissions:
   contents: write
 
 env:
-  OPENMS_VERSION: 3.5.0 
+  OPENMS_VERSION: 3.5.0
+  # Override to pin contrib to a specific release when OPENMS_VERSION is a non-release branch (e.g. "develop").
+  # Leave empty to use OPENMS_VERSION.
+  OPENMS_CONTRIB_VERSION: ""
   PYTHON_VERSION: 3.11.0
   # Name of the installer
   APP_NAME: OpenMS-StreamlitTemplateApp
@@ -73,7 +76,7 @@ jobs:
       uses: actions/cache@v4
       with:
         path: ${{ github.workspace }}/OpenMS/contrib
-        key: ${{ runner.os }}-contrib3
+        key: ${{ runner.os }}-contrib-${{ env.OPENMS_CONTRIB_VERSION || env.OPENMS_VERSION }}
 
     - name: Load contrib build
       if: steps.cache-contrib-win.outputs.cache-hit != 'true'
@@ -82,7 +85,7 @@ jobs:
       run: |
         cd OpenMS/contrib
         # Download the file using the URL fetched from GitHub
-        gh release download -R OpenMS/contrib --pattern 'contrib_build-Windows.tar.gz'
+        gh release download release/${{ env.OPENMS_CONTRIB_VERSION || env.OPENMS_VERSION }} -R OpenMS/contrib --pattern 'contrib_build-Windows.tar.gz'
         # Extract the archive
         7z x -so contrib_build-Windows.tar.gz | 7z x -si -ttar
         rm contrib_build-Windows.tar.gz

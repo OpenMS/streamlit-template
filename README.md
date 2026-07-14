@@ -116,6 +116,75 @@ This repository contains two Dockerfiles.
       docker run -p 8505:8501 openms_streamlit_template
       ```
 
+   ### Mount a local data directory
+
+   To make a directory of MS files on the host available to the running app
+   without uploading or copying them, bind-mount it into the container at
+   the path configured by `local_data_dir` in `settings.json` (the Docker
+   image defaults this to `/mounted-data`):
+
+   ```
+   docker run -p 8501:8501 \
+     -v /path/on/host:/mounted-data:ro \
+     openms_streamlit_template
+   ```
+
+   The upload widget auto-detects the mount: when the directory exists at
+   runtime it shows an in-app tree browser; selected files are referenced
+   in place via `external_files.txt` (no copy into the workspace volume),
+   so the mount can safely be read-only. Omitting `-v` hides the browser
+   and falls back to the standard upload UI. To use a different container
+   path, change `local_data_dir` in `settings.json` before building.
+
+## 🛰️ Run with Apptainer / Singularity (HPC)
+
+Apptainer (formerly Singularity) is the dominant container runtime on HPC
+clusters. CI publishes prebuilt SIFs to GHCR via ORAS, so you can pull a
+ready-to-run image with no on-the-fly OCI→SIF conversion and run it as your
+user — no root, no `--writable-tmpfs` required:
+
+```bash
+apptainer pull --name openms-streamlit-template.sif \
+  oras://ghcr.io/openms/streamlit-template/sif:latest
+apptainer run \
+  --bind /path/to/data:/mounted-data:ro \
+  --bind /path/to/workspaces:/workspaces-streamlit-template \
+  openms-streamlit-template.sif
+```
+
+Available tags follow the same scheme as the Docker images: `latest`,
+`main-full`, `main-simple`, `v*-full`, `v*-simple`, and per-commit SHAs.
+If a tag hasn't been prebuilt yet (e.g. a PR branch), fall back to on-the-fly
+conversion: `apptainer pull docker://ghcr.io/openms/streamlit-template:<tag>`.
+Requires apptainer 1.1+ or singularity-ce 3.10+ for the `oras://` transport.
+
+The entrypoint auto-detects the read-only root filesystem (set by apptainer's
+default isolation) and switches its runtime state — Redis data directory,
+nginx config, PID files — to `/tmp/openms-runtime-$$`, which is always
+writable inside an apptainer container. The workspace cleanup cron job is
+skipped in this mode; rerun `clean-up-workspaces.py` manually if needed.
+
+## ⚖️ Legal pages (Impressum, Privacy Policy, Terms of Use)
+
+Every page shows **Impressum**, **Privacy Policy** and **Terms of Use** links at
+the bottom of the sidebar, and the GDPR consent banner links to the privacy
+policy. By default these point to the centrally maintained official OpenMS pages
+(`https://openms.de/impressum`, `/privacy`, `/terms`).
+
+If you self-host a fork, override them in `settings.json` — an Impressum must
+name the **actual operator**, not OpenMS:
+
+```json
+"legal_links": {
+    "impressum": "https://your-domain.example/impressum",
+    "privacy": "https://your-domain.example/privacy",
+    "terms": "https://your-domain.example/terms"
+}
+```
+
+Any link you omit falls back to its OpenMS default. The `privacy` URL is reused
+for the consent banner's privacy-policy link, so consent and policy stay in sync.
+
 ## Documentation
 
 Documentation for **users** and **developers** is included as pages in [this template app](https://abi-services.cs.uni-tuebingen.de/streamlit-template/), indicated by the 📖 icon.

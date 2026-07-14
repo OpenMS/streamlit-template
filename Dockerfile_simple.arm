@@ -1,0 +1,127 @@
+# This Dockerfile creates a container with pyOpenMS
+# It also adds a basic streamlit server that serves a pyOpenMS-based app.
+# hints:
+# build image with: docker build -f Dockerfile_simple.arm --no-cache -t streamlitapp:latest-arm64 --build-arg GITHUB_TOKEN=<your-github-token> . 2>&1 | tee build.log
+# check if image was build: docker image ls
+# run container: docker run -p 8501:8501 streamlitapp:latest
+# debug container after build (comment out ENTRYPOINT) and run container with interactive /bin/bash shell
+# prune unused images/etc. to free disc space (e.g. might be needed on gitpod). Use with care.: docker system prune --all --force
+
+FROM ubuntu:22.04 AS stage1
+ARG OPENMS_REPO=https://github.com/OpenMS/OpenMS.git
+ARG OPENMS_BRANCH=develop
+ARG PORT=8501
+# Streamlit app GitHub user name (to download artifact from).
+ARG GITHUB_USER=OpenMS
+# Streamlit app GitHub repository name (to download artifact from).
+ARG GITHUB_REPO=streamlit-template
+
+
+# Step 1: set up a sane build system
+USER root
+
+RUN apt-get -y update
+# note: streamlit in docker needs libgtk2.0-dev (see https://yugdamor.medium.com/importerror-libgthread-2-0-so-0-cannot-open-shared-object-file-no-such-file-or-directory-895b94a7827b)
+RUN apt-get install -y --no-install-recommends --no-install-suggests wget ca-certificates libgtk2.0-dev curl jq cron nginx
+RUN update-ca-certificates
+
+# Install Github CLI
+RUN (type -p wget >/dev/null || (apt-get update && apt-get install wget -y)) \
+	&& mkdir -p -m 755 /etc/apt/keyrings \
+	&& wget -qO- https://cli.github.com/packages/githubcli-archive-keyring.gpg | tee /etc/apt/keyrings/githubcli-archive-keyring.gpg > /dev/null \
+	&& chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+	&& echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
+	&& apt-get update \
+	&& apt-get install gh -y
+
+# Download and install miniforge.
+ENV PATH="/root/miniforge3/bin:${PATH}"
+RUN wget -q \
+    https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-aarch64.sh \
+    && bash Miniforge3-Linux-aarch64.sh -b \
+    && rm -f Miniforge3-Linux-aarch64.sh
+RUN mamba --version
+
+# Make /root traversable so the entrypoint can `source
+# /root/miniforge3/bin/activate ...` when the container runs as a non-root
+# user (apptainer/singularity maps the host UID into the container; the
+# default ubuntu /root is 0700 which would block path traversal). +x only,
+# not +r, so the directory listing remains private.
+RUN chmod o+x /root
+
+# Setup mamba environment.
+RUN mamba create -n streamlit-env python=3.10 
+RUN echo "mamba activate streamlit-env" >> ~/.bashrc
+SHELL ["/bin/bash", "--rcfile", "~/.bashrc"]
+SHELL ["mamba", "run", "-n", "streamlit-env", "/bin/bash", "-c"]
+
+#################################### install streamlit
+# install packages
+COPY requirements.txt requirements.txt
+RUN mamba install pip
+RUN python -m pip install --upgrade pip
+RUN python -m pip install -r requirements.txt
+
+# Pre-create bind-mount targets so apptainer/singularity has a real attach
+# point. Docker auto-creates missing `-v` targets, but singularity uses a
+# read-only underlay and silently ignores `:rw` when the target isn't a
+# real directory in the SIF — writes then fail with EROFS even though the
+# host bind path is writable.
+RUN mkdir -p /workspaces-streamlit-template /mounted-data
+
+# create workdir and copy over all streamlit related files/folders
+WORKDIR /app
+# note: specifying folder with slash as suffix and repeating the folder name seems important to preserve directory structure
+WORKDIR /app
+COPY assets/ /app/assets
+COPY content/ /app/content
+COPY docs/ /app/docs
+COPY example-data/ /app/example-data
+COPY gdpr_consent/ /app/gdpr_consent
+COPY hooks/ /app/hooks
+COPY src/ /app/src
+COPY utils/ /app/utils
+COPY app.py /app/app.py
+COPY settings.json /app/settings.json
+COPY default-parameters.json /app/default-parameters.json
+COPY presets.json /app/presets.json
+
+# For streamlit configuration
+COPY .streamlit/ /app/.streamlit/
+
+COPY clean-up-workspaces.py /app/clean-up-workspaces.py
+
+# add cron job to the crontab
+RUN echo "0 3 * * * /root/miniforge3/envs/streamlit-env/bin/python /app/clean-up-workspaces.py >> /app/clean-up-workspaces.log 2>&1" | crontab -
+
+# Number of Streamlit server instances for load balancing (default: 1 = no load balancer)
+# Set to >1 to enable nginx load balancer with multiple Streamlit instances
+ENV STREAMLIT_SERVER_COUNT=1
+
+# Install the apptainer-compatible entrypoint (shared with the full image).
+# The script auto-skips the Redis/RQ section when redis-server is not
+# installed, so it works equally well in the simple variant.
+COPY docker/entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
+# Patch Analytics
+RUN mamba run -n streamlit-env python hooks/hook-analytics.py
+
+# Set Online Deployment
+RUN jq '.online_deployment = true' settings.json > tmp.json && mv tmp.json settings.json
+
+# Download latest OpenMS App executable as a ZIP file.
+# ARG declared here (not at the top) — otherwise the per-run token busts the cache.
+ARG GITHUB_TOKEN
+RUN if [ -n "$GITHUB_TOKEN" ]; then \
+        echo "GITHUB_TOKEN is set, proceeding to download the release asset..."; \
+        gh release download -R ${GITHUB_USER}/${GITHUB_REPO} -p "OpenMS-App.zip" -D /app; \
+    else \
+        echo "GITHUB_TOKEN is not set, skipping the release asset download."; \
+    fi
+
+# make sure that mamba environment is used
+SHELL ["mamba", "run", "-n", "streamlit-env", "/bin/bash", "-c"]
+
+EXPOSE $PORT
+ENTRYPOINT ["/app/entrypoint.sh"]

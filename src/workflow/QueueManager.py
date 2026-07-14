@@ -55,25 +55,34 @@ class QueueManager:
     def __init__(self):
         self._redis = None
         self._queue = None
-        self._is_online = self._check_online_mode()
         self._init_attempted = False
+
+        settings = self._load_settings()
+        self._is_online = self._check_online_mode(settings)
+
+        queue_settings = settings.get("queue_settings", {})
+        self._default_timeout = queue_settings.get("default_timeout", 7200)
+        self._default_result_ttl = queue_settings.get("result_ttl", 86400)
 
         if self._is_online:
             self._init_redis()
 
-    def _check_online_mode(self) -> bool:
+    @staticmethod
+    def _load_settings() -> dict:
+        """Load settings.json once; return empty dict on failure."""
+        try:
+            with open("settings.json", "r") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+
+    def _check_online_mode(self, settings: dict) -> bool:
         """Check if running in online mode"""
         # Check environment variable first (set in Docker)
         if os.environ.get("REDIS_URL"):
             return True
 
-        # Fallback: check settings file
-        try:
-            with open("settings.json", "r") as f:
-                settings = json.load(f)
-                return settings.get("online_deployment", False)
-        except Exception:
-            return False
+        return settings.get("online_deployment", False)
 
     def _init_redis(self) -> None:
         """Initialize Redis connection and queue"""
@@ -108,8 +117,8 @@ class QueueManager:
         args: tuple = (),
         kwargs: dict = None,
         job_id: Optional[str] = None,
-        timeout: int = 7200,  # 2 hour default
-        result_ttl: int = 86400,  # 24 hours
+        timeout: Optional[int] = None,
+        result_ttl: Optional[int] = None,
         description: str = ""
     ) -> Optional[str]:
         """
@@ -120,8 +129,8 @@ class QueueManager:
             args: Positional arguments for the function
             kwargs: Keyword arguments for the function
             job_id: Optional custom job ID (defaults to UUID)
-            timeout: Job timeout in seconds
-            result_ttl: How long to keep results
+            timeout: Job timeout in seconds (defaults to settings.json queue_settings.default_timeout)
+            result_ttl: How long to keep results (defaults to settings.json queue_settings.result_ttl)
             description: Human-readable job description
 
         Returns:
@@ -131,6 +140,10 @@ class QueueManager:
             return None
 
         kwargs = kwargs or {}
+        if timeout is None:
+            timeout = self._default_timeout
+        if result_ttl is None:
+            result_ttl = self._default_result_ttl
 
         try:
             job = self._queue.enqueue(
@@ -165,7 +178,8 @@ class QueueManager:
 
             job = Job.fetch(job_id, connection=self._redis)
 
-            # Map RQ status to our enum
+            # 'stopped' is what RQ records after send_stop_job_command runs;
+            # surface it as CANCELED so the UI doesn't show stopped jobs as queued.
             status_map = {
                 "queued": JobStatus.QUEUED,
                 "started": JobStatus.STARTED,
@@ -173,6 +187,7 @@ class QueueManager:
                 "failed": JobStatus.FAILED,
                 "deferred": JobStatus.DEFERRED,
                 "canceled": JobStatus.CANCELED,
+                "stopped": JobStatus.CANCELED,
             }
 
             status = status_map.get(job.get_status(), JobStatus.QUEUED)
@@ -219,23 +234,60 @@ class QueueManager:
         """
         Cancel a queued or running job.
 
+        For queued jobs, this removes them from the queue. For jobs that are
+        already executing in a worker, Job.cancel() alone is not enough — it
+        only updates Redis registries while the worker keeps running the
+        workflow. We send a stop-job command to the worker so the work-horse
+        is actually interrupted.
+
         Args:
             job_id: The job ID to cancel
 
         Returns:
-            True if successfully canceled
+            True if the job is canceled (or already was), False otherwise.
         """
         if not self.is_available:
             return False
 
         try:
+            from rq.command import send_stop_job_command
+            from rq.exceptions import InvalidJobOperation, NoSuchJobError
             from rq.job import Job
+        except ImportError:
+            return False
 
+        try:
             job = Job.fetch(job_id, connection=self._redis)
-            job.cancel()
-            return True
+        except NoSuchJobError:
+            return False
         except Exception:
             return False
+
+        # Idempotent: a second Stop click (or rerun) should not surface an error.
+        if job.is_canceled or job.is_stopped:
+            return True
+
+        # Tell the worker to interrupt the work-horse before marking canceled.
+        if job.is_started and job.worker_name:
+            try:
+                send_stop_job_command(self._redis, job_id)
+            except InvalidJobOperation:
+                # The worker just finished or the job moved out of 'started';
+                # fall through to cancel() to settle registry state.
+                pass
+            except Exception:
+                pass
+
+        try:
+            job.cancel()
+        except InvalidJobOperation:
+            # Worker already transitioned the job (e.g. to 'stopped'); that
+            # satisfies the user's intent to stop.
+            pass
+        except Exception:
+            return False
+
+        return True
 
     def get_queue_stats(self) -> dict:
         """

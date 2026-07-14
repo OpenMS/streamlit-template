@@ -5,7 +5,7 @@ import subprocess
 import threading
 from pathlib import Path
 from .Logger import Logger
-from .ParameterManager import ParameterManager
+from .ParameterManager import ParameterManager, bool_param_paths_from_param_xml_ini
 import sys
 import importlib.util
 import json
@@ -299,6 +299,7 @@ class CommandExecutor:
             # Add custom parameters
             for k, v in custom_params.items():
                 command += [f"-{k}"]
+                
                 # Skip only empty strings (pass flag with no value)
                 # Note: 0 and 0.0 are valid values, so use explicit check
                 if v != "" and v is not None:

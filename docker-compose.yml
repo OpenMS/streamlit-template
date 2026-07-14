@@ -12,6 +12,11 @@ services:
       - 8501:8501
     volumes:
       - workspaces-streamlit-template:/workspaces-streamlit-template
+      # Optional: bind-mount a host directory of MS data files at the path
+      # that `local_data_dir` in settings.json points to (the Docker image
+      # defaults this to /mounted-data). When the directory exists at
+      # runtime, the upload page shows an in-app file browser for it.
+      # - /path/on/host:/mounted-data:ro
     environment:
       # Number of Streamlit server instances (default: 1 = no load balancer).
       # Set to >1 to enable nginx load balancing across multiple Streamlit instances.

@@ -1,5 +1,16 @@
 # OpenMS streamlit app deployment
 
+OpenMS streamlit apps can be deployed two ways:
+
+- **Kubernetes** — Kustomize manifests under `k8s/` with CI-built images pushed to GHCR. See the "Developers Guide: Kubernetes Deployment" page.
+- **Docker Compose** — described below. Uses the external [OpenMS/streamlit-deployment](https://github.com/OpenMS/streamlit-deployment) repo to aggregate multiple apps as submodules.
+
+If you're using Claude Code, the `configure-app-settings` and `configure-docker-compose-deployment` skills automate the docker-compose path; `configure-app-settings` + `configure-k8s-deployment` automate the Kubernetes path.
+
+---
+
+## Docker Compose
+
 Multiple streamlit apps based on the [OpenMS streamlit template](https://github.com/OpenMS/streamlit-template/) can be deployed together using docker compose.
 
 ## Features

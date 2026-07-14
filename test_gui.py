@@ -56,6 +56,7 @@ def test_launch(launch):
         ("content/documentation.py", "Developers Guide: TOPP Workflow Framework"),
         ("content/documentation.py", "Developer Guide: Windows Executables"),
         ("content/documentation.py", "Developers Guide: Deployment"),
+        ("content/documentation.py", "Developers Guide: Kubernetes Deployment"),
     ],
     indirect=["launch"],
 )

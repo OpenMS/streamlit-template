@@ -6,7 +6,7 @@ import shutil
 from datetime import datetime
 
 # Define the workspaces directory
-workspaces_directory = Path("/workspaces-streamlit-template")
+workspaces_directory = Path(os.environ.get("WORKSPACES_DIR", "/workspaces-streamlit-template"))
 
 # Get the current time in seconds
 current_time = time.time()
@@ -23,6 +23,9 @@ print(
 remaining_directories = []
 # Iterate through directories in workspaces_directory
 for directory in workspaces_directory.iterdir():
+    # Skip hidden top-level directories (e.g. .demos/ holds seeded demo workspaces)
+    if directory.name.startswith("."):
+        continue
     # Check if it's a directory
     if directory.is_dir():
         # Get the directory's modification time

@@ -3,7 +3,51 @@ import json
 import shutil
 import subprocess
 import streamlit as st
+import xml.etree.ElementTree as ET
 from pathlib import Path
+
+
+def bool_param_paths_from_param_xml_ini(ini_path: Path, tool_stem: str) -> set[str]:
+    """
+    Return short parameter paths for every ``<ITEM type="bool">`` in a ParamXML .ini file.
+
+    Paths match the suffix after ``Tool:1:`` in pyOpenMS (e.g. ``algorithm:epd:masstrace_snr_filtering``).
+    """
+    try:
+        root = ET.parse(ini_path).getroot()
+    except (ET.ParseError, OSError):
+        return set()
+
+    def local_tag(el: ET.Element) -> str:
+        t = el.tag
+        return t.rsplit("}", 1)[-1] if isinstance(t, str) and "}" in t else str(t)
+
+    out: set[str] = set()
+
+    def walk(el: ET.Element, parts: tuple[str, ...]) -> None:
+        for ch in el:
+            lt = local_tag(ch)
+            if lt == "NODE":
+                nm = ch.get("name") or ""
+                walk(ch, parts + (nm,))
+            elif lt == "ITEM" and (ch.get("type") or "").lower() == "bool":
+                nm = ch.get("name") or ""
+                segs = [p for p in parts if p]
+                if nm:
+                    segs.append(nm)
+                if not segs:
+                    continue
+                # Strip tool root NODE name and instance NODE "1" (not part of pyOpenMS short keys)
+                while segs and segs[0] in (tool_stem, "1"):
+                    segs.pop(0)
+                if segs:
+                    out.add(":".join(segs))
+
+    for ch in root:
+        if local_tag(ch) == "NODE":
+            walk(ch, ())
+    return out
+
 
 class ParameterManager:
     """
@@ -29,6 +73,29 @@ class ParameterManager:
         # Store workflow name for preset loading; default to directory stem if not provided
         self.workflow_name = workflow_name or workflow_dir.stem
 
+    def bool_pairs_session_key(self) -> str:
+        """Session state key holding a set of (tool name, param path) for bool TOPP params."""
+        return f"{self.ini_dir.parent.stem}-topp-bool-pairs"
+
+    def get_bool_param_pairs(self) -> set:
+        """Return the cached set of (tool, param path) bool params; empty set if none."""
+        return st.session_state.get(self.bool_pairs_session_key(), set())
+
+    def _merge_bool_params_from_ini(self, tool: str) -> None:
+        """Load tool.ini (XML) and merge type=bool parameter paths into session_state."""
+        ini_path = Path(self.ini_dir, f"{tool}.ini")
+        if not ini_path.exists():
+            return
+        try:
+            sk = self.bool_pairs_session_key()
+            if sk not in st.session_state:
+                st.session_state[sk] = set()
+            for short in bool_param_paths_from_param_xml_ini(ini_path, tool):
+                st.session_state[sk].add((tool, short))
+        except RuntimeError:
+            # No Streamlit session (e.g. plain `python` import)
+            pass
+
     def create_ini(self, tool: str) -> bool:
         """
         Create an ini file for a TOPP tool if it doesn't exist.
@@ -41,11 +108,14 @@ class ParameterManager:
         """
         ini_path = Path(self.ini_dir, tool + ".ini")
         if ini_path.exists():
+            self._merge_bool_params_from_ini(tool)
             return True
         try:
             subprocess.call([tool, "-write_ini", str(ini_path)])
         except FileNotFoundError:
             return False
+        if ini_path.exists():
+            self._merge_bool_params_from_ini(tool)
         return ini_path.exists()
 
     def save_parameters(self) -> None:

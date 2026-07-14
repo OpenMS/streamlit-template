@@ -1,0 +1,799 @@
+name: Build and Test
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  lint-manifests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install kubeconform
+        run: |
+          curl -sSL https://github.com/yannh/kubeconform/releases/latest/download/kubeconform-linux-amd64.tar.gz | tar xz
+          sudo mv kubeconform /usr/local/bin/
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v3
+
+      - name: Validate base manifests
+        run: |
+          kubeconform -summary -strict -kubernetes-version 1.28.0 \
+            -ignore-filename-pattern 'kustomization.yaml' \
+            -ignore-filename-pattern 'traefik-ingressroute.yaml' \
+            k8s/base/*.yaml
+
+      - name: Validate kustomized overlay output
+        run: |
+          kubectl kustomize k8s/overlays/prod/ | \
+            kubeconform -summary -strict -kubernetes-version 1.28.0 -skip IngressRoute
+
+  build-amd64:
+    # amd64 path. Produces per-arch tags `<ref>-<variant>-amd64`; the
+    # multi-arch manifest under `<ref>-<variant>` (and `latest`) is stitched
+    # together in `create-manifest` once the sibling `build-arm64` succeeds.
+    needs: lint-manifests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: full
+            dockerfile: Dockerfile
+          - variant: simple
+            dockerfile: Dockerfile_simple
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute lowercase image name (OCI refs must be lowercase)
+        run: echo "IMAGE_NAME_LC=${IMAGE_NAME,,}" >> "$GITHUB_ENV"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch,suffix=-${{ matrix.variant }}-amd64
+            type=ref,event=tag,suffix=-${{ matrix.variant }}-amd64
+            type=sha,prefix=,suffix=-${{ matrix.variant }}-amd64
+            type=raw,value=latest-amd64,enable=${{ matrix.variant == 'full' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+
+      - name: Build and conditionally push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64
+          load: true
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # provenance/attestations turn the pushed tag into a manifest list,
+          # which the create-manifest job's `docker manifest create` then
+          # refuses ("is a manifest list"). Keep the push as a single-platform
+          # image manifest — same as the build-arm64 job.
+          provenance: false
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME_LC }}/cache:${{ matrix.variant }}-amd64
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref={0}/{1}/cache:{2}-amd64,mode=max', env.REGISTRY, env.IMAGE_NAME_LC, matrix.variant) || '' }}
+          build-args: |
+            GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}
+
+      - name: Retag for kind (image name the kustomize overlay points at)
+        run: |
+          # The prod overlay sets `newName: ghcr.io/openms/streamlit-template`,
+          # `newTag: main-full`. The rendered manifests reference that exact
+          # ref, so we need it loaded into kind under that name. Tag invariant
+          # across branches/variants so the test always works.
+          FIRST_TAG=$(printf '%s\n' "${{ steps.meta.outputs.tags }}" | head -n 1)
+          docker tag "$FIRST_TAG" ghcr.io/openms/streamlit-template:main-full
+
+      - name: Save image as tar
+        run: docker save ghcr.io/openms/streamlit-template:main-full -o /tmp/image.tar
+
+      - name: Upload image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: openms-streamlit-${{ matrix.variant }}-amd64-image
+          path: /tmp/image.tar
+          retention-days: 1
+
+  build-arm64:
+    # arm64 path. Runs on a native ARM64 runner (no QEMU). Produces per-arch
+    # tags `<ref>-<variant>-arm64`; gets merged into the multi-arch manifest
+    # under `<ref>-<variant>` by the `create-manifest` job below. The build
+    # uses a separate `Dockerfile.arm` / `Dockerfile_simple.arm` that swaps
+    # the miniforge installer to aarch64 and (for the full variant) guards
+    # the THIRDPARTY/Linux/aarch64 copy. The built image is also uploaded as
+    # an artifact so the apptainer / nginx / traefik integration jobs can
+    # exercise the ARM image on a native ARM runner (matrix arch=arm64).
+    needs: lint-manifests
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: full
+            dockerfile: Dockerfile.arm
+          - variant: simple
+            dockerfile: Dockerfile_simple.arm
+    steps:
+      - name: Free disk space
+        # OpenMS source build needs ~25 GB of scratch space; the ARM runner
+        # image is tighter than the AMD one out of the box. Mirrors what
+        # FLASHApp's publish-docker-images.yml does at the top of its ARM job.
+        run: |
+          # Keep /opt/hostedtoolcache: helm/kind-action and setup-kubectl
+          # cache binaries there and fail if the directory is missing.
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc || true
+          sudo apt-get clean
+          df -h
+
+      - uses: actions/checkout@v4
+
+      - name: Compute lowercase image name (OCI refs must be lowercase)
+        run: echo "IMAGE_NAME_LC=${IMAGE_NAME,,}" >> "$GITHUB_ENV"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch,suffix=-${{ matrix.variant }}-arm64
+            type=ref,event=tag,suffix=-${{ matrix.variant }}-arm64
+            type=sha,prefix=,suffix=-${{ matrix.variant }}-arm64
+            type=raw,value=latest-arm64,enable=${{ matrix.variant == 'full' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+
+      - name: Build and conditionally push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/arm64
+          load: true
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME_LC }}/cache:${{ matrix.variant }}-arm64
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref={0}/{1}/cache:{2}-arm64,mode=max', env.REGISTRY, env.IMAGE_NAME_LC, matrix.variant) || '' }}
+          provenance: false
+          build-args: |
+            GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}
+
+      - name: Retag for kind (image name the kustomize overlay points at)
+        run: |
+          # The prod overlay sets `newName: ghcr.io/openms/streamlit-template`,
+          # `newTag: main-full`. The rendered manifests reference that exact
+          # ref, so we need it loaded into kind under that name. Tag invariant
+          # across branches/variants so the test always works.
+          FIRST_TAG=$(printf '%s\n' "${{ steps.meta.outputs.tags }}" | head -n 1)
+          docker tag "$FIRST_TAG" ghcr.io/openms/streamlit-template:main-full
+
+      - name: Save image as tar
+        run: docker save ghcr.io/openms/streamlit-template:main-full -o /tmp/image.tar
+
+      - name: Upload image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: openms-streamlit-${{ matrix.variant }}-arm64-image
+          path: /tmp/image.tar
+          retention-days: 1
+
+  create-manifest:
+    # Stitch the per-arch tags into multi-arch manifest lists. The manifest
+    # tags reuse the OLD scheme (`<ref>-<variant>`, `latest`) so existing
+    # consumers (k8s overlays, docker-compose users, `docker pull` callers)
+    # keep working transparently — docker now auto-selects the right arch
+    # on pull. PRs don't push per-arch tags, so there's nothing to merge.
+    needs: [build-amd64, build-arm64]
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [full, simple]
+    steps:
+      - name: Compute lowercase image name
+        run: echo "IMAGE_NAME_LC=${IMAGE_NAME,,}" >> "$GITHUB_ENV"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute manifest tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          # NB: no -amd64/-arm64 suffix here. These are the multi-arch
+          # manifest names; they must match the pre-arm64 tag scheme so
+          # `:main-full`, `:v1.0.0-full`, `:latest` continue to resolve.
+          tags: |
+            type=ref,event=branch,suffix=-${{ matrix.variant }}
+            type=ref,event=tag,suffix=-${{ matrix.variant }}
+            type=sha,prefix=,suffix=-${{ matrix.variant }}
+            type=raw,value=latest,enable=${{ matrix.variant == 'full' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+
+      - name: Create and push multi-arch manifests
+        # Iterate over manifest tags (newline-separated from metadata-action)
+        # and merge the matching `-amd64` / `-arm64` per-arch tags into each.
+        # `--amend` makes the step idempotent across workflow_dispatch reruns.
+        # `docker manifest push` accepts only one ref per invocation, hence
+        # the loop.
+        run: |
+          set -euo pipefail
+          while IFS= read -r manifest_tag; do
+            [ -z "$manifest_tag" ] && continue
+            amd_tag="${manifest_tag}-amd64"
+            arm_tag="${manifest_tag}-arm64"
+            echo "Creating manifest ${manifest_tag} from:"
+            echo "  amd: ${amd_tag}"
+            echo "  arm: ${arm_tag}"
+            docker manifest create "$manifest_tag" \
+              --amend "$amd_tag" \
+              --amend "$arm_tag"
+            docker manifest push "$manifest_tag"
+          done <<< "${{ steps.meta.outputs.tags }}"
+
+  test-apptainer:
+    # Apptainer/Singularity is the dominant container runtime on HPC clusters.
+    # It mounts the root filesystem read-only and runs as the host user's UID
+    # (not root inside the image). The entrypoint must tolerate both: this job
+    # exercises that contract by running the built image under apptainer and
+    # waiting for the streamlit /_stcore/health endpoint to come up.
+    #
+    # amd64 only: upstream apptainer does NOT publish arm64 .deb assets
+    # (https://github.com/apptainer/apptainer/releases — every release lists
+    # only `apptainer_<ver>_amd64.deb`), so eWaterCycle/setup-apptainer fails
+    # on ubuntu-24.04-arm with "sudo exit code 100" when its
+    # `apt-get install ./apptainer_*.deb` resolves a non-existent package.
+    # Building apptainer from source on the arm runner would add ~15 min and
+    # significant maintenance surface for limited value (HPC SIF consumers
+    # remain amd64). Re-evaluate if upstream starts publishing arm64 builds.
+    needs: build-amd64
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [full, simple]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free disk space
+        # ubuntu-latest has ~14 GB free; the full image (5-8 GB) plus kind
+        # node image plus loading the OCI tar into both docker and kind can
+        # exhaust it. The arm runner is even tighter. Same incantation as
+        # `build-arm64`'s "Free disk space" step.
+        run: |
+          # Keep /opt/hostedtoolcache: helm/kind-action and setup-kubectl
+          # cache binaries there and fail if the directory is missing.
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc || true
+          sudo apt-get clean
+          df -h
+
+      - name: Download image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: openms-streamlit-${{ matrix.variant }}-amd64-image
+          path: /tmp
+
+      - name: Install apptainer
+        uses: eWaterCycle/setup-apptainer@v2
+        with:
+          apptainer-version: 1.3.4
+
+      - name: Build SIF from docker-archive
+        run: |
+          sudo apptainer build /tmp/openms.sif docker-archive:///tmp/image.tar
+          sudo chmod a+r /tmp/openms.sif
+
+      - name: Prepare host bind dirs (mountpoint contract)
+        run: |
+          # Host paths we'll bind into the SIF. Asserting writability through
+          # singularity's bind machinery requires that the destination paths
+          # exist as real directories in the squashfs (otherwise singularity
+          # silently degrades the bind to read-only via underlay).
+          mkdir -p /tmp/host-workspaces /tmp/host-mounted-data
+          echo "from-host-pretest" > /tmp/host-mounted-data/sentinel.txt
+
+      - name: Start apptainer instance (read-only root, host UID, with binds)
+        run: |
+          # Default apptainer semantics: read-only root, no --writable-tmpfs.
+          # This matches how users on HPC clusters run the SIF.
+          # Use `instance run` (apptainer 1.1+), not `instance start`: the SIF
+          # was built from docker-archive, which populates %runscript with the
+          # Docker ENTRYPOINT but leaves %startscript as the default no-op
+          # `exec "$@"`. `instance start` would launch an empty instance and
+          # streamlit would never bind 8501.
+          apptainer instance run \
+            --bind /tmp/host-workspaces:/workspaces-streamlit-template:rw \
+            --bind /tmp/host-mounted-data:/mounted-data:ro \
+            /tmp/openms.sif openms-test
+          apptainer instance list
+          # Record where this run's logs will land so subsequent steps can tail
+          # them deterministically (path depends on hostname/user).
+          LOG_DIR=$(find "$HOME/.apptainer/instances/logs" -type d -name "$(whoami)" 2>/dev/null | head -n 1)
+          echo "APPTAINER_LOG_DIR=${LOG_DIR}" >> "$GITHUB_ENV"
+          ls -la "$LOG_DIR" || true
+
+      - name: Wait for streamlit /_stcore/health
+        run: |
+          # Tail the entrypoint's stdout/stderr alongside the health probe so
+          # any startup failure surfaces directly in the CI log (the dedicated
+          # "Dump entrypoint logs on failure" step is post-mortem only and
+          # easy to miss in the GH Actions UI).
+          OUT="${APPTAINER_LOG_DIR}/openms-test.out"
+          ERR="${APPTAINER_LOG_DIR}/openms-test.err"
+          for i in $(seq 1 90); do
+            if curl -fsSo /dev/null --max-time 2 http://127.0.0.1:8501/_stcore/health; then
+              echo "Streamlit is ready after $i attempts"
+              exit 0
+            fi
+            if [ $((i % 5)) -eq 0 ]; then
+              echo "--- attempt $i: instance log tail ---"
+              tail -n 20 "$OUT" 2>/dev/null || echo "(no $OUT yet)"
+              tail -n 10 "$ERR" 2>/dev/null || echo "(no $ERR yet)"
+              apptainer instance list || true
+            fi
+            sleep 2
+          done
+          echo "TIMED OUT waiting for streamlit health endpoint"
+          echo "--- full entrypoint stdout ---"
+          cat "$OUT" 2>/dev/null || echo "(missing)"
+          echo "--- full entrypoint stderr ---"
+          cat "$ERR" 2>/dev/null || echo "(missing)"
+          exit 1
+
+      - name: Verify health endpoint returns 200
+        run: curl -fsS http://127.0.0.1:8501/_stcore/health
+
+      - name: Verify Redis is reachable inside container (full variant)
+        if: matrix.variant == 'full'
+        run: |
+          # In apptainer mode the entrypoint uses a unix socket (TCP 6379 on
+          # localhost is the host's, since net namespace is shared). The
+          # entrypoint writes the resolved URL to /tmp/openms-redis-url for
+          # out-of-band discovery, since `apptainer exec` spawns a fresh
+          # shell that doesn't inherit the daemon's exported env.
+          URL=$(apptainer exec instance://openms-test cat /tmp/openms-redis-url 2>/dev/null || true)
+          case "$URL" in
+            unix://*)
+              SOCK="${URL#unix://}"
+              echo "Redis URL is unix socket: $SOCK"
+              apptainer exec instance://openms-test redis-cli -s "$SOCK" ping | grep -i pong
+              ;;
+            *)
+              echo "Redis URL is TCP (or unset): ${URL:-default}"
+              apptainer exec instance://openms-test redis-cli ping | grep -i pong
+              ;;
+          esac
+
+      - name: Verify bind mount is writable (workspaces) and readable (data)
+        run: |
+          # The whole point of pre-creating /workspaces-streamlit-template
+          # and /mounted-data in the image: singularity now has a real
+          # attach point and `:rw` actually sticks. Without the mkdir,
+          # `apptainer exec ... touch` here would fail with EROFS.
+          apptainer exec instance://openms-test sh -c \
+            'echo from-container > /workspaces-streamlit-template/probe.txt'
+          test -f /tmp/host-workspaces/probe.txt
+          grep -q from-container /tmp/host-workspaces/probe.txt
+          # Read-only data mount should also be visible inside the container.
+          apptainer exec instance://openms-test grep -q from-host-pretest /mounted-data/sentinel.txt
+          # The mounted-drive browser uses os.path.ismount() to gate
+          # rendering (existence is no longer enough now that the image
+          # pre-creates the dir). Assert the kernel reports both paths as
+          # real mount points so the detection function returns truthy.
+          apptainer exec instance://openms-test python3 -c "
+          import os, sys
+          for p in ('/mounted-data', '/workspaces-streamlit-template'):
+              assert os.path.ismount(p), f'{p} not reported as mount point'
+              print(f'ismount({p}) = True')
+          "
+
+      - name: Dump entrypoint logs on failure
+        if: failure()
+        run: |
+          echo "--- apptainer instance list ---"
+          apptainer instance list || true
+          echo "--- apptainer instance logs ---"
+          find "$HOME/.apptainer" \( -name '*.out' -o -name '*.err' \) 2>/dev/null \
+            | while read -r f; do echo "=== $f ==="; cat "$f"; done || true
+
+      - name: Stop apptainer instance
+        if: always()
+        run: apptainer instance stop openms-test || true
+
+      - name: Upload validated SIF artifact (push events only)
+        if: success() && github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: openms-streamlit-${{ matrix.variant }}-sif
+          path: /tmp/openms.sif
+          retention-days: 1
+          if-no-files-found: error
+
+  publish-apptainer:
+    # Publish the validated SIF (already health-checked above) to GHCR as an
+    # OCI artifact via ORAS, in a sibling package: ghcr.io/<owner>/<repo>/sif.
+    # Keeping it separate from the docker image package keeps tag lists clean
+    # and lets HPC users `apptainer pull oras://...` without the 5-15 min
+    # on-the-fly OCI->SIF conversion the docker:// path requires.
+    needs: test-apptainer
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [full, simple]
+    steps:
+      - name: Download validated SIF artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: openms-streamlit-${{ matrix.variant }}-sif
+          path: /tmp
+
+      - name: Install apptainer
+        uses: eWaterCycle/setup-apptainer@v2
+        with:
+          apptainer-version: 1.3.4
+
+      - name: Compute SIF tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/sif
+          tags: |
+            type=ref,event=branch,suffix=-${{ matrix.variant }}
+            type=ref,event=tag,suffix=-${{ matrix.variant }}
+            type=sha,prefix=,suffix=-${{ matrix.variant }}
+            type=raw,value=latest,enable=${{ matrix.variant == 'full' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+
+      - name: Log in to GHCR for ORAS push
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # apptainer reads its auth from ~/.apptainer/remote.yaml, NOT from
+          # ~/.docker/config.json — so docker/login-action won't work here.
+          # Login and push must both run as the runner user (no sudo) so they
+          # share the same $HOME and therefore the same auth file.
+          echo "$GHCR_TOKEN" | apptainer registry login \
+            --username "${{ github.actor }}" \
+            --password-stdin \
+            oras://ghcr.io
+
+      - name: Push SIF to each computed tag
+        run: |
+          # `apptainer push` accepts ONE destination per invocation; iterate
+          # over the newline-separated tag list from docker/metadata-action.
+          # tr lowercase is belt-and-braces — metadata-action already
+          # lowercases, but GHCR is strict about case in OCI refs.
+          set -euo pipefail
+          while IFS= read -r tag; do
+            [ -z "$tag" ] && continue
+            tag_lc="$(echo "$tag" | tr '[:upper:]' '[:lower:]')"
+            echo "Pushing SIF to oras://${tag_lc}"
+            apptainer push /tmp/openms.sif "oras://${tag_lc}"
+          done <<< "${{ steps.meta.outputs.tags }}"
+
+  test-nginx:
+    needs: [build-amd64, build-arm64]
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: full
+            arch: amd64
+            runner: ubuntu-latest
+          - variant: full
+            arch: arm64
+            runner: ubuntu-24.04-arm
+          - variant: simple
+            arch: amd64
+            runner: ubuntu-latest
+          - variant: simple
+            arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free disk space
+        # ubuntu-latest has ~14 GB free; the full image (5-8 GB) plus kind
+        # node image plus loading the OCI tar into both docker and kind can
+        # exhaust it. The arm runner is even tighter. Same incantation as
+        # `build-arm64`'s "Free disk space" step.
+        run: |
+          # Keep /opt/hostedtoolcache: helm/kind-action and setup-kubectl
+          # cache binaries there and fail if the directory is missing.
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc || true
+          sudo apt-get clean
+          df -h
+
+      - name: Download image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: openms-streamlit-${{ matrix.variant }}-${{ matrix.arch }}-image
+          path: /tmp
+
+      - name: Create kind cluster
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: test-cluster
+          config: .github/kind-config.yaml
+
+      - name: Load image into kind cluster
+        # Use `kind load image-archive` (not docker-image) so we never store
+        # the image in host docker. Saves ~5-8 GB on /var/lib/docker. Delete
+        # the tar afterwards to free the same again on /tmp — the image is
+        # now in both kind nodes' containerd, which is enough.
+        run: |
+          kind load image-archive /tmp/image.tar --name test-cluster
+          rm -f /tmp/image.tar
+
+      - name: Install nginx ingress controller
+        run: |
+          kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
+          kubectl wait --namespace ingress-nginx --for=condition=ready pod --selector=app.kubernetes.io/component=controller --timeout=90s
+
+      - name: Deploy with Kustomize
+        run: |
+          # Filter out Traefik IngressRoute (kind cluster uses nginx) and force imagePullPolicy=Never
+          kubectl kustomize k8s/overlays/prod/ | \
+            yq 'select(.kind != "IngressRoute")' | \
+            sed -E 's|imagePullPolicy: (IfNotPresent\|Always)|imagePullPolicy: Never|g' | \
+            sed 's|storageClassName: cinder-csi|storageClassName: standard|g' > /tmp/manifests.yaml
+          for i in 1 2 3 4 5; do
+            if kubectl apply -f /tmp/manifests.yaml; then
+              echo "Deploy succeeded on attempt $i"
+              break
+            fi
+            echo "Attempt $i failed, retrying in ${i}0s..."
+            sleep "${i}0"
+          done
+
+      - name: Discover overlay identity
+        run: |
+          SLUG=$(yq '.commonLabels.app' k8s/overlays/prod/kustomization.yaml)
+          echo "SLUG=$SLUG" >> "$GITHUB_ENV"
+
+      - name: Wait for Redis to be ready
+        run: |
+          kubectl wait -n openms --for=condition=ready pod -l app=${SLUG},component=redis --timeout=60s
+
+      - name: Verify Redis Service is reachable
+        run: |
+          kubectl run redis-test -n openms --image=redis:7-alpine --rm -i --restart=Never -- redis-cli -h ${SLUG}-redis.openms.svc.cluster.local ping
+
+      - name: Verify all deployments are available
+        run: |
+          kubectl wait -n openms --for=condition=available deployment -l app=${SLUG} --timeout=180s || true
+          kubectl get pods -n openms -l app=${SLUG}
+          kubectl get services -n openms -l app=${SLUG}
+
+      - name: Curl both hostnames via nginx ingress
+        run: |
+          NGINX_POD=$(kubectl -n ingress-nginx get pod -l app.kubernetes.io/component=controller -o name | head -n 1)
+          kubectl -n ingress-nginx port-forward "$NGINX_POD" 8080:80 &
+          PF_PID=$!
+          trap 'kill "$PF_PID" 2>/dev/null || true' EXIT
+          for i in $(seq 1 30); do
+            sleep 2
+            if curl -fsSo /dev/null --max-time 2 http://127.0.0.1:8080/_stcore/health -H "Host: streamlit.openms.example.de"; then
+              break
+            fi
+            echo "port-forward / app not ready yet, retry $i"
+          done
+          for host in streamlit.openms.example.de streamlit.openms.example.org; do
+            curl -fsS --resolve "$host:8080:127.0.0.1" "http://$host:8080/_stcore/health"
+            echo ""
+            echo "$host -> 200 OK"
+          done
+
+      - name: Dump cluster state on failure
+        if: failure()
+        run: |
+          echo "=== nodes ==="
+          kubectl get nodes -o wide || true
+          echo "=== pods (all namespaces) ==="
+          kubectl get pods -A -o wide || true
+          echo "=== app pods describe ==="
+          kubectl describe pod -n openms -l app=${SLUG} || true
+          echo "=== app pod logs ==="
+          kubectl logs -n openms -l app=${SLUG} --tail=200 --all-containers --prefix || true
+          echo "=== app pod previous logs (if crashed) ==="
+          kubectl logs -n openms -l app=${SLUG} --tail=200 --all-containers --prefix --previous || true
+          echo "=== ingress ==="
+          kubectl get ingress -A -o wide || true
+          kubectl describe ingress -n openms || true
+          echo "=== services + endpoints ==="
+          kubectl get svc,endpoints -n openms || true
+          echo "=== ingress-nginx controller logs ==="
+          kubectl logs -n ingress-nginx -l app.kubernetes.io/component=controller --tail=200 || true
+
+  test-traefik:
+    needs: [build-amd64, build-arm64]
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: full
+            arch: amd64
+            runner: ubuntu-latest
+          - variant: full
+            arch: arm64
+            runner: ubuntu-24.04-arm
+          - variant: simple
+            arch: amd64
+            runner: ubuntu-latest
+          - variant: simple
+            arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free disk space
+        # ubuntu-latest has ~14 GB free; the full image (5-8 GB) plus kind
+        # node image plus loading the OCI tar into both docker and kind can
+        # exhaust it. The arm runner is even tighter. Same incantation as
+        # `build-arm64`'s "Free disk space" step.
+        run: |
+          # Keep /opt/hostedtoolcache: helm/kind-action and setup-kubectl
+          # cache binaries there and fail if the directory is missing.
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc || true
+          sudo apt-get clean
+          df -h
+
+      - name: Download image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: openms-streamlit-${{ matrix.variant }}-${{ matrix.arch }}-image
+          path: /tmp
+
+      - name: Create kind cluster
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: traefik-test
+          config: .github/kind-config.yaml
+
+      - name: Load image into kind cluster
+        # Use `kind load image-archive` (not docker-image) so we never store
+        # the image in host docker. Saves ~5-8 GB on /var/lib/docker. Delete
+        # the tar afterwards to free the same again on /tmp — the image is
+        # now in both kind nodes' containerd, which is enough.
+        run: |
+          kind load image-archive /tmp/image.tar --name traefik-test
+          rm -f /tmp/image.tar
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+
+      - name: Install Traefik via Helm
+        run: |
+          helm repo add traefik https://traefik.github.io/charts
+          helm repo update
+          helm install traefik traefik/traefik \
+            --namespace traefik --create-namespace \
+            --set service.type=ClusterIP
+          kubectl -n traefik wait --for=condition=available deployment/traefik --timeout=120s
+
+      - name: Deploy with Kustomize (full manifests, no filter)
+        run: |
+          kubectl kustomize k8s/overlays/prod/ | \
+            sed -E 's|imagePullPolicy: (IfNotPresent\|Always)|imagePullPolicy: Never|g' | \
+            sed 's|storageClassName: cinder-csi|storageClassName: standard|g' > /tmp/manifests.yaml
+          for i in 1 2 3 4 5; do
+            if kubectl apply -f /tmp/manifests.yaml; then
+              echo "Deploy succeeded on attempt $i"
+              break
+            fi
+            echo "Attempt $i failed, retrying in ${i}0s..."
+            sleep "${i}0"
+          done
+
+      - name: Discover overlay identity
+        run: |
+          SLUG=$(yq '.commonLabels.app' k8s/overlays/prod/kustomization.yaml)
+          TRAEFIK_HOSTS=$(kubectl kustomize k8s/overlays/prod/ \
+            | yq 'select(.kind == "IngressRoute") | .spec.routes[0].match' \
+            | grep -oP "Host\(\`\K[^\`]+" | tr '\n' ' ')
+          echo "SLUG=$SLUG" >> "$GITHUB_ENV"
+          echo "TRAEFIK_HOSTS=$TRAEFIK_HOSTS" >> "$GITHUB_ENV"
+
+      - name: Wait for Redis to be ready
+        run: |
+          kubectl wait -n openms --for=condition=ready pod -l app=${SLUG},component=redis --timeout=60s
+
+      - name: Verify all deployments are available
+        run: |
+          kubectl wait -n openms --for=condition=available deployment -l app=${SLUG} --timeout=180s || true
+          kubectl get pods -n openms -l app=${SLUG}
+          kubectl get services -n openms -l app=${SLUG}
+
+      - name: Curl both hostnames via Traefik
+        run: |
+          kubectl -n traefik port-forward svc/traefik 8080:80 &
+          PF_PID=$!
+          trap 'kill "$PF_PID" 2>/dev/null || true' EXIT
+          FIRST_HOST=$(echo ${TRAEFIK_HOSTS} | awk '{print $1}')
+          for i in $(seq 1 30); do
+            sleep 2
+            if curl -fsSo /dev/null --max-time 2 http://127.0.0.1:8080/_stcore/health -H "Host: ${FIRST_HOST}"; then
+              break
+            fi
+            echo "port-forward / app not ready yet, retry $i"
+          done
+          for host in ${TRAEFIK_HOSTS}; do
+            curl -fsS --resolve "$host:8080:127.0.0.1" "http://$host:8080/_stcore/health"
+            echo ""
+            echo "$host -> 200 OK"
+          done
+
+      - name: Dump cluster state on failure
+        if: failure()
+        run: |
+          echo "=== nodes ==="
+          kubectl get nodes -o wide || true
+          echo "=== pods (all namespaces) ==="
+          kubectl get pods -A -o wide || true
+          echo "=== app pods describe ==="
+          kubectl describe pod -n openms -l app=${SLUG} || true
+          echo "=== app pod logs ==="
+          kubectl logs -n openms -l app=${SLUG} --tail=200 --all-containers --prefix || true
+          echo "=== app pod previous logs (if crashed) ==="
+          kubectl logs -n openms -l app=${SLUG} --tail=200 --all-containers --prefix --previous || true
+          echo "=== traefik ingressroute ==="
+          kubectl get ingressroute -A -o yaml || true
+          echo "=== services + endpoints ==="
+          kubectl get svc,endpoints -n openms || true
+          echo "=== traefik controller logs ==="
+          kubectl logs -n traefik -l app.kubernetes.io/name=traefik --tail=200 || true

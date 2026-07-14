@@ -1,0 +1,80 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: streamlit
+  labels:
+    component: streamlit
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      component: streamlit
+  template:
+    metadata:
+      labels:
+        component: streamlit
+    spec:
+      initContainers:
+        - name: seed-demos
+          image: openms-streamlit
+          imagePullPolicy: Always
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+              mkdir -p /workspaces-streamlit-template/.demos
+              cp -rn /app/example-data/workspaces/. /workspaces-streamlit-template/.demos/
+          volumeMounts:
+            - name: workspaces
+              mountPath: /workspaces-streamlit-template
+      containers:
+        - name: streamlit
+          image: openms-streamlit
+          imagePullPolicy: Always
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              set -euo pipefail
+              source /root/miniforge3/bin/activate streamlit-env
+              jq -s '.[0] * .[1]' /app/settings.json /app/settings-overrides.json > /tmp/settings-merged.json && mv /tmp/settings-merged.json /app/settings.json
+              exec streamlit run app.py --server.address 0.0.0.0
+          ports:
+            - containerPort: 8501
+          env:
+            - name: REDIS_URL
+              value: "redis://redis:6379/0"
+            - name: WORKSPACES_DIR
+              value: "/workspaces-streamlit-template"
+          volumeMounts:
+            - name: workspaces
+              mountPath: /workspaces-streamlit-template
+            - name: config
+              mountPath: /app/settings-overrides.json
+              subPath: settings-overrides.json
+              readOnly: true
+            - name: admin-secrets
+              mountPath: /app/admin-secrets
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /_stcore/health
+              port: 8501
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /_stcore/health
+              port: 8501
+            initialDelaySeconds: 30
+            periodSeconds: 30
+      volumes:
+        - name: workspaces
+          persistentVolumeClaim:
+            claimName: workspaces-pvc
+        - name: config
+          configMap:
+            name: streamlit-config
+        - name: admin-secrets
+          secret:
+            secretName: streamlit-secrets
+            optional: true

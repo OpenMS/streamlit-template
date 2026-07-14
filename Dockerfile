@@ -11,12 +11,9 @@ FROM ubuntu:22.04 AS setup-build-system
 ARG OPENMS_REPO=https://github.com/OpenMS/OpenMS.git
 ARG OPENMS_BRANCH=release/3.5.0
 ARG PORT=8501
-# GitHub token to download latest OpenMS executable for Windows from Github action artifact.
-ARG GITHUB_TOKEN
-ENV GH_TOKEN=${GITHUB_TOKEN}
-# Streamlit app Gihub user name (to download artifact from).
+# Streamlit app GitHub user name (to download artifact from).
 ARG GITHUB_USER=OpenMS
-# Streamlit app Gihub repository name (to download artifact from).
+# Streamlit app GitHub repository name (to download artifact from).
 ARG GITHUB_REPO=streamlit-template
 
 USER root
@@ -49,6 +46,13 @@ RUN wget -q \
     && bash Miniforge3-Linux-x86_64.sh -b \
     && rm -f Miniforge3-Linux-x86_64.sh
 RUN mamba --version
+
+# Make /root traversable so the entrypoint can `source
+# /root/miniforge3/bin/activate ...` when the container runs as a non-root
+# user (apptainer/singularity maps the host UID into the container; the
+# default ubuntu /root is 0700 which would block path traversal). +x only,
+# not +r, so the directory listing remains private.
+RUN chmod o+x /root
 
 # Setup mamba environment.
 RUN mamba create -n streamlit-env python=3.10
@@ -119,12 +123,26 @@ RUN rm -rf openms-build
 # Prepare and run streamlit app.
 FROM compile-openms AS run-app
 
-# Install Redis server for job queue and nginx for load balancing
+# Install Redis server for job queue and nginx for load balancing.
+# Redis data lives under $RUNTIME_DIR at runtime (see entrypoint.sh) so no
+# /var/lib/redis setup is needed - that path is not writable under Apptainer.
 RUN apt-get update && apt-get install -y --no-install-recommends redis-server nginx \
     && rm -rf /var/lib/apt/lists/*
 
-# Create Redis data directory
-RUN mkdir -p /var/lib/redis && chown redis:redis /var/lib/redis
+# Create Redis data directory. Default 0755 root-owned is enough: the docker
+# entrypoint runs as root (can write regardless of mode), and the apptainer
+# entrypoint relocates Redis state to /tmp/openms-runtime-* so this dir is
+# never written under apptainer.
+RUN mkdir -p /var/lib/redis
+
+# Pre-create bind-mount targets so apptainer/singularity has a real attach
+# point. Docker auto-creates missing `-v` targets, but singularity uses a
+# read-only underlay and silently ignores `:rw` when the target isn't a
+# real directory in the SIF — writes then fail with EROFS even though the
+# host bind path is writable. Pre-creating these directories costs one
+# inode each and changes nothing in docker mode (the user's volume mount
+# shadows them).
+RUN mkdir -p /workspaces-streamlit-template /mounted-data
 
 # Create workdir and copy over all streamlit related files/folders.
 
@@ -158,67 +176,10 @@ ENV REDIS_URL=redis://localhost:6379/0
 # Set to >1 to enable nginx load balancer with multiple Streamlit instances
 ENV STREAMLIT_SERVER_COUNT=1
 
-# create entrypoint script to start cron, Redis, RQ workers, and Streamlit
-RUN echo -e '#!/bin/bash\n\
-set -e\n\
-source /root/miniforge3/bin/activate streamlit-env\n\
-\n\
-# Start cron for workspace cleanup\n\
-service cron start\n\
-\n\
-# Start Redis server in background\n\
-echo "Starting Redis server..."\n\
-redis-server --daemonize yes --dir /var/lib/redis --appendonly no\n\
-\n\
-# Wait for Redis to be ready\n\
-until redis-cli ping > /dev/null 2>&1; do\n\
-    echo "Waiting for Redis..."\n\
-    sleep 1\n\
-done\n\
-echo "Redis is ready"\n\
-\n\
-# Start RQ worker(s) in background\n\
-WORKER_COUNT=${RQ_WORKER_COUNT:-1}\n\
-echo "Starting $WORKER_COUNT RQ worker(s)..."\n\
-for i in $(seq 1 $WORKER_COUNT); do\n\
-    rq worker openms-workflows --url $REDIS_URL --name worker-$i &\n\
-done\n\
-\n\
-# Load balancer setup\n\
-SERVER_COUNT=${STREAMLIT_SERVER_COUNT:-1}\n\
-\n\
-if [ "$SERVER_COUNT" -gt 1 ]; then\n\
-    echo "Starting $SERVER_COUNT Streamlit instances with nginx load balancer..."\n\
-\n\
-    # Generate nginx upstream block\n\
-    UPSTREAM_SERVERS=""\n\
-    BASE_PORT=8510\n\
-    for i in $(seq 0 $((SERVER_COUNT - 1))); do\n\
-        PORT=$((BASE_PORT + i))\n\
-        UPSTREAM_SERVERS="${UPSTREAM_SERVERS}        server 127.0.0.1:${PORT};\\n"\n\
-    done\n\
-\n\
-    # Write nginx config\n\
-    mkdir -p /etc/nginx\n\
-    echo -e "worker_processes auto;\\npid /run/nginx.pid;\\n\\nevents {\\n    worker_connections 1024;\\n}\\n\\nhttp {\\n    client_max_body_size 0;\\n\\n    map \\$cookie_stroute \\$route_key {\\n        \\x22\\x22      \\$request_id;\\n        default \\$cookie_stroute;\\n    }\\n\\n    upstream streamlit_backend {\\n        hash \\$route_key consistent;\\n${UPSTREAM_SERVERS}    }\\n\\n    map \\$http_upgrade \\$connection_upgrade {\\n        default upgrade;\\n        \\x27\\x27 close;\\n    }\\n\\n    server {\\n        listen 0.0.0.0:8501;\\n\\n        location / {\\n            proxy_pass http://streamlit_backend;\\n            proxy_http_version 1.1;\\n            proxy_set_header Upgrade \\$http_upgrade;\\n            proxy_set_header Connection \\$connection_upgrade;\\n            proxy_set_header Host \\$host;\\n            proxy_set_header X-Real-IP \\$remote_addr;\\n            proxy_set_header X-Forwarded-For \\$proxy_add_x_forwarded_for;\\n            proxy_set_header X-Forwarded-Proto \\$scheme;\\n            proxy_read_timeout 86400;\\n            proxy_send_timeout 86400;\\n            proxy_buffering off;\\n            add_header Set-Cookie \\x22stroute=\\$route_key; Path=/; HttpOnly; SameSite=Lax\\x22 always;\\n        }\\n    }\\n}" > /etc/nginx/nginx.conf\n\
-\n\
-    # Start Streamlit instances on internal ports\n\
-    for i in $(seq 0 $((SERVER_COUNT - 1))); do\n\
-        PORT=$((BASE_PORT + i))\n\
-        echo "Starting Streamlit instance on port $PORT..."\n\
-        streamlit run app.py --server.port $PORT --server.address 0.0.0.0 &\n\
-    done\n\
-\n\
-    sleep 2\n\
-    echo "Starting nginx load balancer on port 8501..."\n\
-    exec /usr/sbin/nginx -g "daemon off;"\n\
-else\n\
-    # Single instance mode (default) - run Streamlit directly on port 8501\n\
-    echo "Starting Streamlit app..."\n\
-    exec streamlit run app.py --server.address 0.0.0.0\n\
-fi\n\
-' > /app/entrypoint.sh
-# make the script executable
+# Install the apptainer-compatible entrypoint that starts cron (when the root
+# FS is writable), Redis, RQ workers, optional nginx load balancer, and the
+# Streamlit server. The script falls back to /tmp paths under apptainer.
+COPY docker/entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
 
 # Patch Analytics
@@ -227,12 +188,19 @@ RUN mamba run -n streamlit-env python hooks/hook-analytics.py
 # Set Online Deployment
 RUN jq '.online_deployment = true' settings.json > tmp.json && mv tmp.json settings.json
 
-# Download latest OpenMS App executable as a ZIP file
-RUN if [ -n "$GH_TOKEN" ]; then \
-        echo "GH_TOKEN is set, proceeding to download the release asset..."; \
+# Point the in-app mounted-drive browser at the conventional bind-mount path.
+# The browser only renders when this directory exists at runtime, i.e. when
+# the user starts the container with `-v /host/path:/mounted-data`.
+RUN jq '.local_data_dir = "/mounted-data"' settings.json > tmp.json && mv tmp.json settings.json
+
+# Download latest OpenMS App executable as a ZIP file.
+# ARG declared here (not at the top) — otherwise the per-run token busts the cache.
+ARG GITHUB_TOKEN
+RUN if [ -n "$GITHUB_TOKEN" ]; then \
+        echo "GITHUB_TOKEN is set, proceeding to download the release asset..."; \
         gh release download -R ${GITHUB_USER}/${GITHUB_REPO} -p "OpenMS-App.zip" -D /app; \
     else \
-        echo "GH_TOKEN is not set, skipping the release asset download."; \
+        echo "GITHUB_TOKEN is not set, skipping the release asset download."; \
     fi
 
 
