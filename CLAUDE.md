@@ -89,6 +89,8 @@ Each workflow gets 4 content pages (upload, configure, run, results) that call `
 
 Decorate `configure()` and `results()` with `@st.fragment` for partial reruns.
 
+For conditional UI (a widget that shows/hides other widgets), pass `reactive=True` to `input_widget`, `select_input_file`, or `input_TOPP` so a change reruns the parent `configure()` instead of only its isolated fragment. Read the changed value from `st.session_state` (not `self.params`, which is stale within the rerun) via `parameter_manager.param_prefix` for custom-widget keys or `topp_param_prefix` for TOPP keys (`"<Tool>:1:<param path>"`).
+
 ### Python Tools
 
 Custom scripts in `src/python-tools/` define a `DEFAULTS` list for auto-generated UI:

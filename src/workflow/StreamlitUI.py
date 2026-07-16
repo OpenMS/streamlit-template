@@ -819,7 +819,6 @@ class StreamlitUI:
 
         self.parameter_manager.save_parameters()
 
-    @st.fragment
     def input_TOPP(
         self,
         topp_tool_name: str,
@@ -831,6 +830,7 @@ class StreamlitUI:
         display_subsection_tabs: bool = False,
         custom_defaults: dict = {},
         tool_instance_name: str = None,
+        reactive: bool = False,
     ) -> None:
         """
         Generates input widgets for TOPP tool parameters dynamically based on the tool's
@@ -842,6 +842,8 @@ class StreamlitUI:
             num_cols (int, optional): Number of columns to use for the layout. Defaults to 3.
             exclude_parameters (List[str], optional): List of parameter names to exclude from the widget. Defaults to an empty list.
             include_parameters (List[str], optional): List of parameter names to include in the widget. Defaults to an empty list.
+            flag_parameters (List[str], optional): List of parameter names that should
+                be treated as no-value CLI flags during command construction.
             display_tool_name (bool, optional): Whether to display the TOPP tool name. Defaults to True.
             display_subsections (bool, optional): Whether to split parameters into subsections based on the prefix. Defaults to True.
             display_subsection_tabs (bool, optional): Whether to display main subsections in separate tabs (if more than one main section). Defaults to False.
@@ -852,7 +854,58 @@ class StreamlitUI:
                 defaults to topp_tool_name. The instance name is used for session
                 state keys and parameter storage, while topp_tool_name is used for
                 the actual tool executable and ini file creation.
+            reactive (bool, optional): If True, widget changes trigger the parent
+                section to re-render, enabling conditional UI based on this widget's
+                value. Use when downstream UI depends on a parameter value (e.g.,
+                TMT type driving channel count). Default is False.
         """
+        if reactive:
+            self._input_TOPP_impl(
+                topp_tool_name, num_cols, exclude_parameters, include_parameters,
+                flag_parameters, display_tool_name, display_subsections,
+                display_subsection_tabs, custom_defaults, tool_instance_name,
+            )
+        else:
+            self._input_TOPP_fragmented(
+                topp_tool_name, num_cols, exclude_parameters, include_parameters,
+                flag_parameters, display_tool_name, display_subsections,
+                display_subsection_tabs, custom_defaults, tool_instance_name,
+            )
+
+    @st.fragment
+    def _input_TOPP_fragmented(
+        self,
+        topp_tool_name: str,
+        num_cols: int = 4,
+        exclude_parameters: List[str] = [],
+        include_parameters: List[str] = [],
+        flag_parameters: List[str] = [],
+        display_tool_name: bool = True,
+        display_subsections: bool = True,
+        display_subsection_tabs: bool = False,
+        custom_defaults: dict = {},
+        tool_instance_name: str = None,
+    ) -> None:
+        self._input_TOPP_impl(
+            topp_tool_name, num_cols, exclude_parameters, include_parameters,
+            flag_parameters, display_tool_name, display_subsections,
+            display_subsection_tabs, custom_defaults, tool_instance_name,
+        )
+
+    def _input_TOPP_impl(
+        self,
+        topp_tool_name: str,
+        num_cols: int = 4,
+        exclude_parameters: List[str] = [],
+        include_parameters: List[str] = [],
+        flag_parameters: List[str] = [],
+        display_tool_name: bool = True,
+        display_subsections: bool = True,
+        display_subsection_tabs: bool = False,
+        custom_defaults: dict = {},
+        tool_instance_name: str = None,
+    ) -> None:
+        """Internal implementation of input_TOPP - contains all the widget logic."""
         # Default instance name to the tool name when not provided
         if tool_instance_name is None:
             tool_instance_name = topp_tool_name

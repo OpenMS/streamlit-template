@@ -132,6 +132,38 @@ Takes the obligatory **script_file** argument. The default location for the Pyth
         "💡 Access parameter widget values by their **key** in the `self.params` object, e.g. `self.params['mzML-files']` will give all selected mzML files."
     )
 
+    st.markdown(
+        """
+### Reactive parameters (conditional UI)
+
+By default every parameter widget is rendered inside an isolated `st.fragment`: changing it reruns only that widget, which keeps large parameter sections fast but also means a widget **cannot** show or hide other widgets. Pass **`reactive=True`** to `self.ui.input_widget`, `self.ui.select_input_file` or `self.ui.input_TOPP` to render the widget directly in the parent `configure()` scope instead — a change then reruns `configure()`, so you can conditionally render downstream widgets based on the current value.
+
+Read the current value from `st.session_state` (**not** `self.params`, which is only loaded once per run and is stale within the same rerun) using the parameter-manager prefixes: `param_prefix` for `input_widget` / `select_input_file` keys, and `topp_param_prefix` for TOPP keys of the form `"<Tool>:1:<param path>"` (the `<param path>` matches the tool's ini, as shown for each widget in the panel).
+"""
+    )
+    st.code(
+        '''@st.fragment
+def configure(self) -> None:
+    pm = self.parameter_manager
+
+    # A custom widget that reveals more widgets when checked
+    self.ui.input_widget(
+        "advanced-mode", False, "Advanced mode",
+        widget_type="checkbox", reactive=True,
+    )
+    if st.session_state.get(f"{pm.param_prefix}advanced-mode", False):
+        self.ui.input_widget("threads", 4, "Threads", widget_type="number")
+
+    # A TOPP parameter driving conditional UI (e.g. TMT type -> channel count)
+    self.ui.input_TOPP("IsobaricAnalyzer", reactive=True)
+    iso_type = st.session_state.get(f"{pm.topp_param_prefix}IsobaricAnalyzer:1:type", "")
+    if iso_type.startswith("tmt"):
+        self.ui.input_widget("tmt-channels", 10, "TMT channels", widget_type="number")'''
+    )
+    st.info(
+        "💡 `reactive=True` is opt-in per widget and defaults to `False`. On `input_TOPP` it un-isolates the whole tool panel, so **any** parameter change reruns `configure()` — leave it off unless another widget's visibility depends on a value in that panel."
+    )
+
     with st.expander("**Code documentation**", expanded=True):
         st.help(StreamlitUI.input_widget)
         st.help(StreamlitUI.select_input_file)

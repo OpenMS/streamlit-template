@@ -120,9 +120,30 @@ The 4 pages call these methods respectively:
 - `self.ui.input_TOPP("ToolName", custom_defaults={})` — auto-generated TOPP parameter UI
 - `self.ui.input_python("script_name")` — auto-generated Python tool parameter UI
 - `self.ui.input_widget(key, default, label)` — single custom widget
+- `select_input_file`, `input_TOPP` and `input_widget` accept `reactive=True` to rerun `configure()` when the widget changes (for conditional UI — see below)
 
 ### Logging
 - `self.logger.log("message")` — log progress during execution
+
+## Conditional UI (reactive)
+
+Parameter widgets are isolated in an `st.fragment` by default, so a change reruns only that
+widget and can't show/hide other widgets. Pass `reactive=True` to render the widget in the
+parent scope instead — a change then reruns `configure()`. Read the live value from
+`st.session_state` (not `self.params`, which is stale within the rerun) using
+`self.parameter_manager.param_prefix` for custom-widget keys or `topp_param_prefix` for TOPP
+keys of the form `"<Tool>:1:<param path>"`.
+
+```python
+@st.fragment
+def configure(self) -> None:
+    pm = self.parameter_manager
+    # changing the tool's `type` selectbox reruns configure()
+    self.ui.input_TOPP("IsobaricAnalyzer", reactive=True)
+    iso_type = st.session_state.get(f"{pm.topp_param_prefix}IsobaricAnalyzer:1:type", "")
+    if iso_type.startswith("tmt"):
+        self.ui.input_widget("tmt-channels", 10, "TMT channels", widget_type="number")
+```
 
 ## Reference Files
 
@@ -144,6 +165,7 @@ The 4 pages call these methods respectively:
 - [ ] `__init__` calls `super().__init__("Name", st.session_state["workspace"])`
 - [ ] `upload()`, `configure()`, `execution()`, `results()` implemented
 - [ ] `@st.fragment` on `configure()` and `results()`
+- [ ] `reactive=True` on any widget whose value controls other widgets' visibility
 - [ ] 4 content pages created in `content/`
 - [ ] All 4 pages registered as a group in `app.py`
 - [ ] Default parameters added to `default-parameters.json` if needed
