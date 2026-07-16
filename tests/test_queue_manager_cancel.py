@@ -153,9 +153,7 @@ def test_stopped_status_is_mapped_in_get_job_info(monkeypatch):
 
     info = qm.get_job_info("stopped-job")
     assert info is not None
-    assert info.status == __import__(
-        "src.workflow.QueueManager", fromlist=["JobStatus"]
-    ).JobStatus.CANCELED, (
+    assert info.status.name == "CANCELED", (
         "RQ 'stopped' status should be reported as CANCELED to the UI; "
         "otherwise stopped jobs appear stuck in 'queued'."
     )

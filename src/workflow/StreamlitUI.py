@@ -825,6 +825,7 @@ class StreamlitUI:
         num_cols: int = 4,
         exclude_parameters: List[str] = [],
         include_parameters: List[str] = [],
+        flag_parameters: List[str] = [],
         display_tool_name: bool = True,
         display_subsections: bool = True,
         display_subsection_tabs: bool = False,
@@ -914,6 +915,18 @@ class StreamlitUI:
         if "_topp_tool_instance_map" not in st.session_state:
             st.session_state["_topp_tool_instance_map"] = {}
         st.session_state["_topp_tool_instance_map"][tool_instance_name] = topp_tool_name
+
+        # Persist flag_parameters to session_state and params.json so run_topp
+        # can skip appending a value for these boolean CLI flags.
+        if "_topp_flag_params" not in st.session_state:
+            st.session_state["_topp_flag_params"] = {}
+        st.session_state["_topp_flag_params"][tool_instance_name] = list(flag_parameters)
+        _fp = self.parameter_manager.get_parameters_from_json()
+        if "_flag_params" not in _fp:
+            _fp["_flag_params"] = {}
+        _fp["_flag_params"][tool_instance_name] = list(flag_parameters)
+        with open(self.parameter_manager.params_file, "w", encoding="utf-8") as _f:
+            json.dump(_fp, _f, indent=4)
 
         if not display_subsections:
             display_subsection_tabs = False

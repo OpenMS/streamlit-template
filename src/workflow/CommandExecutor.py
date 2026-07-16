@@ -268,6 +268,15 @@ class CommandExecutor:
 
         # Load merged parameters (_defaults + user overrides) for this tool instance
         merged_params = self.parameter_manager.get_merged_params(params_key)
+
+        # Load flag parameter names: params.json takes priority (survives session restart),
+        # session_state is the live fallback during the current session.
+        flag_map = self.parameter_manager.get_parameters_from_json().get("_flag_params", {})
+        flag_list = flag_map.get(params_key)
+        if flag_list is None:
+            flag_list = st.session_state.get("_topp_flag_params", {}).get(params_key, [])
+        flag_params: set = set(flag_list)
+
         # Construct commands for each process
         for i in range(n_processes):
             command = [tool]
@@ -288,25 +297,42 @@ class CommandExecutor:
                     command += [value[i]]
             # Add merged TOPP tool parameters (_defaults + user overrides)
             for k, v in merged_params.items():
-                command += [f"-{k}"]
-                # Skip only empty strings (pass flag with no value)
-                # Note: 0 and 0.0 are valid values, so use explicit check
-                if v != "" and v is not None:
-                    if isinstance(v, str) and "\n" in v:
-                        command += v.split("\n")
+                if k in flag_params:
+                    # CLI flag: include "-k" only when truthy, omit when false
+                    if isinstance(v, str):
+                        is_enabled = v.lower() == "true"
                     else:
-                        command += [str(v)]
+                        is_enabled = bool(v)
+                    if is_enabled:
+                        command += [f"-{k}"]
+                    continue
+                # Regular parameter: skip empty/None/empty-list, append value otherwise
+                if v == "" or v is None or (isinstance(v, list) and not v):
+                    continue
+                command += [f"-{k}"]
+                if isinstance(v, str) and "\n" in v:
+                    command += v.split("\n")
+                elif isinstance(v, list):
+                    command += [str(x) for x in v]
+                else:
+                    command += [str(v)]
             # Add custom parameters
             for k, v in custom_params.items():
-                command += [f"-{k}"]
-                
-                # Skip only empty strings (pass flag with no value)
-                # Note: 0 and 0.0 are valid values, so use explicit check
-                if v != "" and v is not None:
-                    if isinstance(v, list):
-                        command += [str(x) for x in v]
+                if k in flag_params:
+                    if isinstance(v, str):
+                        is_enabled = v.lower() == "true"
                     else:
-                        command += [str(v)]
+                        is_enabled = bool(v)
+                    if is_enabled:
+                        command += [f"-{k}"]
+                    continue
+                if v == "" or v is None or (isinstance(v, list) and not v):
+                    continue
+                command += [f"-{k}"]
+                if isinstance(v, list):
+                    command += [str(x) for x in v]
+                else:
+                    command += [str(v)]
             # Add threads parameter for TOPP tools
             command += ["-threads", str(threads_per_command)]
             commands.append(command)
