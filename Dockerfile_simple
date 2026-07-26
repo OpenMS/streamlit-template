@@ -7,6 +7,21 @@
 # debug container after build (comment out ENTRYPOINT) and run container with interactive /bin/bash shell
 # prune unused images/etc. to free disc space (e.g. might be needed on gitpod). Use with care.: docker system prune --all --force
 
+# Build the OpenMS-Insight package (Python + Vue bundle) from the migration branch.
+# Insight's Vue dist is gitignored and it has no pip build hook, so build the bundle
+# here and sync it into the package tree; stage1 pip-installs it.
+FROM node:21 AS insight-build
+ARG INSIGHT_REPO=https://github.com/t0mdavid-m/openms-insight.git
+ARG INSIGHT_BRANCH=claude/kind-heisenberg-u6dVm
+ADD https://api.github.com/repos/t0mdavid-m/openms-insight/git/refs/heads/${INSIGHT_BRANCH} insight-ref.json
+RUN git clone -b ${INSIGHT_BRANCH} --single-branch ${INSIGHT_REPO} /openms-insight
+WORKDIR /openms-insight/js-component
+RUN npm install && npm run build
+RUN mkdir -p /openms-insight/openms_insight/js-component \
+    && rm -rf /openms-insight/openms_insight/js-component/dist \
+    && cp -r /openms-insight/js-component/dist /openms-insight/openms_insight/js-component/dist \
+    && rm -rf /openms-insight/js-component/node_modules
+
 FROM ubuntu:22.04 AS stage1
 ARG OPENMS_REPO=https://github.com/OpenMS/OpenMS.git
 ARG OPENMS_BRANCH=develop
@@ -60,6 +75,10 @@ SHELL ["mamba", "run", "-n", "streamlit-env", "/bin/bash", "-c"]
 COPY requirements.txt requirements.txt
 RUN mamba install pip
 RUN python -m pip install --upgrade pip
+# OpenMS-Insight: install from the migration branch built in the insight-build stage
+# (with its Vue bundle); installing from source means no PyPI publish is required.
+COPY --from=insight-build /openms-insight /tmp/openms-insight
+RUN python -m pip install /tmp/openms-insight && rm -rf /tmp/openms-insight
 RUN python -m pip install -r requirements.txt
 
 # Pre-create bind-mount targets so apptainer/singularity has a real attach

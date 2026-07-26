@@ -32,6 +32,10 @@ if __name__ == '__main__':
             st.Page(Path("content", "run_example_workflow.py"), title="Run Workflow", icon="⚙️"),
             st.Page(Path("content", "download_section.py"), title="Download Results", icon="⬇️"),
         ],
+        "Visualization Template": [
+            st.Page(Path("content", "visualization_template.py"),
+                    title="Linked Grid Demo", icon="🔗"),
+        ],
         "Others Topics": [
             st.Page(Path("content", "simple_workflow.py"), title="Simple Workflow", icon="⚙️"),
             st.Page(Path("content", "run_subprocess.py"), title="Run Subprocess", icon="🖥️"),
