@@ -1,10 +1,16 @@
 apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 
+# Resource patches only. A tier is a POD SIZE, not a place: nothing in this
+# component - and nothing anywhere else in k8s/ - decides which node a pod
+# lands on. That is the scheduler's job, and the pinning patch that used to
+# live here took it away, unscoped, from every Deployment in the base
+# (streamlit and redis included), which is what made the second node
+# unusable. It also made topologySpreadConstraints inert, since maxSkew is
+# measured over eligible domains and exactly one node was ever eligible.
+# `assert_no_node_pinning_anywhere` in .github/scripts/ci-assertions.sh keeps
+# it from coming back on a fork rebase.
 patches:
-  - path: nodeselector.yaml
-    target:
-      kind: Deployment
   - path: streamlit-resources.yaml
     target:
       kind: Deployment

@@ -3,14 +3,60 @@ kind: Deployment
 metadata:
   name: rq-worker
 spec:
+  # The replica count travels with the size, and only this tier overrides it.
+  # k8s/base/rq-worker-deployment.yaml says 2, which is one per node on a pair
+  # of equally-sized nodes - true of the low tier, false here. A 180Gi
+  # Guaranteed request fits on a high-memory node and nowhere else, and the
+  # de.NBI pair has one of those, so an inherited `replicas: 2` puts the second
+  # worker in Pending permanently: `whenUnsatisfiable: DoNotSchedule` forbids
+  # doubling it up on the node that could hold it, and no other node can.
+  #
+  # Nothing in kustomize couples a resource patch to a replica count, so the
+  # coupling has to be written down somewhere; here is the only place that sees
+  # both numbers. A fork with N high-memory nodes raises this to N. Note that
+  # at 1 replica the spread constraint in the base has nothing to do and
+  # assert_workers_spread_across_nodes will say so - that assertion is written
+  # for the shipped (low-tier) sizing that CI deploys, and a high-tier fork
+  # running it needs N >= 2 for it to mean anything.
+  replicas: 1
   template:
     spec:
       containers:
         - name: rq-worker
+          # requests == limits for Guaranteed QoS; see
+          # ../memory-tier-low/worker-resources.yaml for why that is
+          # architectural rather than advisory once the tier is a pod size
+          # instead of a node label.
+          #
+          # Specific to this tier is what the number now means. 180Gi was
+          # written as a burst ceiling - uniform across heavy workers so that
+          # whichever app was active could borrow the shared pool - and as a
+          # request it stops being a borrow and becomes a reservation the
+          # scheduler holds whether a workflow is running or not, i.e. most of
+          # a high-memory node. Fixed workers statically partition capacity;
+          # that is the accepted trade at this cluster size (decision 10 in
+          # node-distributed-denbi/A16-DECISIONS.md), but a fork sharing its
+          # node pool with another heavy app should size the worker to its own
+          # slice and lower BOTH blocks together rather than reopening a gap
+          # between them.
+          #
+          # cpu 20 sits exactly ON the LimitRange maximum in
+          # k8s/base/limitrange.yaml (200Gi / 20 cpu), so it is a ceiling as
+          # well as a reservation: this number can only move down unless the
+          # LimitRange moves first. Raising it alone does not produce a
+          # Pending pod that says "no node has this much CPU" - the API server
+          # rejects the Deployment's pods outright as a LimitRange violation,
+          # which reads as a quota error rather than a capacity one.
+          #
+          # Down is the direction worth going anyway. The worker cannot spend
+          # 20: run_topp parallelises across files up to max_threads (2 in
+          # online deployments) and TOPPBase caps each tool through
+          # omp_set_num_threads, so bringing cpu down toward max_threads is
+          # the first thing worth tuning here - keeping requests == limits.
           resources:
             requests:
-              memory: "2Gi"
-              cpu: "2"
+              memory: "180Gi"
+              cpu: "20"
             limits:
               memory: "180Gi"
               cpu: "20"

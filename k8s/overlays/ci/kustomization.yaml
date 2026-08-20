@@ -1,0 +1,38 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# The production overlay with exactly one thing changed: the rq-worker is
+# shrunk to a size a GitHub-hosted runner can schedule. APPLIED ONLY BY THE
+# KIND JOBS in .github/workflows/build-and-test.yml - operators and every
+# static assertion still use k8s/overlays/prod.
+#
+# k8s/components/memory-tier-low sizes a worker at 16Gi / 4 cpu with
+# requests == limits, which is right on the de.NBI nodes and impossible in
+# kind. An ubuntu-latest runner has 4 vCPU and ~15.6Gi of RAM in total; every
+# kind node is a container on that one host advertising the whole of it, and
+# kube-system already holds ~1 cpu of that in requests. Both worker replicas
+# would sit Pending for ever and take the whole kind suite down with them -
+# including the two assertions that exist to watch the workers
+# (assert_workers_spread_across_nodes, assert_worker_qos_guaranteed) and the
+# storage assertions that need a running deployment to look at.
+#
+# CI bends, not k8s/components/: production sizing is the thing under test
+# everywhere else. Nothing else differs from prod, so the spread constraint,
+# the replica count, the labels, the namePrefix and the images are all the
+# production ones - shrinking the worker is not allowed to change what the
+# suite is observing.
+#
+# The `lint-manifests` job renders this root and checks two things about the
+# result, because kustomize does NOT error on a `patches:` entry whose target
+# matches nothing - it renders happily and applies nothing. So: that the
+# worker really came out smaller than prod's (the patch below landed), and
+# that requests still equal limits (the shrink did not make it Burstable and
+# so turn assert_worker_qos_guaranteed red over CI's own sizing).
+resources:
+  - ../prod
+
+patches:
+  - path: worker-resources.yaml
+    target:
+      kind: Deployment
+      name: rq-worker
