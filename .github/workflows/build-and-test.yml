@@ -26,6 +26,11 @@ jobs:
       - name: Install kubectl
         uses: azure/setup-kubectl@v3
 
+      - name: Set up Helm
+        # kubectl kustomize --enable-helm shells out to `helm` to inflate the
+        # Ganesha chart in k8s/storage/.
+        uses: azure/setup-helm@v4
+
       - name: Validate base manifests
         run: |
           kubeconform -summary -strict -kubernetes-version 1.28.0 \
@@ -37,6 +42,119 @@ jobs:
         run: |
           kubectl kustomize k8s/overlays/prod/ | \
             kubeconform -summary -strict -kubernetes-version 1.28.0 -skip IngressRoute
+
+      - name: Validate the CI overlay
+        # k8s/overlays/ci/ is what the two kind jobs actually apply, so it is
+        # the overlay whose breakage takes them down - and it is the one
+        # nothing else renders: every static assertion reads prod on purpose,
+        # because production sizing is the thing under test.
+        #
+        # kubeconform is only half of it. A `patches:` entry whose target
+        # matches nothing is NOT an error in kustomize 5 - it renders happily
+        # and silently applies nothing - so the day `rq-worker` is renamed in
+        # the base, this overlay would keep validating while quietly handing
+        # the kind jobs a full-sized 16Gi worker that no runner can schedule.
+        # That failure is worth ten seconds here rather than an hour into a
+        # kind job. Both properties are checked against the render:
+        #   1. the worker really is smaller than prod's, i.e. the patch landed;
+        #   2. requests still equal limits, so the shrink cannot introduce a
+        #      Burstable worker that makes assert_worker_qos_guaranteed report
+        #      a QoS regression existing nowhere but in CI's own sizing.
+        run: |
+          kubectl kustomize k8s/overlays/ci/ > /tmp/ci-rendered.yaml
+          kubeconform -summary -strict -kubernetes-version 1.28.0 -skip IngressRoute \
+            < /tmp/ci-rendered.yaml
+          kubectl kustomize k8s/overlays/prod/ > /tmp/prod-rendered.yaml
+          WORKER_RESOURCES='select(.kind == "Deployment" and (.metadata.name | test("rq-worker$")))
+            | .spec.template.spec.containers[] | select(.name == "rq-worker") | .resources'
+          CI_RES=$(yq "$WORKER_RESOURCES" /tmp/ci-rendered.yaml)
+          PROD_RES=$(yq "$WORKER_RESOURCES" /tmp/prod-rendered.yaml)
+          if [ -z "$CI_RES" ] || [ "$CI_RES" = "null" ]; then
+            echo "::error::k8s/overlays/ci/ renders no rq-worker container resources - the patch target has drifted"
+            exit 1
+          fi
+          if [ "$CI_RES" = "$PROD_RES" ]; then
+            echo "::error::k8s/overlays/ci/ renders the same worker size as prod, so its resource patch matched nothing; the kind jobs would deploy a worker no runner can schedule"
+            echo "$CI_RES"
+            exit 1
+          fi
+          if [ "$(yq "$WORKER_RESOURCES | .requests" /tmp/ci-rendered.yaml)" != \
+               "$(yq "$WORKER_RESOURCES | .limits" /tmp/ci-rendered.yaml)" ]; then
+            echo "::error::the CI worker has requests != limits, so it is Burstable; assert_worker_qos_guaranteed would fail on a regression that exists only in CI's sizing"
+            echo "$CI_RES"
+            exit 1
+          fi
+          echo "CI worker sized down to:"
+          echo "$CI_RES"
+
+      - name: Validate the storage root
+        # Rendered, not file-by-file: k8s/storage/ carries a Helm values file,
+        # which is not a Kubernetes manifest and would fail kubeconform on
+        # sight, and rendering is the only way the chart's own output gets
+        # validated at all. --enable-helm is inert on a root with no helmCharts
+        # field, so this keeps working if the chart is ever vendored.
+        run: |
+          kubectl kustomize --enable-helm k8s/storage/ | \
+            kubeconform -summary -strict -kubernetes-version 1.28.0
+
+  assert-invariants:
+    # Static assertions over the manifests themselves. This job deliberately
+    # gates nothing - it has no `needs:` and nothing needs it - so that a red
+    # invariant does not also hide the build and kind suites, which are the
+    # only place cluster behaviour is observable.
+    #
+    # `assert_no_node_pinning_anywhere` is green as of the commit that deleted
+    # k8s/components/memory-tier-*/nodeselector.yaml, and from here on it is a
+    # ratchet: it exists to stop the pinning being reintroduced by a fork
+    # rebase, which is exactly how it would come back. Its staying green is
+    # not automatic - the NetworkPolicy step below renders the storage root,
+    # and that render makes kustomize vendor the Ganesha chart, whose own
+    # `nodeSelector` keys would otherwise be found by the pinning scan for
+    # ever. k8s/storage/charts/ is .gitignored and the scan asks git for its
+    # file list with `--exclude-standard`, so the two steps do not collide.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v3
+
+      - name: Set up Helm
+        # kubectl kustomize --enable-helm shells out to `helm` to inflate the
+        # Ganesha chart in k8s/storage/.
+        uses: azure/setup-helm@v4
+
+      - name: Check the assertion library
+        run: |
+          bash -n .github/scripts/ci-assertions.sh
+          if command -v shellcheck >/dev/null; then
+            shellcheck -S error .github/scripts/ci-assertions.sh
+          fi
+
+      - name: Assert the storage NetworkPolicy matches the overlay
+        # Runs before the pinning check because it is the step that renders the
+        # storage root, and the pinning scan's exclusion of the vendored chart
+        # is the thing most likely to rot; having the render happen first means
+        # the scan always runs against the state a real job leaves behind.
+        run: |
+          source .github/scripts/ci-assertions.sh
+          assert_netpol_string_matches_overlay
+
+      - name: Assert device-based fsids are pinned off
+        # The static half of invariant 2. It lives here as well as inside
+        # assert_stable_identity_across_restart so that it runs on every push,
+        # in seconds, rather than only after a full kind deploy - the failure
+        # it catches surfaces weeks later as ESTALE, so cheap and early is
+        # worth more than thorough and late.
+        run: |
+          source .github/scripts/ci-assertions.sh
+          assert_fsids_pinned
+
+      - name: Assert no node pinning anywhere
+        # Invariant 1: Kubernetes decides placement, the config must not.
+        run: |
+          source .github/scripts/ci-assertions.sh
+          assert_no_node_pinning_anywhere
 
   build-amd64:
     # amd64 path. Produces per-arch tags `<ref>-<variant>-amd64`; the
@@ -584,13 +702,101 @@ jobs:
           kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
           kubectl wait --namespace ingress-nginx --for=condition=ready pod --selector=app.kubernetes.io/component=controller --timeout=90s
 
+      - name: Set up Helm
+        # kubectl kustomize --enable-helm shells out to `helm` to inflate the
+        # Ganesha chart in k8s/storage/.
+        uses: azure/setup-helm@v4
+
+      - name: Report the NFS client helper on the kind nodes
+        # Diagnostic, not a gate - the gate is whether the claim binds and the
+        # pods come up. An in-tree `nfs:` PV is mounted by the kubelet on the
+        # node, which needs /sbin/mount.nfs there; without this line a missing
+        # helper surfaces several steps later as "wrong fs type, bad option,
+        # bad superblock" in a pod event. Same probe as A16-RUNBOOK.md section 0
+        # runs against the real nodes.
+        run: |
+          for n in $(kind get nodes --name test-cluster); do
+            echo "--- $n"
+            docker exec "$n" sh -c 'ls -l /sbin/mount.nfs* /usr/sbin/mount.nfs* 2>&1; echo ---; grep nfs /proc/filesystems' || true
+          done
+
+      - name: Deploy the storage root (NFS-Ganesha)
+        # Before the overlay, because workspaces-pvc is ReadWriteMany on the
+        # StorageClass this root publishes: with no provisioner running the
+        # claim never binds and every app pod stays Pending. Ganesha is just a
+        # pod on a PVC and kind's `standard` class is RWO local-path, so the
+        # whole NFS re-export genuinely runs here.
+        run: |
+          kubectl kustomize --enable-helm k8s/storage/ > /tmp/storage-rendered.yaml
+          # Ganesha's own backing claim is now the only Cinder-classed object in
+          # the tree. kind has no cinder-csi, so rewrite it to `standard`, and
+          # fail loudly if the string is gone rather than letting the rewrite
+          # no-op and quietly take the storage path out of CI with it.
+          if ! grep -q 'storageClassName: cinder-csi' /tmp/storage-rendered.yaml; then
+            echo "::error::k8s/storage/ no longer renders 'storageClassName: cinder-csi'; the rewrite below would silently no-op"
+            exit 1
+          fi
+          sed 's|storageClassName: cinder-csi|storageClassName: standard|g' \
+            /tmp/storage-rendered.yaml > /tmp/storage.yaml
+          for i in 1 2 3 4 5; do
+            if kubectl apply -f /tmp/storage.yaml; then
+              echo "Storage apply succeeded on attempt $i"
+              break
+            fi
+            echo "Attempt $i failed, retrying in ${i}0s..."
+            sleep "${i}0"
+          done
+          # `kubectl wait --all` reports success against zero objects, so the
+          # server has to be found before it is waited on.
+          WORKLOADS=$(kubectl get deploy,statefulset -n template-app-storage -o name)
+          if [ -z "$WORKLOADS" ]; then
+            echo "::error::k8s/storage/ created no Deployment or StatefulSet in template-app-storage"
+            kubectl get all -n template-app-storage
+            exit 1
+          fi
+          for w in $WORKLOADS; do
+            kubectl rollout status -n template-app-storage "$w" --timeout=300s
+          done
+          kubectl get pods,pvc -n template-app-storage -o wide
+          kubectl get storageclass
+
       - name: Deploy with Kustomize
         run: |
+          # k8s/overlays/ci/, not prod: prod's rq-worker is 16Gi / 4 cpu with
+          # requests == limits, which is right on the de.NBI nodes and
+          # impossible here. This runner has 4 vCPU and ~15.6Gi in total, every
+          # kind node is a container on that one host advertising the whole of
+          # it, and kube-system already holds ~1 cpu in requests - so a single
+          # replica does not fit, let alone two, and both would sit Pending
+          # until "Verify all deployments are available" failed at 180s and
+          # took every assertion below it with it. The CI overlay is prod with
+          # exactly one thing changed: the worker's size. Same replica count,
+          # same spread constraint, same labels, same images, so everything
+          # this suite observes is still the production arrangement. The lint
+          # job checks that the shrink actually applied and stayed Guaranteed.
+          #
           # Filter out Traefik IngressRoute (kind cluster uses nginx) and force imagePullPolicy=Never
-          kubectl kustomize k8s/overlays/prod/ | \
+          # No cinder-csi rewrite here any more. The only Cinder-classed
+          # object left in the tree is Ganesha's own backing claim in
+          # k8s/storage/, and the storage step above rewrites that one - loudly
+          # if the string ever disappears. A sed kept here would match nothing
+          # and quietly imply the storage path was still being exercised.
+          kubectl kustomize k8s/overlays/ci/ | \
             yq 'select(.kind != "IngressRoute")' | \
-            sed -E 's|imagePullPolicy: (IfNotPresent\|Always)|imagePullPolicy: Never|g' | \
-            sed 's|storageClassName: cinder-csi|storageClassName: standard|g' > /tmp/manifests.yaml
+            sed -E 's|imagePullPolicy: (IfNotPresent\|Always)|imagePullPolicy: Never|g' > /tmp/manifests.yaml
+          # Size the workspaces claim for the runner's disk. nfs-provisioner
+          # statfs()es /export on every provision and refuses outright any
+          # claim larger than the free space it finds there - the check is
+          # unconditional, not gated on quotas. In kind the export is a
+          # local-path volume on the GitHub runner's disk, tens of GiB, so the
+          # production figure could never bind and every pod would sit Pending
+          # behind it. Fail loudly if the request has gone, rather than letting
+          # the rewrite no-op and take the storage path out of CI with it.
+          if ! grep -qE 'storage: [0-9]+Gi' /tmp/manifests.yaml; then
+            echo "::error::the rendered overlay has no 'storage: <N>Gi' request; the rewrite below would silently no-op"
+            exit 1
+          fi
+          sed -i -E 's|storage: [0-9]+Gi|storage: 4Gi|g' /tmp/manifests.yaml
           for i in 1 2 3 4 5; do
             if kubectl apply -f /tmp/manifests.yaml; then
               echo "Deploy succeeded on attempt $i"
@@ -601,9 +807,72 @@ jobs:
           done
 
       - name: Discover overlay identity
+        # Still read off prod, even though ci/ is what was applied: the CI
+        # overlay has no commonLabels of its own, it inherits prod's whole
+        # identity and only repatches the worker's resources. Reading the
+        # source of that identity keeps this working if the CI overlay ever
+        # grows a second patch.
         run: |
           SLUG=$(yq '.commonLabels.app' k8s/overlays/prod/kustomization.yaml)
           echo "SLUG=$SLUG" >> "$GITHUB_ENV"
+
+      - name: Verify the workspace StorageClass contract
+        # k8s/base/workspace-pvc.yaml names a class k8s/storage/ has to publish,
+        # and the mount options ride on that class because a PVC has nowhere to
+        # carry them. Checking all of it here turns drift into one failed step
+        # with the actual values printed, instead of a Pending pod at 3am.
+        run: |
+          # Read the claim off the Deployment that mounts it, so namePrefix and
+          # any second PVC in the namespace stay irrelevant.
+          CLAIM=$(kubectl get deployment -n openms -l app=${SLUG},component=streamlit \
+            -o jsonpath='{.items[0].spec.template.spec.volumes[?(@.name=="workspaces")].persistentVolumeClaim.claimName}')
+          if [ -z "${CLAIM}" ]; then
+            echo "::error::no streamlit Deployment in openms mounts a 'workspaces' volume - there is no claim to check"
+            kubectl get deployment -n openms -o wide
+            exit 1
+          fi
+          kubectl wait -n openms --for=jsonpath='{.status.phase}'=Bound \
+            "pvc/${CLAIM}" --timeout=300s
+          MODES=$(kubectl get pvc -n openms "${CLAIM}" -o jsonpath='{.status.accessModes[*]}')
+          case " ${MODES} " in
+            *" ReadWriteMany "*) ;;
+            *)
+              echo "::error::${CLAIM} bound as '${MODES}', not ReadWriteMany; every pod that mounts it is back to sharing one node"
+              exit 1
+              ;;
+          esac
+          CLASS=$(kubectl get pvc -n openms "${CLAIM}" -o jsonpath='{.spec.storageClassName}')
+          echo "${CLAIM} is Bound ReadWriteMany on StorageClass '${CLASS}'"
+          if ! kubectl get storageclass "${CLASS}" >/dev/null 2>&1; then
+            echo "::error::the workspaces PVC names StorageClass '${CLASS}', which k8s/storage/ does not publish"
+            kubectl get storageclass
+            exit 1
+          fi
+          OPTS=$(kubectl get storageclass "${CLASS}" -o jsonpath='{.mountOptions[*]}')
+          echo "mount options: ${OPTS:-<none>}"
+          case " ${OPTS} " in
+            *" soft "*)
+              echo "::error::'${CLASS}' mounts soft; a routine Ganesha restart would then truncate in-flight writes instead of blocking"
+              exit 1
+              ;;
+            *" hard "*) ;;
+            *)
+              echo "::error::'${CLASS}' does not pin 'hard'. It is also the kernel default, but the design states it explicitly so that adding 'soft' is a visible diff"
+              exit 1
+              ;;
+          esac
+          echo "${OPTS}" | grep -qE '(^| )(nfs)?vers=4\.1( |$)' || {
+            echo "::error::'${CLASS}' does not pin NFSv4.1, which is what supplies integrated locking on one port"
+            exit 1
+          }
+          echo "${OPTS}" | grep -qE '(^| )nconnect=4( |$)' || {
+            echo "::error::'${CLASS}' does not set nconnect=4"
+            exit 1
+          }
+          if echo "${OPTS}" | grep -qE '(^| )(actimeo|acregmin|acregmax|acdirmin|acdirmax)='; then
+            echo "::error::'${CLASS}' overrides the attribute cache timeouts; close-to-open consistency already covers this app, so actimeo stays at its default"
+            exit 1
+          fi
 
       - name: Wait for Redis to be ready
         run: |
@@ -614,9 +883,12 @@ jobs:
           kubectl run redis-test -n openms --image=redis:7-alpine --rm -i --restart=Never -- redis-cli -h ${SLUG}-redis.openms.svc.cluster.local ping
 
       - name: Verify all deployments are available
+        # No `|| true`: a Pending, CrashLooping or unschedulable Deployment has to
+        # fail the job, otherwise the ingress curl below is the only real gate.
+        # Diagnostics come from "Dump cluster state on failure".
         run: |
-          kubectl wait -n openms --for=condition=available deployment -l app=${SLUG} --timeout=180s || true
-          kubectl get pods -n openms -l app=${SLUG}
+          kubectl wait -n openms --for=condition=available deployment -l app=${SLUG} --timeout=180s
+          kubectl get pods -n openms -l app=${SLUG} -o wide
           kubectl get services -n openms -l app=${SLUG}
 
       - name: Curl both hostnames via nginx ingress
@@ -638,6 +910,103 @@ jobs:
             echo "$host -> 200 OK"
           done
 
+      # Everything below is `.github/scripts/ci-assertions.sh`. Each assertion
+      # discovers the namespace, the app label, the workspace claim and the
+      # helper image from the cluster, so SLUG above is the only input any of
+      # them needs.
+      #
+      # The two placement assertions come first because they are seconds long
+      # and the storage ones are up to 45 minutes of deliberate timeouts. Both
+      # read the state that "Verify all deployments are available" has just
+      # established, and if the workers are not where they should be then
+      # everything after this is noise measured against a broken deployment.
+      - name: Assert the worker replicas are spread across nodes
+        # Step 4's acceptance criterion for the workers. Every replica Running
+        # - so an unschedulable one fails here rather than being left out of
+        # the node count - on more than one node, inside the maxSkew the
+        # Deployment itself declares, under a spread constraint whose
+        # labelSelector really selects these workers.
+        #
+        # assert_two_pods_two_nodes below does NOT cover this: it starts its
+        # own helper pods with an explicit nodeName, which proves the volume is
+        # reachable from two nodes and says nothing about where the scheduler
+        # put the rq-workers. Deleting the nodeSelector is necessary for this
+        # to pass and is not sufficient - a spread constraint scoped to the
+        # wrong labels, or dropped entirely, fails right here.
+        timeout-minutes: 5
+        run: |
+          source .github/scripts/ci-assertions.sh
+          assert_workers_spread_across_nodes
+
+      - name: Assert the workers are Guaranteed QoS
+        # requests == limits, read off `.status.qosClass` on the RUNNING pods.
+        # A Burstable worker scores oom_score_adj ~969 and sits near the top of
+        # the node's kill list holding hours of work; the regression that
+        # produces it is a one-line edit to a memory-tier component and is
+        # otherwise invisible until something OOMKills under load.
+        timeout-minutes: 5
+        run: |
+          source .github/scripts/ci-assertions.sh
+          assert_worker_qos_guaranteed
+
+      - name: Assert cross-node write visibility
+        # Two pods holding the same claim on two different nodes at the same
+        # time, each reading what the other wrote.
+        timeout-minutes: 10
+        run: |
+          source .github/scripts/ci-assertions.sh
+          assert_cross_node_write_visible
+
+      - name: Assert the POSIX contract holds on the shared volume
+        # Absolute symlinks, atomic rename and flock - what src/ already
+        # depends on and what NFS is allowed to take away. It first checks the
+        # mount really is NFS, because every one of those passes against the
+        # node's local filesystem too, and the flock half runs across two pods
+        # on two nodes, because a lock that only excludes a second holder on
+        # the same node is a lock the two workers do not have.
+        timeout-minutes: 15
+        run: |
+          source .github/scripts/ci-assertions.sh
+          assert_posix_contract
+
+      - name: Assert a workflow survives an NFS server restart
+        # The single most valuable assertion in the set: delete the Ganesha pod
+        # while a workflow is running and assert the workflow COMPLETES, with
+        # every line of its output present and in order. A Ganesha restart is
+        # routine, and this is exactly the case a `soft` mount would have
+        # corrupted - into a truncated featureXML rather than a failed job.
+        # Slow by construction: the restart and the ~90s NFSv4.1 grace period
+        # both pass underneath a running job, which is the point.
+        timeout-minutes: 20
+        run: |
+          source .github/scripts/ci-assertions.sh
+          assert_survives_nfs_restart
+
+      - name: Assert stable identity across an NFS server restart
+        # Invariant 2. Deletes the Ganesha pod under a live client, so it is
+        # slow by construction: NFSv4.1 spends ~90s in its grace period.
+        timeout-minutes: 15
+        run: |
+          source .github/scripts/ci-assertions.sh
+          assert_stable_identity_across_restart
+
+      - name: Assert two pods on two nodes share the workspace volume
+        # The acceptance criterion for the whole exercise, and the last of these
+        # to go green: it stayed red until the memory-tier nodeSelector patches
+        # were deleted. Everything above it is about the export itself and
+        # passes as soon as ReadWriteMany works, which is what kept "RWX proven
+        # while still single-node" observable.
+        #
+        # It carried `continue-on-error: true` while it was red by design - a
+        # step that always fails makes every genuine regression around it
+        # indistinguishable from the expected red, because nobody looks at an
+        # already-failing job. That commit has landed, so the criterion gates
+        # like everything else here.
+        timeout-minutes: 10
+        run: |
+          source .github/scripts/ci-assertions.sh
+          assert_two_pods_two_nodes
+
       - name: Dump cluster state on failure
         if: failure()
         run: |
@@ -645,6 +1014,15 @@ jobs:
           kubectl get nodes -o wide || true
           echo "=== pods (all namespaces) ==="
           kubectl get pods -A -o wide || true
+          echo "=== storage tier ==="
+          kubectl get all,pvc -n template-app-storage -o wide || true
+          kubectl describe pods -n template-app-storage || true
+          for p in $(kubectl get pods -n template-app-storage -o name 2>/dev/null); do
+            kubectl logs -n template-app-storage "$p" --all-containers --prefix --tail=200 || true
+          done
+          echo "=== storage classes and volumes ==="
+          kubectl get storageclass || true
+          kubectl get pv,pvc -A || true
           echo "=== app pods describe ==="
           kubectl describe pod -n openms -l app=${SLUG} || true
           echo "=== app pod logs ==="
@@ -726,11 +1104,89 @@ jobs:
             --set service.type=ClusterIP
           kubectl -n traefik wait --for=condition=available deployment/traefik --timeout=120s
 
+      - name: Report the NFS client helper on the kind nodes
+        # Diagnostic, not a gate - the gate is whether the claim binds and the
+        # pods come up. An in-tree `nfs:` PV is mounted by the kubelet on the
+        # node, which needs /sbin/mount.nfs there; without this line a missing
+        # helper surfaces several steps later as "wrong fs type, bad option,
+        # bad superblock" in a pod event. Same probe as A16-RUNBOOK.md section 0
+        # runs against the real nodes.
+        run: |
+          for n in $(kind get nodes --name traefik-test); do
+            echo "--- $n"
+            docker exec "$n" sh -c 'ls -l /sbin/mount.nfs* /usr/sbin/mount.nfs* 2>&1; echo ---; grep nfs /proc/filesystems' || true
+          done
+
+      - name: Deploy the storage root (NFS-Ganesha)
+        # Before the overlay, because workspaces-pvc is ReadWriteMany on the
+        # StorageClass this root publishes: with no provisioner running the
+        # claim never binds and every app pod stays Pending. Ganesha is just a
+        # pod on a PVC and kind's `standard` class is RWO local-path, so the
+        # whole NFS re-export genuinely runs here.
+        run: |
+          kubectl kustomize --enable-helm k8s/storage/ > /tmp/storage-rendered.yaml
+          # Ganesha's own backing claim is now the only Cinder-classed object in
+          # the tree. kind has no cinder-csi, so rewrite it to `standard`, and
+          # fail loudly if the string is gone rather than letting the rewrite
+          # no-op and quietly take the storage path out of CI with it.
+          if ! grep -q 'storageClassName: cinder-csi' /tmp/storage-rendered.yaml; then
+            echo "::error::k8s/storage/ no longer renders 'storageClassName: cinder-csi'; the rewrite below would silently no-op"
+            exit 1
+          fi
+          sed 's|storageClassName: cinder-csi|storageClassName: standard|g' \
+            /tmp/storage-rendered.yaml > /tmp/storage.yaml
+          for i in 1 2 3 4 5; do
+            if kubectl apply -f /tmp/storage.yaml; then
+              echo "Storage apply succeeded on attempt $i"
+              break
+            fi
+            echo "Attempt $i failed, retrying in ${i}0s..."
+            sleep "${i}0"
+          done
+          # `kubectl wait --all` reports success against zero objects, so the
+          # server has to be found before it is waited on.
+          WORKLOADS=$(kubectl get deploy,statefulset -n template-app-storage -o name)
+          if [ -z "$WORKLOADS" ]; then
+            echo "::error::k8s/storage/ created no Deployment or StatefulSet in template-app-storage"
+            kubectl get all -n template-app-storage
+            exit 1
+          fi
+          for w in $WORKLOADS; do
+            kubectl rollout status -n template-app-storage "$w" --timeout=300s
+          done
+          kubectl get pods,pvc -n template-app-storage -o wide
+          kubectl get storageclass
+
       - name: Deploy with Kustomize (full manifests, no filter)
         run: |
-          kubectl kustomize k8s/overlays/prod/ | \
-            sed -E 's|imagePullPolicy: (IfNotPresent\|Always)|imagePullPolicy: Never|g' | \
-            sed 's|storageClassName: cinder-csi|storageClassName: standard|g' > /tmp/manifests.yaml
+          # k8s/overlays/ci/, not prod, for the same reason as the nginx job:
+          # prod's rq-worker requests 16Gi / 4 cpu with requests == limits and
+          # this runner has 4 vCPU and ~15.6Gi in total, so neither replica
+          # could ever be scheduled and both would sit Pending until "Verify
+          # all deployments are available" failed at 180s. The CI overlay is
+          # prod with the worker's size patched down and nothing else changed,
+          # so the IngressRoute rendered below is prod's, unmodified.
+          #
+          # No cinder-csi rewrite here any more. The only Cinder-classed
+          # object left in the tree is Ganesha's own backing claim in
+          # k8s/storage/, and the storage step above rewrites that one - loudly
+          # if the string ever disappears. A sed kept here would match nothing
+          # and quietly imply the storage path was still being exercised.
+          kubectl kustomize k8s/overlays/ci/ | \
+            sed -E 's|imagePullPolicy: (IfNotPresent\|Always)|imagePullPolicy: Never|g' > /tmp/manifests.yaml
+          # Size the workspaces claim for the runner's disk. nfs-provisioner
+          # statfs()es /export on every provision and refuses outright any
+          # claim larger than the free space it finds there - the check is
+          # unconditional, not gated on quotas. In kind the export is a
+          # local-path volume on the GitHub runner's disk, tens of GiB, so the
+          # production figure could never bind and every pod would sit Pending
+          # behind it. Fail loudly if the request has gone, rather than letting
+          # the rewrite no-op and take the storage path out of CI with it.
+          if ! grep -qE 'storage: [0-9]+Gi' /tmp/manifests.yaml; then
+            echo "::error::the rendered overlay has no 'storage: <N>Gi' request; the rewrite below would silently no-op"
+            exit 1
+          fi
+          sed -i -E 's|storage: [0-9]+Gi|storage: 4Gi|g' /tmp/manifests.yaml
           for i in 1 2 3 4 5; do
             if kubectl apply -f /tmp/manifests.yaml; then
               echo "Deploy succeeded on attempt $i"
@@ -741,6 +1197,11 @@ jobs:
           done
 
       - name: Discover overlay identity
+        # Read off prod, even though ci/ is what was applied: the CI overlay
+        # has no identity of its own - no commonLabels, no IngressRoute patch -
+        # it inherits prod whole and only repatches the worker's resources.
+        # Reading the source of that identity keeps this working if the CI
+        # overlay ever grows a second patch.
         run: |
           SLUG=$(yq '.commonLabels.app' k8s/overlays/prod/kustomization.yaml)
           TRAEFIK_HOSTS=$(kubectl kustomize k8s/overlays/prod/ \
@@ -749,14 +1210,75 @@ jobs:
           echo "SLUG=$SLUG" >> "$GITHUB_ENV"
           echo "TRAEFIK_HOSTS=$TRAEFIK_HOSTS" >> "$GITHUB_ENV"
 
+      - name: Verify the workspace StorageClass contract
+        # k8s/base/workspace-pvc.yaml names a class k8s/storage/ has to publish,
+        # and the mount options ride on that class because a PVC has nowhere to
+        # carry them. Checking all of it here turns drift into one failed step
+        # with the actual values printed, instead of a Pending pod at 3am.
+        run: |
+          # Read the claim off the Deployment that mounts it, so namePrefix and
+          # any second PVC in the namespace stay irrelevant.
+          CLAIM=$(kubectl get deployment -n openms -l app=${SLUG},component=streamlit \
+            -o jsonpath='{.items[0].spec.template.spec.volumes[?(@.name=="workspaces")].persistentVolumeClaim.claimName}')
+          if [ -z "${CLAIM}" ]; then
+            echo "::error::no streamlit Deployment in openms mounts a 'workspaces' volume - there is no claim to check"
+            kubectl get deployment -n openms -o wide
+            exit 1
+          fi
+          kubectl wait -n openms --for=jsonpath='{.status.phase}'=Bound \
+            "pvc/${CLAIM}" --timeout=300s
+          MODES=$(kubectl get pvc -n openms "${CLAIM}" -o jsonpath='{.status.accessModes[*]}')
+          case " ${MODES} " in
+            *" ReadWriteMany "*) ;;
+            *)
+              echo "::error::${CLAIM} bound as '${MODES}', not ReadWriteMany; every pod that mounts it is back to sharing one node"
+              exit 1
+              ;;
+          esac
+          CLASS=$(kubectl get pvc -n openms "${CLAIM}" -o jsonpath='{.spec.storageClassName}')
+          echo "${CLAIM} is Bound ReadWriteMany on StorageClass '${CLASS}'"
+          if ! kubectl get storageclass "${CLASS}" >/dev/null 2>&1; then
+            echo "::error::the workspaces PVC names StorageClass '${CLASS}', which k8s/storage/ does not publish"
+            kubectl get storageclass
+            exit 1
+          fi
+          OPTS=$(kubectl get storageclass "${CLASS}" -o jsonpath='{.mountOptions[*]}')
+          echo "mount options: ${OPTS:-<none>}"
+          case " ${OPTS} " in
+            *" soft "*)
+              echo "::error::'${CLASS}' mounts soft; a routine Ganesha restart would then truncate in-flight writes instead of blocking"
+              exit 1
+              ;;
+            *" hard "*) ;;
+            *)
+              echo "::error::'${CLASS}' does not pin 'hard'. It is also the kernel default, but the design states it explicitly so that adding 'soft' is a visible diff"
+              exit 1
+              ;;
+          esac
+          echo "${OPTS}" | grep -qE '(^| )(nfs)?vers=4\.1( |$)' || {
+            echo "::error::'${CLASS}' does not pin NFSv4.1, which is what supplies integrated locking on one port"
+            exit 1
+          }
+          echo "${OPTS}" | grep -qE '(^| )nconnect=4( |$)' || {
+            echo "::error::'${CLASS}' does not set nconnect=4"
+            exit 1
+          }
+          if echo "${OPTS}" | grep -qE '(^| )(actimeo|acregmin|acregmax|acdirmin|acdirmax)='; then
+            echo "::error::'${CLASS}' overrides the attribute cache timeouts; close-to-open consistency already covers this app, so actimeo stays at its default"
+            exit 1
+          fi
+
       - name: Wait for Redis to be ready
         run: |
           kubectl wait -n openms --for=condition=ready pod -l app=${SLUG},component=redis --timeout=60s
 
       - name: Verify all deployments are available
+        # No `|| true`: a Pending, CrashLooping or unschedulable Deployment has to
+        # fail the job, otherwise the ingress curl below is the only real gate.
+        # Diagnostics come from "Dump cluster state on failure".
         run: |
-          kubectl wait -n openms --for=condition=available deployment -l app=${SLUG} --timeout=180s || true
-          kubectl get pods -n openms -l app=${SLUG}
+          kubectl wait -n openms --for=condition=available deployment -l app=${SLUG} --timeout=180s
+          kubectl get pods -n openms -l app=${SLUG} -o wide
           kubectl get services -n openms -l app=${SLUG}
 
       - name: Curl both hostnames via Traefik
@@ -778,6 +1300,103 @@ jobs:
             echo "$host -> 200 OK"
           done
 
+      # Everything below is `.github/scripts/ci-assertions.sh`. Each assertion
+      # discovers the namespace, the app label, the workspace claim and the
+      # helper image from the cluster, so SLUG above is the only input any of
+      # them needs.
+      #
+      # The two placement assertions come first because they are seconds long
+      # and the storage ones are up to 45 minutes of deliberate timeouts. Both
+      # read the state that "Verify all deployments are available" has just
+      # established, and if the workers are not where they should be then
+      # everything after this is noise measured against a broken deployment.
+      - name: Assert the worker replicas are spread across nodes
+        # Step 4's acceptance criterion for the workers. Every replica Running
+        # - so an unschedulable one fails here rather than being left out of
+        # the node count - on more than one node, inside the maxSkew the
+        # Deployment itself declares, under a spread constraint whose
+        # labelSelector really selects these workers.
+        #
+        # assert_two_pods_two_nodes below does NOT cover this: it starts its
+        # own helper pods with an explicit nodeName, which proves the volume is
+        # reachable from two nodes and says nothing about where the scheduler
+        # put the rq-workers. Deleting the nodeSelector is necessary for this
+        # to pass and is not sufficient - a spread constraint scoped to the
+        # wrong labels, or dropped entirely, fails right here.
+        timeout-minutes: 5
+        run: |
+          source .github/scripts/ci-assertions.sh
+          assert_workers_spread_across_nodes
+
+      - name: Assert the workers are Guaranteed QoS
+        # requests == limits, read off `.status.qosClass` on the RUNNING pods.
+        # A Burstable worker scores oom_score_adj ~969 and sits near the top of
+        # the node's kill list holding hours of work; the regression that
+        # produces it is a one-line edit to a memory-tier component and is
+        # otherwise invisible until something OOMKills under load.
+        timeout-minutes: 5
+        run: |
+          source .github/scripts/ci-assertions.sh
+          assert_worker_qos_guaranteed
+
+      - name: Assert cross-node write visibility
+        # Two pods holding the same claim on two different nodes at the same
+        # time, each reading what the other wrote.
+        timeout-minutes: 10
+        run: |
+          source .github/scripts/ci-assertions.sh
+          assert_cross_node_write_visible
+
+      - name: Assert the POSIX contract holds on the shared volume
+        # Absolute symlinks, atomic rename and flock - what src/ already
+        # depends on and what NFS is allowed to take away. It first checks the
+        # mount really is NFS, because every one of those passes against the
+        # node's local filesystem too, and the flock half runs across two pods
+        # on two nodes, because a lock that only excludes a second holder on
+        # the same node is a lock the two workers do not have.
+        timeout-minutes: 15
+        run: |
+          source .github/scripts/ci-assertions.sh
+          assert_posix_contract
+
+      - name: Assert a workflow survives an NFS server restart
+        # The single most valuable assertion in the set: delete the Ganesha pod
+        # while a workflow is running and assert the workflow COMPLETES, with
+        # every line of its output present and in order. A Ganesha restart is
+        # routine, and this is exactly the case a `soft` mount would have
+        # corrupted - into a truncated featureXML rather than a failed job.
+        # Slow by construction: the restart and the ~90s NFSv4.1 grace period
+        # both pass underneath a running job, which is the point.
+        timeout-minutes: 20
+        run: |
+          source .github/scripts/ci-assertions.sh
+          assert_survives_nfs_restart
+
+      - name: Assert stable identity across an NFS server restart
+        # Invariant 2. Deletes the Ganesha pod under a live client, so it is
+        # slow by construction: NFSv4.1 spends ~90s in its grace period.
+        timeout-minutes: 15
+        run: |
+          source .github/scripts/ci-assertions.sh
+          assert_stable_identity_across_restart
+
+      - name: Assert two pods on two nodes share the workspace volume
+        # The acceptance criterion for the whole exercise, and the last of these
+        # to go green: it stayed red until the memory-tier nodeSelector patches
+        # were deleted. Everything above it is about the export itself and
+        # passes as soon as ReadWriteMany works, which is what kept "RWX proven
+        # while still single-node" observable.
+        #
+        # It carried `continue-on-error: true` while it was red by design - a
+        # step that always fails makes every genuine regression around it
+        # indistinguishable from the expected red, because nobody looks at an
+        # already-failing job. That commit has landed, so the criterion gates
+        # like everything else here.
+        timeout-minutes: 10
+        run: |
+          source .github/scripts/ci-assertions.sh
+          assert_two_pods_two_nodes
+
       - name: Dump cluster state on failure
         if: failure()
         run: |
@@ -785,6 +1404,15 @@ jobs:
           kubectl get nodes -o wide || true
           echo "=== pods (all namespaces) ==="
           kubectl get pods -A -o wide || true
+          echo "=== storage tier ==="
+          kubectl get all,pvc -n template-app-storage -o wide || true
+          kubectl describe pods -n template-app-storage || true
+          for p in $(kubectl get pods -n template-app-storage -o name 2>/dev/null); do
+            kubectl logs -n template-app-storage "$p" --all-containers --prefix --tail=200 || true
+          done
+          echo "=== storage classes and volumes ==="
+          kubectl get storageclass || true
+          kubectl get pv,pvc -A || true
           echo "=== app pods describe ==="
           kubectl describe pod -n openms -l app=${SLUG} || true
           echo "=== app pod logs ==="

@@ -1,0 +1,32 @@
+# The storage tier lives in its own namespace, not in `openms`.
+#
+# Ganesha re-exports the workspace volume with `no_root_squash` and needs
+# elevated privileges to do it, so this namespace has to sit at the
+# `privileged` Pod Security level. `openms` is shared with other applications
+# (`app=nuxl-app` on the de.NBI cluster), so granting that exemption there
+# would hand it to every pod of every app in the namespace. Splitting the tier
+# keeps the exemption scoped to the one component that needs it.
+#
+# The name carries the app prefix for the same reason `namePrefix` exists in
+# k8s/overlays/prod/kustomization.yaml: several forks of this template
+# (quantms-web, UmetaFlow, FLASHApp) share the de.NBI cluster, and each one
+# brings its own Ganesha server, its own backing volume and its own export.
+# A namespace called plain `openms-storage` would collide on every object
+# inside it - the StatefulSet, the Service, the backing PVC - and the second
+# fork to deploy would take over the first one's export. Renaming this is one
+# of the four strings a fork changes; the list is in kustomization.yaml.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: template-app-storage
+  labels:
+    app.kubernetes.io/part-of: openms-streamlit
+    # Chosen, not inherited. An unlabelled namespace already falls back to the
+    # built-in default of `privileged`; writing it out makes the exemption
+    # visible and reviewable rather than implied by an absent label.
+    #
+    # Pinned to a policy version so a cluster upgrade cannot tighten what
+    # `privileged` means underneath a workload that has to keep
+    # DAC_READ_SEARCH and SYS_RESOURCE.
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/enforce-version: v1.28

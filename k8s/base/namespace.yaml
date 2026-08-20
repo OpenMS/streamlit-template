@@ -4,3 +4,33 @@ metadata:
   name: openms
   labels:
     app.kubernetes.io/part-of: openms-streamlit
+    # Pod Security: `warn` and `audit`, deliberately NOT `enforce`.
+    #
+    # This namespace is shared. On the de.NBI cluster `openms` also holds
+    # `app=nuxl-app`, and k8s/storage/namespace.yaml uses exactly that fact to
+    # justify not granting the Ganesha exemption here. The argument runs in
+    # reverse too: an `enforce` label is a namespace-wide admission rule, so
+    # stamping one from this repo's overlay would police every pod of every
+    # co-tenant. A NuXL pod using hostPath, a privileged container or an added
+    # capability would start failing admission on its next rollout, with
+    # nothing in NuXL's own manifests having changed - and the failure would
+    # look like a NuXL problem.
+    #
+    # `warn` returns the same verdict to whoever runs `kubectl apply`, and
+    # `audit` records it in the API server audit log, without blocking anyone.
+    # That is the dry run this app can impose unilaterally. Turning it into
+    # `enforce` is a cluster-owner decision, taken once every co-tenant's pods
+    # are known clean - the audit log is the evidence for it.
+    #
+    # This app's own pods have nothing to lose either way: no securityContext,
+    # no hostPath, no host namespaces and no added capabilities anywhere in
+    # k8s/base or the overlay. The storage tier, which does need more, lives in
+    # `template-app-storage` (k8s/storage/namespace.yaml) for that reason.
+    #
+    # The `-version` pins matter as much as the levels. Left off, the policy
+    # tracks `latest` and silently tightens under a cluster upgrade; pinned, a
+    # newer baseline is adopted by editing this file.
+    pod-security.kubernetes.io/warn: baseline
+    pod-security.kubernetes.io/warn-version: v1.28
+    pod-security.kubernetes.io/audit: baseline
+    pod-security.kubernetes.io/audit-version: v1.28

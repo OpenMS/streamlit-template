@@ -1,0 +1,162 @@
+# Ingress policy for the storage tier.
+#
+# Ganesha exports the workspace volume with `no_root_squash`, so anything that
+# can open TCP 2049 in this namespace holds *root* read and write over every
+# user's workspace: it mounts the export, acts as uid 0 inside it, and reads,
+# rewrites or deletes any file belonging to anyone. Reachability is the whole
+# access-control story here - there is no second check behind it.
+#
+# That is not theoretical. The client pods live in `openms`, which on the
+# de.NBI cluster is shared with a second application labelled `app: nuxl-app`.
+# Admitting the whole namespace would therefore hand NuXL's pods root over
+# every workspace and undo the reason the storage tier was split out at all, so
+# the allow rules below are scoped as narrowly as the traffic allows.
+#
+# ===========================================================================
+# WHO THE CLIENT ACTUALLY IS: the node, not the pod.
+# ===========================================================================
+# The chart's provisioner emits in-tree `nfs:` PersistentVolumes. An in-tree
+# NFS volume is mounted by the KUBELET, on the node, in the host network
+# namespace - the source address on the wire is the node's IP, not the pod's.
+# It therefore matches no `podSelector` at all, and the default-deny below
+# drops it. Symptom: every mount hangs, on any CNI that enforces policy for
+# node-origin traffic. `ipBlock` is the only selector NetworkPolicy offers
+# that can name a node, which is why the second allow rule exists and why it
+# has to be filled in per cluster.
+#
+# The pod-scoped rule is kept alongside it, not replaced by it: it is what
+# admits a client that mounts from inside a pod (a csi-driver-nfs node plugin,
+# or a debug pod running `mount -t nfs4` by hand), and it documents the
+# intended blast radius even where the node rule is what carries the traffic.
+#
+# Kubelet health probes originate from the node in the same way. Most CNIs
+# exempt them, but that exemption is CNI-dependent; the node rule below covers
+# them too.
+
+# Default deny. Selects every pod in the namespace and permits no ingress at
+# all. The allow rules below are the only thing that adds any back.
+#
+# Not redundant, even though those rules also select every pod:
+# NetworkPolicies are additive, so the moment an allow rule is narrowed to a
+# subset of pods (a metrics sidecar, a second export) everything it stops
+# naming falls back to deny rather than to open. Deleting this makes that
+# future edit silently permissive.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  labels:
+    app.kubernetes.io/part-of: openms-streamlit
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+---
+# Hole 1: NFS from the app's own pods.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-nfs-from-app
+  labels:
+    app.kubernetes.io/part-of: openms-streamlit
+    app.kubernetes.io/component: nfs-server
+spec:
+  # Every pod in this namespace, rather than the chart's own labels
+  # (`app: nfs-server`, `release: <releaseName>`): the namespace holds nothing
+  # but the storage tier, so the two are equivalent today, and this way a
+  # renamed Helm release or a changed chart label scheme cannot quietly detach
+  # the rule from the server pod. Such a detachment would fail closed - the
+  # default-deny above would be all that still matched it - but the symptom is
+  # every client mount hanging, which is an expensive way to find out about a
+  # label change.
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        # Both selectors are ONE list element, so they are ANDed: a pod must
+        # carry the app label *and* live in `openms`. Written as two elements
+        # they would be ORed, admitting every pod in that namespace (NuXL
+        # included) and every pod anywhere else that happens to carry the
+        # label. Either alone defeats the point of this file, so CI asserts
+        # they share one element as well as checking their values.
+        - namespaceSelector:
+            matchLabels:
+              # Set automatically by the API server on every namespace since
+              # 1.21, so it needs no cooperation from k8s/base/namespace.yaml.
+              # Hand-synced with `namespace: openms` in
+              # k8s/base/kustomization.yaml - a fork that renames the
+              # application namespace has to change this line too, and CI
+              # compares the two strings.
+              kubernetes.io/metadata.name: openms
+          podSelector:
+            matchLabels:
+              # HAND-SYNCED with `commonLabels.app` in
+              # k8s/overlays/prod/kustomization.yaml, and CI asserts the two
+              # strings are equal.
+              #
+              # Nothing propagates the value here. That transformer belongs to
+              # the prod overlay, this is a separate root applied on its own,
+              # and the label therefore has to be repeated as a literal. Every
+              # workspace-mounting workload in `openms` - streamlit, rq-worker
+              # and the nightly cleanup CronJob - receives the label from that
+              # one transformer, so if the two strings drift, all of them lose
+              # the mount at once and the symptom is a hung mount at deploy
+              # time rather than a lint error. Hence the CI assertion.
+              app: template-app
+      ports:
+        # 2049 only, and only TCP. The clients mount NFSv4.1, which carries
+        # mount, lock and status over this single port; NFSv3 would also need
+        # 111 (rpcbind), 20048 (mountd) and a statically pinned nlockmgr port.
+        # Leaving those closed is deliberate: a client that silently falls back
+        # to v3 fails to mount instead of quietly working through a wider hole.
+        - protocol: TCP
+          port: 2049
+---
+# Hole 2: NFS from the nodes. This is the rule the real mounts come through.
+#
+# ===========================================================================
+# THE CIDR BELOW IS A PLACEHOLDER AND MUST BE SET BEFORE THE FIRST DEPLOY.
+# ===========================================================================
+# 192.0.2.0/24 is RFC 5737 TEST-NET-1: reserved for documentation and routed
+# nowhere, so as shipped this rule admits nothing. That is the safe direction
+# to be wrong in - an unset CIDR shows up immediately, at cutover, as pods
+# stuck in ContainerCreating with `mount.nfs: Connection timed out`, which is
+# loud and reversible. The opposite mistake is not: a CIDR wide enough to
+# contain the POD network hands every pod in the cluster, NuXL included, root
+# over every workspace, and nothing about that is visible from the outside.
+#
+# Set it to the range covering the INTERNAL IPs of the cluster's nodes. The
+# addresses are in `kubectl get nodes -o wide` under INTERNAL-IP. Then check
+# the range against the pod and service networks before applying - if it
+# overlaps either, narrow it. One /32 per node is perfectly acceptable, and is
+# what a small fixed cluster should use. Note that a hostNetwork pod shares
+# its node's address and is admitted by this rule whatever its labels say;
+# that is inherent to naming nodes by address, and is the reason the range
+# should be as tight as the cluster allows.
+#
+# A16-RUNBOOK.md section 3 step 5 carries this as an explicit cutover step.
+#
+# Cilium, which is what the de.NBI user clusters run: from 1.14 remote nodes
+# carry the `remote-node` identity, and CIDR rules do not select node
+# identities unless the agent runs with `policy-cidr-match-mode=nodes`. If
+# mounts still hang with the correct CIDR in place, that flag is the next
+# thing to check - not a wider selector here.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-nfs-from-nodes
+  labels:
+    app.kubernetes.io/part-of: openms-streamlit
+    app.kubernetes.io/component: nfs-server
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - ipBlock:
+            cidr: 192.0.2.0/24
+      ports:
+        - protocol: TCP
+          port: 2049
