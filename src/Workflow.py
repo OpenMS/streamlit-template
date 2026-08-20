@@ -51,11 +51,18 @@ class Workflow(WorkflowManager):
             # Parameters are specified within the file in the DEFAULTS dictionary.
             self.ui.input_python("example")
 
-    def execution(self) -> None:
+    def execution(self) -> bool:
+        # Return True only if every step succeeded. The caller
+        # (WorkflowManager.workflow_process in local mode, tasks.execute_workflow
+        # in queue mode) writes the "WORKFLOW FINISHED" marker based on this,
+        # and that marker is the only thing the run page reads to decide whether
+        # the workflow succeeded. Returning None marks a successful run failed;
+        # ignoring an executor result marks a failed run successful.
+
         # Any parameter checks, here simply checking if mzML files are selected
         if not self.params["mzML-files"]:
             self.logger.log("ERROR: No mzML files selected.")
-            return
+            return False
 
         # Get mzML files with FileManager
         in_mzML = self.file_manager.get_files(self.params["mzML-files"])
@@ -69,10 +76,13 @@ class Workflow(WorkflowManager):
         )
 
         # Run FeatureFinderMetabo tool with input and output files.
+        # run_topp returns False if any of the commands it ran failed.
         self.logger.log("Detecting features...")
-        self.executor.run_topp(
+        if not self.executor.run_topp(
             "FeatureFinderMetabo", input_output={"in": in_mzML, "out": out_ffm}
-        )
+        ):
+            self.logger.log("ERROR: Feature detection failed.")
+            return False
 
         # Prepare input and output files for feature linking
         in_fl = self.file_manager.get_files(out_ffm, collect=True)
@@ -82,17 +92,29 @@ class Workflow(WorkflowManager):
 
         # Run FeatureLinkerUnlabaeledKD with all feature maps passed at once
         self.logger.log("Linking features...")
-        self.executor.run_topp(
+        if not self.executor.run_topp(
             "FeatureLinkerUnlabeledKD", input_output={"in": in_fl, "out": out_fl}
-        )
+        ):
+            self.logger.log("ERROR: Feature linking failed.")
+            return False
+
+        # run_python has the same contract as run_topp: False if the script was
+        # not found or exited non-zero.
         self.logger.log("Exporting consensus features to pandas DataFrame...")
-        self.executor.run_python(
+        if not self.executor.run_python(
             "export_consensus_feature_df", input_output={"in": out_fl[0]}
-        )
+        ):
+            self.logger.log("ERROR: Exporting consensus features failed.")
+            return False
+
         # Check if adduct detection should be run.
         if self.params["run-python-script"]:
             # Example for a custom Python tool, which is located in src/python-tools.
-            self.executor.run_python("example", {"in": in_mzML})
+            if not self.executor.run_python("example", {"in": in_mzML}):
+                self.logger.log("ERROR: Custom Python script failed.")
+                return False
+
+        return True
 
     @st.fragment
     def results(self) -> None:

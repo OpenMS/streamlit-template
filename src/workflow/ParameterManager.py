@@ -1,10 +1,16 @@
 import pyopenms as poms
+import errno
 import json
+import logging
+import os
 import shutil
 import subprocess
 import streamlit as st
+import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 def bool_param_paths_from_param_xml_ini(ini_path: Path, tool_stem: str) -> set[str]:
@@ -47,6 +53,171 @@ def bool_param_paths_from_param_xml_ini(ini_path: Path, tool_stem: str) -> set[s
         if local_tag(ch) == "NODE":
             walk(ch, ())
     return out
+
+
+class InvalidParameterFileError(ValueError):
+    """
+    Raised when a params.json exists but cannot be read as a parameter dict.
+
+    Deliberately distinct from an absent file, which simply means a first run
+    with no stored parameters. Conflating the two is the erasure bug: a failed
+    read reported as an empty dict gets merged into a read-modify-write and
+    written back as the current session's subset, permanently deleting
+    ``_defaults``, ``_flag_params`` and every other tool's values.
+    """
+
+
+class TransientParameterFileError(InvalidParameterFileError):
+    """
+    Raised when the read failed for a reason expected to clear by itself.
+
+    A shared NFS export is restarted by upgrades, evictions and node drains,
+    and clients see ESTALE/EIO until it is back. The stored bytes are almost
+    certainly intact, so callers must still refuse to write - the current
+    content is unknown - but must not offer to delete the file. Resetting
+    during a self-healing blip is what would turn a momentary outage into the
+    permanent data loss this split exists to prevent.
+
+    A subclass, so every ``except InvalidParameterFileError`` guard keeps
+    catching it; only code that treats the two differently has to know.
+    """
+
+
+# errno values meaning "the storage is not answering right now", as opposed to
+# "this file is broken". Looked up defensively: not all exist on every platform.
+_TRANSIENT_READ_ERRNOS = frozenset(
+    value
+    for value in (
+        getattr(errno, name, None)
+        for name in (
+            "ESTALE",
+            "EIO",
+            "ENOTCONN",
+            "ETIMEDOUT",
+            "EAGAIN",
+            "EINTR",
+            "ENOLINK",
+            "EREMOTEIO",
+        )
+    )
+    if value is not None
+)
+
+# Two retries, at 0.2s and 0.4s. Long enough to ride out a re-established NFS
+# connection, short enough that a Streamlit rerun does not visibly stall. Only
+# transient errnos retry, so a corrupt file still fails on the first attempt.
+_READ_ATTEMPTS = 3
+_READ_RETRY_DELAY_SECONDS = 0.2
+
+
+def _read_parameter_file(params_file: Path) -> dict:
+    """
+    Read a parameter JSON file. Pure I/O, no Streamlit and no session state.
+
+    Args:
+        params_file: Path of the JSON file to read.
+
+    Returns:
+        dict: The stored parameters, or an empty dict if the file does not
+            exist at all - a first run has no parameters and that is not a
+            failure.
+
+    Raises:
+        TransientParameterFileError: The storage did not answer (ESTALE, EIO,
+            ...), and still did not after retrying. The file is probably fine.
+        InvalidParameterFileError: The file exists but could not be read as a
+            JSON object: malformed or torn content, a bad encoding, a directory
+            in its place, permissions. Callers which merge the result and write
+            it back must abort on this rather than treat it as "no parameters".
+    """
+    last_error = None
+    for attempt in range(_READ_ATTEMPTS):
+        try:
+            with open(params_file, "r", encoding="utf-8") as f:
+                params = json.load(f)
+            break
+        except FileNotFoundError:
+            # Ordered before OSError on purpose: an absent file is a first run,
+            # not a failure, and conflating the two is the erasure bug.
+            return {}
+        except OSError as e:
+            if e.errno not in _TRANSIENT_READ_ERRNOS:
+                raise InvalidParameterFileError(
+                    f"Could not read parameter file {params_file}: {e}"
+                ) from e
+            last_error = e
+            if attempt + 1 < _READ_ATTEMPTS:
+                time.sleep(_READ_RETRY_DELAY_SECONDS * (attempt + 1))
+        except ValueError as e:
+            # json.JSONDecodeError *and* UnicodeDecodeError - the latter is a
+            # ValueError, not an OSError, so catching OSError alone let a
+            # params.json written in the platform codepage escape both readers
+            # uncaught and take the workflow page down with a raw traceback.
+            raise InvalidParameterFileError(
+                f"Could not read parameter file {params_file}: {e}"
+            ) from e
+    else:
+        raise TransientParameterFileError(
+            f"Could not read parameter file {params_file} after "
+            f"{_READ_ATTEMPTS} attempts: {last_error}"
+        ) from last_error
+
+    if not isinstance(params, dict):
+        raise InvalidParameterFileError(
+            f"Parameter file {params_file} does not hold a JSON object "
+            f"(found {type(params).__name__})."
+        )
+    return params
+
+
+def _write_parameter_file(params_file: Path, params: dict) -> None:
+    """
+    Write a parameter JSON file atomically: temp file, then ``os.replace()``.
+
+    A truncate-then-rewrite that dies half way - an OOM kill, ENOSPC - leaves a
+    file which is neither the old parameters nor the new ones. Every later
+    strict read rejects it, so ``save_parameters()`` becomes a permanent silent
+    no-op and the parameter page stops on every render, with no way out but the
+    reset button. ``os.replace()`` is atomic on POSIX and on Windows, so a
+    reader sees either the whole old file or the whole new one.
+
+    This does not make concurrent writers safe - the last writer still wins the
+    whole file, DEFECTS.md A2 - it only removes the torn file.
+
+    Args:
+        params_file: Destination path.
+        params: Parameters to store.
+    """
+    tmp_file = params_file.with_name(f".{params_file.name}.{os.getpid()}.tmp")
+    try:
+        with open(tmp_file, "w", encoding="utf-8") as f:
+            json.dump(params, f, indent=4)
+        os.replace(tmp_file, params_file)
+    except BaseException:
+        # Never leave the scratch file behind next to params.json.
+        try:
+            tmp_file.unlink()
+        except OSError:
+            pass
+        raise
+
+
+def _streamlit_session_active() -> bool:
+    """
+    True only while running inside a real Streamlit script run.
+
+    tasks.py builds a ParameterManager inside the RQ work horse, where there is
+    no ScriptRunContext and st.error() is a silent no-op - so the user facing
+    half of a message is skipped there and the log carries it instead.
+    """
+    try:
+        from streamlit.runtime.scriptrunner import get_script_run_ctx
+
+        # suppress_warning, or every probe from the worker logs a "missing
+        # ScriptRunContext!" warning next to the message it is deciding about.
+        return get_script_run_ctx(suppress_warning=True) is not None
+    except Exception:  # streamlit absent, mocked out, or internals moved
+        return False
 
 
 class ParameterManager:
@@ -132,8 +303,18 @@ class ParameterManager:
         }
 
         # Merge with parameters from json
-        # Advanced parameters are only in session state if the view is active
-        json_params = self.get_parameters_from_json() | json_params
+        # Advanced parameters are only in session state if the view is active.
+        # The read has to be strict: merging a tolerant empty dict from a failed
+        # read and writing that back is what erases every stored value, so a
+        # failed read aborts the write and leaves the file on disk untouched.
+        try:
+            stored_params = self.read_parameters_strict()
+        except InvalidParameterFileError as e:
+            self._report_unreadable_parameter_file(
+                e, "Parameters were not saved, the existing file is left unchanged."
+            )
+            return
+        json_params = stored_params | json_params
 
         # get a list of TOPP tools (or tool instance names) which are in session state
         current_topp_tools = list(
@@ -187,29 +368,79 @@ class ParameterManager:
                         # store non-default value
                         json_params[tool][short_key] = value
         # Save to json file
-        with open(self.params_file, "w", encoding="utf-8") as f:
-            json.dump(json_params, f, indent=4)
+        _write_parameter_file(self.params_file, json_params)
 
     def get_parameters_from_json(self) -> dict:
         """
         Loads parameters from the JSON file if it exists and returns them as a dictionary.
-        If the file does not exist, it returns an empty dictionary.
+        If the file does not exist or cannot be read, it returns an empty dictionary.
+
+        Tolerant on purpose, for the constructors and the read-only callers which
+        have no way to handle a raise. Never use it as the read half of a
+        read-modify-write: an empty dict from a failed read, merged over the
+        stored parameters and written back, erases them. Use
+        read_parameters_strict() there.
 
         Returns:
             dict: A dictionary containing the loaded parameters. Keys are parameter names,
                 and values are parameter values.
         """
-        # Check if parameter file exists
-        if not Path(self.params_file).exists():
+        try:
+            return _read_parameter_file(self.params_file)
+        except InvalidParameterFileError as e:
+            self._report_unreadable_parameter_file(
+                e, "Falling back to default parameters."
+            )
             return {}
-        else:
-            # Load parameters from json file
-            try:
-                with open(self.params_file, "r", encoding="utf-8") as f:
-                    return json.load(f)
-            except:
-                st.error("**ERROR**: Attempting to load an invalid JSON parameter file. Reset to defaults.")
-                return {}
+
+    def read_parameters_strict(self) -> dict:
+        """
+        Loads parameters from the JSON file, raising instead of hiding a failed read.
+
+        This is the reader for every read-modify-write-back site.
+        get_parameters_from_json() cannot be used there: its empty dict for an
+        unreadable file gets merged with the current session's parameters and
+        written back, permanently erasing everything the session does not hold -
+        while the user is told it was a deliberate reset to defaults.
+
+        Returns:
+            dict: The stored parameters. Empty only if params.json does not exist.
+
+        Raises:
+            InvalidParameterFileError: params.json exists but is unreadable.
+        """
+        return _read_parameter_file(self.params_file)
+
+    def write_parameters(self, params: dict) -> None:
+        """
+        Write params.json, atomically, for the write-back sites outside this class.
+
+        StreamlitUI._input_TOPP_impl() seeds ``_flag_params`` and ``_defaults``
+        by reading with read_parameters_strict(), merging, and writing straight
+        back, so it needs the same atomic write save_parameters() uses - a torn
+        file written there wedges the parameter page on every later render.
+
+        Args:
+            params: The complete parameter dict to store.
+        """
+        _write_parameter_file(self.params_file, params)
+
+    def _report_unreadable_parameter_file(self, error: Exception, consequence: str) -> None:
+        """
+        Report an unreadable params.json, to the log always and to the user if there is one.
+
+        logging is the sink which always works: tasks.py builds a
+        ParameterManager inside the RQ work horse, where st.error() reaches
+        nobody.
+
+        Args:
+            error: The read failure being reported.
+            consequence: What the caller did about it, in the user's terms.
+        """
+        message = f"{error} {consequence}"
+        logger.error(message)
+        if _streamlit_session_active():
+            st.error(f"**ERROR**: {message}")
 
     def get_merged_params(self, tool_instance_name: str, ini_params: dict = None) -> dict:
         """
@@ -268,13 +499,42 @@ class ParameterManager:
 
         return self.get_merged_params(instance_name, ini_params=ini_params)
 
-    def reset_to_default_parameters(self) -> None:
+    def reset_to_default_parameters(self) -> Path | None:
         """
-        Resets the parameters to their default values by deleting the custom parameters
-        JSON file.
+        Reset to defaults by moving the stored parameter file out of the way.
+
+        Moved, not deleted. This is also the recovery offered when params.json
+        cannot be read, and an unreadable file is very often a healthy file
+        behind a storage blip, so deleting it there would turn a self-healing
+        outage into permanent loss. The bytes are kept under a timestamped name
+        beside the original and the caller is told where they went. A rename
+        also copes with a directory in place of params.json, which
+        ``unlink()`` cannot - that used to make the reset button itself raise,
+        leaving the parameter page stopped on every render with no way out.
+
+        Returns:
+            Path: Where the previous parameters were moved, or None when there
+                was nothing to reset.
+
+        Raises:
+            OSError: The file exists but could not be moved. Callers rendering
+                a reset affordance must surface this rather than let it escape.
         """
-        # Delete custom params json file
-        self.params_file.unlink(missing_ok=True)
+        if not self.params_file.exists():
+            return None
+
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        backup = self.params_file.with_name(f"{self.params_file.name}.{stamp}.bak")
+        collision = 1
+        while backup.exists():
+            backup = self.params_file.with_name(
+                f"{self.params_file.name}.{stamp}-{collision}.bak"
+            )
+            collision += 1
+
+        self.params_file.rename(backup)
+        logger.info("Reset parameters, previous file kept at %s", backup)
+        return backup
 
     def load_presets(self) -> dict:
         """
@@ -341,8 +601,16 @@ class ParameterManager:
         if not preset:
             return False
 
-        # Load existing parameters
-        current_params = self.get_parameters_from_json()
+        # Load existing parameters. Strict, because this is a read-modify-write
+        # back too: a tolerant empty dict here would delete every parameter the
+        # preset does not mention and still report success.
+        try:
+            current_params = self.read_parameters_strict()
+        except InvalidParameterFileError as e:
+            self._report_unreadable_parameter_file(
+                e, "The preset was not applied, the existing file is left unchanged."
+            )
+            return False
 
         # Collect keys to delete from session_state
         keys_to_delete = []
@@ -374,8 +642,7 @@ class ParameterManager:
                 del st.session_state[session_key]
 
         # Save updated parameters to file
-        with open(self.params_file, "w", encoding="utf-8") as f:
-            json.dump(current_params, f, indent=4)
+        _write_parameter_file(self.params_file, current_params)
 
         return True
 
