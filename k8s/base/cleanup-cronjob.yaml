@@ -11,6 +11,22 @@ spec:
   failedJobsHistoryLimit: 3
   jobTemplate:
     spec:
+      # concurrencyPolicy above is Forbid, so an Active Job suppresses every
+      # later schedule. Without a deadline, one run wedged on the shared
+      # workspaces mount - an NFS server restart is routine - silently blocks
+      # cleanup forever, with no error surface. The deadline forces the Job to
+      # Failed, which is terminal, so the next night runs.
+      # Generous: the cleanup walks every workspace over the network.
+      #
+      # Belt and braces with the in-container `timeout` below, because this
+      # deadline alone does not close the hole it names. It is a control-plane
+      # bound applied to a syscall-level hang: a pod stuck in D-state on a
+      # `hard` mount cannot terminate, and on recent Kubernetes the Job's
+      # terminal Failed condition is only added once every pod has actually
+      # terminated (FailureTarget first), so Forbid can still suppress the next
+      # schedule. The `timeout` inside the container covers the
+      # reachable-but-slow cases without depending on the cluster version.
+      activeDeadlineSeconds: 3600
       template:
         metadata:
           labels:
@@ -24,8 +40,11 @@ spec:
               command: ["/bin/bash", "-c"]
               args:
                 - |
+                  set -euo pipefail
                   source /root/miniforge3/bin/activate streamlit-env
-                  exec python clean-up-workspaces.py
+                  # Inside activeDeadlineSeconds (3600), so the Job still fails
+                  # if this somehow outlives its own bound.
+                  exec timeout -k 60 3000 python clean-up-workspaces.py
               env:
                 - name: WORKSPACES_DIR
                   value: "/workspaces-streamlit-template"
@@ -42,4 +61,4 @@ spec:
           volumes:
             - name: workspaces
               persistentVolumeClaim:
-                claimName: workspaces-pvc
+                claimName: workspaces-nfs-pvc

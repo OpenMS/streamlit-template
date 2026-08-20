@@ -104,6 +104,12 @@ ENV STREAMLIT_SERVER_COUNT=1
 COPY docker/entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
 
+# Install the demo-seeding script run by the seed-demos initContainer
+# (k8s/base/streamlit-deployment.yaml). One copy of the logic, so what the
+# image ships is what tests/test_seed_demos.py executes.
+COPY docker/seed-demos.sh /app/docker/seed-demos.sh
+RUN chmod +x /app/docker/seed-demos.sh
+
 # Patch Analytics
 RUN mamba run -n streamlit-env python hooks/hook-analytics.py
 
