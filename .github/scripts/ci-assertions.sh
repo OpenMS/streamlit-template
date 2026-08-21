@@ -25,6 +25,8 @@
 #   assert_fsids_pinned              static; the storage root pins
 #                                    device-based-fsids off
 #   assert_netpol_string_matches_overlay
+#   assert_netpol_admits_every_node
+#   assert_storage_identity_values
 #                                    static; the storage NetworkPolicy admits
 #                                    exactly the overlay's commonLabels.app, in
 #                                    the overlay's namespace, on 2049 alone
@@ -912,13 +914,26 @@ assert_workers_spread_across_nodes() {
 
     # The labelSelector has to select the workers themselves.
     _ci_bad="$(kubectl get deployment -n "$CI_ASSERT_NS" "$_ci_deploy" -o json 2>/dev/null \
-        | jq -r '.spec.template as $t
+        | jq -r --arg app "$_ci_a" '.spec.template as $t
                  | [.spec.template.spec.topologySpreadConstraints[]?
                     | select(.topologyKey == "kubernetes.io/hostname")
                     | (.labelSelector.matchLabels // {}) as $m
                     | if ($m | length) == 0 then "labelSelector.matchLabels is empty, so the constraint counts every pod in the namespace"
                       elif [$m | to_entries[] | select($t.metadata.labels[.key] != .value)] | length > 0
                       then "labelSelector.matchLabels \($m) does not match the pod template labels \($t.metadata.labels)"
+                      # NOTE: no apostrophes in this jq program - it is inside a
+                      # single-quoted shell string, where one would end it.
+                      # to_entries only walks keys that are PRESENT, so a bare
+                      # {component: rq-worker} selector matched the pod template
+                      # and passed, while counting every other fork rq-worker in
+                      # this shared namespace against our skew. That is the
+                      # regression k8s/base/rq-worker-deployment.yaml calls
+                      # load-bearing in the comment above its own constraint,
+                      # and the check above cannot see it, because the app label
+                      # is injected by commonLabels at overlay time rather than
+                      # declared in the base.
+                      elif ($m.app // "") != $app
+                      then "labelSelector.matchLabels \($m) carries no app=\($app) key, so the constraint counts every rq-worker in the namespace rather than only these workers"
                       else empty end] | .[]' 2>/dev/null || true)"
     if [ -n "$_ci_bad" ]; then
         _ci_fail "deployment/$_ci_deploy has a spread constraint that does not select its own workers: $_ci_bad"
@@ -1033,6 +1048,74 @@ assert_fsids_pinned() {
 
     if [ "$_ci_rc" -eq 0 ]; then
         _ci_pass "$CI_ASSERT_STORAGE_ROOT pins device-based fsids off: $(printf '%s' "$_ci_fsid" | tr '\n' ' ')"
+    fi
+    return "$_ci_rc"
+}
+
+assert_storage_identity_values() {
+    # The other three quarters of invariant 2. `device-based-fsids` above is
+    # only one of the four things that make the NFS server come back serving
+    # the same bytes under the same identity; the remaining three were asserted
+    # nowhere, so a values edit dropping any of them rendered clean,
+    # kubeconformed clean, deployed clean, and passed every runtime assertion
+    # in this file. What it costs is not a red build - it is deleted data on a
+    # PVC delete, or a second Ganesha Pending forever on an RWO claim.
+    #
+    # Read off the RENDERED root for the same reason as assert_fsids_pinned:
+    # it holds whichever key the chart exposes, and kustomize strips the
+    # comments that would otherwise look like compliance.
+    _ci_require kubectl helm yq || return 1
+    _ci_rc=0
+
+    _ci_rendered="$(mktemp)"
+    _ci_err="$(mktemp)"
+    if ! _ci_kustomize_storage > "$_ci_rendered" 2>"$_ci_err"; then
+        _ci_fail "kubectl kustomize --enable-helm $CI_ASSERT_STORAGE_ROOT failed"
+        cat "$_ci_err" >&2 || true
+        rm -f "$_ci_rendered" "$_ci_err"
+        return 1
+    fi
+    rm -f "$_ci_err"
+    if [ ! -s "$_ci_rendered" ]; then
+        _ci_fail "$CI_ASSERT_STORAGE_ROOT rendered nothing - these checks would pass vacuously"
+        rm -f "$_ci_rendered"
+        return 1
+    fi
+
+    # 1. reclaimPolicy: Retain on the class this root publishes. The cluster
+    #    default is Delete, which destroys the volume with the claim.
+    _ci_reclaim="$(yq 'select(.kind == "StorageClass") | .reclaimPolicy' "$_ci_rendered" \
+        | grep -v '^---$' | grep -v '^$' || true)"
+    if [ "$_ci_reclaim" != "Retain" ]; then
+        _ci_fail "the StorageClass reclaimPolicy is '${_ci_reclaim:-unset}', not Retain: deleting a PV or PVC would destroy the workspace data rather than orphan it"
+        _ci_rc=1
+    fi
+
+    # 2. A fixed, pre-existing backing claim. Dynamic provisioning for the
+    #    BACKING volume means a re-provisioned claim is a different volume, and
+    #    the server comes back empty.
+    _ci_claim="$(yq 'select(.kind == "StatefulSet" or .kind == "Deployment")
+                     | .spec.template.spec.volumes[]?
+                     | select(.persistentVolumeClaim)
+                     | .persistentVolumeClaim.claimName' "$_ci_rendered" \
+        | grep -v '^---$' | grep -v '^$' | grep -v '^null$' || true)"
+    if [ -z "$_ci_claim" ]; then
+        _ci_fail "the NFS server mounts no persistentVolumeClaim, so persistence.existingClaim was dropped and its backing store is not a fixed volume"
+        _ci_rc=1
+    fi
+
+    # 3. Exactly one replica. Two Ganesha pods on one RWO claim is worse than
+    #    the RollingUpdate deadlock `strategy: Recreate` exists to avoid.
+    _ci_replicas="$(yq 'select(.kind == "StatefulSet" or .kind == "Deployment") | .spec.replicas' "$_ci_rendered" \
+        | grep -v '^---$' | grep -v '^$' | grep -v '^null$' || true)"
+    if [ "$_ci_replicas" != "1" ]; then
+        _ci_fail "the NFS server renders replicas='${_ci_replicas:-unset}', not 1: a second pod cannot mount the RWO backing claim and would sit Pending forever"
+        _ci_rc=1
+    fi
+
+    rm -f "$_ci_rendered"
+    if [ "$_ci_rc" -eq 0 ]; then
+        _ci_pass "storage identity pinned: reclaimPolicy=Retain, backing claim=$_ci_claim, replicas=$_ci_replicas"
     fi
     return "$_ci_rc"
 }
@@ -1590,6 +1673,73 @@ assert_netpol_string_matches_overlay() {
 
     if [ "$_ci_rc" -eq 0 ]; then
         _ci_pass "the storage NetworkPolicy admits exactly app='$_ci_expected' in namespace '$_ci_expected_ns', ANDed in one peer, on TCP 2049 alone"
+    fi
+    return "$_ci_rc"
+}
+
+assert_netpol_admits_every_node() {
+    # The runtime companion to assert_netpol_string_matches_overlay, which can
+    # only note that the shipped node CIDR is a placeholder - it reads
+    # manifests, and a node address cannot be derived from a manifest.
+    #
+    # This one has a cluster, so it can answer the question that actually
+    # decides whether the storage tier works: is every node's kubelet allowed
+    # to reach 2049? The provisioner emits in-tree `nfs:` PVs, which the
+    # KUBELET mounts from the node's own address in the host network namespace.
+    # That matches no podSelector, so on a policy-enforcing CNI the only thing
+    # standing between a worker and an indefinitely hanging mount is an ipBlock
+    # covering its node - and the value shipped in networkpolicy.yaml is RFC
+    # 5737 TEST-NET-1, which covers nothing.
+    #
+    # Without this, the CI rewrite that patches that CIDR is an unverified sed:
+    # if its target string ever moves, the rewrite no-ops and the suite fails
+    # forty minutes later as a Deployment availability timeout that names
+    # nothing.
+    _ci_require kubectl jq python3 || return 1
+    _ci_rc=0
+
+    _ci_cidrs="$(kubectl get networkpolicy -n "$CI_ASSERT_STORAGE_NS" -o json 2>/dev/null \
+        | jq -r '[.items[].spec.ingress[]?.from[]?.ipBlock.cidr // empty] | .[]' 2>/dev/null || true)"
+    if [ -z "$_ci_cidrs" ]; then
+        _ci_fail "the NetworkPolicies in $CI_ASSERT_STORAGE_NS admit no ipBlock at all, so no kubelet can mount the share"
+        return 1
+    fi
+
+    _ci_nodes="$(kubectl get nodes \
+        -o jsonpath='{range .items[*]}{.status.addresses[?(@.type=="InternalIP")].address}{"\n"}{end}' \
+        2>/dev/null || true)"
+    if [ -z "$_ci_nodes" ]; then
+        _ci_fail "could not read any node InternalIP; cannot tell whether the storage NetworkPolicy admits them"
+        return 1
+    fi
+
+    # python3 rather than shell arithmetic: these are CIDRs, and a prefix-length
+    # comparison written in awk is exactly the kind of thing that silently
+    # passes on /16 and fails on /12.
+    _ci_missing=""
+    for _ci_n in $_ci_nodes; do
+        if ! CI_NODE_IP="$_ci_n" CI_CIDRS="$_ci_cidrs" python3 -c '
+import ipaddress, os, sys
+ip = ipaddress.ip_address(os.environ["CI_NODE_IP"])
+for c in os.environ["CI_CIDRS"].split():
+    try:
+        if ip in ipaddress.ip_network(c, strict=False):
+            sys.exit(0)
+    except ValueError:
+        continue
+sys.exit(1)
+' 2>/dev/null; then
+            _ci_missing="$_ci_missing $_ci_n"
+        fi
+    done
+
+    if [ -n "$_ci_missing" ]; then
+        _ci_fail "node InternalIP(s) not admitted on 2049 by the storage NetworkPolicy, so their kubelets cannot mount the workspace share:$_ci_missing (policy admits: $(printf '%s' "$_ci_cidrs" | tr '\n' ' '))"
+        _ci_rc=1
+    fi
+
+    if [ "$_ci_rc" -eq 0 ]; then
+        _ci_pass "every node InternalIP is admitted on 2049 by the storage NetworkPolicy: $(printf '%s' "$_ci_cidrs" | tr '\n' ' ')"
     fi
     return "$_ci_rc"
 }

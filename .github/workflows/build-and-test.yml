@@ -24,12 +24,37 @@ jobs:
           sudo mv kubeconform /usr/local/bin/
 
       - name: Install kubectl
+        # Pinned to the version helm/kind-action installs in the kind jobs, so
+        # every job in this file renders through the same kustomize (v5.7.1).
+        # Unpinned, setup-kubectl@v3 resolves `latest` from the frozen legacy
+        # GCS bucket - kubectl v1.31.0, kustomize 5.4.2 - and the static gates
+        # then validate output the kind clusters never see.
         uses: azure/setup-kubectl@v3
+        with:
+          version: v1.35.0
 
       - name: Set up Helm
         # kubectl kustomize --enable-helm shells out to `helm` to inflate the
         # Ganesha chart in k8s/storage/.
+        #
+        # PINNED TO THE 3.x LINE ON PURPOSE, and pinned identically at all four
+        # `Set up Helm` steps in this file. The kustomize built into kubectl
+        # <= 1.35 (v5.7.1) probes the binary with `helm version -c --short` - a
+        # shorthand Helm 4 removed - and then refuses any major that is not 3.
+        # An unpinned `latest` resolved to Helm v4.2.4 and took every job that
+        # renders k8s/storage/ down with
+        #   error: unknown shorthand flag: 'c' in -c
+        # Do NOT "fix" this by bumping kubectl past 1.36 instead: kustomize
+        # v5.8.1 stopped applying the namespace transformer to Helm-inflated
+        # objects, so the chart's ServiceAccount, Service and StatefulSet would
+        # render with no metadata.namespace - contradicting the contract stated
+        # at the top of k8s/storage/kustomization.yaml, and silently deploying
+        # Ganesha outside its NetworkPolicy for anyone using the documented
+        # `kustomize | kubectl apply -f -` pipe.
         uses: azure/setup-helm@v4
+        with:
+          # renovate: datasource=github-releases depName=helm/helm
+          version: v3.21.4
 
       - name: Validate base manifests
         run: |
@@ -39,9 +64,17 @@ jobs:
             k8s/base/*.yaml
 
       - name: Validate kustomized overlay output
+        # Same shape as "Validate the storage root" below: rendered to a file
+        # and checked non-empty, because this shell has no pipefail and
+        # kubeconform reports success on empty input.
         run: |
-          kubectl kustomize k8s/overlays/prod/ | \
-            kubeconform -summary -strict -kubernetes-version 1.28.0 -skip IngressRoute
+          kubectl kustomize k8s/overlays/prod/ > /tmp/prod-lint.yaml
+          if [ ! -s /tmp/prod-lint.yaml ]; then
+            echo "::error::k8s/overlays/prod/ rendered nothing"
+            exit 1
+          fi
+          kubeconform -summary -strict -kubernetes-version 1.28.0 -skip IngressRoute \
+            < /tmp/prod-lint.yaml
 
       - name: Validate the CI overlay
         # k8s/overlays/ci/ is what the two kind jobs actually apply, so it is
@@ -93,9 +126,23 @@ jobs:
         # sight, and rendering is the only way the chart's own output gets
         # validated at all. --enable-helm is inert on a root with no helmCharts
         # field, so this keeps working if the chart is ever vendored.
+        #
+        # Rendered to a file rather than piped. `bash -e {0}` does not set
+        # pipefail, so a failing kustomize on the left of a pipe was invisible:
+        # this step printed the Helm 4 error, then
+        #   Summary: 0 resource found parsing stdin - Valid: 0
+        # and the job concluded success. The `[ -s ]` test is the load-bearing
+        # half of the fix, not the redirect - kubeconform exits 0 on empty
+        # input, so a render that SUCCEEDS and emits zero documents would still
+        # pass a pipefail-corrected pipe.
         run: |
-          kubectl kustomize --enable-helm k8s/storage/ | \
-            kubeconform -summary -strict -kubernetes-version 1.28.0
+          kubectl kustomize --enable-helm k8s/storage/ > /tmp/storage-rendered.yaml
+          if [ ! -s /tmp/storage-rendered.yaml ]; then
+            echo "::error::k8s/storage/ rendered nothing; the chart was never validated"
+            exit 1
+          fi
+          kubeconform -summary -strict -kubernetes-version 1.28.0 \
+            < /tmp/storage-rendered.yaml
 
   assert-invariants:
     # Static assertions over the manifests themselves. This job deliberately
@@ -117,12 +164,37 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install kubectl
+        # Pinned to the version helm/kind-action installs in the kind jobs, so
+        # every job in this file renders through the same kustomize (v5.7.1).
+        # Unpinned, setup-kubectl@v3 resolves `latest` from the frozen legacy
+        # GCS bucket - kubectl v1.31.0, kustomize 5.4.2 - and the static gates
+        # then validate output the kind clusters never see.
         uses: azure/setup-kubectl@v3
+        with:
+          version: v1.35.0
 
       - name: Set up Helm
         # kubectl kustomize --enable-helm shells out to `helm` to inflate the
         # Ganesha chart in k8s/storage/.
+        #
+        # PINNED TO THE 3.x LINE ON PURPOSE, and pinned identically at all four
+        # `Set up Helm` steps in this file. The kustomize built into kubectl
+        # <= 1.35 (v5.7.1) probes the binary with `helm version -c --short` - a
+        # shorthand Helm 4 removed - and then refuses any major that is not 3.
+        # An unpinned `latest` resolved to Helm v4.2.4 and took every job that
+        # renders k8s/storage/ down with
+        #   error: unknown shorthand flag: 'c' in -c
+        # Do NOT "fix" this by bumping kubectl past 1.36 instead: kustomize
+        # v5.8.1 stopped applying the namespace transformer to Helm-inflated
+        # objects, so the chart's ServiceAccount, Service and StatefulSet would
+        # render with no metadata.namespace - contradicting the contract stated
+        # at the top of k8s/storage/kustomization.yaml, and silently deploying
+        # Ganesha outside its NetworkPolicy for anyone using the documented
+        # `kustomize | kubectl apply -f -` pipe.
         uses: azure/setup-helm@v4
+        with:
+          # renovate: datasource=github-releases depName=helm/helm
+          version: v3.21.4
 
       - name: Check the assertion library
         run: |
@@ -149,6 +221,17 @@ jobs:
         run: |
           source .github/scripts/ci-assertions.sh
           assert_fsids_pinned
+
+      - name: Assert the storage identity values are pinned
+        # The other three quarters of invariant 2. device-based-fsids above is
+        # only one of the four values that make the NFS server come back
+        # serving the same bytes under the same identity; a values edit
+        # dropping Retain, the fixed backing claim or the single replica
+        # rendered clean, deployed clean and passed every runtime assertion,
+        # and cost deleted data rather than a red build.
+        run: |
+          source .github/scripts/ci-assertions.sh
+          assert_storage_identity_values
 
       - name: Assert no node pinning anywhere
         # Invariant 1: Kubernetes decides placement, the config must not.
@@ -685,6 +768,14 @@ jobs:
       - name: Create kind cluster
         uses: helm/kind-action@v1
         with:
+          # Pinned to what the action picks today. kubectl_version must stay
+          # equal to the `Install kubectl` pin above, or the static jobs and
+          # the kind jobs render k8s/storage/ through different kustomize
+          # versions and disagree about namespaces on Helm-inflated objects.
+          # node_image is deliberately NOT pinned: a digest that goes stale
+          # fails cluster creation outright, with no fallback.
+          version: v0.31.0
+          kubectl_version: v1.35.0
           cluster_name: test-cluster
           config: .github/kind-config.yaml
 
@@ -696,6 +787,11 @@ jobs:
         run: |
           kind load image-archive /tmp/image.tar --name test-cluster
           rm -f /tmp/image.tar
+          # Diagnostic only. The image has just been written into both kind
+          # nodes' containerd, and nfs-provisioner refuses claims larger than
+          # the free space under /export - so when a claim fails to bind, this
+          # line is the difference between "out of disk" and a lost afternoon.
+          df -h / || true
 
       - name: Install nginx ingress controller
         run: |
@@ -705,7 +801,25 @@ jobs:
       - name: Set up Helm
         # kubectl kustomize --enable-helm shells out to `helm` to inflate the
         # Ganesha chart in k8s/storage/.
+        #
+        # PINNED TO THE 3.x LINE ON PURPOSE, and pinned identically at all four
+        # `Set up Helm` steps in this file. The kustomize built into kubectl
+        # <= 1.35 (v5.7.1) probes the binary with `helm version -c --short` - a
+        # shorthand Helm 4 removed - and then refuses any major that is not 3.
+        # An unpinned `latest` resolved to Helm v4.2.4 and took every job that
+        # renders k8s/storage/ down with
+        #   error: unknown shorthand flag: 'c' in -c
+        # Do NOT "fix" this by bumping kubectl past 1.36 instead: kustomize
+        # v5.8.1 stopped applying the namespace transformer to Helm-inflated
+        # objects, so the chart's ServiceAccount, Service and StatefulSet would
+        # render with no metadata.namespace - contradicting the contract stated
+        # at the top of k8s/storage/kustomization.yaml, and silently deploying
+        # Ganesha outside its NetworkPolicy for anyone using the documented
+        # `kustomize | kubectl apply -f -` pipe.
         uses: azure/setup-helm@v4
+        with:
+          # renovate: datasource=github-releases depName=helm/helm
+          version: v3.21.4
 
       - name: Report the NFS client helper on the kind nodes
         # Diagnostic, not a gate - the gate is whether the claim binds and the
@@ -727,7 +841,25 @@ jobs:
         # pod on a PVC and kind's `standard` class is RWO local-path, so the
         # whole NFS re-export genuinely runs here.
         run: |
-          kubectl kustomize --enable-helm k8s/storage/ > /tmp/storage-rendered.yaml
+          # Nothing vendors the chart - .gitignore excludes k8s/storage/charts/
+          # on purpose - so every job re-fetches index.yaml and the tarball from
+          # GitHub Pages. A transient 5xx there presents as exactly the same
+          # "kubectl kustomize --enable-helm failed" this pipeline has already
+          # been taken down by once, so retry the render rather than the apply
+          # alone.
+          rendered=0
+          for i in 1 2 3; do
+            if kubectl kustomize --enable-helm k8s/storage/ > /tmp/storage-rendered.yaml; then
+              rendered=1
+              break
+            fi
+            echo "Render attempt $i failed, retrying in ${i}0s..."
+            sleep "${i}0"
+          done
+          if [ "$rendered" -ne 1 ] || [ ! -s /tmp/storage-rendered.yaml ]; then
+            echo "::error::could not render k8s/storage/ (needs Helm 3.x on PATH)"
+            exit 1
+          fi
           # Ganesha's own backing claim is now the only Cinder-classed object in
           # the tree. kind has no cinder-csi, so rewrite it to `standard`, and
           # fail loudly if the string is gone rather than letting the rewrite
@@ -736,19 +868,78 @@ jobs:
             echo "::error::k8s/storage/ no longer renders 'storageClassName: cinder-csi'; the rewrite below would silently no-op"
             exit 1
           fi
-          sed 's|storageClassName: cinder-csi|storageClassName: standard|g' \
-            /tmp/storage-rendered.yaml > /tmp/storage.yaml
+          # 500Gi is right for de.NBI and absurd on a runner. local-path never
+          # checks capacity so it binds anyway, but nfs-provisioner statfs()es
+          # /export and refuses any workspace claim larger than the free space
+          # it reports - and a 500Gi Bound claim in the failure dump sends the
+          # next reader looking in the wrong place entirely.
+          if ! grep -q 'storage: 500Gi' /tmp/storage-rendered.yaml; then
+            echo "::error::k8s/storage/ no longer renders 'storage: 500Gi'; the size rewrite below would silently no-op"
+            exit 1
+          fi
+          sed -e 's|storageClassName: cinder-csi|storageClassName: standard|g' \
+              -e 's|storage: 500Gi|storage: 8Gi|' \
+              /tmp/storage-rendered.yaml > /tmp/storage.yaml
+          # The node CIDR in networkpolicy.yaml ships as RFC 5737 TEST-NET-1 and
+          # is documented there as a placeholder to be set before the first
+          # deploy. It is not cosmetic here: kindnetd runs kube-network-policies
+          # unconditionally, the namespace default-deny therefore applies, and
+          # the in-tree `nfs:` PVs this chart emits are mounted by the KUBELET
+          # from the node's own address in the host netns - matching no
+          # podSelector and no ipBlock. Left alone, every mount on a node not
+          # running Ganesha hangs, which the worker's DoNotSchedule spread
+          # guarantees will happen to exactly one replica.
+          if ! grep -q 'cidr: 192.0.2.0/24' /tmp/storage.yaml; then
+            echo "::error::k8s/storage/networkpolicy.yaml no longer carries the 192.0.2.0/24 placeholder; this rewrite would silently no-op and every cross-node mount would hang"
+            exit 1
+          fi
+          # Derived, not hardcoded: kind pins only its IPv6 subnet, so the IPv4
+          # one comes from Docker's default address pool and is not 172.18/16
+          # by contract.
+          NODE_CIDR=$(docker network inspect kind \
+            -f '{{range .IPAM.Config}}{{.Subnet}} {{end}}' \
+            | tr ' ' '\n' | grep -v ':' | grep -E '^[0-9.]+/[0-9]+$' | head -n1)
+          if [ -z "$NODE_CIDR" ]; then
+            echo "::error::could not read an IPv4 subnet from the kind docker network"
+            docker network inspect kind -f '{{json .IPAM.Config}}'
+            exit 1
+          fi
+          echo "admitting kind nodes on 2049 from $NODE_CIDR"
+          sed -i "s|cidr: 192.0.2.0/24|cidr: ${NODE_CIDR}|" /tmp/storage.yaml
+          # kubeconform validated /tmp/storage-rendered.yaml, not the file that
+          # is actually applied. Re-check the one value the seds above compute
+          # rather than copy, so a malformed CIDR fails here and names itself
+          # instead of surfacing as an API-server rejection mid-retry-loop.
+          if ! grep -Eq '^[[:space:]]*cidr: [0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/[0-9]+$' /tmp/storage.yaml; then
+            echo "::error::the rewritten NetworkPolicy CIDR is not a bare IPv4 block"
+            grep -n 'cidr:' /tmp/storage.yaml
+            exit 1
+          fi
+          applied=0
           for i in 1 2 3 4 5; do
             if kubectl apply -f /tmp/storage.yaml; then
+              applied=1
               echo "Storage apply succeeded on attempt $i"
               break
             fi
             echo "Attempt $i failed, retrying in ${i}0s..."
             sleep "${i}0"
           done
+          # `if ... then break; fi` never trips `set -e`, so without this the
+          # loop fell through on total failure and the step died on the bare
+          # NotFound from the substitution below - taking the authored error
+          # message and its diagnostic dump with it, in precisely the case the
+          # retry loop exists to report.
+          if [ "$applied" -ne 1 ]; then
+            echo "::error::could not apply k8s/storage/ after 5 attempts"
+            kubectl get all -n template-app-storage || true
+            exit 1
+          fi
           # `kubectl wait --all` reports success against zero objects, so the
-          # server has to be found before it is waited on.
-          WORKLOADS=$(kubectl get deploy,statefulset -n template-app-storage -o name)
+          # server has to be found before it is waited on. `|| true` because an
+          # empty result must reach the explicit check below rather than kill
+          # the step through `bash -e`.
+          WORKLOADS=$(kubectl get deploy,statefulset -n template-app-storage -o name 2>/dev/null || true)
           if [ -z "$WORKLOADS" ]; then
             echo "::error::k8s/storage/ created no Deployment or StatefulSet in template-app-storage"
             kubectl get all -n template-app-storage
@@ -759,6 +950,11 @@ jobs:
           done
           kubectl get pods,pvc -n template-app-storage -o wide
           kubectl get storageclass
+          # Diagnostic, never a gate: this is the filesystem nfs-provisioner
+          # measures when it decides whether a workspace claim fits.
+          kubectl exec -n template-app-storage \
+            "$(kubectl get pod -n template-app-storage -l app=nfs-server -o name | head -n1)" \
+            -- df -h /export || true
 
       - name: Deploy with Kustomize
         run: |
@@ -796,7 +992,14 @@ jobs:
             echo "::error::the rendered overlay has no 'storage: <N>Gi' request; the rewrite below would silently no-op"
             exit 1
           fi
-          sed -i -E 's|storage: [0-9]+Gi|storage: 4Gi|g' /tmp/manifests.yaml
+          # 1Gi, not 4Gi: nfs-provisioner statfs()es /export and refuses any
+          # claim larger than the free space it reports, and /export here is a
+          # local-path directory on a runner disk that has just absorbed the
+          # app image into both kind nodes' containerd. No assertion in this
+          # suite writes anywhere near a gigabyte - the largest is ~60 short
+          # log lines - so the headroom buys nothing and costs a 300s Bound
+          # timeout whose message is about bytes.
+          sed -i -E 's|storage: [0-9]+Gi|storage: 1Gi|g' /tmp/manifests.yaml
           for i in 1 2 3 4 5; do
             if kubectl apply -f /tmp/manifests.yaml; then
               echo "Deploy succeeded on attempt $i"
@@ -915,11 +1118,25 @@ jobs:
       # helper image from the cluster, so SLUG above is the only input any of
       # them needs.
       #
-      # The two placement assertions come first because they are seconds long
-      # and the storage ones are up to 45 minutes of deliberate timeouts. Both
-      # read the state that "Verify all deployments are available" has just
-      # established, and if the workers are not where they should be then
-      # everything after this is noise measured against a broken deployment.
+      # The NetworkPolicy assertion is first, and then the two placement ones,
+      # because all three are seconds long where the storage ones are up to 45
+      # minutes of deliberate timeouts. They read the state that "Verify all
+      # deployments are available" has just established, and if the workers are
+      # not where they should be then everything after this is noise measured
+      # against a broken deployment.
+      - name: Assert every node is admitted to the NFS share
+        # First, because it is the failure that disguises itself as all the
+        # others. The share is behind a namespace-wide default-deny, the
+        # in-tree `nfs:` PVs are mounted by the KUBELET from the node address,
+        # and the CIDR that admits them is rewritten by the storage deploy step
+        # rather than shipped - so if that rewrite ever no-ops, every mount on
+        # every node except Ganesha's own hangs, and the first thing anyone
+        # sees is an unrelated assertion timing out forty minutes later.
+        timeout-minutes: 2
+        run: |
+          source .github/scripts/ci-assertions.sh
+          assert_netpol_admits_every_node
+
       - name: Assert the worker replicas are spread across nodes
         # Step 4's acceptance criterion for the workers. Every replica Running
         # - so an unschedulable one fails here rather than being left out of
@@ -1023,12 +1240,22 @@ jobs:
           echo "=== storage classes and volumes ==="
           kubectl get storageclass || true
           kubectl get pv,pvc -A || true
+          # Unfiltered on purpose. SLUG is exported by "Discover overlay
+          # identity", which runs AFTER the storage steps - so any failure
+          # before it left ${SLUG} empty here, every `-l app=` matched nothing,
+          # and this dump reported an empty namespace on a cluster that simply
+          # had not been deployed to yet. In CI the openms namespace holds only
+          # this app, so dropping the selector cannot lose anything.
           echo "=== app pods describe ==="
-          kubectl describe pod -n openms -l app=${SLUG} || true
+          kubectl describe pod -n openms || true
           echo "=== app pod logs ==="
-          kubectl logs -n openms -l app=${SLUG} --tail=200 --all-containers --prefix || true
+          for p in $(kubectl get pods -n openms -o name 2>/dev/null); do
+            kubectl logs -n openms "$p" --all-containers --prefix --tail=200 || true
+          done
           echo "=== app pod previous logs (if crashed) ==="
-          kubectl logs -n openms -l app=${SLUG} --tail=200 --all-containers --prefix --previous || true
+          for p in $(kubectl get pods -n openms -o name 2>/dev/null); do
+            kubectl logs -n openms "$p" --all-containers --prefix --tail=200 --previous || true
+          done
           echo "=== ingress ==="
           kubectl get ingress -A -o wide || true
           kubectl describe ingress -n openms || true
@@ -1080,6 +1307,9 @@ jobs:
       - name: Create kind cluster
         uses: helm/kind-action@v1
         with:
+          # Keep in lockstep with the nginx job and the `Install kubectl` pins.
+          version: v0.31.0
+          kubectl_version: v1.35.0
           cluster_name: traefik-test
           config: .github/kind-config.yaml
 
@@ -1091,18 +1321,44 @@ jobs:
         run: |
           kind load image-archive /tmp/image.tar --name traefik-test
           rm -f /tmp/image.tar
+          # Diagnostic only. The image has just been written into both kind
+          # nodes' containerd, and nfs-provisioner refuses claims larger than
+          # the free space under /export - so when a claim fails to bind, this
+          # line is the difference between "out of disk" and a lost afternoon.
+          df -h / || true
 
       - name: Set up Helm
+        # Same 3.x pin as the other three `Set up Helm` steps in this file, and
+        # for the same reason - see the long note on the first of them. This one
+        # also drives `helm install traefik` below; chart 41.x declares a
+        # `Helm v3.9.0+` prerequisite, which v3.21.4 clears comfortably.
         uses: azure/setup-helm@v4
+        with:
+          # renovate: datasource=github-releases depName=helm/helm
+          version: v3.21.4
 
       - name: Install Traefik via Helm
         run: |
           helm repo add traefik https://traefik.github.io/charts
           helm repo update
+          # `service.type` is NOT a key in this chart and never has been - the
+          # Service type lives at `service.spec.type`, defaulting to
+          # LoadBalancer. The old --set was a silent no-op that nothing caught,
+          # because a port-forward works against a LoadBalancer Service too.
+          # renovate: datasource=helm registryUrl=https://traefik.github.io/charts depName=traefik
           helm install traefik traefik/traefik \
+            --version 41.3.0 \
             --namespace traefik --create-namespace \
-            --set service.type=ClusterIP
+            --set service.spec.type=ClusterIP
           kubectl -n traefik wait --for=condition=available deployment/traefik --timeout=120s
+          # Assert the --set actually landed, so the next time this chart moves
+          # its values path it fails here by name instead of silently reverting
+          # to the default.
+          SVC_TYPE=$(kubectl -n traefik get svc traefik -o jsonpath='{.spec.type}')
+          if [ "$SVC_TYPE" != "ClusterIP" ]; then
+            echo "::error::traefik Service is ${SVC_TYPE}, not ClusterIP; the chart's values path for the Service type has moved again"
+            exit 1
+          fi
 
       - name: Report the NFS client helper on the kind nodes
         # Diagnostic, not a gate - the gate is whether the claim binds and the
@@ -1124,7 +1380,25 @@ jobs:
         # pod on a PVC and kind's `standard` class is RWO local-path, so the
         # whole NFS re-export genuinely runs here.
         run: |
-          kubectl kustomize --enable-helm k8s/storage/ > /tmp/storage-rendered.yaml
+          # Nothing vendors the chart - .gitignore excludes k8s/storage/charts/
+          # on purpose - so every job re-fetches index.yaml and the tarball from
+          # GitHub Pages. A transient 5xx there presents as exactly the same
+          # "kubectl kustomize --enable-helm failed" this pipeline has already
+          # been taken down by once, so retry the render rather than the apply
+          # alone.
+          rendered=0
+          for i in 1 2 3; do
+            if kubectl kustomize --enable-helm k8s/storage/ > /tmp/storage-rendered.yaml; then
+              rendered=1
+              break
+            fi
+            echo "Render attempt $i failed, retrying in ${i}0s..."
+            sleep "${i}0"
+          done
+          if [ "$rendered" -ne 1 ] || [ ! -s /tmp/storage-rendered.yaml ]; then
+            echo "::error::could not render k8s/storage/ (needs Helm 3.x on PATH)"
+            exit 1
+          fi
           # Ganesha's own backing claim is now the only Cinder-classed object in
           # the tree. kind has no cinder-csi, so rewrite it to `standard`, and
           # fail loudly if the string is gone rather than letting the rewrite
@@ -1133,19 +1407,78 @@ jobs:
             echo "::error::k8s/storage/ no longer renders 'storageClassName: cinder-csi'; the rewrite below would silently no-op"
             exit 1
           fi
-          sed 's|storageClassName: cinder-csi|storageClassName: standard|g' \
-            /tmp/storage-rendered.yaml > /tmp/storage.yaml
+          # 500Gi is right for de.NBI and absurd on a runner. local-path never
+          # checks capacity so it binds anyway, but nfs-provisioner statfs()es
+          # /export and refuses any workspace claim larger than the free space
+          # it reports - and a 500Gi Bound claim in the failure dump sends the
+          # next reader looking in the wrong place entirely.
+          if ! grep -q 'storage: 500Gi' /tmp/storage-rendered.yaml; then
+            echo "::error::k8s/storage/ no longer renders 'storage: 500Gi'; the size rewrite below would silently no-op"
+            exit 1
+          fi
+          sed -e 's|storageClassName: cinder-csi|storageClassName: standard|g' \
+              -e 's|storage: 500Gi|storage: 8Gi|' \
+              /tmp/storage-rendered.yaml > /tmp/storage.yaml
+          # The node CIDR in networkpolicy.yaml ships as RFC 5737 TEST-NET-1 and
+          # is documented there as a placeholder to be set before the first
+          # deploy. It is not cosmetic here: kindnetd runs kube-network-policies
+          # unconditionally, the namespace default-deny therefore applies, and
+          # the in-tree `nfs:` PVs this chart emits are mounted by the KUBELET
+          # from the node's own address in the host netns - matching no
+          # podSelector and no ipBlock. Left alone, every mount on a node not
+          # running Ganesha hangs, which the worker's DoNotSchedule spread
+          # guarantees will happen to exactly one replica.
+          if ! grep -q 'cidr: 192.0.2.0/24' /tmp/storage.yaml; then
+            echo "::error::k8s/storage/networkpolicy.yaml no longer carries the 192.0.2.0/24 placeholder; this rewrite would silently no-op and every cross-node mount would hang"
+            exit 1
+          fi
+          # Derived, not hardcoded: kind pins only its IPv6 subnet, so the IPv4
+          # one comes from Docker's default address pool and is not 172.18/16
+          # by contract.
+          NODE_CIDR=$(docker network inspect kind \
+            -f '{{range .IPAM.Config}}{{.Subnet}} {{end}}' \
+            | tr ' ' '\n' | grep -v ':' | grep -E '^[0-9.]+/[0-9]+$' | head -n1)
+          if [ -z "$NODE_CIDR" ]; then
+            echo "::error::could not read an IPv4 subnet from the kind docker network"
+            docker network inspect kind -f '{{json .IPAM.Config}}'
+            exit 1
+          fi
+          echo "admitting kind nodes on 2049 from $NODE_CIDR"
+          sed -i "s|cidr: 192.0.2.0/24|cidr: ${NODE_CIDR}|" /tmp/storage.yaml
+          # kubeconform validated /tmp/storage-rendered.yaml, not the file that
+          # is actually applied. Re-check the one value the seds above compute
+          # rather than copy, so a malformed CIDR fails here and names itself
+          # instead of surfacing as an API-server rejection mid-retry-loop.
+          if ! grep -Eq '^[[:space:]]*cidr: [0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/[0-9]+$' /tmp/storage.yaml; then
+            echo "::error::the rewritten NetworkPolicy CIDR is not a bare IPv4 block"
+            grep -n 'cidr:' /tmp/storage.yaml
+            exit 1
+          fi
+          applied=0
           for i in 1 2 3 4 5; do
             if kubectl apply -f /tmp/storage.yaml; then
+              applied=1
               echo "Storage apply succeeded on attempt $i"
               break
             fi
             echo "Attempt $i failed, retrying in ${i}0s..."
             sleep "${i}0"
           done
+          # `if ... then break; fi` never trips `set -e`, so without this the
+          # loop fell through on total failure and the step died on the bare
+          # NotFound from the substitution below - taking the authored error
+          # message and its diagnostic dump with it, in precisely the case the
+          # retry loop exists to report.
+          if [ "$applied" -ne 1 ]; then
+            echo "::error::could not apply k8s/storage/ after 5 attempts"
+            kubectl get all -n template-app-storage || true
+            exit 1
+          fi
           # `kubectl wait --all` reports success against zero objects, so the
-          # server has to be found before it is waited on.
-          WORKLOADS=$(kubectl get deploy,statefulset -n template-app-storage -o name)
+          # server has to be found before it is waited on. `|| true` because an
+          # empty result must reach the explicit check below rather than kill
+          # the step through `bash -e`.
+          WORKLOADS=$(kubectl get deploy,statefulset -n template-app-storage -o name 2>/dev/null || true)
           if [ -z "$WORKLOADS" ]; then
             echo "::error::k8s/storage/ created no Deployment or StatefulSet in template-app-storage"
             kubectl get all -n template-app-storage
@@ -1156,6 +1489,11 @@ jobs:
           done
           kubectl get pods,pvc -n template-app-storage -o wide
           kubectl get storageclass
+          # Diagnostic, never a gate: this is the filesystem nfs-provisioner
+          # measures when it decides whether a workspace claim fits.
+          kubectl exec -n template-app-storage \
+            "$(kubectl get pod -n template-app-storage -l app=nfs-server -o name | head -n1)" \
+            -- df -h /export || true
 
       - name: Deploy with Kustomize (full manifests, no filter)
         run: |
@@ -1186,7 +1524,14 @@ jobs:
             echo "::error::the rendered overlay has no 'storage: <N>Gi' request; the rewrite below would silently no-op"
             exit 1
           fi
-          sed -i -E 's|storage: [0-9]+Gi|storage: 4Gi|g' /tmp/manifests.yaml
+          # 1Gi, not 4Gi: nfs-provisioner statfs()es /export and refuses any
+          # claim larger than the free space it reports, and /export here is a
+          # local-path directory on a runner disk that has just absorbed the
+          # app image into both kind nodes' containerd. No assertion in this
+          # suite writes anywhere near a gigabyte - the largest is ~60 short
+          # log lines - so the headroom buys nothing and costs a 300s Bound
+          # timeout whose message is about bytes.
+          sed -i -E 's|storage: [0-9]+Gi|storage: 1Gi|g' /tmp/manifests.yaml
           for i in 1 2 3 4 5; do
             if kubectl apply -f /tmp/manifests.yaml; then
               echo "Deploy succeeded on attempt $i"
@@ -1207,6 +1552,17 @@ jobs:
           TRAEFIK_HOSTS=$(kubectl kustomize k8s/overlays/prod/ \
             | yq 'select(.kind == "IngressRoute") | .spec.routes[0].match' \
             | grep -oP "Host\(\`\K[^\`]+" | tr '\n' ' ')
+          # This shell has no pipefail, so a grep that matches nothing yields an
+          # empty string with exit 0 - and "Curl both hostnames via Traefik"
+          # below, the ONLY place this job exercises the app through Traefik,
+          # then iterates zero times and passes. Unlike the nginx job, which
+          # hardcodes its two hosts, this gate is entirely derived, so the
+          # emptiness has to be an error rather than a quiet no-op.
+          if [ -z "${TRAEFIK_HOSTS// /}" ]; then
+            echo "::error::no Host() found in the prod IngressRoute match expression; the curl gate below would test nothing"
+            kubectl kustomize k8s/overlays/prod/ | yq 'select(.kind == "IngressRoute")'
+            exit 1
+          fi
           echo "SLUG=$SLUG" >> "$GITHUB_ENV"
           echo "TRAEFIK_HOSTS=$TRAEFIK_HOSTS" >> "$GITHUB_ENV"
 
@@ -1294,22 +1650,44 @@ jobs:
             fi
             echo "port-forward / app not ready yet, retry $i"
           done
+          curled=0
           for host in ${TRAEFIK_HOSTS}; do
             curl -fsS --resolve "$host:8080:127.0.0.1" "http://$host:8080/_stcore/health"
             echo ""
             echo "$host -> 200 OK"
+            curled=$((curled + 1))
           done
+          # A loop that ran zero times is otherwise indistinguishable from a
+          # loop where every host answered 200.
+          if [ "$curled" -lt 2 ]; then
+            echo "::error::curled $curled host(s) through Traefik, expected 2"
+            exit 1
+          fi
 
       # Everything below is `.github/scripts/ci-assertions.sh`. Each assertion
       # discovers the namespace, the app label, the workspace claim and the
       # helper image from the cluster, so SLUG above is the only input any of
       # them needs.
       #
-      # The two placement assertions come first because they are seconds long
-      # and the storage ones are up to 45 minutes of deliberate timeouts. Both
-      # read the state that "Verify all deployments are available" has just
-      # established, and if the workers are not where they should be then
-      # everything after this is noise measured against a broken deployment.
+      # The NetworkPolicy assertion is first, and then the two placement ones,
+      # because all three are seconds long where the storage ones are up to 45
+      # minutes of deliberate timeouts. They read the state that "Verify all
+      # deployments are available" has just established, and if the workers are
+      # not where they should be then everything after this is noise measured
+      # against a broken deployment.
+      - name: Assert every node is admitted to the NFS share
+        # First, because it is the failure that disguises itself as all the
+        # others. The share is behind a namespace-wide default-deny, the
+        # in-tree `nfs:` PVs are mounted by the KUBELET from the node address,
+        # and the CIDR that admits them is rewritten by the storage deploy step
+        # rather than shipped - so if that rewrite ever no-ops, every mount on
+        # every node except Ganesha's own hangs, and the first thing anyone
+        # sees is an unrelated assertion timing out forty minutes later.
+        timeout-minutes: 2
+        run: |
+          source .github/scripts/ci-assertions.sh
+          assert_netpol_admits_every_node
+
       - name: Assert the worker replicas are spread across nodes
         # Step 4's acceptance criterion for the workers. Every replica Running
         # - so an unschedulable one fails here rather than being left out of
@@ -1413,12 +1791,22 @@ jobs:
           echo "=== storage classes and volumes ==="
           kubectl get storageclass || true
           kubectl get pv,pvc -A || true
+          # Unfiltered on purpose. SLUG is exported by "Discover overlay
+          # identity", which runs AFTER the storage steps - so any failure
+          # before it left ${SLUG} empty here, every `-l app=` matched nothing,
+          # and this dump reported an empty namespace on a cluster that simply
+          # had not been deployed to yet. In CI the openms namespace holds only
+          # this app, so dropping the selector cannot lose anything.
           echo "=== app pods describe ==="
-          kubectl describe pod -n openms -l app=${SLUG} || true
+          kubectl describe pod -n openms || true
           echo "=== app pod logs ==="
-          kubectl logs -n openms -l app=${SLUG} --tail=200 --all-containers --prefix || true
+          for p in $(kubectl get pods -n openms -o name 2>/dev/null); do
+            kubectl logs -n openms "$p" --all-containers --prefix --tail=200 || true
+          done
           echo "=== app pod previous logs (if crashed) ==="
-          kubectl logs -n openms -l app=${SLUG} --tail=200 --all-containers --prefix --previous || true
+          for p in $(kubectl get pods -n openms -o name 2>/dev/null); do
+            kubectl logs -n openms "$p" --all-containers --prefix --tail=200 --previous || true
+          done
           echo "=== traefik ingressroute ==="
           kubectl get ingressroute -A -o yaml || true
           echo "=== services + endpoints ==="
