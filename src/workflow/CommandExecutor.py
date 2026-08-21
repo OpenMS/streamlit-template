@@ -6,7 +6,7 @@ import threading
 from pathlib import Path
 from .Logger import Logger
 from .ParameterManager import ParameterManager, bool_param_paths_from_param_xml_ini
-from .settings_io import load_settings
+from .settings_io import load_settings, detect_cpu_quota
 import sys
 import importlib.util
 import json
@@ -41,9 +41,22 @@ class CommandExecutor:
 
         In local mode the workspace params.json may override the configured
         value - that is what the "Threads" widget writes, and it is only
-        rendered in local mode. Online the worker is shared and sized for a
-        known thread count, so the configured value stays authoritative and
-        user supplied params.json is ignored.
+        rendered in local mode. Online the worker is shared and sized by its
+        pod spec, so user supplied params.json is ignored.
+
+        Online the container's own cgroup CPU quota wins over
+        max_threads.online where one exists. The rq-worker runs at
+        requests.cpu == limits.cpu, so its pod spec IS its allocation, and the
+        memory-tier components size that per deployment - a 4 cpu worker and a
+        20 cpu worker cannot both be described by one number in settings.json,
+        and the number that was there described neither. max_threads.online
+        remains the fallback for every deployment where no quota is readable:
+        bare metal, docker-compose without a cpu limit, a dev box.
+
+        The trade-off, deliberately taken: an operator can no longer
+        under-subscribe a container that declares more CPU than it wants used.
+        For a Guaranteed pod that is the right call, because the declaration
+        and the allocation are the same thing.
 
         The result is memoised for the lifetime of this executor: run_topp()
         consults it twice, once for its own thread split and once more inside
@@ -59,7 +72,11 @@ class CommandExecutor:
         max_threads_config = settings.get("max_threads", {"local": 4, "online": 2})
 
         if settings.get("online_deployment", False):
-            value = max_threads_config.get("online", 2)
+            quota = detect_cpu_quota()
+            if quota is not None:
+                value = quota
+            else:
+                value = max_threads_config.get("online", 2)
         else:
             default = max_threads_config.get("local", 4)
             params = self.parameter_manager.get_parameters_from_json()

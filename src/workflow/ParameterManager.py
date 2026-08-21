@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import streamlit as st
 import time
+import uuid
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -184,14 +185,34 @@ def _write_parameter_file(params_file: Path, params: dict) -> None:
     This does not make concurrent writers safe - the last writer still wins the
     whole file, DEFECTS.md A2 - it only removes the torn file.
 
+    The scratch name carries a uuid as well as the pid. The pid alone is not
+    unique per writer: Streamlit serves every session from threads of ONE
+    process, and in a container that process is pid 1 in every replica - so two
+    sessions sharing a `?workspace=` link, or two pods now that the volume is
+    genuinely ReadWriteMany, resolved to the same scratch path and interleaved
+    their writes into it. Whichever one reached os.replace() second published a
+    file the other was still writing, which is precisely the torn file this
+    function exists to prevent.
+
+    flush + fsync before the rename because os.replace() orders the directory
+    entry, not the data behind it: on NFS a crash between the two can otherwise
+    publish a name pointing at unwritten blocks.
+
+    Deliberately not tempfile.mkstemp(): it creates at mode 0600, so params.json
+    would quietly change permissions the first time it was rewritten.
+
     Args:
         params_file: Destination path.
         params: Parameters to store.
     """
-    tmp_file = params_file.with_name(f".{params_file.name}.{os.getpid()}.tmp")
+    tmp_file = params_file.with_name(
+        f".{params_file.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp"
+    )
     try:
         with open(tmp_file, "w", encoding="utf-8") as f:
             json.dump(params, f, indent=4)
+            f.flush()
+            os.fsync(f.fileno())
         os.replace(tmp_file, params_file)
     except BaseException:
         # Never leave the scratch file behind next to params.json.

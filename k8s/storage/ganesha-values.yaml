@@ -177,6 +177,16 @@ storageClass:
   # destroys the evidence along with it.
   reclaimPolicy: Retain
 
+  # The only storageClass key that was still inherited, in a file that restates
+  # its defaults on purpose. The chart defaults it to `true`, and an in-tree
+  # `nfs:` PV has no volume expander behind it - so a `kubectl edit pvc` that
+  # raises the request is ACCEPTED, and then sits in FileSystemResizePending
+  # forever with no controller that will ever act on it. Rejecting the resize
+  # outright is the honest answer: growing this tier means growing Ganesha's
+  # backing Cinder volume, which is a separate operation on a different claim.
+  # `null` is the chart's documented off-switch and removes the field entirely.
+  allowVolumeExpansion: null
+
   # The released 1.8.0 chart defaults these to `vers=3`, which is wrong here
   # twice over: NFSv3 has no integrated locking, and it needs rpcbind (111),
   # mountd (20048) and a pinned nlockmgr port, so it could not work behind a

@@ -404,9 +404,18 @@ def test_malformed_parameter_file_does_not_read_as_empty(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def _executor_in_worker(tmp_path, monkeypatch, settings, params_json=None):
+def _executor_in_worker(
+    tmp_path, monkeypatch, settings, params_json=None, cpu_quota=None
+):
     """
     Build a CommandExecutor under the RQ work horse's real conditions.
+
+    `cpu_quota` pins what detect_cpu_quota() reports. It defaults to None — "no
+    readable CPU ceiling" — so the settings-driven tests below assert the
+    setting rather than whatever cgroup the test host happens to have. Left
+    unpinned they would pass on an unconstrained runner and fail the moment CI
+    ran inside a container with a quota, which is a fixture reading the
+    environment rather than a test.
 
     No ScriptRunContext means `st.session_state` is an empty global mock, so
     `st.session_state.get("settings", {})` yields {} and every configured value
@@ -426,6 +435,15 @@ def _executor_in_worker(tmp_path, monkeypatch, settings, params_json=None):
 
     monkeypatch.chdir(cwd)
     monkeypatch.delenv("REDIS_URL", raising=False)
+    # Reached through the function's own globals, not by dotted name: the
+    # import block above pops src.workflow.* from sys.modules, so a string
+    # target would re-import a *different* CommandExecutor module - one bound
+    # to the real streamlit - and patch a copy this executor never calls.
+    monkeypatch.setitem(
+        CommandExecutor._get_max_threads.__globals__,
+        "detect_cpu_quota",
+        lambda: cpu_quota,
+    )
 
     pm = ParameterManager(workflow_dir)
     if params_json is not None:
@@ -827,3 +845,142 @@ def test_max_threads_is_memoised(tmp_path, monkeypatch):
         "the thread budget was re-read mid-run; the two call sites in run_topp() "
         "would then disagree"
     )
+
+
+# ---------------------------------------------------------------------------
+# max_threads from the container's cgroup CPU quota
+#
+# The rq-worker runs at requests.cpu == limits.cpu (Guaranteed QoS), and the
+# memory-tier components size that per deployment - 4 cpu on the low tier, 20
+# on the high one. A single max_threads.online in settings.json cannot describe
+# both, so where a real quota is readable it wins, and the setting stays as the
+# fallback for deployments that have none.
+# ---------------------------------------------------------------------------
+
+
+def _settings_io_ns():
+    """
+    The real detect_cpu_quota and the module globals it reads its paths from.
+
+    Same reason as the monkeypatch in _executor_in_worker: src.workflow.* is
+    popped from sys.modules by the import block at the top of this file, so
+    `from src.workflow import settings_io` would build a SECOND module object
+    and patching its constants would leave the function under test reading the
+    real /sys/fs/cgroup. Going through __globals__ reaches the namespace the
+    live function actually closes over.
+    """
+    detect = CommandExecutor._get_max_threads.__globals__["detect_cpu_quota"]
+    return detect, detect.__globals__
+
+
+def test_cpu_quota_beats_configured_online_value(tmp_path, monkeypatch):
+    """A readable quota is the allocation; max_threads.online is only a guess."""
+    executor = _executor_in_worker(
+        tmp_path,
+        monkeypatch,
+        {"online_deployment": True, "max_threads": {"local": 9, "online": 2}},
+        cpu_quota=20,
+    )
+
+    assert executor._get_max_threads() == 20, (
+        "the container's own CPU quota was ignored in favour of a static "
+        "max_threads.online, which is wrong on every tier it was not written for"
+    )
+
+
+def test_cpu_quota_ignored_in_local_mode(tmp_path, monkeypatch):
+    """
+    Local mode keeps its params.json override.
+
+    The Threads widget is rendered only locally and writing it must keep
+    working, so quota detection has to stay confined to the online branch.
+    """
+    executor = _executor_in_worker(
+        tmp_path,
+        monkeypatch,
+        {"online_deployment": False, "max_threads": {"local": 9, "online": 2}},
+        params_json={"max_threads": 3},
+        cpu_quota=20,
+    )
+
+    assert executor._get_max_threads() == 3, (
+        "cgroup detection leaked into local mode and overrode the user's "
+        "Threads setting"
+    )
+
+
+def test_configured_online_value_used_when_no_quota(tmp_path, monkeypatch):
+    """No quota - bare metal, an unlimited container - falls back to settings."""
+    executor = _executor_in_worker(
+        tmp_path,
+        monkeypatch,
+        {"online_deployment": True, "max_threads": {"local": 9, "online": 6}},
+        cpu_quota=None,
+    )
+
+    assert executor._get_max_threads() == 6
+
+
+@pytest.mark.parametrize(
+    "cpu_max, expected",
+    [
+        ("400000 100000", 4),      # cpu: 4
+        ("2000000 100000", 20),    # cpu: 20, the high tier
+        ("150000 100000", 2),      # cpu: 1500m rounds UP, not down
+        ("50000 100000", 1),       # cpu: 500m floors at 1, never 0
+        ("max 100000", None),      # unconstrained
+        ("garbage", None),
+        ("", None),
+    ],
+)
+def test_detect_cpu_quota_cgroup_v2(tmp_path, monkeypatch, cpu_max, expected):
+    """cgroup v2 writes '<quota> <period>', or 'max <period>' when unlimited."""
+    detect, g = _settings_io_ns()
+
+    cpu_file = tmp_path / "cpu.max"
+    cpu_file.write_text(cpu_max, encoding="utf-8")
+    monkeypatch.setitem(g, "CGROUP_V2_CPU_MAX", cpu_file)
+    # Point v1 at somewhere absent, so a fallthrough cannot be mistaken for a
+    # v2 read succeeding.
+    monkeypatch.setitem(g, "CGROUP_V1_CPU_QUOTA", tmp_path / "nope" / "cfs_quota_us")
+
+    assert detect() == expected
+
+
+@pytest.mark.parametrize(
+    "quota, period, expected",
+    [
+        ("400000", "100000", 4),
+        ("-1", "100000", None),     # v1's documented "no limit"
+        ("0", "100000", None),      # not a legal quota; never a 0 thread budget
+    ],
+)
+def test_detect_cpu_quota_cgroup_v1(tmp_path, monkeypatch, quota, period, expected):
+    """cgroup v1 splits the same information across two files, -1 meaning none."""
+    detect, g = _settings_io_ns()
+
+    quota_file = tmp_path / "cpu.cfs_quota_us"
+    period_file = tmp_path / "cpu.cfs_period_us"
+    quota_file.write_text(quota, encoding="utf-8")
+    period_file.write_text(period, encoding="utf-8")
+    monkeypatch.setitem(g, "CGROUP_V2_CPU_MAX", tmp_path / "absent-cpu.max")
+    monkeypatch.setitem(g, "CGROUP_V1_CPU_QUOTA", quota_file)
+    monkeypatch.setitem(g, "CGROUP_V1_CPU_PERIOD", period_file)
+
+    assert detect() == expected
+
+
+def test_detect_cpu_quota_absent_everywhere(tmp_path, monkeypatch):
+    """
+    Off Linux, or outside a container, the answer is None - never 1.
+
+    A 1 here would silently serialise every workflow on a developer's laptop
+    and look like a performance problem rather than a configuration one.
+    """
+    detect, g = _settings_io_ns()
+
+    monkeypatch.setitem(g, "CGROUP_V2_CPU_MAX", tmp_path / "no-cpu.max")
+    monkeypatch.setitem(g, "CGROUP_V1_CPU_QUOTA", tmp_path / "no-quota")
+    monkeypatch.setitem(g, "CGROUP_V1_CPU_PERIOD", tmp_path / "no-period")
+
+    assert detect() is None

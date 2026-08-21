@@ -48,11 +48,13 @@ spec:
           # rejects the Deployment's pods outright as a LimitRange violation,
           # which reads as a quota error rather than a capacity one.
           #
-          # Down is the direction worth going anyway. The worker cannot spend
-          # 20: run_topp parallelises across files up to max_threads (2 in
-          # online deployments) and TOPPBase caps each tool through
-          # omp_set_num_threads, so bringing cpu down toward max_threads is
-          # the first thing worth tuning here - keeping requests == limits.
+          # This cpu value IS the worker's thread budget, not merely a ceiling
+          # on it. CommandExecutor._get_max_threads() reads the container's
+          # cgroup CPU quota in online mode, so run_topp parallelises across
+          # files up to 20 here and up to 4 on the low tier, with
+          # max_threads.online in settings.json left as the fallback for
+          # deployments that expose no quota. Changing cpu therefore changes
+          # throughput directly - keep requests == limits when you do.
           resources:
             requests:
               memory: "180Gi"
