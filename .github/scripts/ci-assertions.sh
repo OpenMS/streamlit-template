@@ -56,6 +56,10 @@
 
 CI_ASSERT_NS="${CI_ASSERT_NS:-openms}"
 CI_ASSERT_OVERLAY="${CI_ASSERT_OVERLAY:-k8s/overlays/prod}"
+# The overlay the kind jobs actually apply. Scanned for pinning too:
+# prod is the one under test, but a nodeSelector reintroduced here would
+# pin every pod CI ever schedules while prod stayed clean.
+CI_ASSERT_CI_OVERLAY="${CI_ASSERT_CI_OVERLAY:-k8s/overlays/ci}"
 CI_ASSERT_MOUNT="${CI_ASSERT_MOUNT:-/workspaces-streamlit-template}"
 CI_ASSERT_TIMEOUT="${CI_ASSERT_TIMEOUT:-180}"
 CI_ASSERT_BASE="${CI_ASSERT_BASE:-k8s/base}"
@@ -691,6 +695,35 @@ CLEAN
     return 0
 }
 
+_ci_scan_rendered_for_pinning() {
+    # Report every object in a RENDERED manifest stream that pins pods to a
+    # node. Factored out of assert_no_node_pinning_anywhere because three
+    # separate roots have to be scanned and they are not rendered the same way.
+    #
+    # PersistentVolume is skipped whole. `spec.nodeAffinity` on a PV is volume
+    # TOPOLOGY - where the bytes are - not pod pinning, and it is mandatory for
+    # a local volume. Nothing in the roots scanned today renders a PV, since the
+    # provisioner creates them at runtime, but this function now also reads the
+    # storage root, and a chart that ever emitted a static PV would otherwise
+    # turn invariant 1 permanently red with no way to make it green except
+    # weakening the check.
+    #
+    # $1 rendered file, $2 label printed against each hit.
+    awk -v src="$2" '
+        /^---[[:space:]]*$/ { kind = ""; name = ""; inmeta = 0; next }
+        /^kind:/ && kind == "" { kind = $2; next }
+        /^metadata:/ { inmeta = 1; next }
+        /^[^[:space:]]/ { inmeta = 0 }
+        inmeta && /^  name:/ && name == "" { name = $2 }
+        kind == "PersistentVolume" { next }
+        /^[[:space:]]*(nodeSelector|nodeName|nodeAffinity)[[:space:]]*:/ {
+            key = $1
+            sub(/:.*$/, "", key)
+            print "  " src ": " kind "/" name " pins pods with " key " (rendered line " NR ")"
+        }
+    ' "$1" || true
+}
+
 assert_no_node_pinning_anywhere() {
     # Invariant 1 as a test: Kubernetes decides placement, the config must not.
     # Static, so it needs no cluster:
@@ -701,45 +734,61 @@ assert_no_node_pinning_anywhere() {
     #      tree" excludes, and why)
     # It also stops the pinning being reintroduced by a later fork rebase,
     # which is exactly how it would come back.
-    _ci_require kubectl || return 1
+    # helm as well as kubectl, because the storage root is one of the three
+    # roots scanned below and inflating it shells out to helm. A hard
+    # requirement, deliberately not `if command -v helm`: a check that silently
+    # does less work when a tool is missing is the shape this round exists to
+    # remove.
+    _ci_require kubectl helm || return 1
     _ci_rc=0
 
-    _ci_rendered="$(mktemp)"
-    _ci_err="$(mktemp)"
-    if ! kubectl kustomize "$CI_ASSERT_OVERLAY" > "$_ci_rendered" 2>"$_ci_err"; then
-        _ci_fail "kubectl kustomize $CI_ASSERT_OVERLAY failed"
-        cat "$_ci_err" >&2 || true
-        rm -f "$_ci_rendered" "$_ci_err"
-        return 1
-    fi
-    rm -f "$_ci_err"
-    if [ ! -s "$_ci_rendered" ]; then
-        _ci_fail "kubectl kustomize $CI_ASSERT_OVERLAY rendered nothing - the check would pass vacuously"
+    # THREE rendered roots, not one. The Ganesha StatefulSet is the pod whose
+    # placement mattered most in this work, and until now nothing inspected it:
+    # the rendered half only ever rendered the prod overlay, and the text half
+    # below asks git, which prunes the vendored chart under k8s/storage/charts/
+    # through .gitignore. k8s/overlays/ci/ was equally unseen, and it is what
+    # the kind jobs actually apply - a nodeSelector reintroduced there would pin
+    # every pod CI ever schedules while prod stayed clean.
+    _ci_hits=""
+    for _ci_root in "$CI_ASSERT_OVERLAY" "$CI_ASSERT_CI_OVERLAY" "$CI_ASSERT_STORAGE_ROOT"; do
+        [ -n "$_ci_root" ] || continue
+        _ci_rendered="$(mktemp)"
+        _ci_err="$(mktemp)"
+        _ci_ok=0
+        if [ "$_ci_root" = "$CI_ASSERT_STORAGE_ROOT" ]; then
+            _ci_kustomize_storage > "$_ci_rendered" 2>"$_ci_err" && _ci_ok=1
+        else
+            kubectl kustomize "$_ci_root" > "$_ci_rendered" 2>"$_ci_err" && _ci_ok=1
+        fi
+        if [ "$_ci_ok" -ne 1 ]; then
+            _ci_fail "kubectl kustomize $_ci_root failed"
+            cat "$_ci_err" >&2 || true
+            rm -f "$_ci_rendered" "$_ci_err"
+            return 1
+        fi
+        rm -f "$_ci_err"
+        if [ ! -s "$_ci_rendered" ]; then
+            _ci_fail "kubectl kustomize $_ci_root rendered nothing - the check would pass vacuously"
+            rm -f "$_ci_rendered"
+            return 1
+        fi
+        _ci_found="$(_ci_scan_rendered_for_pinning "$_ci_rendered" "$_ci_root")"
         rm -f "$_ci_rendered"
-        return 1
-    fi
-
-    # `nodeSelectorTerms` on its own is PV node affinity, a property of a volume
-    # rather than pod pinning. `nodeAffinity` is caught by its own key one level
-    # above it, so filtering the inner one out loses nothing.
-    _ci_hits="$(awk '
-        /^---[[:space:]]*$/ { kind = ""; name = ""; inmeta = 0; next }
-        /^kind:/ && kind == "" { kind = $2; next }
-        /^metadata:/ { inmeta = 1; next }
-        /^[^[:space:]]/ { inmeta = 0 }
-        inmeta && /^  name:/ && name == "" { name = $2 }
-        /^[[:space:]]*(nodeSelector|nodeName|nodeAffinity)[[:space:]]*:/ {
-            key = $1
-            sub(/:.*$/, "", key)
-            print "  " kind "/" name " pins pods with " key " (rendered line " NR ")"
-        }
-    ' "$_ci_rendered" || true)"
+        if [ -n "$_ci_found" ]; then
+            if [ -z "$_ci_hits" ]; then
+                _ci_hits="$_ci_found"
+            else
+                _ci_hits="$(printf '%s
+%s' "$_ci_hits" "$_ci_found")"
+            fi
+        fi
+    done
     if [ -n "$_ci_hits" ]; then
-        _ci_fail "$CI_ASSERT_OVERLAY still renders objects that pin pods to nodes"
-        printf '%s\n' "$_ci_hits" >&2
+        _ci_fail "a rendered root still contains objects that pin pods to nodes"
+        printf '%s
+' "$_ci_hits" >&2
         _ci_rc=1
     fi
-    rm -f "$_ci_rendered"
 
     # The text half runs over COMMENT-STRIPPED lines. `.github/kind-config.yaml`
     # explains its control-plane taint patch in prose that contains the word
@@ -780,7 +829,7 @@ assert_no_node_pinning_anywhere() {
     fi
 
     if [ "$_ci_rc" -eq 0 ]; then
-        _ci_pass "no node pinning anywhere: $CI_ASSERT_OVERLAY renders none, and none of the $_ci_scanned files scanned under '$CI_ASSERT_PINNING_PATHS' references any (tracked + untracked; gitignored files, i.e. the vendored Ganesha chart, are not scanned)"
+        _ci_pass "no node pinning anywhere: $CI_ASSERT_OVERLAY, $CI_ASSERT_CI_OVERLAY and $CI_ASSERT_STORAGE_ROOT all render none - the last of those is what covers the vendored Ganesha chart, which the text scan cannot see - and none of the $_ci_scanned files scanned under '$CI_ASSERT_PINNING_PATHS' references any (tracked + untracked; gitignored files are not scanned)"
     fi
     return "$_ci_rc"
 }
@@ -1091,22 +1140,56 @@ assert_storage_identity_values() {
         _ci_rc=1
     fi
 
-    # 2. A fixed, pre-existing backing claim. Dynamic provisioning for the
-    #    BACKING volume means a re-provisioned claim is a different volume, and
-    #    the server comes back empty.
-    _ci_claim="$(yq 'select(.kind == "StatefulSet" or .kind == "Deployment")
+    # The workload selects below are scoped to the server's own app label, not
+    # to "any StatefulSet or Deployment". The chart is free to grow a second
+    # workload - a metrics exporter, a sidecar controller - and an unscoped
+    # select would then yield two lines, turning both checks into a spurious
+    # failure whose message names no workload at all.
+    #
+    # Derived from the values file rather than hardcoded: replacing one
+    # hand-synced literal with another is not an improvement. `nameOverride`
+    # is what the chart renders into `app:`; `fullnameOverride` names the
+    # objects and is a different string on purpose.
+    _ci_srv="$(yq '.nameOverride' "$CI_ASSERT_STORAGE_ROOT/ganesha-values.yaml" 2>/dev/null \
+        | grep -v '^null$' || true)"
+    if [ -z "$_ci_srv" ]; then
+        _ci_fail "could not read nameOverride from $CI_ASSERT_STORAGE_ROOT/ganesha-values.yaml; cannot identify the NFS server workload"
+        rm -f "$_ci_rendered"
+        return 1
+    fi
+
+    # 2. A fixed, pre-existing backing claim, whose name matches a PVC this
+    #    root actually renders. Dynamic provisioning for the BACKING volume
+    #    means a re-provisioned claim is a different volume and the server
+    #    comes back empty; a claim name that matches nothing means the pod
+    #    sits Pending forever. `persistence.existingClaim` in the values and
+    #    `metadata.name` in nfs-backing-pvc.yaml are hand-synced, and until
+    #    now nothing checked that they still agreed.
+    _ci_claim="$(yq "select((.kind == \"StatefulSet\" or .kind == \"Deployment\")
+                            and .metadata.labels.app == \"$_ci_srv\")
                      | .spec.template.spec.volumes[]?
                      | select(.persistentVolumeClaim)
-                     | .persistentVolumeClaim.claimName' "$_ci_rendered" \
+                     | .persistentVolumeClaim.claimName" "$_ci_rendered" \
         | grep -v '^---$' | grep -v '^$' | grep -v '^null$' || true)"
     if [ -z "$_ci_claim" ]; then
         _ci_fail "the NFS server mounts no persistentVolumeClaim, so persistence.existingClaim was dropped and its backing store is not a fixed volume"
         _ci_rc=1
+    else
+        # `else`, not a second unguarded `if`: on a dropped claim both branches
+        # would fire and the second message would misdirect.
+        _ci_pvc="$(yq 'select(.kind == "PersistentVolumeClaim") | .metadata.name' "$_ci_rendered" \
+            | grep -v '^---$' | grep -v '^$' | grep -v '^null$' || true)"
+        if [ "$_ci_claim" != "$_ci_pvc" ]; then
+            _ci_fail "the NFS server mounts claim '$_ci_claim' but $CI_ASSERT_STORAGE_ROOT renders PVC '${_ci_pvc:-none}': the pod would sit Pending on a claim that does not exist"
+            _ci_rc=1
+        fi
     fi
 
     # 3. Exactly one replica. Two Ganesha pods on one RWO claim is worse than
     #    the RollingUpdate deadlock `strategy: Recreate` exists to avoid.
-    _ci_replicas="$(yq 'select(.kind == "StatefulSet" or .kind == "Deployment") | .spec.replicas' "$_ci_rendered" \
+    _ci_replicas="$(yq "select((.kind == \"StatefulSet\" or .kind == \"Deployment\")
+                               and .metadata.labels.app == \"$_ci_srv\")
+                        | .spec.replicas" "$_ci_rendered" \
         | grep -v '^---$' | grep -v '^$' | grep -v '^null$' || true)"
     if [ "$_ci_replicas" != "1" ]; then
         _ci_fail "the NFS server renders replicas='${_ci_replicas:-unset}', not 1: a second pod cannot mount the RWO backing claim and would sit Pending forever"
@@ -1698,10 +1781,26 @@ assert_netpol_admits_every_node() {
     _ci_require kubectl jq python3 || return 1
     _ci_rc=0
 
+    # Rules are filtered by PORT before their CIDRs are collected. Reading
+    # `.from[].ipBlock.cidr` without descending into the sibling `.ports` -
+    # and flattening across every policy in the namespace while doing it -
+    # produces a check whose PASS string claims 2049 without ever having
+    # looked at a port. It is accidentally right on today's single-rule
+    # policy; change `port: 2049` to 111, or add any unrelated policy with a
+    # broad ipBlock, and it still reports "admitted on 2049" while every
+    # cross-node mount hangs. That is exactly the forty-minute Deployment
+    # timeout this assertion exists to pre-empt.
+    #
+    # A rule with no `ports` at all means all ports, so it is kept. `endPort`
+    # ranges and named ports are dropped by the equality: fail-safe, since the
+    # result is a spurious red rather than a false green.
     _ci_cidrs="$(kubectl get networkpolicy -n "$CI_ASSERT_STORAGE_NS" -o json 2>/dev/null \
-        | jq -r '[.items[].spec.ingress[]?.from[]?.ipBlock.cidr // empty] | .[]' 2>/dev/null || true)"
+        | jq -r '[.items[].spec.ingress[]?
+                  | select((.ports // []) | length == 0
+                           or any(.[]?; (.port == 2049) and ((.protocol // "TCP") == "TCP")))
+                  | .from[]?.ipBlock.cidr // empty] | .[]' 2>/dev/null || true)"
     if [ -z "$_ci_cidrs" ]; then
-        _ci_fail "the NetworkPolicies in $CI_ASSERT_STORAGE_NS admit no ipBlock at all, so no kubelet can mount the share"
+        _ci_fail "the NetworkPolicies in $CI_ASSERT_STORAGE_NS admit no ipBlock on TCP 2049, so no kubelet can mount the share"
         return 1
     fi
 
