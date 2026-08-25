@@ -27,8 +27,8 @@
 #
 # Each one fails the same way: silently, long after the change, as clients
 # getting ESTALE or as workspaces that appear to have vanished. If you think
-# one of them is wrong, read `node-distributed-denbi/A16-DECISIONS.md`
-# decision 3 and `A16-RUNBOOK.md` section 1 first.
+# one of them is wrong, read `docs/a16-storage-decisions.md`
+# decision 3 and `docs/a16-storage-runbook.md` section 1 first.
 #
 # ---------------------------------------------------------------------------
 # Names shared with the rest of k8s/storage/ - all four are hand-synced
@@ -41,9 +41,9 @@
 #                          provisioner name. The ClusterRole and
 #                          ClusterRoleBinding among them are cluster scoped,
 #                          hence the app prefix
-#   nfs-server             the `app` label on the server pod, which
-#                          A16-RUNBOOK.md addresses it by. Namespaced, so it
-#                          needs no prefix
+#   nfs-server             the `app` label on the server pod, which the
+#                          storage runbook addresses it by. Namespaced, so
+#                          it needs no prefix
 #   template-app-storage   the namespace, which must enforce the `privileged`
 #                          Pod Security Standard - see `securityContext` below
 #
@@ -69,8 +69,9 @@
 # of this template on one cluster would otherwise overwrite each other's RBAC,
 # so that one carries the app prefix. The `app` label is namespaced and the
 # namespace is already prefixed, so `nameOverride` stays short - which matters
-# because A16-RUNBOOK.md section 4.5, "the single most valuable test in the
-# list", restarts the server with `delete pod -l app=nfs-server`. Addressing it
+# because docs/a16-storage-runbook.md section 4.5, "the single most valuable
+# test in the list", restarts the server with `delete pod -l app=nfs-server`.
+# Addressing it
 # by label rather than by object name is also what keeps the runbook working
 # for a fork that changes the prefix.
 #
@@ -98,7 +99,7 @@ replicaCount: 1
 
 image:
   repository: registry.k8s.io/sig-storage/nfs-provisioner
-  # Digest-pinned per A16-DECISIONS decision 3: A16 is the destination rather
+  # Digest-pinned per docs/a16-storage-decisions.md decision 3: A16 is the destination rather
   # than a bridge, so the server image is a multi-year commitment and should
   # not move underneath us. The chart uses the digest and ignores the tag when
   # both are set; the tag is kept only to record which release the digest is.
@@ -171,7 +172,7 @@ storageClass:
 
   # NOT A TUNABLE.
   # The chart defaults to `Delete`, as does the cluster's `cinder-csi` class -
-  # that is the hazard recorded in DEFECTS.md. With `Retain`, deleting a PV or
+  # that is the hazard recorded in docs/storage-defect-register.md. With `Retain`, deleting a PV or
   # a PVC leaves the data on the backing volume instead of destroying it, and
   # in particular deleting a claim while diagnosing an outage no longer
   # destroys the evidence along with it.
@@ -190,7 +191,7 @@ storageClass:
   # The released 1.8.0 chart defaults these to `vers=3`, which is wrong here
   # twice over: NFSv3 has no integrated locking, and it needs rpcbind (111),
   # mountd (20048) and a pinned nlockmgr port, so it could not work behind a
-  # NetworkPolicy that admits 2049 alone. Per A16-DECISIONS decision 6:
+  # NetworkPolicy that admits 2049 alone. Per docs/a16-storage-decisions.md decision 6:
   #
   #   hard        a restart of this server must block the client and resume,
   #               never return a short read. A `soft` mount turns a routine
@@ -238,7 +239,7 @@ securityContext:
 # streams mean N sets of buffers and dirty pages inside one userspace process,
 # so under load it gets OOMKilled - and then every client hangs on its `hard`
 # mount, the restart burns the ~90s NFSv4 grace period, and the same load is
-# still waiting when it returns. A16-DECISIONS decision 3 calls this the one
+# still waiting when it returns. docs/a16-storage-decisions.md decision 3 calls this the one
 # genuine collapse mode in the design.
 #
 # Having explicit requests, and having them equal to the limits, is not
@@ -249,7 +250,7 @@ securityContext:
 # preference to the single worker that caused the pressure.
 #
 # The *numbers*, unlike the four settings above, are a tunable. They are
-# reasoned starting points rather than measurements, and A16-DECISIONS
+# reasoned starting points rather than measurements, and docs/a16-storage-decisions.md
 # decision 11 asks for a load test to find the real knee. Raise `memory` if
 # the pod is ever OOMKilled; raise `cpu` if
 # `container_cpu_cfs_throttled_seconds_total` climbs under load. Move requests

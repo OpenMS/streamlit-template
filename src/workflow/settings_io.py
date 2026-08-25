@@ -3,7 +3,7 @@ Streamlit free access to settings.json.
 
 Inside the RQ work horse there is no ScriptRunContext, so `st.session_state` is
 an empty global mock and every setting read through session state silently
-falls back to its hardcoded default there (DEFECTS.md G1). Code which has to
+falls back to its hardcoded default there (docs/storage-defect-register.md G1). Code which has to
 behave the same in the worker and in a Streamlit session reads the settings
 from disk through this module instead.
 

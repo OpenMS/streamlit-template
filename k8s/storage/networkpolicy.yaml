@@ -135,7 +135,7 @@ spec:
 # that is inherent to naming nodes by address, and is the reason the range
 # should be as tight as the cluster allows.
 #
-# A16-RUNBOOK.md section 3 step 5 carries this as an explicit cutover step.
+# docs/a16-storage-runbook.md section 3 step 5 carries this as an explicit cutover step.
 #
 # Cilium, which is what the de.NBI user clusters run: from 1.14 remote nodes
 # carry the `remote-node` identity, and CIDR rules do not select node

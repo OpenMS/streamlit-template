@@ -7,7 +7,7 @@ initContainer that runs, under ``replicas: 2``::
     mkdir -p /workspaces-streamlit-template/.demos
     cp -rn /app/example-data/workspaces/. /workspaces-streamlit-template/.demos/
 
-``cp -rn`` has two failure branches, one silent and one fatal (A16-RUNBOOK.md
+``cp -rn`` has two failure branches, one silent and one fatal (docs/a16-storage-runbook.md
 section 2):
 
 * **Silent** - ``cp`` writes in place with no temp-and-rename, so replica B can
@@ -148,7 +148,7 @@ def _require_seed_script():
             "The seeding logic is still inlined in "
             "k8s/base/streamlit-deployment.yaml, where it cannot be tested. "
             "Extract it to docker/seed-demos.sh and have the manifest run that "
-            "one copy (A16-RUNBOOK.md section 2)."
+            "one copy (docs/a16-storage-runbook.md section 2)."
         )
 
 

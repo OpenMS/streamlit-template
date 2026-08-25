@@ -71,7 +71,8 @@ helmCharts:
   # `releaseName` feeds the chart's object names and its `release:` label. The
   # chart's default naming is `<releaseName>-nfs-server-provisioner` unless the
   # values set `fullnameOverride`, which they do - nothing in this file can
-  # supply it. A16-RUNBOOK.md addresses the server by its `app: nfs-server`
+  # supply it. The storage runbook addresses the server by its
+  # `app: nfs-server`
   # label rather than by object name, so it is unaffected by that override.
   - name: nfs-server-provisioner
     repo: https://kubernetes-sigs.github.io/nfs-ganesha-server-and-external-provisioner/

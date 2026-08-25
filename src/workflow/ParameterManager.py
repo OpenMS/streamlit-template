@@ -183,7 +183,7 @@ def _write_parameter_file(params_file: Path, params: dict) -> None:
     reader sees either the whole old file or the whole new one.
 
     This does not make concurrent writers safe - the last writer still wins the
-    whole file, DEFECTS.md A2 - it only removes the torn file.
+    whole file, docs/storage-defect-register.md A2 - it only removes the torn file.
 
     The scratch name carries a uuid as well as the pid. The pid alone is not
     unique per writer: Streamlit serves every session from threads of ONE

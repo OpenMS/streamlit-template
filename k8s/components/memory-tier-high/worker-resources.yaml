@@ -35,7 +35,7 @@ spec:
           # scheduler holds whether a workflow is running or not, i.e. most of
           # a high-memory node. Fixed workers statically partition capacity;
           # that is the accepted trade at this cluster size (decision 10 in
-          # node-distributed-denbi/A16-DECISIONS.md), but a fork sharing its
+          # docs/a16-storage-decisions.md), but a fork sharing its
           # node pool with another heavy app should size the worker to its own
           # slice and lower BOTH blocks together rather than reopening a gap
           # between them.

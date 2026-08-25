@@ -15,11 +15,12 @@
 # `kubectl apply -k k8s/overlays/prod/` would fail half way through, and the
 # only way past it is deleting the claim - which, on a `cinder-csi` class that
 # reclaims with `Delete`, destroys the original volume. That volume is the
-# rollback: A16-RUNBOOK.md section 5 re-applies the previous manifests and
+# rollback: docs/a16-storage-runbook.md section 5 re-applies the previous manifests and
 # expects `<prefix>-workspaces-pvc` still to be there, Bound, holding the data.
 #
 # So the RWX claim gets a new name and the workload manifests are repointed at
-# it (A16-RUNBOOK.md section 3, steps 6 and 8). The old claim is left alone: it
+# it (docs/a16-storage-runbook.md section 3, steps 6 and 8). The old claim is
+# left alone: it
 # stays Bound to its Cinder volume, costs nothing but disk, and rollback is one
 # `kubectl apply` of the previous manifests with no restore step. Delete it by
 # hand once the cutover has been stable for a week - never as part of a deploy.

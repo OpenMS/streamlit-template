@@ -3,7 +3,7 @@ Parameter-file integrity tests.
 
 These pin the contract that a *failed read* of ``params.json`` must never turn
 into a *write* that erases it — the live data-loss bug recorded as A2 in
-``node-distributed-denbi/DEFECTS.md`` and the first item of Step 1 in the
+``docs/storage-defect-register.md`` and the first item of Step 1 in the
 multi-node distribution plan.
 
 The bug, end to end:
@@ -220,7 +220,7 @@ def _require_strict_reader(pm: ParameterManager):
 
 
 # ---------------------------------------------------------------------------
-# The erasure bug (DEFECTS.md A2)
+# The erasure bug (docs/storage-defect-register.md A2)
 # ---------------------------------------------------------------------------
 
 
@@ -263,7 +263,7 @@ def test_corrupt_read_does_not_erase(tmp_path):
     for key, value in FULL_PARAMS.items():
         assert key in surviving, (
             f"'{key}' was erased from params.json by a save that could not read "
-            "it first (DEFECTS.md A2): the failed read became an empty dict and "
+            "it first (docs/storage-defect-register.md A2): the failed read became an empty dict and "
             f"the merge wrote back only this session's subset {sorted(surviving)}"
         )
         if key != CHANGED_KEY:
@@ -400,7 +400,7 @@ def test_malformed_parameter_file_does_not_read_as_empty(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# max_threads outside a Streamlit session (DEFECTS.md G1)
+# max_threads outside a Streamlit session (docs/storage-defect-register.md G1)
 # ---------------------------------------------------------------------------
 
 
@@ -460,7 +460,7 @@ def test_max_threads_without_session_state(tmp_path, monkeypatch):
     `st.session_state.get("settings", {})` is {} inside the work horse, so the
     online branch of _get_max_threads() (CommandExecutor.py:41) is unreachable
     there and the local branch's hardcoded 4 wins — dead config since #333
-    (DEFECTS.md G1), and a correctness bug once a worker has a hard memory
+    (docs/storage-defect-register.md G1), and a correctness bug once a worker has a hard memory
     limit sized for a known thread count.
     """
     executor = _executor_in_worker(
@@ -496,7 +496,7 @@ def test_max_threads_online_ignores_workspace_params_json(tmp_path, monkeypatch)
     In online mode the workspace's params.json must not set the thread budget.
 
     Workers are shared and params.json is user-supplied — the import uploader
-    writes it verbatim, with no reserved-key filter (DEFECTS.md G2) — so the
+    writes it verbatim, with no reserved-key filter (docs/storage-defect-register.md G2) — so the
     per-workspace value may only apply to the local, single-user deployment.
     """
     executor = _executor_in_worker(
