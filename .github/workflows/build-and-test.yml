@@ -1264,6 +1264,47 @@ jobs:
           echo "=== ingress-nginx controller logs ==="
           kubectl logs -n ingress-nginx -l app.kubernetes.io/component=controller --tail=200 || true
 
+      - name: Release the NFS mounts before kind tears the nodes down
+        # `docker rm -f` on a kind node whose kubelet still holds a `hard`
+        # NFSv4.1 mount cannot complete: the Ganesha server is a pod INSIDE the
+        # cluster being destroyed, so it dies alongside its own clients, the
+        # pending RPCs block in uninterruptible sleep, SIGKILL is ignored and
+        # containerd never sees an exit event. dockerd gives up after ~12s and
+        # `Post Create kind cluster` fails - in all 8 kind jobs, on both arches.
+        #
+        # This has to be the LAST NORMAL STEP: every normal step runs before any
+        # post step, and no `if:` on a normal step can observe a post step's
+        # failure (which is also why "Dump cluster state on failure" above is
+        # `skipped` in a job that is red only at teardown).
+        #
+        # Order is load-bearing. Diagnostics FIRST, because after the deletes
+        # there is nothing left to name. Then clients, while the server is still
+        # up and their unmounts can complete. Then a lazy detach for whatever the
+        # kubelet has not released - `-l` returns without waiting on the server,
+        # so it cannot itself hang. The server LAST: killing it while a client
+        # mount is still attached is the deadlock verbatim.
+        #
+        # This step gates nothing; every command is `|| true`.
+        if: always()
+        run: |
+          CL=test-cluster
+          echo "=== NFS mounts and D-state processes, before teardown ==="
+          for n in $(kind get nodes --name "$CL" 2>/dev/null); do
+            echo "--- $n"
+            docker exec "$n" sh -c 'grep -E " nfs4? " /proc/self/mounts' || true
+            docker exec "$n" sh -c 'ps -eo pid,stat,wchan:24,comm 2>/dev/null | awk "\$2 ~ /D/"' || true
+          done
+          kubectl delete ns openms --wait=true --timeout=120s || true
+          for n in $(kind get nodes --name "$CL" 2>/dev/null); do
+            docker exec "$n" sh -c 'umount -f -l -a -t nfs,nfs4' || true
+          done
+          kubectl delete ns template-app-storage --wait=false || true
+          echo "=== residual NFS mounts (expected: none) ==="
+          for n in $(kind get nodes --name "$CL" 2>/dev/null); do
+            echo "--- $n"
+            docker exec "$n" sh -c 'grep -E " nfs4? " /proc/self/mounts' || true
+          done
+
   test-traefik:
     needs: [build-amd64, build-arm64]
     runs-on: ${{ matrix.runner }}
@@ -1813,3 +1854,27 @@ jobs:
           kubectl get svc,endpoints -n openms || true
           echo "=== traefik controller logs ==="
           kubectl logs -n traefik -l app.kubernetes.io/name=traefik --tail=200 || true
+
+      - name: Release the NFS mounts before kind tears the nodes down
+        # Identical to the nginx job's copy apart from the cluster name; see the
+        # long note there for why this is the last normal step and why the order
+        # of the four operations below cannot be rearranged.
+        if: always()
+        run: |
+          CL=traefik-test
+          echo "=== NFS mounts and D-state processes, before teardown ==="
+          for n in $(kind get nodes --name "$CL" 2>/dev/null); do
+            echo "--- $n"
+            docker exec "$n" sh -c 'grep -E " nfs4? " /proc/self/mounts' || true
+            docker exec "$n" sh -c 'ps -eo pid,stat,wchan:24,comm 2>/dev/null | awk "\$2 ~ /D/"' || true
+          done
+          kubectl delete ns openms --wait=true --timeout=120s || true
+          for n in $(kind get nodes --name "$CL" 2>/dev/null); do
+            docker exec "$n" sh -c 'umount -f -l -a -t nfs,nfs4' || true
+          done
+          kubectl delete ns template-app-storage --wait=false || true
+          echo "=== residual NFS mounts (expected: none) ==="
+          for n in $(kind get nodes --name "$CL" 2>/dev/null); do
+            echo "--- $n"
+            docker exec "$n" sh -c 'grep -E " nfs4? " /proc/self/mounts' || true
+          done
