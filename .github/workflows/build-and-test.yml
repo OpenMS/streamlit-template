@@ -795,7 +795,18 @@ jobs:
 
       - name: Install nginx ingress controller
         run: |
-          kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
+          # Pinned. `main` was the last unpinned upstream of the class that took
+          # this whole pipeline down through Helm 4 - and here the usual
+          # moving-ref trap has inverted into rot, because the repository is
+          # archived: the ref will not move again, but the kind node image will.
+          #
+          # controller-v1.15.1, not v1.14.0: upstream's support table lists
+          # v1.14.0 as covering k8s 1.30-1.34, and the cluster created above is
+          # kindest/node:v1.35.0. `node_image` is deliberately left unpinned on
+          # kind-action, so the cluster's k8s version floats upward while this
+          # manifest does not - when the next kind bump lands, this tag is the
+          # thing to re-check.
+          kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.15.1/deploy/static/provider/kind/deploy.yaml
           kubectl wait --namespace ingress-nginx --for=condition=ready pod --selector=app.kubernetes.io/component=controller --timeout=90s
 
       - name: Set up Helm
@@ -826,12 +837,20 @@ jobs:
         # pods come up. An in-tree `nfs:` PV is mounted by the kubelet on the
         # node, which needs /sbin/mount.nfs there; without this line a missing
         # helper surfaces several steps later as "wrong fs type, bad option,
-        # bad superblock" in a pod event. Same probe as A16-RUNBOOK.md section 0
-        # runs against the real nodes.
+        # bad superblock" in a pod event. Same probe as the storage runbook's
+        # section 0 runs against the real nodes.
+        #
+        # The /proc/filesystems half needs the modprobe and the explainer: the
+        # nfs module autoloads on FIRST MOUNT, and this step runs before any
+        # mount exists, so the grep printed nothing on every node of every job
+        # in a run where the same nodes went on to mount `type=nfs4 vers=4.1`
+        # two minutes later. This is the line a triager reads to decide whether
+        # the module is present, and unqualified it answered "absent" about a
+        # perfectly working host.
         run: |
           for n in $(kind get nodes --name test-cluster); do
             echo "--- $n"
-            docker exec "$n" sh -c 'ls -l /sbin/mount.nfs* /usr/sbin/mount.nfs* 2>&1; echo ---; grep nfs /proc/filesystems' || true
+            docker exec "$n" sh -c 'ls -l /sbin/mount.nfs* /usr/sbin/mount.nfs* 2>&1; echo ---; modprobe nfs 2>/dev/null || true; grep nfs /proc/filesystems || echo "(nfs absent from /proc/filesystems - the module autoloads on first mount, so this is only conclusive once one has been attempted)"' || true
           done
 
       - name: Deploy the storage root (NFS-Ganesha)
@@ -1000,14 +1019,26 @@ jobs:
           # log lines - so the headroom buys nothing and costs a 300s Bound
           # timeout whose message is about bytes.
           sed -i -E 's|storage: [0-9]+Gi|storage: 1Gi|g' /tmp/manifests.yaml
+          applied=0
           for i in 1 2 3 4 5; do
             if kubectl apply -f /tmp/manifests.yaml; then
+              applied=1
               echo "Deploy succeeded on attempt $i"
               break
             fi
             echo "Attempt $i failed, retrying in ${i}0s..."
             sleep "${i}0"
           done
+          # Same fix as the storage apply loop above. `kubectl apply` inside an
+          # `if` condition is exempt from `set -e`, so on five failures the last
+          # command run is `sleep`, the loop exits 0, and the step passes having
+          # created nothing - surfacing three steps later as "Wait for Redis to
+          # be ready" timing out on a pod that never existed.
+          if [ "$applied" -ne 1 ]; then
+            echo "::error::could not apply the overlay after 5 attempts"
+            kubectl get all -n openms || true
+            exit 1
+          fi
 
       - name: Discover overlay identity
         # Still read off prod, even though ci/ is what was applied: the CI
@@ -1406,12 +1437,20 @@ jobs:
         # pods come up. An in-tree `nfs:` PV is mounted by the kubelet on the
         # node, which needs /sbin/mount.nfs there; without this line a missing
         # helper surfaces several steps later as "wrong fs type, bad option,
-        # bad superblock" in a pod event. Same probe as A16-RUNBOOK.md section 0
-        # runs against the real nodes.
+        # bad superblock" in a pod event. Same probe as the storage runbook's
+        # section 0 runs against the real nodes.
+        #
+        # The /proc/filesystems half needs the modprobe and the explainer: the
+        # nfs module autoloads on FIRST MOUNT, and this step runs before any
+        # mount exists, so the grep printed nothing on every node of every job
+        # in a run where the same nodes went on to mount `type=nfs4 vers=4.1`
+        # two minutes later. This is the line a triager reads to decide whether
+        # the module is present, and unqualified it answered "absent" about a
+        # perfectly working host.
         run: |
           for n in $(kind get nodes --name traefik-test); do
             echo "--- $n"
-            docker exec "$n" sh -c 'ls -l /sbin/mount.nfs* /usr/sbin/mount.nfs* 2>&1; echo ---; grep nfs /proc/filesystems' || true
+            docker exec "$n" sh -c 'ls -l /sbin/mount.nfs* /usr/sbin/mount.nfs* 2>&1; echo ---; modprobe nfs 2>/dev/null || true; grep nfs /proc/filesystems || echo "(nfs absent from /proc/filesystems - the module autoloads on first mount, so this is only conclusive once one has been attempted)"' || true
           done
 
       - name: Deploy the storage root (NFS-Ganesha)
@@ -1573,14 +1612,26 @@ jobs:
           # log lines - so the headroom buys nothing and costs a 300s Bound
           # timeout whose message is about bytes.
           sed -i -E 's|storage: [0-9]+Gi|storage: 1Gi|g' /tmp/manifests.yaml
+          applied=0
           for i in 1 2 3 4 5; do
             if kubectl apply -f /tmp/manifests.yaml; then
+              applied=1
               echo "Deploy succeeded on attempt $i"
               break
             fi
             echo "Attempt $i failed, retrying in ${i}0s..."
             sleep "${i}0"
           done
+          # Same fix as the storage apply loop above. `kubectl apply` inside an
+          # `if` condition is exempt from `set -e`, so on five failures the last
+          # command run is `sleep`, the loop exits 0, and the step passes having
+          # created nothing - surfacing three steps later as "Wait for Redis to
+          # be ready" timing out on a pod that never existed.
+          if [ "$applied" -ne 1 ]; then
+            echo "::error::could not apply the overlay after 5 attempts"
+            kubectl get all -n openms || true
+            exit 1
+          fi
 
       - name: Discover overlay identity
         # Read off prod, even though ci/ is what was applied: the CI overlay
@@ -1591,7 +1642,7 @@ jobs:
         run: |
           SLUG=$(yq '.commonLabels.app' k8s/overlays/prod/kustomization.yaml)
           TRAEFIK_HOSTS=$(kubectl kustomize k8s/overlays/prod/ \
-            | yq 'select(.kind == "IngressRoute") | .spec.routes[0].match' \
+            | yq 'select(.kind == "IngressRoute") | .spec.routes[].match' \
             | grep -oP "Host\(\`\K[^\`]+" | tr '\n' ' ')
           # This shell has no pipefail, so a grep that matches nothing yields an
           # empty string with exit 0 - and "Curl both hostnames via Traefik"
