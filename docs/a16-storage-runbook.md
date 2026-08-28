@@ -10,7 +10,7 @@
 
 # A16 cutover runbook — PR 2
 
-Companion to `A16-DECISIONS.md`. That file records *what* was decided; this one
+Companion to `docs/a16-storage-decisions.md`. That file records *what* was decided; this one
 records *how to do it and how to undo it*.
 
 Closes open items 3, 4, 5 and 6. Items 1 (`mount.nfs` probe) and 2 (memory-ceiling
@@ -24,7 +24,8 @@ declaration) remain open and are noted where they bite.
 or need csi-driver-nfs in `kube-system`:
 
 ```bash
-kubectl debug node/lowmem-6498ddb8c8-rmnbx -n openms -it --image=busybox -- \
+kubectl get nodes -o name          # then, for EACH node returned:
+kubectl debug node/<node-name> -n openms -it --image=busybox -- \
   sh -c 'ls -l /host/sbin/mount.nfs* /host/usr/sbin/mount.nfs* 2>&1;
          echo ---; grep nfs /host/proc/filesystems'
 ```

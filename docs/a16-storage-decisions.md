@@ -31,7 +31,7 @@ provision a fresh Cinder volume, repoint the claim, restart. Losing in-flight
 workspaces is acceptable — the app already deletes them on a timer.
 
 Backups are handled with OpenStack tooling, outside Kubernetes, which also
-defuses the `reclaimPolicy: Delete` hazard recorded in `DEFECTS.md`.
+defuses the `reclaimPolicy: Delete` hazard recorded in `docs/storage-defect-register.md`.
 
 > Open: confirm those are Cinder *backups* rather than only *snapshots*. If
 > snapshots live in the same Ceph pool as the volume, a backend failure takes
@@ -195,7 +195,7 @@ workers with large ones. The cluster then places them wherever they fit.
 
 Why this is better than what the interview had landed on:
 
-- **It deletes a defect instead of working around it.** `D2` in `DEFECTS.md` — the
+- **It deletes a defect instead of working around it.** `D2` in `docs/storage-defect-register.md` — the
   unscoped `nodeSelector` patching `kind: Deployment` with no name — stops needing
   to be scoped, because the `nodeselector.yaml` patches are removed outright. The
   `memory-tier-*` components survive as *resource* patches, which is exactly what
@@ -273,10 +273,10 @@ suggests.
 |---|---|---|
 | 1 | Does the node have `mount.nfs`? Decides in-tree `nfs:` PV vs csi-driver-nfs in `kube-system`. Probe: `kubectl debug node/<n> -n openms …` | PR 2 |
 | 2 | How a workflow **declares its memory ceiling** — constant, class attribute, or a callable over (params, inputs, threads). The routing function is trivial; the declaration is the design. Research outline at `../job-tier-routing` | PR 3 |
-| ~~3~~ | ~~Fixed fsid value~~ — **closed**: `Export_Id: 1`, `deviceBasedFsids: false`, never changed. See `A16-RUNBOOK.md` §1 | — |
-| ~~4~~ | ~~`.demos` seeding race~~ — **closed**: copy-to-temp plus `mv -T`, script in `A16-RUNBOOK.md` §2 | — |
-| ~~5~~ | ~~Cutover verification~~ — **closed**: six ordered pass/fail assertions in `A16-RUNBOOK.md` §4 | — |
-| ~~6~~ | ~~Rollback procedure~~ — **closed**: `A16-RUNBOOK.md` §5. Cheap by construction, since the cutover never touches the original volume | — |
+| ~~3~~ | ~~Fixed fsid value~~ — **closed**: `Export_Id: 1`, `deviceBasedFsids: false`, never changed. See `docs/a16-storage-runbook.md` §1 | — |
+| ~~4~~ | ~~`.demos` seeding race~~ — **closed**: copy-to-temp plus `mv -T`, script in `docs/a16-storage-runbook.md` §2 | — |
+| ~~5~~ | ~~Cutover verification~~ — **closed**: six ordered pass/fail assertions in `docs/a16-storage-runbook.md` §4 | — |
+| ~~6~~ | ~~Rollback procedure~~ — **closed**: `docs/a16-storage-runbook.md` §5. Cheap by construction, since the cutover never touches the original volume | — |
 
 ---
 
@@ -306,4 +306,4 @@ Codebase, verified by reading:
 - `os.getpid()` is not unique per session: Streamlit runs sessions as threads
   within one process.
 
-New defect found during the interview — see `DEFECTS.md` entry D7.
+New defect found during the interview — see `docs/storage-defect-register.md` entry D7.
