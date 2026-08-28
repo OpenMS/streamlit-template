@@ -1920,7 +1920,7 @@ assert_netpol_string_matches_overlay() {
         # app=<slug>" was an over-claim: the same policy set also admits a raw
         # ipBlock, which this function bounds but cannot verify against the real
         # cluster - only assert_netpol_admits_every_node can do that.
-        _ci_pass "the storage NetworkPolicy admits app='$_ci_expected' in namespace '$_ci_expected_ns', ANDed in one peer, on TCP 2049 alone, plus ipBlock $(printf '%s' "$_ci_cidrs" | tr '\n' ' ')for kubelet mounts"
+        _ci_pass "the storage NetworkPolicy admits app='$_ci_expected' in namespace '$_ci_expected_ns', ANDed in one peer, on TCP 2049 alone, plus ipBlock $(printf '%s' "$_ci_cidrs" | tr '\n' ' ') for kubelet mounts"
     fi
     return "$_ci_rc"
 }
