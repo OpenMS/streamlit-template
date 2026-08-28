@@ -32,6 +32,8 @@
 #                                    the overlay's namespace, on 2049 alone
 #   assert_no_node_pinning_anywhere  static; no nodeSelector, nodeName,
 #                                    nodeAffinity or memory tier
+#   assert_doc_links_resolve         static; every backticked *.md path in
+#                                    tracked Markdown names a tracked file
 #   assert_workers_spread_across_nodes
 #                                    every worker replica is Running, on more
 #                                    than one node, within the declared maxSkew
@@ -750,8 +752,19 @@ assert_no_node_pinning_anywhere() {
     # the kind jobs actually apply - a nodeSelector reintroduced there would pin
     # every pod CI ever schedules while prod stayed clean.
     _ci_hits=""
+    _ci_roots_scanned=""
     for _ci_root in "$CI_ASSERT_OVERLAY" "$CI_ASSERT_CI_OVERLAY" "$CI_ASSERT_STORAGE_ROOT"; do
-        [ -n "$_ci_root" ] || continue
+        # An empty root is a hard failure, not a `continue`. All three are
+        # ${VAR:-default} overridable, so emptying one silently removed a third
+        # of this check while the PASS below went on naming all three - the
+        # exact silent-skip shape the hard `_ci_require kubectl helm` above was
+        # added to remove. Do NOT relax this into an opt-out "to unblock CI":
+        # that would make an empty root the documented way to switch the check
+        # off while its message keeps claiming full coverage.
+        if [ -z "$_ci_root" ]; then
+            _ci_fail "one of CI_ASSERT_OVERLAY / CI_ASSERT_CI_OVERLAY / CI_ASSERT_STORAGE_ROOT is empty, so a third of this check would be skipped in silence"
+            return 1
+        fi
         _ci_rendered="$(mktemp)"
         _ci_err="$(mktemp)"
         _ci_ok=0
@@ -772,6 +785,17 @@ assert_no_node_pinning_anywhere() {
             rm -f "$_ci_rendered"
             return 1
         fi
+        # One line per root as it is scanned. Without this the step emitted only
+        # its PASS sentence, so nothing in the log substantiated the claim that
+        # three roots had been rendered at all.
+        # `^kind:` rather than `^---`: kustomize writes a separator BETWEEN
+        # documents, so counting those is always one short. Verified against
+        # the prod overlay - 13 objects, 13 `^kind:` lines, 12 separators.
+        # Counted with grep rather than yq so this assertion keeps requiring
+        # only kubectl and helm.
+        printf 'rendered %s: %s documents\n' "$_ci_root" \
+            "$(grep -c '^kind:' "$_ci_rendered" 2>/dev/null || echo '?')"
+        _ci_roots_scanned="$_ci_roots_scanned $_ci_root"
         _ci_found="$(_ci_scan_rendered_for_pinning "$_ci_rendered" "$_ci_root")"
         rm -f "$_ci_rendered"
         if [ -n "$_ci_found" ]; then
@@ -808,7 +832,17 @@ assert_no_node_pinning_anywhere() {
         _ci_scanned=$((_ci_scanned + 1))
         _ci_tmp="$(mktemp)"
         sed 's/#.*$//' "$_ci_file" > "$_ci_tmp"
-        _ci_found="$(grep -nE "$_ci_pin_re" "$_ci_tmp" | grep -v 'nodeSelectorTerms' || true)"
+        # No `| grep -v nodeSelectorTerms` here. That filter looked like it was
+        # suppressing a false positive, and was not: `nodeSelectorTerms:` on its
+        # own line does not match _ci_pin_re at all, because the pattern requires
+        # `nodeSelector` to be followed by `:`, end-of-line or `/`, and there it
+        # is followed by `Terms:`. Its only effect was to drop lines that DID
+        # match and happened to contain the substring - i.e. a flow-style
+        # `nodeAffinity: {required: {nodeSelectorTerms: [...]}}`, which is
+        # genuine pod pinning. PersistentVolume topology is not a concern for
+        # this half: the only `kind: PersistentVolume` in the tree is inside the
+        # vendored chart's README, which .gitignore prunes from _ci_pinning_files.
+        _ci_found="$(grep -nE "$_ci_pin_re" "$_ci_tmp" || true)"
         rm -f "$_ci_tmp"
         if [ -n "$_ci_found" ]; then
             _ci_found="$(printf '%s' "$_ci_found" | sed "s|^|  $_ci_file:|")"
@@ -829,7 +863,82 @@ assert_no_node_pinning_anywhere() {
     fi
 
     if [ "$_ci_rc" -eq 0 ]; then
-        _ci_pass "no node pinning anywhere: $CI_ASSERT_OVERLAY, $CI_ASSERT_CI_OVERLAY and $CI_ASSERT_STORAGE_ROOT all render none - the last of those is what covers the vendored Ganesha chart, which the text scan cannot see - and none of the $_ci_scanned files scanned under '$CI_ASSERT_PINNING_PATHS' references any (tracked + untracked; gitignored files are not scanned)"
+        # Built from the roots actually scanned, not from the three variables.
+        # Interpolating the variables meant an emptied one degraded the sentence
+        # to "prod,  and k8s/storage", a double space being the only trace that
+        # a third of the check had not run.
+        _ci_pass "no node pinning anywhere:${_ci_roots_scanned} all render none - the storage root is what covers the vendored Ganesha chart, which the text scan cannot see - and none of the $_ci_scanned files scanned under '$CI_ASSERT_PINNING_PATHS' references any (tracked + untracked; gitignored files are not scanned)"
+    fi
+    return "$_ci_rc"
+}
+
+assert_doc_links_resolve() {
+    # Every `some/file.md` written in backticks inside a tracked Markdown file
+    # has to name a tracked path.
+    #
+    # This exists because the commit that moved three research documents under
+    # docs/ repointed every reference to them from k8s/, .github/, src/ and
+    # tests/ - and missed the eight cross-references the three documents make to
+    # each other, which kept their pre-move names. One of those was the rollback
+    # procedure for the storage cutover, cited by k8s/base/workspace-pvc.yaml as
+    # authoritative: the outer hop resolved, the inner one did not.
+    #
+    # Deliberately general rather than a grep for the three old filenames. That
+    # grep would itself be a hand-synced literal, correct until the fourth
+    # rename and silent afterwards - the same class of defect it would be
+    # guarding against.
+    #
+    # Backticks only: no Markdown-link form (`[text](path.md)`) appears in this
+    # tree, and matching one would also have to cope with anchors and relative
+    # traversal. If that form is ever introduced, extend this rather than
+    # assuming it is covered.
+    _ci_require git || return 1
+    _ci_rc=0
+
+    _ci_docs="$(git ls-files '*.md' 2>/dev/null || true)"
+    if [ -z "$_ci_docs" ]; then
+        _ci_fail "no tracked Markdown files found; the doc link check would pass vacuously"
+        return 1
+    fi
+
+    # `-o` so one line per token, not per line of prose; `sort -u` because the
+    # same target is cited many times and a dangling one should be reported once.
+    _ci_refs="$(printf '%s\n' "$_ci_docs" \
+        | xargs grep -ohE '`[A-Za-z0-9_./-]+\.md`' 2>/dev/null \
+        | tr -d '`' | sort -u || true)"
+    if [ -z "$_ci_refs" ]; then
+        _ci_fail "no backticked *.md references found in $(printf '%s\n' "$_ci_docs" | wc -l) tracked Markdown files; the extraction has stopped matching"
+        return 1
+    fi
+
+    # Resolved against the repository root first, then against docs/, because
+    # both forms are in use: k8s/base/workspace-pvc.yaml writes the full
+    # `docs/a16-storage-runbook.md`, while a sibling reference inside docs/
+    # may reasonably write just `build_app.md`.
+    _ci_dangling=""
+    _ci_checked=0
+    for _ci_ref in $_ci_refs; do
+        _ci_checked=$((_ci_checked + 1))
+        if git ls-files --error-unmatch "$_ci_ref" >/dev/null 2>&1; then
+            continue
+        fi
+        if git ls-files --error-unmatch "docs/$_ci_ref" >/dev/null 2>&1; then
+            continue
+        fi
+        _ci_dangling="$_ci_dangling $_ci_ref"
+    done
+
+    if [ -n "$_ci_dangling" ]; then
+        _ci_fail "tracked Markdown cites .md paths that do not exist:$_ci_dangling"
+        printf '%s\n' "$_ci_dangling" | tr ' ' '\n' | grep -v '^$' | while read -r _ci_d; do
+            git ls-files '*.md' -z 2>/dev/null \
+                | xargs -0 grep -n -- "\`$_ci_d\`" 2>/dev/null | sed 's|^|  |' >&2 || true
+        done
+        _ci_rc=1
+    fi
+
+    if [ "$_ci_rc" -eq 0 ]; then
+        _ci_pass "all $_ci_checked backticked .md references in tracked Markdown resolve to tracked paths"
     fi
     return "$_ci_rc"
 }
@@ -1198,7 +1307,10 @@ assert_storage_identity_values() {
 
     rm -f "$_ci_rendered"
     if [ "$_ci_rc" -eq 0 ]; then
-        _ci_pass "storage identity pinned: reclaimPolicy=Retain, backing claim=$_ci_claim, replicas=$_ci_replicas"
+        # The app label is named as well as the three values: it is the scope
+        # every check above was read through, and a PASS that omits it does not
+        # say which workload was inspected.
+        _ci_pass "storage identity pinned for app='$_ci_srv': reclaimPolicy=Retain, backing claim=$_ci_claim, replicas=$_ci_replicas"
     fi
     return "$_ci_rc"
 }
@@ -1752,10 +1864,63 @@ assert_netpol_string_matches_overlay() {
         if printf '%s\n' "$_ci_cidrs" | grep -q '^192\.0\.2\.'; then
             printf 'NOTE: that is RFC 5737 TEST-NET-1, the shipped placeholder. Set it to the cluster node CIDR before deploying, or every mount will hang (k8s/storage/networkpolicy.yaml).\n'
         fi
+
+        # Breadth. Until now the only failure here was an EMPTY set, so the most
+        # dangerous possible value passed: 0.0.0.0/0 kept this green AND removed
+        # the placeholder NOTE above, which only matches ^192\.0\.2\. - the worst
+        # setting produced a quieter log than the safe one.
+        #
+        # The export is no_root_squash, so a range wide enough to contain the pod
+        # network hands every pod in the cluster root over every workspace. That
+        # hazard is stated in k8s/storage/networkpolicy.yaml and was asserted by
+        # nothing.
+        #
+        # A prefix-length threshold, deliberately NOT an "warn on non-RFC1918"
+        # rule: pod networks ARE RFC1918 - kind defaults to 10.244.0.0/16 - so
+        # that rule would stay silent on 10.0.0.0/8, the most dangerous realistic
+        # value, while firing on the harmless TEST-NET-1 placeholder. It inverts
+        # the hazard. /12 is a judgement call; real node ranges are /16 or
+        # tighter and networkpolicy.yaml recommends one /32 per node.
+        #
+        # This bounds WIDTH, not overlap. A node rule set to exactly the pod
+        # CIDR (kind: 10.244.0.0/16) is /16 and passes here. Deciding overlap
+        # needs the cluster's actual pod and service networks, so it belongs in
+        # a kind-job assertion rather than this manifest-only one; what this
+        # catches is the realistic error, someone widening the range "to cover
+        # everything" - and 10.0.0.0/8 does contain the pod network.
+        _ci_broad=""
+        for _ci_cidr in $_ci_cidrs; do
+            case "$_ci_cidr" in
+                *:*) continue ;;   # IPv6: a threshold calibrated for IPv4 says
+                                   # nothing useful about a /48 or a /64.
+                */*) : ;;
+                *)   _ci_fail "the storage NetworkPolicy admits ipBlock '$_ci_cidr', which is not CIDR notation"
+                     _ci_rc=1
+                     continue ;;
+            esac
+            _ci_prefix="${_ci_cidr##*/}"
+            case "$_ci_prefix" in
+                ''|*[!0-9]*)
+                     _ci_fail "the storage NetworkPolicy admits ipBlock '$_ci_cidr', whose prefix length is not a number"
+                     _ci_rc=1
+                     continue ;;
+            esac
+            if [ "$_ci_prefix" -lt 12 ]; then
+                _ci_broad="$_ci_broad $_ci_cidr"
+            fi
+        done
+        if [ -n "$_ci_broad" ]; then
+            _ci_fail "the storage NetworkPolicy admits$_ci_broad on 2049, which is wide enough to contain the pod network. The export is no_root_squash, so that gives every pod in the cluster root over every workspace - name the nodes' own addresses instead (one /32 per node is fine)"
+            _ci_rc=1
+        fi
     fi
 
     if [ "$_ci_rc" -eq 0 ]; then
-        _ci_pass "the storage NetworkPolicy admits exactly app='$_ci_expected' in namespace '$_ci_expected_ns', ANDed in one peer, on TCP 2049 alone"
+        # The node rule is named rather than left out. "admits exactly
+        # app=<slug>" was an over-claim: the same policy set also admits a raw
+        # ipBlock, which this function bounds but cannot verify against the real
+        # cluster - only assert_netpol_admits_every_node can do that.
+        _ci_pass "the storage NetworkPolicy admits app='$_ci_expected' in namespace '$_ci_expected_ns', ANDed in one peer, on TCP 2049 alone, plus ipBlock $(printf '%s' "$_ci_cidrs" | tr '\n' ' ')for kubelet mounts"
     fi
     return "$_ci_rc"
 }
@@ -1798,9 +1963,14 @@ assert_netpol_admits_every_node() {
         | jq -r '[.items[].spec.ingress[]?
                   | select((.ports // []) | length == 0
                            or any(.[]?; (.port == 2049) and ((.protocol // "TCP") == "TCP")))
-                  | .from[]?.ipBlock.cidr // empty] | .[]' 2>/dev/null || true)"
+                  | .from[]?.ipBlock.cidr // empty] | .[]' || true)"
+    # jq's stderr is deliberately NOT redirected to /dev/null. A syntax error in
+    # the filter above produces empty output, which lands in the branch below
+    # and blames the manifests - sending whoever reads it to networkpolicy.yaml
+    # when the defect is in this file. Nothing catches that earlier either:
+    # `bash -n` and `shellcheck` do not parse an embedded jq program.
     if [ -z "$_ci_cidrs" ]; then
-        _ci_fail "the NetworkPolicies in $CI_ASSERT_STORAGE_NS admit no ipBlock on TCP 2049, so no kubelet can mount the share"
+        _ci_fail "the NetworkPolicies in $CI_ASSERT_STORAGE_NS admit no ipBlock on TCP 2049, so no kubelet can mount the share (if jq printed a parse error above, the fault is this filter, not the manifests)"
         return 1
     fi
 
