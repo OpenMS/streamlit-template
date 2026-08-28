@@ -141,6 +141,12 @@ behind each, because the reasoning is not recoverable from the YAML alone. The
 whole cutover is:
 
 ```bash
+k8s/deploy.sh          # --dry-run first if you want to see it render and validate
+```
+
+which is, expanded:
+
+```bash
 kubectl kustomize --enable-helm k8s/storage/ \
   | k8s/storage/set-node-cidrs.sh \
   | kubectl apply -f -
@@ -150,7 +156,10 @@ kubectl apply -k k8s/overlays/prod/
 ```
 
 Storage root first: it publishes the StorageClass the workspaces PVC claims, so
-the other order leaves every pod `Pending` on a class that does not exist.
+the other order leaves every pod `Pending` on a class that does not exist. The
+script confirms which cluster it is pointed at before touching anything, because
+both namespaces are named the same on every cluster and nothing in the later
+output would tell you it had gone to the wrong one.
 
 1. `template-app-storage`, labelled `pod-security.kubernetes.io/enforce=privileged`
    — `k8s/storage/namespace.yaml`.

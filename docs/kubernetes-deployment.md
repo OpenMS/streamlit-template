@@ -322,7 +322,19 @@ kubectl -n openms rollout restart deployment/<your-app-name>-streamlit
 
 ### Step 6 — Deploy
 
-Apply the storage tier **before** the overlay. It publishes the StorageClass the workspaces PVC claims; applied in the other order, every pod sits `Pending` on a class that does not exist yet:
+```bash
+k8s/deploy.sh              # or --dry-run to render and validate, applying nothing
+```
+
+That is the whole deploy. It prints the context and cluster it is about to touch and asks for confirmation first (`--yes` to skip, required when there is no terminal), then does the three things below in the one order that works, waiting between them.
+
+**There is no single `kubectl apply -k` for this, and the reasons are worth knowing** — each is a silent, expensive failure if you do it by hand and get it wrong:
+
+1. **Two roots, in order.** `k8s/storage/` publishes the StorageClass `k8s/base/workspace-pvc.yaml` claims. The other order leaves every pod `Pending` on a class that does not exist, and the message says nothing about ordering. They cannot be merged into one root either — see the top of `k8s/storage/kustomization.yaml`, which is about the namespace transformer clobbering per-object namespaces.
+2. **`kubectl apply -k` has no `--enable-helm`.** The storage root inflates the Ganesha chart, so it must be rendered and piped.
+3. **The node addresses are not in the repo.** See below.
+
+Done by hand, it is:
 
 ```bash
 kubectl kustomize --enable-helm k8s/storage/ \
