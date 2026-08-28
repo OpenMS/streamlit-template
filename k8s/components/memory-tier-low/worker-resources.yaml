@@ -7,10 +7,34 @@ spec:
     spec:
       containers:
         - name: rq-worker
+          # requests == limits, on cpu as well as memory, because that is the
+          # exact condition for Guaranteed QoS - and Guaranteed is the point.
+          # A Burstable pod gets oom_score_adj = 1000 - 1000 * request /
+          # nodeCapacity, so the old 1Gi request scored ~969 out of 1000: the
+          # worker sat near the top of the node's kill list while holding
+          # hours of work, and the 16Gi limit bought nothing against it, since
+          # only the request enters that formula. Guaranteed pins the worker
+          # at -997 instead, below everything else on the node.
+          #
+          # That is architectural now rather than a tuning preference. The
+          # tier no longer selects a node - the tier IS the pod size - so this
+          # request is the only thing the scheduler is told about how big a
+          # worker is. A worker asking for 1Gi against a 16Gi ceiling is
+          # schedulable on every node in the cluster and OOMKilled on most of
+          # them.
+          #
+          # Converged upwards deliberately: under Guaranteed the limit is a
+          # wall the kernel enforces at exactly this number, so pulling it
+          # down to the old request would start killing workflows that run
+          # today, whereas raising the request only changes where the pod is
+          # placed. Retune both blocks together - k8s/base/limitrange.yaml
+          # caps a container at 200Gi / 20 cpu, and CI fails the deploy if
+          # .status.qosClass stops being Guaranteed
+          # (assert_worker_qos_guaranteed).
           resources:
             requests:
-              memory: "1Gi"
-              cpu: "500m"
+              memory: "16Gi"
+              cpu: "4"
             limits:
               memory: "16Gi"
               cpu: "4"

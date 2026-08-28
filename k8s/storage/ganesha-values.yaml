@@ -1,0 +1,266 @@
+# Helm values for the Ganesha NFS server.
+#
+# Chart: nfs-server-provisioner 1.8.0 (appVersion 4.0.8), from
+#        kubernetes-sigs/nfs-ganesha-server-and-external-provisioner.
+#        Consumed by the `helmCharts` block in kustomization.yaml, which is
+#        why rendering this root needs `kubectl kustomize --enable-helm`.
+#
+# One userspace Ganesha pod re-exports the single ReadWriteOnce Cinder volume
+# in `template-app-storage` as ReadWriteMany, which is what lets streamlit,
+# the rq-workers and the nightly cleanup CronJob be placed on any node instead
+# of all being stuck on whichever node the Cinder volume is attached to.
+#
+# ===========================================================================
+# THE FOUR SETTINGS BELOW MARKED "NOT A TUNABLE" ARE NOT TUNABLES.
+# ===========================================================================
+# They are not performance knobs, and they are not chart defaults nobody got
+# round to reviewing. Together they are the only reason this server comes back
+# serving the same bytes under the same identity after a restart - and it will
+# be restarted, by upgrades, evictions, node drains and OOM. They are:
+#
+#   persistence.existingClaim     the backing volume is a fixed, pre-existing
+#                                 claim, never dynamically provisioned
+#   storageClass.reclaimPolicy    Retain, so deleting a PV or PVC does not
+#                                 destroy the data with it
+#   replicaCount                  one pod, and never two on one RWO claim
+#   extraArgs.device-based-fsids  NFS file handles that survive a re-attach
+#
+# Each one fails the same way: silently, long after the change, as clients
+# getting ESTALE or as workspaces that appear to have vanished. If you think
+# one of them is wrong, read `docs/a16-storage-decisions.md`
+# decision 3 and `docs/a16-storage-runbook.md` section 1 first.
+#
+# ---------------------------------------------------------------------------
+# Names shared with the rest of k8s/storage/ - all four are hand-synced
+# ---------------------------------------------------------------------------
+#   nfs-server-data        the Cinder PVC in nfs-backing-pvc.yaml, consumed
+#                          below as `persistence.existingClaim`
+#   template-app-nfs       the StorageClass name the workspaces PVC in `openms`
+#                          claims. Cluster scoped, hence the app prefix
+#   template-app-nfs-server  every object this chart renders, and the
+#                          provisioner name. The ClusterRole and
+#                          ClusterRoleBinding among them are cluster scoped,
+#                          hence the app prefix
+#   nfs-server             the `app` label on the server pod, which the
+#                          storage runbook addresses it by. Namespaced, so
+#                          it needs no prefix
+#   template-app-storage   the namespace, which must enforce the `privileged`
+#                          Pod Security Standard - see `securityContext` below
+#
+# The prefixed three exist because several forks of this template share the
+# de.NBI cluster and each brings its own export. kustomize cannot apply a
+# namePrefix here (see kustomization.yaml), so they are written out by hand;
+# that file carries the full fork checklist.
+#
+# The chart version is pinned in kustomization.yaml and must stay pinned. The
+# chart's `master` branch carries an unreleased appVersion 6.5 whose image tag
+# was never published to registry.k8s.io, so an unpinned render can resolve to
+# an image that cannot be pulled at all.
+
+# The chart derives every object name from the release name, giving
+# `nfs-server-nfs-server-provisioner` here. Both overrides are set so the
+# names are fixed by this file rather than by whatever the release is called:
+# `fullnameOverride` names the StatefulSet, Service, ServiceAccount,
+# ClusterRole and ClusterRoleBinding, and `nameOverride` sets the `app` label
+# on the pod.
+#
+# They differ on purpose. The objects `fullnameOverride` names include the
+# ClusterRole and the ClusterRoleBinding, which are CLUSTER scoped: two forks
+# of this template on one cluster would otherwise overwrite each other's RBAC,
+# so that one carries the app prefix. The `app` label is namespaced and the
+# namespace is already prefixed, so `nameOverride` stays short - which matters
+# because docs/a16-storage-runbook.md section 4.5, "the single most valuable
+# test in the list", restarts the server with `delete pod -l app=nfs-server`.
+# Addressing it
+# by label rather than by object name is also what keeps the runbook working
+# for a fork that changes the prefix.
+#
+# Note for whoever runs section 4.6: this chart renders a StatefulSet, not a
+# Deployment, so it is `scale statefulset -l app=nfs-server`.
+nameOverride: nfs-server
+fullnameOverride: template-app-nfs-server
+
+# NOT A TUNABLE.
+# The chart's own template says it: "TODO: Investigate how/if nfs-provisioner
+# can be scaled out beyond 1 replica". Two Ganesha pods over one volume is
+# worse than an outage - they would hand out conflicting state and neither
+# would know - and the second would not schedule anyway, because the backing
+# claim is ReadWriteOnce.
+#
+# The other half of the one-pod rule is how the pod gets *replaced*, and it
+# needs no setting here. The chart renders a StatefulSet, not a Deployment:
+# updating a StatefulSet deletes pod 0, waits for it to terminate completely,
+# and only then creates the replacement. There is no surge, so the RWO claim
+# is never held by two pods and the rolling-update deadlock that a Deployment
+# would hit here cannot occur. That is exactly the `strategy: Recreate`
+# guarantee, obtained structurally. Converting this workload to a Deployment,
+# or raising the replica count, reintroduces the deadlock.
+replicaCount: 1
+
+image:
+  repository: registry.k8s.io/sig-storage/nfs-provisioner
+  # Digest-pinned per docs/a16-storage-decisions.md decision 3: A16 is the destination rather
+  # than a bridge, so the server image is a multi-year commitment and should
+  # not move underneath us. The chart uses the digest and ignores the tag when
+  # both are set; the tag is kept only to record which release the digest is.
+  # Verified against registry.k8s.io as the multi-arch index for v4.0.8
+  # (linux/amd64 and linux/arm64 both present).
+  tag: v4.0.8
+  digest: sha256:c825f3d5e28bde099bd7a3daace28772d412c9157ad47fa752a9ad0baafc118d
+  pullPolicy: IfNotPresent
+
+# NOT A TUNABLE.
+# Ganesha defaults to deriving every NFS file handle it hands to every client
+# from the major/minor device number of the backing volume at `/export`. A
+# Cinder volume's `/dev/vdX` minor is not stable across detach and re-attach,
+# so with the default left in place every client gets ESTALE the first time
+# this pod moves to another node - typically weeks later, with no obvious link
+# to the change that caused it. The upstream flag documentation says the same
+# thing in fewer words: set it false on any cloud-backed volume.
+#
+# With it disabled the export ids come from `vfs.conf`, which lives on the
+# backing volume and therefore outlives the pod. That is the specific reason
+# this design uses the chart's StorageClass rather than a hand-rolled export.
+#
+# `grace-period` is deliberately absent. The default 90s is what lets clients
+# reclaim their locks after a restart; the chart's commented-out
+# `grace-period: 0` example applies only to servers whose export is *not*
+# persisted, which is the opposite of this deployment.
+extraArgs:
+  device-based-fsids: "false"
+
+persistence:
+  enabled: true
+  # NOT A TUNABLE.
+  # A fixed, pre-existing claim. Leave this unset and the chart falls back to
+  # a volumeClaimTemplate instead - and a re-provisioned claim is a different,
+  # empty volume, so the server would come back serving nothing and every
+  # workspace would appear to have vanished.
+  #
+  # Hand-synced with `metadata.name` in nfs-backing-pvc.yaml. Nothing checks
+  # it: kustomize treats this as an opaque string and does not rewrite or
+  # validate it, so a typo shows up as a pod stuck Pending on a claim that
+  # does not exist.
+  #
+  # `accessMode`, `size` and `storageClass` are unused on this path and are
+  # deliberately not repeated here, so there is only one place that describes
+  # the backing volume.
+  existingClaim: nfs-server-data
+
+storageClass:
+  create: true
+
+  # Cluster-scoped, so it must not collide with an existing class on the
+  # cluster - and a plain `nfs` would, the moment a second fork of this
+  # template deploys here. Whichever installed second would lose the create,
+  # and every workspaces PVC in the cluster would then bind to one app's
+  # export. Hence the app prefix. The workspaces PVC in `openms` claims exactly
+  # this name; CI's "Verify the workspace StorageClass contract" step fails the
+  # deploy if the two ever drift.
+  name: template-app-nfs
+  defaultClass: false
+
+  # Pinned rather than derived. Left unset the chart generates
+  # `cluster.local/<fullname>`, so a renamed release would silently change the
+  # StorageClass's provisioner and orphan every PV already bound through it.
+  # This is the value the default produces from the `fullnameOverride` above,
+  # so writing it out changes nothing now and prevents that later. It is a
+  # cluster-wide identifier, which is the second reason for the app prefix:
+  # two forks sharing `cluster.local/nfs-server` would each answer the other's
+  # provisioning requests.
+  provisionerName: cluster.local/template-app-nfs-server
+
+  # NOT A TUNABLE.
+  # The chart defaults to `Delete`, as does the cluster's `cinder-csi` class -
+  # that is the hazard recorded in docs/storage-defect-register.md. With `Retain`, deleting a PV or
+  # a PVC leaves the data on the backing volume instead of destroying it, and
+  # in particular deleting a claim while diagnosing an outage no longer
+  # destroys the evidence along with it.
+  reclaimPolicy: Retain
+
+  # The only storageClass key that was still inherited, in a file that restates
+  # its defaults on purpose. The chart defaults it to `true`, and an in-tree
+  # `nfs:` PV has no volume expander behind it - so a `kubectl edit pvc` that
+  # raises the request is ACCEPTED, and then sits in FileSystemResizePending
+  # forever with no controller that will ever act on it. Rejecting the resize
+  # outright is the honest answer: growing this tier means growing Ganesha's
+  # backing Cinder volume, which is a separate operation on a different claim.
+  # `null` is the chart's documented off-switch and removes the field entirely.
+  allowVolumeExpansion: null
+
+  # The released 1.8.0 chart defaults these to `vers=3`, which is wrong here
+  # twice over: NFSv3 has no integrated locking, and it needs rpcbind (111),
+  # mountd (20048) and a pinned nlockmgr port, so it could not work behind a
+  # NetworkPolicy that admits 2049 alone. Per docs/a16-storage-decisions.md decision 6:
+  #
+  #   hard        a restart of this server must block the client and resume,
+  #               never return a short read. A `soft` mount turns a routine
+  #               Ganesha restart into a truncated featureXML - the one
+  #               failure class the 7-day workspace retention does not cover.
+  #   vers=4.1    integrated locking, stateful reclaim, and a single port,
+  #               which is what makes the NetworkPolicy tractable.
+  #   nconnect=4  the nodes run kernel 6.8, and the access pattern here is
+  #               metadata-heavy rather than bandwidth-bound.
+  #
+  # `retrans` and `timeo` are the chart's own defaults, carried over unchanged
+  # because they have to be restated to keep the two above. There is
+  # deliberately no `actimeo` or `noac`: close-to-open consistency already
+  # guarantees a fresh read on every open(), and Logger closes per message
+  # while the UI reopens per second, so lowering it would only add GETATTR
+  # traffic for no correctness gain.
+  mountOptions:
+    - hard
+    - vers=4.1
+    - nconnect=4
+    - retrans=2
+    - timeo=30
+
+# The provisioner creates and deletes PersistentVolumes cluster-wide, so it
+# needs its own ServiceAccount and ClusterRole rather than running as
+# `default`.
+rbac:
+  create: true
+
+# Restated at the chart default on purpose, because it is load-bearing rather
+# than incidental: Ganesha needs DAC_READ_SEARCH and SYS_RESOURCE to serve an
+# export it does not own, and it exports `no_root_squash`. Those capabilities
+# are the reason this workload lives in `template-app-storage` at
+# `pod-security.kubernetes.io/enforce=privileged` instead of in `openms`,
+# which is shared with another application. Removing them does not harden
+# anything; it stops the server working.
+securityContext:
+  capabilities:
+    add:
+      - DAC_READ_SEARCH
+      - SYS_RESOURCE
+
+# The chart ships no resource block at all, which leaves this pod BestEffort:
+# nothing reserved, and first on the kernel's kill list. N concurrent write
+# streams mean N sets of buffers and dirty pages inside one userspace process,
+# so under load it gets OOMKilled - and then every client hangs on its `hard`
+# mount, the restart burns the ~90s NFSv4 grace period, and the same load is
+# still waiting when it returns. docs/a16-storage-decisions.md decision 3 calls this the one
+# genuine collapse mode in the design.
+#
+# Having explicit requests, and having them equal to the limits, is not
+# optional. Equality makes the pod Guaranteed QoS (`oom_score_adj -997`).
+# Without it the rq-workers become Guaranteed in the worker-spreading step
+# while this pod stays burstable at roughly 938, so under node memory pressure
+# the kernel would kill the storage server - an outage for every user - in
+# preference to the single worker that caused the pressure.
+#
+# The *numbers*, unlike the four settings above, are a tunable. They are
+# reasoned starting points rather than measurements, and docs/a16-storage-decisions.md
+# decision 11 asks for a load test to find the real knee. Raise `memory` if
+# the pod is ever OOMKilled; raise `cpu` if
+# `container_cpu_cfs_throttled_seconds_total` climbs under load. Move requests
+# and limits together, or the QoS class silently drops to burstable. Note also
+# that a kind node in CI is far smaller than a de.NBI node, so raising these
+# may need a CI-only resource patch, the same way the worker sizes do.
+resources:
+  requests:
+    cpu: "1"
+    memory: 4Gi
+  limits:
+    cpu: "1"
+    memory: 4Gi

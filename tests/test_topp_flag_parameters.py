@@ -97,8 +97,16 @@ def build_command(
 
     ``run_command`` / ``run_multiple_commands`` are stubbed so nothing is
     executed; the built command is captured from the ``run_command`` mock.
+
     ``max_threads`` is pinned to 1 so the trailing ``-threads`` argument is
-    deterministic.
+    deterministic, and pinning it takes *both* halves: ``_get_max_threads()``
+    resolves ``online_deployment`` from a ``settings.json`` read relative to the
+    process working directory, and only consults the workspace ``params.json``
+    on the local branch. So the temporary directory gets its own local-mode
+    ``settings.json`` and becomes the CWD for the call — otherwise these argv
+    assertions would silently depend on the repository-root config and on where
+    pytest happens to be run from, and a fork shipping
+    ``online_deployment: true`` would see ``-threads 2`` here.
     """
     if input_output is None:
         input_output = {"in": ["input.mzML"], "out": ["output.featureXML"]}
@@ -108,6 +116,12 @@ def build_command(
 
     with tempfile.TemporaryDirectory() as tmpdir:
         workflow_dir = Path(tmpdir)
+        with open(Path(tmpdir, "settings.json"), "w", encoding="utf-8") as f:
+            json.dump(
+                {"online_deployment": False, "max_threads": {"local": 1, "online": 1}},
+                f,
+            )
+
         pm = ParameterManager(workflow_dir)
         with open(pm.params_file, "w", encoding="utf-8") as f:
             json.dump(params_json, f)
@@ -118,12 +132,17 @@ def build_command(
         executor.run_command = MagicMock(return_value=True)
         executor.run_multiple_commands = MagicMock(return_value=True)
 
-        executor.run_topp(
-            tool,
-            input_output,
-            custom_params=custom_params or {},
-            tool_instance_name=tool_instance_name or tool,
-        )
+        previous_cwd = os.getcwd()
+        os.chdir(tmpdir)
+        try:
+            executor.run_topp(
+                tool,
+                input_output,
+                custom_params=custom_params or {},
+                tool_instance_name=tool_instance_name or tool,
+            )
+        finally:
+            os.chdir(previous_cwd)
 
         assert executor.run_command.call_count == 1, (
             "expected exactly one single-process command, got "

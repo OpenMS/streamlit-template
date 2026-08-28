@@ -1,0 +1,5 @@
+# Shell scripts are executed by /bin/sh inside Linux containers and by POSIX
+# shells in tests/test_seed_demos.py. A CRLF checkout on Windows breaks both:
+# sh reports "not found" on every carriage return, and a shebang with a
+# trailing CR fails to exec. Pin them to LF regardless of core.autocrlf.
+*.sh text eol=lf

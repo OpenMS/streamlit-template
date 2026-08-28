@@ -6,6 +6,7 @@ import threading
 from pathlib import Path
 from .Logger import Logger
 from .ParameterManager import ParameterManager, bool_param_paths_from_param_xml_ini
+from .settings_io import load_settings, detect_cpu_quota
 import sys
 import importlib.util
 import json
@@ -25,28 +26,73 @@ class CommandExecutor:
         self.pid_dir = Path(workflow_dir, "pids")
         self.logger = logger
         self.parameter_manager = parameter_manager
+        # Memoised thread budget, resolved lazily by _get_max_threads().
+        self._max_threads = None
 
     def _get_max_threads(self) -> int:
         """
         Get max threads for current deployment mode.
 
-        In local mode, reads from parameter manager (persisted params.json).
-        In online mode, uses the configured value directly from settings.
+        Settings are read from settings.json on disk, not from
+        st.session_state: inside the RQ work horse there is no
+        ScriptRunContext, so st.session_state is an empty mock, the online
+        branch was unreachable and the hardcoded local default silently won
+        instead of max_threads.online.
+
+        In local mode the workspace params.json may override the configured
+        value - that is what the "Threads" widget writes, and it is only
+        rendered in local mode. Online the worker is shared and sized by its
+        pod spec, so user supplied params.json is ignored.
+
+        Online the container's own cgroup CPU quota wins over
+        max_threads.online where one exists. The rq-worker runs at
+        requests.cpu == limits.cpu, so its pod spec IS its allocation, and the
+        memory-tier components size that per deployment - a 4 cpu worker and a
+        20 cpu worker cannot both be described by one number in settings.json,
+        and the number that was there described neither. max_threads.online
+        remains the fallback for every deployment where no quota is readable:
+        bare metal, docker-compose without a cpu limit, a dev box.
+
+        The trade-off, deliberately taken: an operator can no longer
+        under-subscribe a container that declares more CPU than it wants used.
+        For a Guaranteed pod that is the right call, because the declaration
+        and the allocation are the same thing.
+
+        The result is memoised for the lifetime of this executor: run_topp()
+        consults it twice, once for its own thread split and once more inside
+        run_multiple_commands(), and the two must agree.
 
         Returns:
             int: Maximum number of threads to use for parallel processing (minimum 1).
         """
-        settings = st.session_state.get("settings", {})
+        if self._max_threads is not None:
+            return self._max_threads
+
+        settings = load_settings()
         max_threads_config = settings.get("max_threads", {"local": 4, "online": 2})
 
         if settings.get("online_deployment", False):
-            value = max_threads_config.get("online", 2)
+            quota = detect_cpu_quota()
+            if quota is not None:
+                value = quota
+            else:
+                value = max_threads_config.get("online", 2)
         else:
             default = max_threads_config.get("local", 4)
             params = self.parameter_manager.get_parameters_from_json()
             value = params.get("max_threads", default)
 
-        return max(1, int(value))
+        try:
+            value = int(value)
+        except (TypeError, ValueError):
+            # params.json is user supplied - the parameter import uploader
+            # writes it verbatim - so a non numeric thread budget degrades to
+            # serial execution instead of taking the whole run down.
+            self.logger.log(f"Invalid max_threads value {value!r}, falling back to 1.", 1)
+            value = 1
+
+        self._max_threads = max(1, value)
+        return self._max_threads
 
     def run_multiple_commands(
         self, commands: list[str]
@@ -361,7 +407,7 @@ class CommandExecutor:
         shutil.rmtree(self.pid_dir, ignore_errors=True)
         self.logger.log("Workflow stopped.")
 
-    def run_python(self, script_file: str, input_output: dict = {}) -> None:
+    def run_python(self, script_file: str, input_output: dict = {}) -> bool:
         """
         Executes a specified Python script with dynamic input and output parameters,
         optionally logging the execution process. The method identifies and loads
@@ -378,6 +424,13 @@ class CommandExecutor:
                                 If the path is omitted, the method looks for the script in 'src/python-tools/'.
                                 The '.py' extension is appended if not present.
             input_output (dict, optional): A dictionary specifying the input/output parameter names (as key) and their corresponding file paths (as value). Defaults to {}.
+
+        Returns:
+            bool: True if the script ran and exited 0, False otherwise. Same
+                contract as run_topp(), so execution() can gate on it. This used
+                to discard run_command()'s result and return None, which made
+                every `if not self.executor.run_python(...)` guard dead code and
+                left a failed Python tool indistinguishable from a successful one.
         """
         # Check if script file exists (can be specified without path and extension)
         # default location: src/python-tools/script_file
@@ -387,8 +440,12 @@ class CommandExecutor:
         if not path.exists():
             path = Path("src", "python-tools", script_file)
             if not path.exists():
-                self.logger.log(f"Script file not found: {script_file}")
-                
+                # Bail out here: falling through to spec_from_file_location on a
+                # path that does not exist raises out of the workflow instead of
+                # reporting a failed step.
+                self.logger.log(f"ERROR: Script file not found: {script_file}", 0)
+                return False
+
         # load DEFAULTS
         if path.parent not in sys.path:
             sys.path.append(str(path.parent))
@@ -399,7 +456,7 @@ class CommandExecutor:
         if defaults is None:
             self.logger.log(f"WARNING: No DEFAULTS found in {path.name}")
             # run command without params
-            self.run_command(["python", str(path)])
+            return self.run_command(["python", str(path)])
         elif isinstance(defaults, list):
             defaults = {entry["key"]: entry["value"] for entry in defaults}
             # load paramters from JSON file
@@ -414,6 +471,17 @@ class CommandExecutor:
             with open(tmp_params_file, "w", encoding="utf-8") as f:
                 json.dump(defaults, f, indent=4)
             # run command
-            self.run_command(["python", str(path), str(tmp_params_file)])
+            success = self.run_command(["python", str(path), str(tmp_params_file)])
             # remove tmp params file
             tmp_params_file.unlink()
+            return success
+
+        # DEFAULTS exists but is not the documented list of parameter dicts, so
+        # nothing ran. Reporting that as success would put the workflow's
+        # WORKFLOW FINISHED marker on a step which never executed.
+        self.logger.log(
+            f"ERROR: DEFAULTS in {path.name} is a {type(defaults).__name__}, "
+            "expected a list of parameter dicts. Script not run.",
+            0,
+        )
+        return False

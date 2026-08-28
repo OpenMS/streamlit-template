@@ -1,0 +1,151 @@
+name: Build one image variant
+
+# Called four times by build-and-test.yml, once per {variant} x {arch}.
+#
+# WHY THIS IS A SEPARATE WORKFLOW rather than a matrix inside build-and-test.yml.
+# `needs:` in GitHub Actions is job-level, not matrix-leaf-level. With one
+# `build-amd64` job carrying a {full, simple} matrix, a failure in EITHER leg
+# marks the whole job failed and every consumer is skipped - including the kind
+# integration jobs, which are the only place the multi-node storage tier is
+# exercised at all.
+#
+# That is not hypothetical. On 2026-08-25 an upstream cython 3.3.0 release broke
+# the `full` build on both arches, and all 8 kind leaves were skipped without
+# their matrices ever expanding - even though both `simple` images had been
+# built, uploaded and were sitting unexpired in the same run. A break in one
+# image variant cost 100% of the storage-tier runtime coverage instead of 50%.
+#
+# Four separate caller jobs give every consumer a dependency at the granularity
+# it actually cares about. Routing them through one reusable workflow keeps that
+# from becoming four copies of the same eighty lines - this file replaces the
+# former `build-amd64` and `build-arm64` jobs, which were themselves near
+# duplicates of each other.
+#
+# The only behavioural difference from those two jobs is which of them ran the
+# disk-space step; that is preserved exactly through `free_disk_space` rather
+# than quietly normalised, so the split introduces no delta to compare against
+# when the kind suite finally runs.
+
+on:
+  workflow_call:
+    inputs:
+      variant:
+        description: 'full (OpenMS built from source) or simple (pyopenms wheel)'
+        required: true
+        type: string
+      dockerfile:
+        description: 'Dockerfile to build, e.g. Dockerfile or Dockerfile_simple.arm'
+        required: true
+        type: string
+      arch:
+        description: 'amd64 or arm64 - the tag suffix, cache ref and artifact name'
+        required: true
+        type: string
+      runner:
+        description: 'runs-on label for this architecture'
+        required: true
+        type: string
+      platform:
+        description: 'buildx platform, e.g. linux/amd64'
+        required: true
+        type: string
+      free_disk_space:
+        description: >-
+          Reclaim runner disk before checkout. True for arm64, whose runner image
+          is tighter out of the box than the amd64 one; false for amd64, which is
+          how these two jobs behaved before they were merged into this file.
+        required: false
+        default: false
+        type: boolean
+
+env:
+  # Restated, not inherited: a reusable workflow does not see the caller's `env`
+  # block. `github.repository` resolves to the CALLING repository, which for a
+  # same-repo workflow_call is this one, so IMAGE_NAME is unchanged.
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build:
+    runs-on: ${{ inputs.runner }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Free disk space
+        # OpenMS source build needs ~25 GB of scratch space; the ARM runner
+        # image is tighter than the AMD one out of the box. Mirrors what
+        # FLASHApp's publish-docker-images.yml does at the top of its ARM job.
+        if: inputs.free_disk_space
+        run: |
+          # Keep /opt/hostedtoolcache: helm/kind-action and setup-kubectl
+          # cache binaries there and fail if the directory is missing.
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc || true
+          sudo apt-get clean
+          df -h
+
+      - uses: actions/checkout@v4
+
+      - name: Compute lowercase image name (OCI refs must be lowercase)
+        run: echo "IMAGE_NAME_LC=${IMAGE_NAME,,}" >> "$GITHUB_ENV"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch,suffix=-${{ inputs.variant }}-${{ inputs.arch }}
+            type=ref,event=tag,suffix=-${{ inputs.variant }}-${{ inputs.arch }}
+            type=sha,prefix=,suffix=-${{ inputs.variant }}-${{ inputs.arch }}
+            type=raw,value=latest-${{ inputs.arch }},enable=${{ inputs.variant == 'full' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+
+      - name: Build and conditionally push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ${{ inputs.dockerfile }}
+          platforms: ${{ inputs.platform }}
+          load: true
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # provenance/attestations turn the pushed tag into a manifest list,
+          # which the create-manifest job's `docker manifest create` then
+          # refuses ("is a manifest list"). Keep the push as a single-platform
+          # image manifest.
+          provenance: false
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME_LC }}/cache:${{ inputs.variant }}-${{ inputs.arch }}
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref={0}/{1}/cache:{2}-{3},mode=max', env.REGISTRY, env.IMAGE_NAME_LC, inputs.variant, inputs.arch) || '' }}
+          build-args: |
+            GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}
+
+      - name: Retag for kind (image name the kustomize overlay points at)
+        run: |
+          # The prod overlay sets `newName: ghcr.io/openms/streamlit-template`,
+          # `newTag: main-full`. The rendered manifests reference that exact
+          # ref, so we need it loaded into kind under that name. Tag invariant
+          # across branches/variants so the test always works.
+          FIRST_TAG=$(printf '%s\n' "${{ steps.meta.outputs.tags }}" | head -n 1)
+          docker tag "$FIRST_TAG" ghcr.io/openms/streamlit-template:main-full
+
+      - name: Save image as tar
+        run: docker save ghcr.io/openms/streamlit-template:main-full -o /tmp/image.tar
+
+      - name: Upload image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: openms-streamlit-${{ inputs.variant }}-${{ inputs.arch }}-image
+          path: /tmp/image.tar
+          retention-days: 1

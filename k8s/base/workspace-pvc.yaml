@@ -1,11 +1,96 @@
+# The shared workspace volume, served over NFS by the Ganesha server in
+# k8s/storage/.
+#
+# ---------------------------------------------------------------------------
+# This is a NEW claim, not an edit of the old one. That is deliberate.
+# ---------------------------------------------------------------------------
+# The previous claim was named `workspaces-pvc` and is `ReadWriteOnce` on
+# `cinder-csi`. A PVC's spec is immutable once it is Bound - everything except
+# `resources.requests` - so changing `accessModes` and `storageClassName` on
+# that object is rejected by the API server:
+#
+#   spec: Forbidden: spec is immutable after creation except
+#   resources.requests for bound claims
+#
+# `kubectl apply -k k8s/overlays/prod/` would fail half way through, and the
+# only way past it is deleting the claim - which, on a `cinder-csi` class that
+# reclaims with `Delete`, destroys the original volume. That volume is the
+# rollback: docs/a16-storage-runbook.md section 5 re-applies the previous manifests and
+# expects `<prefix>-workspaces-pvc` still to be there, Bound, holding the data.
+#
+# So the RWX claim gets a new name and the workload manifests are repointed at
+# it (docs/a16-storage-runbook.md section 3, steps 6 and 8). The old claim is
+# left alone: it
+# stays Bound to its Cinder volume, costs nothing but disk, and rollback is one
+# `kubectl apply` of the previous manifests with no restore step. Delete it by
+# hand once the cutover has been stable for a week - never as part of a deploy.
+#
+# The mount path does not move. Every consumer reaches this volume through
+# `claimName` plus `/workspaces-streamlit-template`, so nothing in `src/`
+# changes and absolute symlinks and `external_files.txt` survive byte for byte.
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: workspaces-pvc
+  name: workspaces-nfs-pvc
 spec:
+  # ReadWriteMany, so the scheduler is free to place streamlit, rq-worker and
+  # the cleanup CronJob wherever they fit.
   accessModes:
-    - ReadWriteOnce
-  storageClassName: cinder-csi
+    - ReadWriteMany
+  # Served by the NFS-Ganesha server in k8s/storage/, which re-exports a
+  # single Cinder volume over NFSv4.1. This name must equal storageClass.name
+  # in the chart values there; the "Verify the workspace StorageClass contract"
+  # step in .github/workflows/build-and-test.yml fails the deploy - and prints
+  # the classes that do exist - if the two ever drift.
+  #
+  # It carries the app prefix because a StorageClass is cluster scoped. Two
+  # forks of this template on one cluster (the de.NBI cluster already hosts
+  # more than one OpenMS webapp) would otherwise fight over a class called
+  # plain `nfs`, and whichever installed second would silently bind its
+  # workspaces to the other app's export. A fork changes this string and
+  # `storageClass.name` in k8s/storage/ganesha-values.yaml together.
+  #
+  # The mount options ride on that StorageClass, because a PVC has nowhere to
+  # put them and the provisioner copies them onto every PV it emits. The same
+  # CI step asserts they are really there:
+  #
+  #   hard         a Ganesha restart is routine; `soft` would convert one into a
+  #                truncated featureXML, the single failure class the 7-day
+  #                retention does not cover. Clients block and resume instead.
+  #   vers=4.1     integrated locking, and one port (2049) with no side-band
+  #                NLM/statd, which is what keeps the NetworkPolicy tractable.
+  #   nconnect=4   the nodes run kernel 6.8 and this access pattern is
+  #                metadata-heavy rather than bandwidth-bound.
+  #   default actimeo - close-to-open consistency already guarantees a fresh
+  #                read on every open(), and Logger closes per message while the
+  #                UI reopens per second. Lowering it buys GETATTR traffic and
+  #                no correctness.
+  storageClassName: template-app-nfs
   resources:
     requests:
-      storage: 500Gi
+      # MUST stay materially below the backing volume in
+      # k8s/storage/nfs-backing-pvc.yaml, which is 500Gi.
+      #
+      # nfs-provisioner does not carve this out of thin air: `validateOptions`
+      # statfs()es /export on every provision and refuses the claim outright
+      # with "insufficient available space N bytes to satisfy claim for M
+      # bytes" whenever the request exceeds the export's *free* space. That
+      # check is unconditional - it is not gated on quotas being enabled. A
+      # freshly made filesystem on a 500 GiB volume never reports 500 GiB free
+      # (ext4 alone reserves 5%), so a claim equal to the backing volume can
+      # never bind, on any cluster, and every pod stays Pending on it.
+      #
+      # 400Gi leaves ~75 GiB of headroom over the ~475 GiB an ext4 filesystem
+      # on a 500 GiB volume actually offers. Raising it means growing the
+      # backing volume first, by more than the same amount.
+      #
+      # There is no quota behind the number either - the provisioner hands out
+      # a directory on the shared export unless `enableXfsQuota` is set, which
+      # it is not. This is what `kubectl get pvc` reports and what has to clear
+      # the statfs check, not a per-workspace limit.
+      #
+      # CI shrinks this to a few GiB before applying: a kind node's /export
+      # lives on the runner's disk, which has tens of GiB free, so the real
+      # figure would fail the same check there. See the "Size the workspaces
+      # claim for the runner disk" step in .github/workflows/build-and-test.yml.
+      storage: 400Gi

@@ -12,6 +12,17 @@ import traceback
 from pathlib import Path
 
 
+class WorkflowExecutionError(RuntimeError):
+    """
+    Raised when a workflow's execution() reports failure by returning False.
+
+    RQ records a job as failed only if the job function raises, so an
+    application level failure has to be turned into an exception here.
+    Returning a result dict instead leaves the FailedJobRegistry empty and
+    health.py's failed_jobs metric structurally zero.
+    """
+
+
 def execute_workflow(
     workflow_dir: str,
     workflow_class: str,
@@ -30,6 +41,14 @@ def execute_workflow(
 
     Returns:
         Dictionary with execution results
+
+    Raises:
+        Exception: Anything raised while setting up or running the workflow is
+            re-raised after the failure has been written to the workflow logs,
+            and a WorkflowExecutionError if execution() returned False. RQ
+            needs the job function to raise to record the job as failed. A
+            legacy execution() returning None is accepted as success with a
+            deprecation warning in the workflow log.
     """
     try:
         from rq import get_current_job
@@ -62,7 +81,10 @@ def execute_workflow(
         # Load parameters from saved params.json
         params_file = workflow_path / "params.json"
         if params_file.exists():
-            with open(params_file, "r") as f:
+            # encoding="utf-8" explicitly, matching every other reader and
+            # writer of params.json: the platform codepage here would decode a
+            # file written elsewhere differently, or fail outright.
+            with open(params_file, "r", encoding="utf-8") as f:
                 params = json.load(f)
         else:
             params = {}
@@ -101,10 +123,35 @@ def execute_workflow(
 
         _update_progress(job, 0.15, "Executing workflow steps...")
 
-        # Execute the workflow
-        workflow.execution()
+        # Execute the workflow. It reports success with a bool
+        # (WorkflowManager.execution is declared -> bool), same as the local
+        # mode in WorkflowManager.workflow_process.
+        success = workflow.execution()
 
-        # Log workflow completion
+        if success is None:
+            # Migration shim for workflows written against the older example,
+            # which was annotated -> None and returned nothing. Those
+            # subclasses live in downstream repositories (quantms-web,
+            # umetaflow, FLASHApp) and cannot be fixed in the same commit as
+            # this file, so treating their None as a failure would report every
+            # successful queued run as failed the moment they rebase. Accepted
+            # as success, loudly, so they have a runway; explicit False is
+            # still a failure.
+            logger.log(
+                "WARNING: execution() returned None and was treated as success. "
+                "Annotate it '-> bool' and return True on success / False on "
+                "failure - see .claude/skills/create-workflow.md. A future "
+                "release will treat None as a failure.",
+                0,
+            )
+        elif not success:
+            raise WorkflowExecutionError(
+                f"Workflow execution reported failure (returned {success!r})"
+            )
+
+        # Log workflow completion. Only write the marker for a run which
+        # actually succeeded, it is what classify_log_outcome reads to tell a
+        # finished run from a failed one.
         logger.log("WORKFLOW FINISHED")
 
         _update_progress(job, 1.0, "Workflow completed")
@@ -119,8 +166,6 @@ def execute_workflow(
         }
 
     except Exception as e:
-        error_msg = f"Workflow failed: {str(e)}\n{traceback.format_exc()}"
-
         # Log error to workflow logs
         try:
             log_dir = workflow_path / "logs"
@@ -130,7 +175,10 @@ def execute_workflow(
                 log_file = log_dir / log_name
                 with open(log_file, "a") as f:
                     f.write(f"\n\nERROR: {str(e)}\n")
-                    f.write(traceback.format_exc())
+                    # A workflow reporting failure by returning False is not a
+                    # crash, the reason is in the tool output above.
+                    if not isinstance(e, WorkflowExecutionError):
+                        f.write(traceback.format_exc())
         except Exception:
             pass
 
@@ -141,11 +189,10 @@ def execute_workflow(
         except Exception:
             pass
 
-        return {
-            "success": False,
-            "workflow_dir": str(workflow_path),
-            "error": error_msg
-        }
+        # Re-raise so RQ moves the job into the FailedJobRegistry. Returning a
+        # {"success": False} dict here looked like a normal return to RQ, which
+        # recorded every crashed workflow as finished successfully.
+        raise
 
 
 def _update_progress(job, progress: float, step: str) -> None:

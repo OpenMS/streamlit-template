@@ -1,0 +1,43 @@
+# Backing volume for the NFS server. Every workspace in the cluster lives
+# inside this one Cinder volume, which Ganesha re-exports as ReadWriteMany so
+# that pods on more than one node can share it.
+#
+# The name is fixed and load bearing: the Ganesha chart consumes this claim
+# through `persistence.existingClaim`, never through dynamic provisioning. A
+# dynamically provisioned claim is re-provisioned as an *empty* volume whenever
+# it is recreated, so the server would come back serving different bytes and
+# every workspace would appear to vanish.
+#
+# This is a fresh volume, not a migration of k8s/base/workspace-pvc.yaml.
+# Workspaces are deleted after 7 days anyway, so there is nothing worth moving,
+# and leaving the original volume untouched keeps rollback to a single
+# re-apply of the previous manifests.
+#
+# Do not delete this claim while diagnosing a storage problem: `cinder-csi`
+# reclaims with `Delete`, so removing the claim destroys the volume and the
+# evidence together. Scale the server to zero instead.
+#
+# The size is not just bookkeeping. nfs-provisioner statfs()es /export on every
+# provision and refuses any claim larger than the export's *free* space, so
+# this volume has to be materially bigger than the workspaces claim in
+# k8s/base/workspace-pvc.yaml (400Gi against the ~475 GiB an ext4 filesystem on
+# a 500 GiB volume actually offers). Sizing the two equally - which is what the
+# first draft did - means the workspaces claim can never bind, on any cluster.
+# Grow this one first if the workspaces claim ever needs to grow.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nfs-server-data
+  namespace: template-app-storage
+  labels:
+    app.kubernetes.io/part-of: openms-streamlit
+    app.kubernetes.io/component: nfs-server
+spec:
+  # Cinder attaches to exactly one node. That is the whole reason this volume
+  # is behind an NFS server instead of being mounted by the app directly.
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: cinder-csi
+  resources:
+    requests:
+      storage: 500Gi

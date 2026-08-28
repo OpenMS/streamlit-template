@@ -7,11 +7,12 @@ Only activates when running in online mode with Redis available.
 """
 
 import os
-import json
 from typing import Optional, Callable, Any
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
+
+from .settings_io import load_settings
 
 
 class JobStatus(Enum):
@@ -63,6 +64,13 @@ class QueueManager:
         queue_settings = settings.get("queue_settings", {})
         self._default_timeout = queue_settings.get("default_timeout", 7200)
         self._default_result_ttl = queue_settings.get("result_ttl", 86400)
+        # RQ's own default failure_ttl is one year. Failed jobs only started
+        # existing once execute_workflow began re-raising, and each one keeps
+        # its full traceback in Redis - which runs with a 256Mi limit, no
+        # persistence and no maxmemory-policy, so it is OOMKilled rather than
+        # evicting. "No mzML files selected" is a routine user error; it must
+        # not leave a year-lived key behind.
+        self._default_failure_ttl = queue_settings.get("failure_ttl", 86400)
 
         if self._is_online:
             self._init_redis()
@@ -70,11 +78,7 @@ class QueueManager:
     @staticmethod
     def _load_settings() -> dict:
         """Load settings.json once; return empty dict on failure."""
-        try:
-            with open("settings.json", "r") as f:
-                return json.load(f)
-        except Exception:
-            return {}
+        return load_settings()
 
     def _check_online_mode(self, settings: dict) -> bool:
         """Check if running in online mode"""
@@ -119,6 +123,7 @@ class QueueManager:
         job_id: Optional[str] = None,
         timeout: Optional[int] = None,
         result_ttl: Optional[int] = None,
+        failure_ttl: Optional[int] = None,
         description: str = ""
     ) -> Optional[str]:
         """
@@ -131,6 +136,9 @@ class QueueManager:
             job_id: Optional custom job ID (defaults to UUID)
             timeout: Job timeout in seconds (defaults to settings.json queue_settings.default_timeout)
             result_ttl: How long to keep results (defaults to settings.json queue_settings.result_ttl)
+            failure_ttl: How long to keep failed jobs, with their traceback
+                (defaults to settings.json queue_settings.failure_ttl). Without
+                it RQ keeps them for a year.
             description: Human-readable job description
 
         Returns:
@@ -144,6 +152,8 @@ class QueueManager:
             timeout = self._default_timeout
         if result_ttl is None:
             result_ttl = self._default_result_ttl
+        if failure_ttl is None:
+            failure_ttl = self._default_failure_ttl
 
         try:
             job = self._queue.enqueue(
@@ -153,6 +163,7 @@ class QueueManager:
                 job_id=job_id,
                 job_timeout=timeout,
                 result_ttl=result_ttl,
+                failure_ttl=failure_ttl,
                 description=description,
                 meta={"description": description, "progress": 0.0, "current_step": ""}
             )

@@ -1,27 +1,35 @@
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
-# Two-node cluster that mirrors the production memory-tier topology, so
-# the Build-and-Test job passes regardless of which tier a fork selects
-# in its overlay (memory-tier-low or memory-tier-high). Without both
-# labels present, flipping the overlay would leave pods Pending on the
-# single kind node.
+# Two schedulable nodes, which is the smallest cluster that can observe the
+# property the deployment now rests on: workers spread across hosts, and one
+# workspace volume reachable from all of them. On a single node every spread
+# constraint is satisfied vacuously - maxSkew is measured over eligible
+# domains and one domain is always perfectly balanced - so a one-node cluster
+# would report success for exactly the arrangement this suite exists to rule
+# out.
+#
+# No node labels. Nothing under k8s/ selects a node any more: the scheduler
+# places pods, and the manifests only declare how big a worker is. The nodes
+# carried openms.de/memory-tier=low and =high while the memory-tier components
+# patched a matching nodeSelector onto every Deployment; those patches are
+# gone, and leaving the labels behind would imply the pinning had survived
+# somewhere. assert_no_node_pinning_anywhere text-scans this file for exactly
+# that.
 nodes:
   - role: control-plane
     # Multi-node kind clusters taint the control-plane with
-    # node-role.kubernetes.io/control-plane:NoSchedule. Clear it so
-    # app pods with nodeSelector memory-tier=low can actually land
-    # here (single-node kind had no such taint, hence the original
-    # workflow passed without this patch).
+    # node-role.kubernetes.io/control-plane:NoSchedule. Clear it so app pods
+    # can land here as well: with the taint in place there is one schedulable
+    # node, and every cross-node assertion - two pods on two nodes, the
+    # cross-node write, the cross-node flock, the worker spread - collapses
+    # into a tautology it cannot fail.
     kubeadmConfigPatches:
       - |
         kind: InitConfiguration
         nodeRegistration:
           taints: []
     labels:
-      openms.de/memory-tier: low
       # ingress-ready is required by the kind variant of the
       # ingress-nginx deploy manifest applied in CI.
       ingress-ready: "true"
   - role: worker
-    labels:
-      openms.de/memory-tier: high

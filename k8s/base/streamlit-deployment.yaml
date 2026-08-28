@@ -15,15 +15,27 @@ spec:
         component: streamlit
     spec:
       initContainers:
+        # The seeding logic lives in docker/seed-demos.sh, not inline here, so
+        # that tests/test_seed_demos.py executes the script the image ships.
+        # It stages the copy in a private directory and renames it into place -
+        # rename(2) on a directory is atomic and fails on a non-empty target,
+        # so with replicas: 2 the winner renames and the loser stands down.
+        #
+        # The script bounds itself with `timeout` and always exits 0: this
+        # container gates pod start on the shared workspaces mount, and a pod
+        # held in Init by a slow or restarting NFS server would defeat the
+        # point of Streamlit being able to serve through a storage outage.
         - name: seed-demos
           image: openms-streamlit
           imagePullPolicy: Always
-          command: ["/bin/sh", "-c"]
+          command: ["/bin/sh", "/app/docker/seed-demos.sh"]
           args:
-            - |
-              set -eu
-              mkdir -p /workspaces-streamlit-template/.demos
-              cp -rn /app/example-data/workspaces/. /workspaces-streamlit-template/.demos/
+            - /app/example-data/workspaces
+            - /workspaces-streamlit-template/.demos
+          env:
+            # Wall clock for the whole seeding run, copy and stat calls alike.
+            - name: SEED_TIMEOUT
+              value: "300"
           volumeMounts:
             - name: workspaces
               mountPath: /workspaces-streamlit-template
@@ -70,7 +82,7 @@ spec:
       volumes:
         - name: workspaces
           persistentVolumeClaim:
-            claimName: workspaces-pvc
+            claimName: workspaces-nfs-pvc
         - name: config
           configMap:
             name: streamlit-config

@@ -5,6 +5,7 @@ import json
 import time
 import psutil
 import shutil
+import logging
 
 import pandas as pd
 import streamlit as st
@@ -27,6 +28,8 @@ from src.common.admin import (
     demo_exists,
     save_workspace_as_demo,
 )
+
+logger = logging.getLogger(__name__)
 
 # Detect system platform
 OS_PLATFORM = sys.platform
@@ -216,6 +219,17 @@ def copy_demo_workspace(demo_name: str, target_path: Path) -> bool:
 
 @st.fragment(run_every=5)
 def monitor_hardware():
+    """
+    Display CPU and RAM of the machine running this Streamlit process.
+
+    Gated by the caller on where the workflows actually run, not on
+    `online_deployment`: in Kubernetes psutil here reports a Streamlit pod that
+    does no work, and an idle 2Gi container shown while a 64Gi worker saturates
+    is worse than showing nothing. In the single-container images - the full
+    one under docker-compose, and `Dockerfile_simple`, which has no queue at
+    all - this process and the workflows share a machine and these are the only
+    numbers that expander has. See `health.queue_workers_are_remote()`.
+    """
     cpu_progress = psutil.cpu_percent(interval=None) / 100
     ram_progress = 1 - psutil.virtual_memory().available / psutil.virtual_memory().total
 
@@ -270,6 +284,106 @@ def monitor_queue():
 
     except Exception:
         pass  # Silently fail if queue not available
+
+
+@st.fragment(run_every=5)
+def monitor_storage():
+    """
+    Display shared storage status in sidebar.
+
+    Reads Redis and nothing else. The workspace volume is a shared NFS mount
+    online, and its failure mode is a hang rather than an error: a `stat` on a
+    `hard` mount that has wedged blocks in uninterruptible sleep and cannot be
+    killed, so a fragment re-running every 5 seconds would accumulate unkillable
+    threads - this indicator would become the very hang it exists to report.
+    The mount is touched by the rq-worker readiness probe instead, which
+    publishes a per node heartbeat whose Redis TTL is the liveness mechanism.
+
+    Renders nothing where no node publishes a heartbeat at all - local mode,
+    docker-compose, apptainer - because a red tick for a mechanism that is not
+    deployed is a false alarm pointing at the wrong layer.
+    """
+    try:
+        from src.workflow.health import get_storage_status
+
+        status = get_storage_status()
+        if not status:
+            return
+
+        state = status.get("state", "unknown")
+        nodes = status.get("nodes") or []
+        stale = status.get("stale_nodes") or []
+
+        st.markdown("---")
+        st.markdown("**Storage Status**")
+
+        if state == "connected":
+            st.markdown(":green[Connected]")
+            st.caption(
+                f"{len(nodes)} node{'' if len(nodes) == 1 else 's'} reporting a "
+                "healthy shared volume."
+            )
+        elif state == "degraded":
+            # The case per node heartbeats exist for. Collapsing them would
+            # show green here, because a healthy node is still reporting.
+            st.markdown(":orange[Degraded]")
+            st.caption(
+                f"{', '.join(stale)} stopped confirming the shared volume. "
+                "Workflows running there may be stalled; other nodes are fine."
+            )
+        elif state == "unreachable":
+            st.markdown(":red[Unreachable]")
+            st.caption(
+                "No node has confirmed the shared volume recently. Running "
+                "workflows may be stalled and new results may not appear."
+            )
+        else:
+            # Redis is down, which says nothing about the mount. Showing this as
+            # unreachable storage would send an operator to the wrong layer.
+            st.markdown(":gray[Unknown]")
+            st.caption("Cannot reach the queue, so storage status is unknown.")
+
+        st.caption(f"Last fetched at: {time.strftime('%H:%M:%S')}")
+
+    except Exception:
+        # Never break the sidebar over an indicator, but never swallow it in
+        # silence either: a broken indicator that renders nothing is
+        # indistinguishable from a deployment that has no shared storage.
+        logger.exception("Could not render the shared storage indicator")
+
+
+def render_resource_utilization():
+    """
+    Render the sidebar's "Resource Utilization" expander.
+
+    Extracted from `render_sidebar()` so the choice of panels is reachable
+    without standing up a whole session (tests/test_sidebar_monitors.py).
+
+    Which panels apply is a question about the deployment, and the three
+    answers do not line up with `online_deployment`:
+
+    - Kubernetes: the queue and the shared volume are what a user's job waits
+      on, and psutil here would describe a Streamlit pod that runs nothing.
+    - Full image under docker/docker-compose: one container runs Redis, the RQ
+      workers and Streamlit, so all three panels describe the same machine.
+    - `Dockerfile_simple`: `online_deployment` is baked true but there is no
+      Redis and no queue, so the psutil panel is the only content there is.
+      Gating it on `online_deployment` left the expander empty.
+    """
+    from src.workflow.health import get_queue_metrics, queue_workers_are_remote
+
+    with st.expander("📊 **Resource Utilization**"):
+        # `{}` means "no queue in this deployment" - the same distinction
+        # get_queue_metrics() already draws for the metrics themselves.
+        metrics = get_queue_metrics()
+        if metrics:
+            monitor_queue()
+            monitor_storage()
+        # Short-circuited on `available`: an unreachable queue is not evidence
+        # that the workers are elsewhere, and this saves the second round trip
+        # in exactly the case where Redis is slow to answer.
+        if not (metrics.get("available") and queue_workers_are_remote()):
+            monitor_hardware()
 
 
 def load_params(default: bool = False) -> dict[str, Any]:
@@ -765,11 +879,7 @@ def render_sidebar(page: str = "") -> None:
             else:
                 st.session_state["spectrum_num_bins"] = 50
 
-        with st.expander("📊 **Resource Utilization**"):
-            monitor_hardware()
-            # Show queue metrics in online mode
-            if st.session_state.settings.get("online_deployment", False):
-                monitor_queue()
+        render_resource_utilization()
 
         # Display OpenMS WebApp Template Version from settings.json
         with st.container():

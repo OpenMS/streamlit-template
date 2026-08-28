@@ -14,3 +14,12 @@ gdpr_consent/node_modules/
 .streamlit/secrets.toml
 docs/superpowers/
 .venv/
+
+# Helm charts vendored by `kubectl kustomize --enable-helm k8s/storage/`.
+# Kustomize downloads the Ganesha chart into a `charts/` directory beside the
+# kustomization that inflates it, so every render - local or CI - leaves a tree
+# here. It must never be committed: the vendored chart carries its own
+# `nodeSelector` keys, which would make the no-node-pinning assertion in
+# .github/scripts/ci-assertions.sh red from a clean checkout, and a committed
+# copy silently outranks the version pin the chart is deliberately held at.
+k8s/storage/charts/

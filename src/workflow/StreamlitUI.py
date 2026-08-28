@@ -21,6 +21,10 @@ from src.common.common import (
     tk_file_dialog,
 )
 from src.workflow._log_status import classify_log_outcome
+from src.workflow.ParameterManager import (
+    InvalidParameterFileError,
+    TransientParameterFileError,
+)
 
 
 def _mounted_data_root() -> Union[Path, None]:
@@ -893,6 +897,78 @@ class StreamlitUI:
             display_subsection_tabs, custom_defaults, tool_instance_name,
         )
 
+    def _read_params_for_update(self, tool_instance_name: str) -> dict:
+        """
+        Strict read of params.json for the read-modify-write-back sites below.
+
+        Both callers merge into what they read and write the result straight
+        back, so a tolerant empty dict from an unreadable file would be written
+        over everything stored - erasing `_defaults`, `_flag_params` and every
+        other tool's values while looking like a successful save.
+        read_parameters_strict() raises instead, and here that raise becomes a
+        halt: the write is skipped entirely, so the file on disk is preserved
+        for inspection and can still be repaired by hand, or reset from the
+        button rendered below.
+
+        Args:
+            tool_instance_name (str): Instance currently being rendered, used to
+                keep the reset button key unique across tool fragments.
+
+        Returns:
+            dict: Stored parameters, or an empty dict for an absent file.
+
+        Does not return if the file exists but cannot be read.
+        """
+        try:
+            return self.parameter_manager.read_parameters_strict()
+        except TransientParameterFileError as e:
+            # Ordered before InvalidParameterFileError, of which this is a
+            # subclass. The storage is not answering; the file itself is most
+            # likely intact, so deliberately no reset affordance here - a reset
+            # during a Ganesha restart is what would actually destroy it.
+            st.error(
+                f"**ERROR**: {e} Nothing was written, so no stored parameters "
+                "were lost. This usually clears by itself, reload the page in "
+                "a moment."
+            )
+            st.stop()
+            # st.stop() raises, so this is only reached when Streamlit is
+            # stubbed out; re-raise rather than fall through to the write.
+            raise
+        except InvalidParameterFileError as e:
+            st.error(
+                f"**ERROR**: {e} Nothing was written, so no stored parameters "
+                "were lost. Repair the file, or reset to defaults to continue."
+            )
+            if st.button(
+                "⚠️ Reset parameters to defaults",
+                help="Move the unreadable parameter file aside and start over from the default parameters.",
+                key=f"reset_unreadable_params_{tool_instance_name}",
+            ):
+                try:
+                    backup = self.parameter_manager.reset_to_default_parameters()
+                except OSError as reset_error:
+                    # Without this the button itself raises and the page stops
+                    # again on the next render, with no remaining way out.
+                    st.error(
+                        f"**ERROR**: Could not move "
+                        f"{self.parameter_manager.params_file} aside: "
+                        f"{reset_error}"
+                    )
+                else:
+                    self.parameter_manager.clear_parameter_session_state()
+                    st.toast(
+                        f"Parameters reset to defaults, previous file kept as {backup.name}"
+                        if backup is not None
+                        else "Parameters reset to defaults"
+                    )
+                    # Every tool section is affected, not just this fragment.
+                    st.rerun(scope="app")
+            st.stop()
+            # st.stop() raises, so this is only reached when Streamlit is
+            # stubbed out; re-raise rather than fall through to the write.
+            raise
+
     def _input_TOPP_impl(
         self,
         topp_tool_name: str,
@@ -921,12 +997,14 @@ class StreamlitUI:
         if "_topp_flag_params" not in st.session_state:
             st.session_state["_topp_flag_params"] = {}
         st.session_state["_topp_flag_params"][tool_instance_name] = list(flag_parameters)
-        _fp = self.parameter_manager.get_parameters_from_json()
+        _fp = self._read_params_for_update(tool_instance_name)
         if "_flag_params" not in _fp:
             _fp["_flag_params"] = {}
         _fp["_flag_params"][tool_instance_name] = list(flag_parameters)
-        with open(self.parameter_manager.params_file, "w", encoding="utf-8") as _f:
-            json.dump(_fp, _f, indent=4)
+        # Atomic: a truncate-then-rewrite interrupted here leaves a torn
+        # params.json which every later strict read rejects, wedging this very
+        # method on each render.
+        self.parameter_manager.write_parameters(_fp)
 
         if not display_subsections:
             display_subsection_tabs = False
@@ -941,14 +1019,15 @@ class StreamlitUI:
 
         # Seed custom defaults into params.json under _defaults key
         if custom_defaults:
-            params = self.parameter_manager.get_parameters_from_json()
+            params = self._read_params_for_update(tool_instance_name)
             if "_defaults" not in params:
                 params["_defaults"] = {}
             params["_defaults"][tool_instance_name] = custom_defaults
-            with open(self.parameter_manager.params_file, "w", encoding="utf-8") as f:
-                json.dump(params, f, indent=4)
-            # Refresh self.params so widget resolution sees _defaults
-            self.params = self.parameter_manager.get_parameters_from_json()
+            self.parameter_manager.write_parameters(params)
+            # Refresh self.params so widget resolution sees _defaults - reuse
+            # what was just written instead of reading the file back, which
+            # could be torn by a concurrent writer.
+            self.params = params
 
         # read into Param object
         param = poms.Param()
@@ -1465,7 +1544,10 @@ class StreamlitUI:
                 key="param_import_uploader"
             )
             if up is not None:
-                with open(self.parameter_manager.params_file, "w") as f:
+                # encoding="utf-8" explicitly: the payload is decoded as utf-8
+                # just above, and writing it back in the platform codepage
+                # produced a params.json that no later utf-8 read could decode.
+                with open(self.parameter_manager.params_file, "w", encoding="utf-8") as f:
                     f.write(up.read().decode("utf-8"))
                 self.parameter_manager.clear_parameter_session_state()
                 st.toast("Parameters imported")
