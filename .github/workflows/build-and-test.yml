@@ -274,185 +274,75 @@ jobs:
           source .github/scripts/ci-assertions.sh
           assert_doc_links_resolve
 
-  build-amd64:
-    # amd64 path. Produces per-arch tags `<ref>-<variant>-amd64`; the
-    # multi-arch manifest under `<ref>-<variant>` (and `latest`) is stitched
-    # together in `create-manifest` once the sibling `build-arm64` succeeds.
+  # Four per-variant, per-arch build jobs, all routed through the reusable
+  # .github/workflows/build-image.yml. Until 2026-08-25 these were two jobs,
+  # `build-amd64` and `build-arm64`, each carrying a {full, simple} matrix.
+  #
+  # Separate JOBS rather than matrix legs because `needs:` is job-level, not
+  # leaf-level: a failure in one leg marks the whole job failed and skips every
+  # consumer, so a break in one image variant took the entire kind integration
+  # suite with it. build-image.yml's header records what that cost. Consumers
+  # below now name exactly the variants they actually download.
+
+  build-full-amd64:
     needs: lint-manifests
-    runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - variant: full
-            dockerfile: Dockerfile
-          - variant: simple
-            dockerfile: Dockerfile_simple
-    steps:
-      - uses: actions/checkout@v4
+    uses: ./.github/workflows/build-image.yml
+    with:
+      variant: full
+      dockerfile: Dockerfile
+      arch: amd64
+      runner: ubuntu-latest
+      platform: linux/amd64
+    secrets: inherit
 
-      - name: Compute lowercase image name (OCI refs must be lowercase)
-        run: echo "IMAGE_NAME_LC=${IMAGE_NAME,,}" >> "$GITHUB_ENV"
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GHCR
-        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Extract metadata (tags, labels)
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=ref,event=branch,suffix=-${{ matrix.variant }}-amd64
-            type=ref,event=tag,suffix=-${{ matrix.variant }}-amd64
-            type=sha,prefix=,suffix=-${{ matrix.variant }}-amd64
-            type=raw,value=latest-amd64,enable=${{ matrix.variant == 'full' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-
-      - name: Build and conditionally push
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ${{ matrix.dockerfile }}
-          platforms: linux/amd64
-          load: true
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          # provenance/attestations turn the pushed tag into a manifest list,
-          # which the create-manifest job's `docker manifest create` then
-          # refuses ("is a manifest list"). Keep the push as a single-platform
-          # image manifest — same as the build-arm64 job.
-          provenance: false
-          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME_LC }}/cache:${{ matrix.variant }}-amd64
-          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref={0}/{1}/cache:{2}-amd64,mode=max', env.REGISTRY, env.IMAGE_NAME_LC, matrix.variant) || '' }}
-          build-args: |
-            GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}
-
-      - name: Retag for kind (image name the kustomize overlay points at)
-        run: |
-          # The prod overlay sets `newName: ghcr.io/openms/streamlit-template`,
-          # `newTag: main-full`. The rendered manifests reference that exact
-          # ref, so we need it loaded into kind under that name. Tag invariant
-          # across branches/variants so the test always works.
-          FIRST_TAG=$(printf '%s\n' "${{ steps.meta.outputs.tags }}" | head -n 1)
-          docker tag "$FIRST_TAG" ghcr.io/openms/streamlit-template:main-full
-
-      - name: Save image as tar
-        run: docker save ghcr.io/openms/streamlit-template:main-full -o /tmp/image.tar
-
-      - name: Upload image artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: openms-streamlit-${{ matrix.variant }}-amd64-image
-          path: /tmp/image.tar
-          retention-days: 1
-
-  build-arm64:
-    # arm64 path. Runs on a native ARM64 runner (no QEMU). Produces per-arch
-    # tags `<ref>-<variant>-arm64`; gets merged into the multi-arch manifest
-    # under `<ref>-<variant>` by the `create-manifest` job below. The build
-    # uses a separate `Dockerfile.arm` / `Dockerfile_simple.arm` that swaps
-    # the miniforge installer to aarch64 and (for the full variant) guards
-    # the THIRDPARTY/Linux/aarch64 copy. The built image is also uploaded as
-    # an artifact so the apptainer / nginx / traefik integration jobs can
-    # exercise the ARM image on a native ARM runner (matrix arch=arm64).
+  build-simple-amd64:
     needs: lint-manifests
-    runs-on: ubuntu-24.04-arm
     permissions:
       contents: read
       packages: write
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - variant: full
-            dockerfile: Dockerfile.arm
-          - variant: simple
-            dockerfile: Dockerfile_simple.arm
-    steps:
-      - name: Free disk space
-        # OpenMS source build needs ~25 GB of scratch space; the ARM runner
-        # image is tighter than the AMD one out of the box. Mirrors what
-        # FLASHApp's publish-docker-images.yml does at the top of its ARM job.
-        run: |
-          # Keep /opt/hostedtoolcache: helm/kind-action and setup-kubectl
-          # cache binaries there and fail if the directory is missing.
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc || true
-          sudo apt-get clean
-          df -h
+    uses: ./.github/workflows/build-image.yml
+    with:
+      variant: simple
+      dockerfile: Dockerfile_simple
+      arch: amd64
+      runner: ubuntu-latest
+      platform: linux/amd64
+    secrets: inherit
 
-      - uses: actions/checkout@v4
+  build-full-arm64:
+    # Native ARM64 runner, no QEMU. `Dockerfile.arm` swaps the miniforge
+    # installer to aarch64 and guards the THIRDPARTY/Linux/aarch64 copy.
+    needs: lint-manifests
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/build-image.yml
+    with:
+      variant: full
+      dockerfile: Dockerfile.arm
+      arch: arm64
+      runner: ubuntu-24.04-arm
+      platform: linux/arm64
+      free_disk_space: true
+    secrets: inherit
 
-      - name: Compute lowercase image name (OCI refs must be lowercase)
-        run: echo "IMAGE_NAME_LC=${IMAGE_NAME,,}" >> "$GITHUB_ENV"
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GHCR
-        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Extract metadata (tags, labels)
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=ref,event=branch,suffix=-${{ matrix.variant }}-arm64
-            type=ref,event=tag,suffix=-${{ matrix.variant }}-arm64
-            type=sha,prefix=,suffix=-${{ matrix.variant }}-arm64
-            type=raw,value=latest-arm64,enable=${{ matrix.variant == 'full' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-
-      - name: Build and conditionally push
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ${{ matrix.dockerfile }}
-          platforms: linux/arm64
-          load: true
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME_LC }}/cache:${{ matrix.variant }}-arm64
-          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref={0}/{1}/cache:{2}-arm64,mode=max', env.REGISTRY, env.IMAGE_NAME_LC, matrix.variant) || '' }}
-          provenance: false
-          build-args: |
-            GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}
-
-      - name: Retag for kind (image name the kustomize overlay points at)
-        run: |
-          # The prod overlay sets `newName: ghcr.io/openms/streamlit-template`,
-          # `newTag: main-full`. The rendered manifests reference that exact
-          # ref, so we need it loaded into kind under that name. Tag invariant
-          # across branches/variants so the test always works.
-          FIRST_TAG=$(printf '%s\n' "${{ steps.meta.outputs.tags }}" | head -n 1)
-          docker tag "$FIRST_TAG" ghcr.io/openms/streamlit-template:main-full
-
-      - name: Save image as tar
-        run: docker save ghcr.io/openms/streamlit-template:main-full -o /tmp/image.tar
-
-      - name: Upload image artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: openms-streamlit-${{ matrix.variant }}-arm64-image
-          path: /tmp/image.tar
-          retention-days: 1
+  build-simple-arm64:
+    needs: lint-manifests
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/build-image.yml
+    with:
+      variant: simple
+      dockerfile: Dockerfile_simple.arm
+      arch: arm64
+      runner: ubuntu-24.04-arm
+      platform: linux/arm64
+      free_disk_space: true
+    secrets: inherit
 
   create-manifest:
     # Stitch the per-arch tags into multi-arch manifest lists. The manifest
@@ -460,7 +350,18 @@ jobs:
     # consumers (k8s overlays, docker-compose users, `docker pull` callers)
     # keep working transparently — docker now auto-selects the right arch
     # on pull. PRs don't push per-arch tags, so there's nothing to merge.
-    needs: [build-amd64, build-arm64]
+    #
+    # The kind jobs are dependencies, not just the builds. This is what
+    # publishes `latest` and the multi-arch tags the de.NBI cluster pulls, and
+    # until now nothing in the graph named test-nginx or test-traefik at all -
+    # so a merge published an image whose multi-node storage tier had never been
+    # exercised on a cluster. `main` carries no branch protection either, so the
+    # graph is the only place this can be enforced.
+    #
+    # Accepted cost: every push to main now waits on a ~40 minute kind matrix,
+    # and a teardown failure blocks publishing for a reason unrelated to the
+    # image. That is the trade; the alternative was publishing untested.
+    needs: [build-full-amd64, build-simple-amd64, build-full-arm64, build-simple-arm64, test-nginx, test-traefik]
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
@@ -531,7 +432,17 @@ jobs:
     # Building apptainer from source on the arm runner would add ~15 min and
     # significant maintenance surface for limited value (HPC SIF consumers
     # remain amd64). Re-evaluate if upstream starts publishing arm64 builds.
-    needs: build-amd64
+    #
+    # Both amd64 variants, because this job has its own {full, simple} matrix
+    # and each leg downloads the matching artifact.
+    #
+    # Deliberately NOT given the `if: always() && ...` override the kind jobs
+    # below carry: `needs:` skips this whole job if either build fails, so a
+    # broken `full` image still costs the `simple` apptainer leg. That is
+    # accepted. Apptainer is a side deployment - the cluster runs the docker
+    # image - so the coverage worth rescuing from a one-variant break is the
+    # kind suite, not this. Add the same override here if that ever changes.
+    needs: [build-full-amd64, build-simple-amd64]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -544,7 +455,8 @@ jobs:
         # ubuntu-latest has ~14 GB free; the full image (5-8 GB) plus kind
         # node image plus loading the OCI tar into both docker and kind can
         # exhaust it. The arm runner is even tighter. Same incantation as
-        # `build-arm64`'s "Free disk space" step.
+        # the "Free disk space" step in .github/workflows/build-image.yml, which
+        # the arm64 callers enable via free_disk_space.
         run: |
           # Keep /opt/hostedtoolcache: helm/kind-action and setup-kubectl
           # cache binaries there and fail if the directory is missing.
@@ -761,7 +673,30 @@ jobs:
           done <<< "${{ steps.meta.outputs.tags }}"
 
   test-nginx:
-    needs: [build-amd64, build-arm64]
+    # All four build jobs, so this job waits for every image it might download -
+    # `needs:` is what provides the ordering, and it is kept.
+    #
+    # `if: always()` overrides only the OTHER thing `needs:` does, which is skip
+    # this job when a dependency fails. Without it a broken `full` build skipped
+    # all four leaves here, including the two `simple` ones whose images had
+    # been built and uploaded successfully - 100% of the storage-tier runtime
+    # coverage lost to a break in one image variant.
+    #
+    # The condition is the `simple` pair specifically. Those legs install a
+    # prebuilt pyopenms wheel and are the robust ones; the `full` legs compile
+    # OpenMS from source and are where upstream breakage lands. When `full` is
+    # broken, the `simple` leaves run and assert everything, and the `full`
+    # leaves go red at "Download image artifact" - honest, since their image
+    # genuinely does not exist. When the `simple` builds are themselves broken
+    # there is nothing to test against, and the whole job skips as before.
+    #
+    # No staleness risk: download-artifact@v4 is scoped to the current run, so a
+    # leaf either gets THIS run's image or fails. It cannot silently test the
+    # previous one.
+    needs: [build-full-amd64, build-simple-amd64, build-full-arm64, build-simple-arm64]
+    if: always() && !cancelled()
+        && needs.build-simple-amd64.result == 'success'
+        && needs.build-simple-arm64.result == 'success'
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -786,7 +721,8 @@ jobs:
         # ubuntu-latest has ~14 GB free; the full image (5-8 GB) plus kind
         # node image plus loading the OCI tar into both docker and kind can
         # exhaust it. The arm runner is even tighter. Same incantation as
-        # `build-arm64`'s "Free disk space" step.
+        # the "Free disk space" step in .github/workflows/build-image.yml, which
+        # the arm64 callers enable via free_disk_space.
         run: |
           # Keep /opt/hostedtoolcache: helm/kind-action and setup-kubectl
           # cache binaries there and fail if the directory is missing.
@@ -795,10 +731,22 @@ jobs:
           df -h
 
       - name: Download image artifact
+        id: download-image
         uses: actions/download-artifact@v4
         with:
           name: openms-streamlit-${{ matrix.variant }}-${{ matrix.arch }}-image
           path: /tmp
+
+      - name: Explain a missing image
+        # This job runs under `if: always() && <the simple builds succeeded>`,
+        # so when the `full` build is broken its two leaves reach here and the
+        # download above fails with "unable to find any artifacts" - true, but
+        # it names neither the variant nor the cause. Say both, then stay red:
+        # the leaf genuinely tested nothing and must not report success.
+        if: always() && steps.download-image.outcome == 'failure'
+        run: |
+          echo "::error::openms-streamlit-${{ matrix.variant }}-${{ matrix.arch }}-image was not produced by this run, so the ${{ matrix.variant }} ${{ matrix.arch }} build failed earlier. This leaf tested nothing; the other variant's leaves are unaffected and their results stand."
+          exit 1
 
       - name: Create kind cluster
         uses: helm/kind-action@v1
@@ -1430,7 +1378,30 @@ jobs:
           fi
 
   test-traefik:
-    needs: [build-amd64, build-arm64]
+    # All four build jobs, so this job waits for every image it might download -
+    # `needs:` is what provides the ordering, and it is kept.
+    #
+    # `if: always()` overrides only the OTHER thing `needs:` does, which is skip
+    # this job when a dependency fails. Without it a broken `full` build skipped
+    # all four leaves here, including the two `simple` ones whose images had
+    # been built and uploaded successfully - 100% of the storage-tier runtime
+    # coverage lost to a break in one image variant.
+    #
+    # The condition is the `simple` pair specifically. Those legs install a
+    # prebuilt pyopenms wheel and are the robust ones; the `full` legs compile
+    # OpenMS from source and are where upstream breakage lands. When `full` is
+    # broken, the `simple` leaves run and assert everything, and the `full`
+    # leaves go red at "Download image artifact" - honest, since their image
+    # genuinely does not exist. When the `simple` builds are themselves broken
+    # there is nothing to test against, and the whole job skips as before.
+    #
+    # No staleness risk: download-artifact@v4 is scoped to the current run, so a
+    # leaf either gets THIS run's image or fails. It cannot silently test the
+    # previous one.
+    needs: [build-full-amd64, build-simple-amd64, build-full-arm64, build-simple-arm64]
+    if: always() && !cancelled()
+        && needs.build-simple-amd64.result == 'success'
+        && needs.build-simple-arm64.result == 'success'
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -1455,7 +1426,8 @@ jobs:
         # ubuntu-latest has ~14 GB free; the full image (5-8 GB) plus kind
         # node image plus loading the OCI tar into both docker and kind can
         # exhaust it. The arm runner is even tighter. Same incantation as
-        # `build-arm64`'s "Free disk space" step.
+        # the "Free disk space" step in .github/workflows/build-image.yml, which
+        # the arm64 callers enable via free_disk_space.
         run: |
           # Keep /opt/hostedtoolcache: helm/kind-action and setup-kubectl
           # cache binaries there and fail if the directory is missing.
@@ -1464,10 +1436,22 @@ jobs:
           df -h
 
       - name: Download image artifact
+        id: download-image
         uses: actions/download-artifact@v4
         with:
           name: openms-streamlit-${{ matrix.variant }}-${{ matrix.arch }}-image
           path: /tmp
+
+      - name: Explain a missing image
+        # This job runs under `if: always() && <the simple builds succeeded>`,
+        # so when the `full` build is broken its two leaves reach here and the
+        # download above fails with "unable to find any artifacts" - true, but
+        # it names neither the variant nor the cause. Say both, then stay red:
+        # the leaf genuinely tested nothing and must not report success.
+        if: always() && steps.download-image.outcome == 'failure'
+        run: |
+          echo "::error::openms-streamlit-${{ matrix.variant }}-${{ matrix.arch }}-image was not produced by this run, so the ${{ matrix.variant }} ${{ matrix.arch }} build failed earlier. This leaf tested nothing; the other variant's leaves are unaffected and their results stand."
+          exit 1
 
       - name: Create kind cluster
         uses: helm/kind-action@v1
