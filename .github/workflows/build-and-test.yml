@@ -98,6 +98,18 @@ jobs:
           kubeconform -summary -strict -kubernetes-version 1.28.0 -skip IngressRoute \
             < /tmp/ci-rendered.yaml
           kubectl kustomize k8s/overlays/prod/ > /tmp/prod-rendered.yaml
+          # Fenced like its two siblings at "Validate the prod overlay" and
+          # "Validate the storage root". `bash -e` catches a render that FAILS;
+          # it does not catch one that succeeds and emits zero documents. That
+          # case matters more here than for ci-rendered.yaml above, which the
+          # CI_RES null probe below already covers: an empty prod render leaves
+          # PROD_RES empty while CI_RES holds a real value, so the
+          # "CI_RES = PROD_RES" comparison is FALSE, passes, and prints a real
+          # worker size having compared it against nothing.
+          if [ ! -s /tmp/prod-rendered.yaml ]; then
+            echo "::error::k8s/overlays/prod/ rendered nothing; the ci-vs-prod worker comparison below would compare against an empty file and pass"
+            exit 1
+          fi
           WORKER_RESOURCES='select(.kind == "Deployment" and (.metadata.name | test("rq-worker$")))
             | .spec.template.spec.containers[] | select(.name == "rq-worker") | .resources'
           CI_RES=$(yq "$WORKER_RESOURCES" /tmp/ci-rendered.yaml)
@@ -197,11 +209,22 @@ jobs:
           version: v3.21.4
 
       - name: Check the assertion library
+        # shellcheck is run unconditionally, not behind `if command -v`. Guarded,
+        # a missing shellcheck produced a green step with no line saying so - and
+        # since shellcheck prints nothing when it finds nothing, the log could
+        # not distinguish "ran clean" from "never ran". That is the same
+        # pass-on-zero-work shape as `if command -v helm`, which
+        # assert_no_node_pinning_anywhere replaced with a hard `_ci_require`.
+        # ubuntu-latest ships shellcheck; if a future image drops it, this step
+        # going red with "command not found" is the honest answer.
+        #
+        # -S error, not -S warning: raising it may well be free, but the only
+        # evidence for that is a single unreproduced run, and sizing the batch
+        # belongs on a runner rather than in this commit.
         run: |
           bash -n .github/scripts/ci-assertions.sh
-          if command -v shellcheck >/dev/null; then
-            shellcheck -S error .github/scripts/ci-assertions.sh
-          fi
+          shellcheck --version | sed -n '2p'
+          shellcheck -S error .github/scripts/ci-assertions.sh
 
       - name: Assert the storage NetworkPolicy matches the overlay
         # Runs before the pinning check because it is the step that renders the
@@ -238,6 +261,18 @@ jobs:
         run: |
           source .github/scripts/ci-assertions.sh
           assert_no_node_pinning_anywhere
+
+      - name: Assert every documented .md reference resolves
+        # The commit that moved the three storage research documents under docs/
+        # repointed every reference from k8s/, .github/, src/ and tests/, and
+        # missed the eight the documents make to each other. One of those was
+        # the storage rollback procedure, which k8s/base/workspace-pvc.yaml
+        # cites as authoritative - so the outer hop resolved and the inner one
+        # led nowhere. Cheap enough to run on every push; nothing else in the
+        # pipeline reads a doc path at all.
+        run: |
+          source .github/scripts/ci-assertions.sh
+          assert_doc_links_resolve
 
   build-amd64:
     # amd64 path. Produces per-arch tags `<ref>-<variant>-amd64`; the
@@ -800,12 +835,21 @@ jobs:
           # moving-ref trap has inverted into rot, because the repository is
           # archived: the ref will not move again, but the kind node image will.
           #
-          # controller-v1.15.1, not v1.14.0: upstream's support table lists
-          # v1.14.0 as covering k8s 1.30-1.34, and the cluster created above is
-          # kindest/node:v1.35.0. `node_image` is deliberately left unpinned on
-          # kind-action, so the cluster's k8s version floats upward while this
-          # manifest does not - when the next kind bump lands, this tag is the
-          # thing to re-check.
+          # controller-v1.15.1, not v1.14.0: upstream's support table at this
+          # tag lists v1.15.1 as covering k8s 1.31-1.35 and v1.14.0 as covering
+          # only 1.30-1.34, and the cluster created above is
+          # kindest/node:v1.35.0.
+          #
+          # That cluster version is PINNED, indirectly: `version: v0.31.0` on
+          # kind-action fixes the default node image, because kind v0.31.0
+          # ships kindest/node:v1.35.0. It does not drift on its own. The
+          # separate decision not to pin `node_image` is made at that step for
+          # an unrelated reason - a digest that goes stale fails cluster
+          # creation outright, with no fallback.
+          #
+          # So the trigger for re-checking this tag is the `version:` pin
+          # moving, not the passage of time: bump kind, then read the support
+          # table again.
           kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.15.1/deploy/static/provider/kind/deploy.yaml
           kubectl wait --namespace ingress-nginx --for=condition=ready pod --selector=app.kubernetes.io/component=controller --timeout=90s
 
@@ -850,7 +894,7 @@ jobs:
         run: |
           for n in $(kind get nodes --name test-cluster); do
             echo "--- $n"
-            docker exec "$n" sh -c 'ls -l /sbin/mount.nfs* /usr/sbin/mount.nfs* 2>&1; echo ---; modprobe nfs 2>/dev/null || true; grep nfs /proc/filesystems || echo "(nfs absent from /proc/filesystems - the module autoloads on first mount, so this is only conclusive once one has been attempted)"' || true
+            docker exec "$n" sh -c 'ls -l /sbin/mount.nfs* /usr/sbin/mount.nfs* 2>&1; echo ---; if modprobe nfs 2>/dev/null; then MP="modprobe loaded it"; else MP="modprobe could not (absent, or no such module)"; fi; grep nfs /proc/filesystems || echo "(nfs absent from /proc/filesystems; $MP. Loaded-and-still-absent is CONCLUSIVE: this node cannot mount NFS. Otherwise the module may still autoload on first mount, and this says nothing.)"' || true
           done
 
       - name: Deploy the storage root (NFS-Ganesha)
@@ -1319,22 +1363,71 @@ jobs:
         if: always()
         run: |
           CL=test-cluster
+          # Derived ONCE and reused by all three loops below. They run during
+          # teardown, when the cluster can disappear between them, and
+          # re-deriving would silently shrink the list mid-step. An empty list
+          # is announced rather than tolerated: every loop would otherwise
+          # iterate zero times and the step would exit 0 having done nothing -
+          # indistinguishable from having worked. That is the failure a wrong
+          # cluster name produces, and it is why $CL is checked against
+          # `cluster_name` on the kind-action step above.
+          NODES="$(kind get nodes --name "$CL" 2>/dev/null || true)"
+          if [ -z "$NODES" ]; then
+            echo "::warning::kind get nodes --name $CL returned nothing - this step released no mounts, and a green teardown says nothing about it"
+          fi
+
           echo "=== NFS mounts and D-state processes, before teardown ==="
-          for n in $(kind get nodes --name "$CL" 2>/dev/null); do
+          mounts_before=0
+          for n in $NODES; do
             echo "--- $n"
-            docker exec "$n" sh -c 'grep -E " nfs4? " /proc/self/mounts' || true
-            docker exec "$n" sh -c 'ps -eo pid,stat,wchan:24,comm 2>/dev/null | awk "\$2 ~ /D/"' || true
+            # Counted as well as printed. Whether there was anything to release
+            # is the one thing a green teardown cannot tell you on its own, and
+            # it is the difference between "this step fixed the deadlock" and
+            # "something else did".
+            m="$(docker exec "$n" sh -c 'grep -E " nfs4? " /proc/self/mounts' || true)"
+            if [ -n "$m" ]; then
+              printf '%s\n' "$m"
+              mounts_before=$((mounts_before + $(printf '%s\n' "$m" | grep -c .)))
+            fi
+            # No `2>/dev/null` on ps. Suppressed, a failing ps prints nothing,
+            # which is byte-identical to "no processes in D state" - a false
+            # negative in the diagnostic that identified round 2's deadlock.
+            # Keep ps rather than reading /proc/<pid>/status: wchan is the
+            # column that named it (nfs_wait_bit_killable). kind v0.31.0's base
+            # image installs procps, so ps failing would itself be news.
+            docker exec "$n" sh -c 'ps -eo pid,stat,wchan:24,comm | awk "\$2 ~ /D/"' || true
           done
+          if [ -n "$NODES" ]; then
+            if [ "$mounts_before" -eq 0 ]; then
+              echo "::warning::this step released no NFS mounts - there were none to release, so a green teardown proves nothing about the deadlock it exists to prevent"
+            else
+              echo "$mounts_before NFS mount(s) held before teardown"
+            fi
+          fi
+
+          # Order is load-bearing: clients first, while the server is still up
+          # and their unmounts can complete; then a lazy detach for whatever the
+          # kubelet has not released; the server namespace LAST.
           kubectl delete ns openms --wait=true --timeout=120s || true
-          for n in $(kind get nodes --name "$CL" 2>/dev/null); do
+          for n in $NODES; do
             docker exec "$n" sh -c 'umount -f -l -a -t nfs,nfs4' || true
           done
           kubectl delete ns template-app-storage --wait=false || true
+
           echo "=== residual NFS mounts (expected: none) ==="
-          for n in $(kind get nodes --name "$CL" 2>/dev/null); do
+          residual=""
+          for n in $NODES; do
             echo "--- $n"
-            docker exec "$n" sh -c 'grep -E " nfs4? " /proc/self/mounts' || true
+            r="$(docker exec "$n" sh -c 'grep -E " nfs4? " /proc/self/mounts' || true)"
+            if [ -n "$r" ]; then
+              printf '%s\n' "$r"
+              residual="$residual $n"
+            fi
           done
+          if [ -n "$residual" ]; then
+            # Collapsed to one line: GitHub's ::warning:: is line-oriented.
+            echo "::warning::NFS mounts still held after this step on:$residual - if teardown nevertheless passes, something other than this step is responsible"
+          fi
 
   test-traefik:
     needs: [build-amd64, build-arm64]
@@ -1450,7 +1543,7 @@ jobs:
         run: |
           for n in $(kind get nodes --name traefik-test); do
             echo "--- $n"
-            docker exec "$n" sh -c 'ls -l /sbin/mount.nfs* /usr/sbin/mount.nfs* 2>&1; echo ---; modprobe nfs 2>/dev/null || true; grep nfs /proc/filesystems || echo "(nfs absent from /proc/filesystems - the module autoloads on first mount, so this is only conclusive once one has been attempted)"' || true
+            docker exec "$n" sh -c 'ls -l /sbin/mount.nfs* /usr/sbin/mount.nfs* 2>&1; echo ---; if modprobe nfs 2>/dev/null; then MP="modprobe loaded it"; else MP="modprobe could not (absent, or no such module)"; fi; grep nfs /proc/filesystems || echo "(nfs absent from /proc/filesystems; $MP. Loaded-and-still-absent is CONCLUSIVE: this node cannot mount NFS. Otherwise the module may still autoload on first mount, and this says nothing.)"' || true
           done
 
       - name: Deploy the storage root (NFS-Ganesha)
@@ -1913,19 +2006,68 @@ jobs:
         if: always()
         run: |
           CL=traefik-test
+          # Derived ONCE and reused by all three loops below. They run during
+          # teardown, when the cluster can disappear between them, and
+          # re-deriving would silently shrink the list mid-step. An empty list
+          # is announced rather than tolerated: every loop would otherwise
+          # iterate zero times and the step would exit 0 having done nothing -
+          # indistinguishable from having worked. That is the failure a wrong
+          # cluster name produces, and it is why $CL is checked against
+          # `cluster_name` on the kind-action step above.
+          NODES="$(kind get nodes --name "$CL" 2>/dev/null || true)"
+          if [ -z "$NODES" ]; then
+            echo "::warning::kind get nodes --name $CL returned nothing - this step released no mounts, and a green teardown says nothing about it"
+          fi
+
           echo "=== NFS mounts and D-state processes, before teardown ==="
-          for n in $(kind get nodes --name "$CL" 2>/dev/null); do
+          mounts_before=0
+          for n in $NODES; do
             echo "--- $n"
-            docker exec "$n" sh -c 'grep -E " nfs4? " /proc/self/mounts' || true
-            docker exec "$n" sh -c 'ps -eo pid,stat,wchan:24,comm 2>/dev/null | awk "\$2 ~ /D/"' || true
+            # Counted as well as printed. Whether there was anything to release
+            # is the one thing a green teardown cannot tell you on its own, and
+            # it is the difference between "this step fixed the deadlock" and
+            # "something else did".
+            m="$(docker exec "$n" sh -c 'grep -E " nfs4? " /proc/self/mounts' || true)"
+            if [ -n "$m" ]; then
+              printf '%s\n' "$m"
+              mounts_before=$((mounts_before + $(printf '%s\n' "$m" | grep -c .)))
+            fi
+            # No `2>/dev/null` on ps. Suppressed, a failing ps prints nothing,
+            # which is byte-identical to "no processes in D state" - a false
+            # negative in the diagnostic that identified round 2's deadlock.
+            # Keep ps rather than reading /proc/<pid>/status: wchan is the
+            # column that named it (nfs_wait_bit_killable). kind v0.31.0's base
+            # image installs procps, so ps failing would itself be news.
+            docker exec "$n" sh -c 'ps -eo pid,stat,wchan:24,comm | awk "\$2 ~ /D/"' || true
           done
+          if [ -n "$NODES" ]; then
+            if [ "$mounts_before" -eq 0 ]; then
+              echo "::warning::this step released no NFS mounts - there were none to release, so a green teardown proves nothing about the deadlock it exists to prevent"
+            else
+              echo "$mounts_before NFS mount(s) held before teardown"
+            fi
+          fi
+
+          # Order is load-bearing: clients first, while the server is still up
+          # and their unmounts can complete; then a lazy detach for whatever the
+          # kubelet has not released; the server namespace LAST.
           kubectl delete ns openms --wait=true --timeout=120s || true
-          for n in $(kind get nodes --name "$CL" 2>/dev/null); do
+          for n in $NODES; do
             docker exec "$n" sh -c 'umount -f -l -a -t nfs,nfs4' || true
           done
           kubectl delete ns template-app-storage --wait=false || true
+
           echo "=== residual NFS mounts (expected: none) ==="
-          for n in $(kind get nodes --name "$CL" 2>/dev/null); do
+          residual=""
+          for n in $NODES; do
             echo "--- $n"
-            docker exec "$n" sh -c 'grep -E " nfs4? " /proc/self/mounts' || true
+            r="$(docker exec "$n" sh -c 'grep -E " nfs4? " /proc/self/mounts' || true)"
+            if [ -n "$r" ]; then
+              printf '%s\n' "$r"
+              residual="$residual $n"
+            fi
           done
+          if [ -n "$residual" ]; then
+            # Collapsed to one line: GitHub's ::warning:: is line-oriented.
+            echo "::warning::NFS mounts still held after this step on:$residual - if teardown nevertheless passes, something other than this step is responsible"
+          fi
