@@ -24,6 +24,23 @@ mock_streamlit.session_state = {}
 _original_streamlit = sys.modules.get('streamlit')
 sys.modules['streamlit'] = mock_streamlit
 
+
+def _drop_cached_workflow_modules() -> None:
+    """Forget any cached src.workflow modules.
+
+    A module binds `st` once, at import time. If an earlier test file has already
+    imported src.workflow.ParameterManager against the real streamlit, the import
+    below is just a cache hit and the mock never takes effect - which is why these
+    tests passed when run alone but failed in a full-suite run.
+    """
+    for _key in list(sys.modules.keys()):
+        if _key.startswith('src.workflow'):
+            sys.modules.pop(_key, None)
+
+
+# Drop first, so the import below really binds the mock.
+_drop_cached_workflow_modules()
+
 from src.workflow.ParameterManager import ParameterManager
 
 if _original_streamlit is not None:
@@ -31,10 +48,9 @@ if _original_streamlit is not None:
 else:
     sys.modules.pop('streamlit', None)
 
-# Remove cached src.workflow modules
-for _key in list(sys.modules.keys()):
-    if _key.startswith('src.workflow'):
-        sys.modules.pop(_key, None)
+# Drop again, so later test files re-import against the real streamlit instead of
+# the mock-bound modules this file just created.
+_drop_cached_workflow_modules()
 
 
 @pytest.fixture
