@@ -322,22 +322,39 @@ kubectl -n openms rollout restart deployment/<your-app-name>-streamlit
 
 ### Step 6 — Deploy
 
-**Set the node CIDR first.** `k8s/storage/networkpolicy.yaml` ships `192.0.2.0/24` (RFC 5737 TEST-NET-1) as a placeholder, which admits nothing. The provisioner emits in-tree `nfs:` volumes, and the kubelet mounts those from the node's own address rather than from a pod IP, so without this every mount hangs on a CNI that enforces NetworkPolicy. Read the node addresses off the cluster and narrow the range as far as it will go:
-
 ```bash
-kubectl get nodes -o wide          # the INTERNAL-IP column
+k8s/deploy.sh              # or --dry-run to render and validate, applying nothing
 ```
 
-Then apply the storage tier **before** the overlay. It publishes the StorageClass the workspaces PVC claims; applied in the other order, every pod sits `Pending` on a class that does not exist yet:
+That is the whole deploy. It prints the context and cluster it is about to touch and asks for confirmation first (`--yes` to skip, required when there is no terminal), then does the three things below in the one order that works, waiting between them.
+
+**There is no single `kubectl apply -k` for this, and the reasons are worth knowing** — each is a silent, expensive failure if you do it by hand and get it wrong:
+
+1. **Two roots, in order.** `k8s/storage/` publishes the StorageClass `k8s/base/workspace-pvc.yaml` claims. The other order leaves every pod `Pending` on a class that does not exist, and the message says nothing about ordering. They cannot be merged into one root either — see the top of `k8s/storage/kustomization.yaml`, which is about the namespace transformer clobbering per-object namespaces.
+2. **`kubectl apply -k` has no `--enable-helm`.** The storage root inflates the Ganesha chart, so it must be rendered and piped.
+3. **The node addresses are not in the repo.** See below.
+
+Done by hand, it is:
 
 ```bash
-kubectl kustomize --enable-helm k8s/storage/ | kubectl apply -f -
+kubectl kustomize --enable-helm k8s/storage/ \
+  | k8s/storage/set-node-cidrs.sh \
+  | kubectl apply -f -
+
 kubectl -n template-app-storage rollout status statefulset -l app=nfs-server --timeout=300s
 
 kubectl apply -k k8s/overlays/prod/
 ```
 
-The first of those needs Helm on `PATH`. Both applies are idempotent, and on an upgrade the storage one is usually a no-op.
+**Do not skip `set-node-cidrs.sh`, and do not edit the CIDR by hand instead.** `k8s/storage/networkpolicy.yaml` ships `192.0.2.0/24` (RFC 5737 TEST-NET-1) as a placeholder, which admits nothing. The provisioner emits in-tree `nfs:` volumes and the kubelet mounts those from the node's own address rather than from a pod IP — matching no `podSelector` — so on a CNI that enforces NetworkPolicy, an `ipBlock` covering the nodes is the only thing that admits the mount. Left unset, every mount hangs with `mount.nfs: Connection timed out`, which names nothing.
+
+The script reads the node addresses from the cluster you are pointed at and patches the **rendered stream** — it never edits a tracked file, so your fork does not diverge from upstream on a cluster-specific line. It emits one `/32` per node, which is tighter than a range chosen by hand, and it refuses rather than proceeding when:
+
+- a node address falls inside the pod network (the export is `no_root_squash`, so that would give every pod in the cluster root over every workspace);
+- it cannot evaluate that overlap at all;
+- the cluster runs **Cilium** with `policy-cidr-match-mode` unset. From Cilium 1.14 remote nodes carry the `remote-node` identity and CIDR rules do not select node identities without that flag — so the policy would be correct and silently ignored, producing exactly the same hang. Fix the cluster, or override with `ALLOW_CILIUM_WITHOUT_NODE_CIDR_MATCH=1` if you know it admits node traffic another way. **Do not widen the CIDR to work around it.**
+
+It needs `kubectl`, `yq` and `python3` on `PATH`; the first apply also needs Helm. Both applies are idempotent, and on an upgrade the storage one is usually a no-op.
 
 ### Step 7 — Verify
 

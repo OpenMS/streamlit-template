@@ -135,32 +135,75 @@ Decision 4 provisions a **fresh** Cinder PVC in `template-app-storage` rather th
 migrating the existing one, so the old volume stays intact and untouched
 throughout. That is what makes section 5 cheap.
 
-1. Create `template-app-storage`, labelled `pod-security.kubernetes.io/enforce=privileged`.
-2. Label `openms` explicitly `enforce=baseline` — do not rely on the absent label.
-3. Provision the new Cinder PVC in `template-app-storage`.
-4. Deploy Ganesha with `existingClaim`, `Export_Id: 1`, `deviceBasedFsids: false`,
-   `strategy: Recreate`, 1 replica, and **explicit memory request and limit**.
-5. Apply the default-deny ingress plus the two allow rules on 2049: the
-   pod-label-scoped one admitting `app: template-app` in `openms`, and an
-   `ipBlock` for the cluster's node addresses. **The second is not optional
-   and ships as a placeholder.** The provisioner emits in-tree `nfs:` PVs,
-   which the kubelet mounts from the node's own address in the host network
-   namespace — that matches no `podSelector`, so with the placeholder left in
-   place every mount hangs. Read the addresses from `kubectl get nodes -o wide`
-   and narrow the range as far as it will go; check it does not contain the pod
-   CIDR, which would hand every pod in the cluster root over every workspace.
-6. Create the PVC in `openms` on the new StorageClass, mounted at the unchanged
-   path `/workspaces-streamlit-template`. It is a NEW claim, `workspaces-nfs-pvc`,
-   not an edit of `workspaces-pvc`: a bound PVC's spec is immutable apart from
-   `resources.requests`, so `kubectl apply` would be rejected outright, and the
-   only way past that is deleting a claim whose `cinder-csi` class reclaims with
-   `Delete` — destroying the volume section 5 rolls back to.
-7. Seed `.demos` via the fixed initContainer above, and create the `.nfs-probe`
-   sentinel.
-8. Repoint the streamlit and rq-worker Deployments at the new claim. Delete the
-   `nodeselector.yaml` patches; keep the `memory-tier-*` components as resource
-   patches; set requests == limits.
-9. Deploy the storage canary and the sidebar indicator.
+**Steps 1–9 below shipped as manifests and are no longer performed by hand.**
+They are kept as a description of what the two applies do, and of the reasoning
+behind each, because the reasoning is not recoverable from the YAML alone. The
+whole cutover is:
+
+```bash
+k8s/deploy.sh          # --dry-run first if you want to see it render and validate
+```
+
+which is, expanded:
+
+```bash
+kubectl kustomize --enable-helm k8s/storage/ \
+  | k8s/storage/set-node-cidrs.sh \
+  | kubectl apply -f -
+
+kubectl -n template-app-storage rollout status statefulset -l app=nfs-server --timeout=300s
+kubectl apply -k k8s/overlays/prod/
+```
+
+Storage root first: it publishes the StorageClass the workspaces PVC claims, so
+the other order leaves every pod `Pending` on a class that does not exist. The
+script confirms which cluster it is pointed at before touching anything, because
+both namespaces are named the same on every cluster and nothing in the later
+output would tell you it had gone to the wrong one.
+
+1. `template-app-storage`, labelled `pod-security.kubernetes.io/enforce=privileged`
+   — `k8s/storage/namespace.yaml`.
+2. ~~Label `openms` explicitly `enforce=baseline`.~~ **Reversed during
+   implementation.** `k8s/base/namespace.yaml` sets `warn` and `audit` at
+   baseline and does **not** set `enforce`. The reasoning is recorded there: the
+   app's own pods have no `securityContext`, no `hostPath`, no host namespaces
+   and no added capabilities anywhere in `k8s/base` or the overlay, so enforcing
+   buys nothing it does not already satisfy, while an enforced level that
+   tightens under a cluster upgrade can refuse to admit pods. The storage tier,
+   which does need more, is isolated in its own namespace for exactly this
+   reason. **A fork that adds a privileged sidecar to `openms` should revisit
+   this** — the audit trail will show the violation, but nothing will stop it.
+3. The new Cinder PVC — `k8s/storage/nfs-backing-pvc.yaml`.
+4. Ganesha with `existingClaim`, `Export_Id: 1`, `deviceBasedFsids: false`,
+   `strategy: Recreate`, 1 replica and explicit memory request and limit —
+   `k8s/storage/ganesha-values.yaml`. CI asserts all four
+   (`assert_storage_identity_values`, `assert_fsids_pinned`).
+5. The default-deny ingress plus the two allow rules on 2049 —
+   `k8s/storage/networkpolicy.yaml`. The node rule is **not optional** and ships
+   as a placeholder: the provisioner emits in-tree `nfs:` PVs which the kubelet
+   mounts from the node's own address in the host network namespace, matching no
+   `podSelector`, so with the placeholder left in place every mount hangs.
+   `set-node-cidrs.sh` in the pipeline above supplies the real addresses — one
+   `/32` per node — and refuses if any of them falls inside the pod network, or
+   if the cluster runs a Cilium whose `policy-cidr-match-mode` would ignore the
+   rule. **Do not hand-edit the CIDR instead**; that puts cluster-specific
+   configuration into a tracked manifest.
+6. The workspaces PVC in `openms` on the new StorageClass, at the unchanged path
+   `/workspaces-streamlit-template` — `k8s/base/workspace-pvc.yaml`. It is a NEW
+   claim, `workspaces-nfs-pvc`, not an edit of `workspaces-pvc`: a bound PVC's
+   spec is immutable apart from `resources.requests`, so `kubectl apply` would be
+   rejected outright, and the only way past that is deleting a claim whose
+   `cinder-csi` class reclaims with `Delete` — destroying the volume section 5
+   rolls back to.
+7. `.demos` seeding — now an initContainer running `docker/seed-demos.sh`
+   (`k8s/base/streamlit-deployment.yaml`), not the inline script in section 2.
+   The `.nfs-probe` sentinel is created by the worker's readiness probe on first
+   run (`src/workflow/health.py`).
+8. The Deployments already mount the new claim; the `nodeselector.yaml` patches
+   are deleted and `assert_no_node_pinning_anywhere` is the ratchet that keeps
+   them deleted. `memory-tier-*` remain as resource patches with
+   requests == limits.
+9. The sidebar indicator reads the heartbeats `probe_storage()` publishes.
 
 ---
 
