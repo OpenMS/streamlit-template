@@ -7,38 +7,76 @@ description: Use when a session needs to drive a browser rather than merely open
 
 Ends in one of two states, and the caller branches on which:
 
-- **control, confirmed** — a browser this machine can serve, which you have
-  driven. Say nothing further about it.
-- **no control** — the cost is stated once in the user's terms, and page checks
-  run in the local headless browser instead.
+- **control, confirmed** — a browser you have driven, which loaded a page this
+  machine served. The user's app opens in it.
+- **no control** — page checks run in the headless browser, the app opens in
+  their default browser, and rounds put their eyes on one named thing at a time.
 
-**Chromium only.** Chrome, Edge, Brave, Chromium. There is no Firefox
-extension and there will not be one from here: the native messaging host Claude
-Code registers declares a `chrome-extension://` origin, which Firefox cannot
-load, and it is registered for Chrome, Edge and Chromium alone.
+**Neither state is ever explained to the user.** Both are this framework's
+plumbing, and a limitation explained is plumbing talk however carefully the noun
+is chosen. *"The browser reachable from this session lives on another machine,
+so I can't look at your finished pages myself"* was a real turn, and it is
+retired. It obeyed every rule this skill had — cost stated once, in their terms,
+the extension unnamed — and it still told a mass spectrometrist about the
+deployment topology of their coding assistant. What a user can act on is a
+question about their page. Nothing above is one.
 
-**Open the app in the browser you drive — by name, not by default.** When
-control is confirmed, that is where the user's app opens too; otherwise a design
-round discusses two renderings, and a header truncated in one sits fine in the
-other. **`start <url>`, `open <url>` and `xdg-open <url>` all open their
-*default* browser**, which is how a user who had just installed the extension in
-Chrome was shown their app in Firefox. Name the executable instead — the same
-one you found above, the same two forms that launch it:
+**Consider only the browser you are attached to.** Where it runs is a fact about
+the deployment, not a fault in it: Claude Code is routinely a shell on one
+machine and a browser on another, and the user picked neither. There is no
+better browser to go looking for, and no machine to suggest they move to. Where
+it runs may route your next command; it is never a finding, and it never reaches
+the user. What decides whether you drive it is one thing only: whether it can
+load a page you serve.
+
+**Chromium only, but that is a wide family.** Claude Code registers its native
+messaging host for Chrome, Edge, Chromium, Brave, Arc, Opera and Vivaldi — check
+the machine rather than assuming, since the list is the installer's and can
+grow:
 
 ```
-PowerShell:   Start-Process '<path found above>' '<url>'
-POSIX shell:  "<path found above>" "<url>" >/dev/null 2>&1 &
+Windows:  HKCU:\Software\**\NativeMessagingHosts\com.anthropic.claude_code_browser_extension
+macOS:    ~/Library/Application Support/*/NativeMessagingHosts/
+Linux:    ~/.config/*/NativeMessagingHosts/
 ```
 
-Say only *"it's open at <url>"*; which browser, and why, is not their problem.
-With no control there is no such constraint: open their default, and never imply
-you can see it.
+**There is no Firefox extension and there will not be one from here.** The host
+manifest declares a `chrome-extension://` origin, which Firefox cannot load, and
+no `Mozilla` registration is written. An earlier version of this rule said the
+host was registered "for Chrome, Edge and Chromium alone"; that was wrong, and
+it would have had you skip a Brave or Vivaldi install that works.
+
+**With control, open the app by driving to it.** Navigate the browser you
+already hold; it is the user's own window, so the app arrives in front of them
+and you are looking at their pixels rather than a second rendering of the same
+page. That matters: otherwise a design round discusses two renderings, and a
+header truncated in one sits fine in the other.
+
+**With control, never launch anything to do it.** `start <url>`, `open <url>`
+and `xdg-open <url>` all open the *default* browser, which is how a user who had
+just installed the extension in Chrome was shown their app in Firefox. Naming a
+local executable instead does not fix it — the browser you drive need not be on
+this filesystem at all, so the path you found here can name a browser nobody is
+sitting at. Navigating the browser under control has neither failure: there is
+no default to resolve and no path to be wrong about.
+
+**With no control, open their default and say nothing about why.** Nothing is
+being protected now, so `start` / `open` / `xdg-open` is exactly right: they get
+their app in a window. You simply cannot see it, so never imply you can.
+
+Say only *"it's open at <url>"*. **That URL is always `localhost:<port>`** —
+whatever address you had to use to reach the app yourself is machinery, and
+theirs resolves from where they are sitting.
 
 ## Find a Chromium browser
 
-Chrome, Edge, Brave, Chromium. Windows keeps them under `Program Files`; elsewhere try the executable
-name on `PATH`. Edge ships with Windows, so on a Windows machine the
-answer is almost always yes.
+**Only when nothing is attached.** A browser already under control needs no
+path from you; this search exists to wake a shut local one so the extension in
+it can answer.
+
+Any browser from the family above. Windows keeps them under `Program Files`;
+elsewhere try the executable name on `PATH`. Edge ships with Windows, so on a
+Windows machine the answer is almost always yes.
 
 ## Connect control, by using it
 
@@ -56,9 +94,9 @@ mcp__claude-in-chrome__tabs_context_mcp   {"createIfEmpty": true}
 closed one, and the extension is what answers the probe — so with the
 browser shut, control is unavailable and the probe rightly says so.
 
-**Preflight ends with the browser under control** — every design round
-and the whole usability gate depend on it. An empty probe is a step in a
-sequence, not the answer, and the next step is a command, not another
+**An empty probe is a step, not the answer.** Control is worth real effort —
+it is what puts the app in the user's own window instead of a second rendering
+of it — so the next move after an empty probe is a command, never another
 probe:
 
 ```
@@ -111,8 +149,8 @@ I can't check the pages"* tells a mass spectrometrist about this
 framework's wiring and gives them nothing to do. Naming it inside a
 request is different, because it comes with an action and a reason:
 *"one click to add the Claude browser extension and I can check the
-finished pages myself."* After they decline, it is not named again — the
-cost is stated in their terms and the reason is dropped.
+finished pages myself."* After they decline, it is not named again, and
+nothing takes its place: the run simply proceeds without it.
 
 **Check that it started; `start` on Windows does not.** A measured run
 issued `cmd /c start "" "<path>"`, saw its own `launched` echo, probed,
@@ -121,11 +159,11 @@ whether or not anything ran. Both forms above were verified to leave a
 process behind; after either, confirm the process exists before probing.
 
 The same applies later: **opening a page starts a browser** — but only a
-Chromium one is driveable. `xdg-open` / `start <url>` opens their
+Chromium one is driveable. Opening the app with no control opens their
 *default*, which may be Firefox, and re-probing after that finds nothing
-because there is nothing there to find. So if you open the app before
-control is established, re-probe only when what opened was the browser
-you found above.
+because there is nothing there to find. So a page opening is worth a re-probe
+only when what opened was the local browser you launched yourself; the install
+has its own re-probe, and this rule does not govern it.
 
 **Confirm by driving, not by probing.** A probe that returns is not proof:
 navigate to any ordinary web page and take one screenshot. Not
@@ -133,40 +171,46 @@ navigate to any ordinary web page and take one screenshot. Not
 *"Can't interact with browser-internal or unparseable URLs"*, so a blank
 tab fails the check while control is in fact working.
 
-**Then confirm it is *your* browser, with a page you serve.** A browser
-answering is not the same as the browser on this machine answering, and
-the difference is invisible: a run drove a browser successfully for an
-entire build, pointed it at `localhost:8577`, and read **a different
-Streamlit app** on that port — reporting its pages back as if they were
-the user's. Nothing in the tab context distinguishes them; it reads
-`"New Tab" chrome://newtab/` either way. Only a page you serve can:
+**Then confirm it can reach *this* machine, with a page you serve.** A browser
+that answers is not the same as a browser that can load what you are serving,
+and the difference is invisible: a run drove a browser successfully for an
+entire build, pointed it at `localhost:8577`, and read **a different Streamlit
+app** on that port — reporting its pages back as this run's. Most likely an
+earlier build of the user's own, still running over there. The cause never
+mattered; only that the pixels belonged to different software. Nothing in the
+tab context distinguishes them — it reads `"New Tab" chrome://newtab/` either
+way. Only a page you serve can:
 
 ```
 write  <tmp>/<random-token>.txt containing that token
-serve  python -m http.server <port> --bind 127.0.0.1 --directory <tmp>
-drive  browser -> http://127.0.0.1:<port>/<token>.txt
+serve  python -m http.server <port> --bind 0.0.0.0 --directory <tmp>
+drive  browser -> http://<candidate>/<token>.txt
 read   the page
 
-token back  ->  it is this machine's browser. Say nothing; use it.
-anything else -> a browser answered, but not yours.
+token back    ->  it can reach you. Use it, and say nothing.
+anything else ->  next candidate, then stop.
 ```
 
-**A browser that fails the marker is never driven.** Not for the smoke
-run, not for a design round, not once. It renders other people's pages
-convincingly, and a screenshot of the wrong app is worse than no
-screenshot — it is a finding about someone else's software delivered to
-your user as theirs.
+Candidates, in order: `127.0.0.1:<port>`, then each routable interface this host
+has. A random token on a random port is why binding every interface is safe here
+— and necessary, or every candidate but loopback fails for the wrong reason.
 
-**Ask the extension where that browser is before guessing why.** It
-reports whether the browser is local, and the two causes take different
-fixes:
+**A browser that fails every candidate is never driven.** Not for the smoke run,
+not for a design round, not once. It renders *some* app on that port
+convincingly, and a screenshot of the wrong app is worse than no screenshot: it
+is a finding about different software, delivered to your user as one about
+theirs.
 
-- **not local** — the browser is on another machine. A shell inside WSL, a
-     container or an SSH host with the browser on the desktop that owns it is
-     the ordinary case, and there is no second browser to switch to. Do not
-     stop here: the app binds every interface (`streamlit run` with no
-     `--server.address`), so the question is only which address that host can
-     route to. Try one it can reach and re-marker.
+**Ask the extension where that browser is to route the fix, never to report
+it.** It says whether the browser is local, and that answer picks between two
+different repairs. It is not a finding, and it does not reach the user:
+
+- **not local** — an ordinary deployment: a shell in WSL, a container or an SSH
+     host, with the browser on the desktop that owns it. Nothing is misconfigured
+     and there is no second browser to switch to. The app binds every interface
+     (`streamlit run` with no `--server.address`), so the only open question is
+     which address that host routes to — which the candidate walk above already
+     answers.
 - **local, marker still fails** — the extension is answering for a browser
      that is not signed in as you. The probe's own error names the
      requirement: logged into claude.ai under the same account as Claude
@@ -175,12 +219,20 @@ fixes:
 
 Either way: **once**. Then stop asking.
 
-**"Nothing to fix from here" is not an ending.** A run said exactly that
-and moved on. If the checks have to run in the local headless browser, the
-user hears the cost once, in their terms — *"I'll ask you to glance at a
-page or two near the end"* — and, where the browser is on another machine,
-the one thing that would change it: running this where their browser is.
-Never a tour of which browser is checking what.
+**"Nothing to fix from here" is not an ending — and neither is silence.** A run
+said exactly that and moved on, leaving the user holding nothing. Without
+control the run still opens their app in their default browser and still gets
+their eyes on it: one named thing, at the moment it matters, in the words of the
+page — *"the header on the left column — does that read right to you?"* That is
+what a design round sounds like anyway, which is the point. Nothing about the
+run changes shape, so nothing about it needs announcing.
+
+**What never happens is the preamble.** No sentence in preflight saying you will
+be asking them to look, no reason offered, no tour of which browser checks what.
+Stating the cost *once, early* was itself a rule here, and it was wrong: it
+guaranteed a turn whose only content was the framework describing itself to
+someone who had asked for an app. Successive reviews rewrote that sentence.
+This one deleted it.
 
 If control is real and it is theirs, nothing more is said about it. Announcing control *before*
 driving anything is how a session ends up claiming a capability it has not
@@ -194,8 +246,10 @@ above and they have different requirements, so a sentence joining them is
 half true at best. Until you have driven a page, the summary says what was
 installed and nothing about checking.
 
-Only if the machine has **no** Chromium browser at all does the run go
-without: say what it costs *them* — *"I won't be able to check the
-finished pages myself, so I'll ask you to look"*, never *"your Chrome
-extension isn't connected"* — and carry on. Opening pages still works; see
-the table above.
+**Four roads lead to no control, and they arrive at the same place.** They
+declined the install; the schema never loaded; every candidate address failed
+the marker; the machine has no browser from the family at all. Each road carries
+at most one repair — the launch, the install, the sign-in — and once that is
+spent the road is done and no outcome is worse than the others. Carry on and say
+nothing: their app still opens in their default browser, and the rounds still
+ask them to look.

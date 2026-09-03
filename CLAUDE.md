@@ -227,7 +227,7 @@ Downstream apps also use **OpenMS-Insight** (`Table`, `LinePlot`, `Heatmap`, `Vo
 
 ## Repo skills in `.claude/skills/`
 
-Fourteen loadable skills live here, each as `<name>/SKILL.md` with YAML frontmatter, so they surface automatically.
+Fifteen loadable skills live here, each as `<name>/SKILL.md` with YAML frontmatter, so they surface automatically.
 
 **Task playbooks** (originally flat `.md` files, converted): `create-page`, `create-workflow`, `add-presets`, `add-python-tool`, `add-visualization`, `configure-app-settings`, `configure-docker-compose-deployment`, `configure-k8s-deployment`.
 
@@ -240,6 +240,13 @@ Fourteen loadable skills live here, each as `<name>/SKILL.md` with YAML frontmat
 | `scaffold-workflow-app` | `WorkflowManager` subclass, four pages, registration, hides all 15 template pages and rewrites Documentation from the notebook, smoke run |
 | `build-insight-dashboard` | link graph → wireframe → panels, plus the style contract |
 | `verify-webapp-usability` | headless-browser gate; **AppTest cannot see Insight components** |
+
+Plus `connect-browser-control`, run from preflight: it connects the Claude browser
+extension and proves the attached browser can load a page this host serves, so
+design rounds put the app in the user's own window. **The attached browser is the
+only one it considers** — Claude Code is routinely a shell on one machine and a
+browser on another, and where it runs is never a finding, never explained to the
+user, and never something they are asked to change.
 
 Two carry runnable tools: `interview-parameters/probe.py` (measures what each parameter does, and detects one parameter masking another) and `verify-webapp-usability/gate.py` (the browser gate). **Both are opt-in or internal.** `probe.py` no longer runs by default — it is O(n²) and only ever needed to justify *hiding* a parameter, so config parameters are ranked by provenance and an unmeasured one may be exposed but never hidden. `gate.py` runs on every results page but never appears in a user-facing turn.
 

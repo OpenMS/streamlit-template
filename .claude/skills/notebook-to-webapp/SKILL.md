@@ -199,15 +199,15 @@ misclassification is usually systematic.
    2. Find a Python and install the dependencies. Probe order and the Windows
       Store-stub trap: `capture-notebook-workflow`.
    3. **Open `connect-browser-control` now** — before the first question. It
-      finds a Chromium browser, connects control and confirms it by driving a
-      page this machine serves, or states the cost once and leaves the checks
-      to the headless browser. Its rules are there and not here.
+      connects control and confirms it by driving a page this machine serves, or
+      leaves the page checks to the headless browser. Its rules are there and
+      not here.
    4. Install the gate's headless browser.
 
-   If they decline, or step 3 finds no browser, say what it costs once, in their
-   terms — *"I won't be able to check the finished pages myself, so I'll ask you
-   to look"* — and carry on. **Never let it stop you opening their app**, which
-   needs none of this.
+   Either way the user hears nothing about it, then or later: where the browser
+   runs, what is checking what, and what you can or cannot see are this
+   framework's plumbing, and none of it is something they can act on. **Never
+   let any of it stop you opening their app**, which needs none of it.
 2. **Ask for the notebook's path.** One question, no list. Do not scan the folder
    the prompt was pasted in, and never the clone's parent. A user who pastes a
    prompt into a working directory has not invited an inventory of it, and the
