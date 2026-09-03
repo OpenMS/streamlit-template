@@ -231,21 +231,48 @@ misclassification is usually systematic.
       still empty?  ->  the extension is missing from that browser.
       ```
 
-      **The offer happens here or not at all.** *"That needs the Claude
-      extension connected — want me to walk you through it?"*, once, in
-      preflight, while they are not yet in the middle of anything. A run that
-      carried on and raised it later — *"I'd have to ask you to set that up"* —
-      landed the request in the middle of a design decision, which is the exact
-      thing this step exists to prevent. If they decline, that is settled for
-      the run and is not raised again.
+      **Two failure shapes, and they are not the same.** A schema that loads
+      and answers *"not connected"* means control exists and the browser is
+      shut or the extension missing from it — fixable here. `ToolSearch`
+      returning **no schema** means this session has no browser control to
+      connect to at all: there is no probe to run, launching a browser cannot
+      create one, and a session started afterwards is what picks the tools up.
 
-      **Two failure shapes, and they are not the same.** `ToolSearch` returning
-      no schema means this session has no browser control to connect to — the
-      offer is about installing the extension for future sessions, and nothing
-      you do now will change this run. A schema that loads and then answers
-      *"not connected"* means control exists and the browser is shut or the
-      extension is missing from it: that one you can still fix, here, by
-      launching and re-probing.
+      **Take them to the install; do not offer to mention it later.** You cannot
+      finish this yourself — the extension comes from the store, in their
+      browser, under their claude.ai account, and the click and the sign-in are
+      theirs. Everything up to that is yours. Open `https://claude.ai/chrome`
+      the same way you open any page (see the table above), say the one thing to
+      click, and then:
+
+      ```
+      schema, not connected  ->  carry on with capture while they install;
+                                 re-probe before the first design round
+      no schema at all       ->  wait. Then: "one click to add it, then start
+                                 me again -- nothing's been decided yet, so
+                                 there's nothing to lose." A restart is theirs
+                                 to do; you cannot restart yourself.
+      ```
+
+      *"Happy to point you at the setup for next time"* is the failure. It was a
+      real turn, and it converts a one-click fix available right now into
+      homework. So is raising it later — *"I'd have to ask you to set that up"*,
+      landing mid-decision, which is the thing this step exists to prevent. Ask
+      here, once. If they decline, it is settled for the run and never raised
+      again.
+
+      **Everything installs before the first question — the asking, at least.**
+      In the connected-but-shut case their clicking overlaps your capture work,
+      and that is fine: what may not drift later is the moment you ask.
+
+      **Name the extension only to act on it.** Naming it to explain a
+      limitation is plumbing talk — *"your Chrome extension isn't connected, so
+      I can't check the pages"* tells a mass spectrometrist about this
+      framework's wiring and gives them nothing to do. Naming it inside a
+      request is different, because it comes with an action and a reason:
+      *"one click to add the Claude browser extension and I can check the
+      finished pages myself."* After they decline, it is not named again — the
+      cost is stated in their terms and the reason is dropped.
 
       **Check that it started; `start` on Windows does not.** A measured run
       issued `cmd /c start "" "<path>"`, saw its own `launched` echo, probed,

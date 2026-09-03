@@ -98,6 +98,22 @@ _Avoid_: style guide, design system, conventions
 
 ### The framework itself
 
+**Browser control**:
+Driving a page — screenshotting it, clicking it, reading its DOM. Distinct from
+**opening** a page, which needs nothing at all. Control needs two pieces: the
+Claude browser extension, installed by the user in their own browser under their
+own claude.ai account, and a native messaging host that Claude Code registers
+itself. Only the first is ever the user's to do.
+_Avoid_: browser access, Chrome integration, headless browser
+
+**Control absent** vs **control disconnected**:
+Two failures that look alike and are not. *Absent* is the browser tools having no
+schema in this session: there is no probe to run, launching a browser cannot
+create one, and a session started afterwards is what picks them up. *Disconnected*
+is the tools loading and reporting that nothing answers — the browser is shut, or
+the extension is missing from it — and that one is fixable where you stand.
+_Avoid_: not connected (for both), browser not working
+
 **Stage skill**:
 One of the skills performing a single stage of app derivation, invocable on its own
 against an existing application.
