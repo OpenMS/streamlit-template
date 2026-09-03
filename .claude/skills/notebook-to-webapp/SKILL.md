@@ -139,6 +139,16 @@ Five habits:
   see is one they must imagine an answer to.
 - Carry a recommendation into every fork. "I suggest X because Y" — not "what
   would you like?"
+- **Never resolve a fork yourself and report it as applied.** The shape to
+  refuse: a turn that says *"two calls before I build the config page"*, lays
+  out the evidence for both, offers nothing to select, and is followed by
+  *"Applied: … now defaults to 0, … to 20 ppm."* Every word of the evidence can
+  be right and the user has still not decided anything — and the run then spends
+  a later turn explaining the consequence of a value they never chose. Naming
+  something a decision and then making it is worse than never raising it: it
+  reads as consultation and works as an announcement. If it is genuinely yours
+  to settle, settle it silently and say so once it is done; if it is theirs, it
+  arrives with a recommendation and something to click.
 - Report conclusions, not process. Name the interpreter you chose, not the
   five you probed. Name what needs attention, not how many things do.
 - Never ask for what you can determine. Ask only what is genuinely the
