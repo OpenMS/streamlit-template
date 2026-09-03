@@ -53,11 +53,13 @@ happen, in thinking. What reaches the screen is a **progress line** while
 something slow runs, and an **interview** when something needs deciding. Between
 those two there is nothing to say.
 
-**One progress line per stage, not per step.** A stage is something the user
-would name — pulling the analysis out, checking it against their numbers,
-building the app. The workflow class, the page registration, the template
-cleanup and the three test lists are four steps of *one* of those, and four lines
-saying so is the framework thinking out loud:
+**One progress line per stage, not per step.** The stages are the five in the
+table near the end of this file, and nothing else is one — a line goes out when
+a stage starts, and the wording is whatever a user would recognise as a piece of
+their own work: pulling the analysis out, building the app. The workflow class,
+the page registration, the template cleanup and the three test lists are four
+steps of *one* stage, and four lines saying so is the framework thinking out
+loud:
 
 ```
 Now pulling the analysis out into a script.        Now pulling the analysis out into a script.
@@ -133,7 +135,7 @@ options holds, ask whether the recommendation stands **before** asking about any
 single row — most of the time it does, and the whole list closes in one click.
 Every row can be right and the whole thing still unreachable.
 
-Five habits:
+Six habits:
 
 - Show it before you ask about it. A question about something the user cannot
   see is one they must imagine an answer to.
