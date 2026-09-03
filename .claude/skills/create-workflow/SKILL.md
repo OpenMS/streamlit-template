@@ -1,3 +1,8 @@
+---
+name: create-workflow
+description: Use when creating a TOPP Workflow Framework workflow that chains OpenMS TOPP tools through upload, configure, execute and results pages.
+---
+
 # Create a TOPP Workflow
 
 Create a complete mass spectrometry data processing workflow: a WorkflowManager subclass and its 4 associated content pages.

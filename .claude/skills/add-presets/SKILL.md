@@ -1,3 +1,8 @@
+---
+name: add-presets
+description: Use when adding named parameter presets to a TOPP workflow, or when users need one-click parameter sets such as 'High Sensitivity' or 'Fast'.
+---
+
 # Add Parameter Presets
 
 Add or modify parameter presets for a TOPP workflow in `presets.json`.
@@ -96,3 +101,24 @@ For a workflow initialized as `super().__init__("Feature Analysis", ...)`:
 - [ ] TOPP tool names match exactly
 - [ ] Parameter paths use colon-separated format
 - [ ] `presets.json` is valid JSON
+
+
+## When a preset does not move the widget
+
+The symptom: the preset writes the right values into `params.json`, and the
+number on screen does not change.
+
+The cause is not the preset. `apply_preset` works by *deleting* the matching
+session-state keys so the widgets re-initialise from the file — and a widget
+left at `widget_type="auto"` for a numeric, selectbox or multiselect type
+prefixes its session key twice, so the delete misses it and the stale value
+overwrites the preset on the next rerun.
+
+**The fix is in the parameter, not in the mechanism:** give every parameter a
+preset should drive an explicit `widget_type`. The legal values are `text`,
+`textarea`, `number`, `selectbox`, `slider`, `checkbox`, `multiselect`,
+`password`, `auto` — and anything else renders nothing at all.
+
+Do not rewrite `apply_preset`. It is template code shared with every other app
+built from this template; see `scaffold-workflow-app`, "The template's code is
+not yours to change".

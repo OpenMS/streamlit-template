@@ -1,3 +1,8 @@
+---
+name: create-page
+description: Use when adding a standalone Streamlit page to an OpenMS app, or when a page needs tracked parameters backed by default-parameters.json.
+---
+
 # Create a New Streamlit Page
 
 Add a new page to the OpenMS web application.

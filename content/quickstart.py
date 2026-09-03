@@ -63,6 +63,37 @@ Extract the zip file and run the installer (.msi) file to install the app. The a
 """
     )
 
+st.markdown("## 📓 Turn a Jupyter notebook into an app")
+st.markdown(
+    """
+Already have your analysis in a notebook? Paste the prompt below into an agentic
+terminal — **Claude Code**, **Codex**, **Gemini CLI** or similar. It clones this
+template and walks you through porting one notebook into a web app: it asks for
+the notebook's path, shows you how it read your analysis, asks what to call the
+app, and then builds the Upload, Configure and Results pages **with you**, three
+suggestions at a time.
+"""
+)
+
+# Spell the skill out by file path rather than by name. Skills are registered
+# from .claude/skills/ when a session starts, so a repository cloned mid-session
+# puts them on disk but not into the running session's registry -- "use the
+# notebook-to-webapp skill" can fail on the very first move, and looks like the
+# framework does not exist. The path also works in terminals that have no notion
+# of skills at all. Do not shorten this to the skill name.
+NOTEBOOK_TO_WEBAPP_PROMPT = """\
+Clone https://github.com/OpenMS/streamlit-template into a new folder, then read
+.claude/skills/notebook-to-webapp/SKILL.md inside that clone and follow it to turn
+my Jupyter notebook into a web app. Ask me for the path to the notebook, what to
+call the app, and how each page should look as you build it."""
+
+st.code(NOTEBOOK_TO_WEBAPP_PROMPT, language="text")
+st.page_link(
+    "content/documentation.py",
+    label='Walkthrough: pick "Developers Guide: From Notebook to Web App" in the content menu.',
+    icon="➡️",
+)
+
 st.markdown("## 📖 Documentation")
 st.markdown(
     f"""

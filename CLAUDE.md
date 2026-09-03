@@ -225,11 +225,35 @@ Downstream apps also use **OpenMS-Insight** (`Table`, `LinePlot`, `Heatmap`, `Vo
 - Kubernetes: `k8s/base` → `k8s/components/memory-tier-{low,high}` → `k8s/overlays/prod` (sets `namePrefix`, GHCR image, Traefik hosts, `REDIS_URL`), plus the separate `k8s/storage/` root. The `memory-tier-*` components are **pod sizing only** — a tier is how big a worker is, not which node it runs on, and `requests == limits` there is what makes the worker Guaranteed QoS. **Nothing in `k8s/` pins a pod to a node**: no `nodeSelector`, no `nodeName`, no `nodeAffinity`, no `openms.de/memory-tier` labels. The scheduler places pods, and `rq-worker` runs a fixed replica count spread over `kubernetes.io/hostname` with `maxSkew: 1`. CI validates with kubeconform, asserts those invariants statically (`.github/scripts/ci-assertions.sh`), and runs kind integration tests against both nginx and Traefik ingress; the kind jobs apply `k8s/overlays/ci/`, which is `prod` with the worker shrunk to fit a runner.
 - Env/secrets: `WORKSPACES_DIR`, `REDIS_URL`, `STREAMLIT_SERVER_COUNT` (>1 puts nginx in front of N Streamlit instances), and `st.secrets["admin"]["password"]` from `.streamlit/secrets.toml` (mounted at `/app/admin-secrets/secrets.toml` in k8s) gating save-as-demo.
 
-## Repo playbooks in `.claude/skills/`
+## Repo skills in `.claude/skills/`
 
-Eight task-specific procedures live here: `create-page`, `create-workflow`, `add-presets`, `add-python-tool`, `add-visualization`, `configure-app-settings`, `configure-docker-compose-deployment`, `configure-k8s-deployment`.
+Fourteen loadable skills live here, each as `<name>/SKILL.md` with YAML frontmatter, so they surface automatically.
 
-**They are flat `.md` files with no YAML frontmatter, so they are not loadable Claude Code skills** (that requires `.claude/skills/<name>/SKILL.md`) — nothing surfaces them automatically. Read the relevant one by path before doing the corresponding task; they contain the interview questions, templates and checklists to follow.
+**Task playbooks** (originally flat `.md` files, converted): `create-page`, `create-workflow`, `add-presets`, `add-python-tool`, `add-visualization`, `configure-app-settings`, `configure-docker-compose-deployment`, `configure-k8s-deployment`.
+
+**Notebook → webapp framework** — turns a Jupyter notebook into an app. `notebook-to-webapp` orchestrates; the five stage skills also work standalone against an existing app:
+
+| skill | stage |
+|---|---|
+| `capture-notebook-workflow` | classify cells, extract a Streamlit-free python tool, golden-value test |
+| `interview-parameters` | one batch review: demo shortcuts, then config parameters ranked by provenance (measurement is opt-in) |
+| `scaffold-workflow-app` | `WorkflowManager` subclass, four pages, registration, hides all 15 template pages and rewrites Documentation from the notebook, smoke run |
+| `build-insight-dashboard` | link graph → wireframe → panels, plus the style contract |
+| `verify-webapp-usability` | headless-browser gate; **AppTest cannot see Insight components** |
+
+Two carry runnable tools: `interview-parameters/probe.py` (measures what each parameter does, and detects one parameter masking another) and `verify-webapp-usability/gate.py` (the browser gate). **Both are opt-in or internal.** `probe.py` no longer runs by default — it is O(n²) and only ever needed to justify *hiding* a parameter, so config parameters are ranked by provenance and an unmeasured one may be exposed but never hidden. `gate.py` runs on every results page but never appears in a user-facing turn.
+
+**Users enter through the Quickstart page**, not through a slash command: `content/quickstart.py` holds an entry prompt they copy into any agentic terminal. It names the orchestrator **by file path**, because a repo cloned mid-session puts its skills on disk but not in the running session's registry — do not shorten it to the skill name.
+
+**Two interaction shapes, not interchangeable.** An *interview* is one batch, arriving already decided — every row carries the recommendation the framework would act on, so the user's work is disagreeing rather than choosing from nothing (capture findings, config parameters). A *design round* puts one rendered thing **in the user's own browser** and offers up to three suggestions — one on **data**, one on **layout**, one on **behaviour**, each pointing at something visible — plus a free field and an exit, then re-renders. Rounds run on the Upload, Configure and Results pages; the first two are bounded to *template functionality* (widget arguments, section naming and order, presets), because the template chose those pages' shape. None opens before a **smoke run** has driven upload→configure→execute→results once with the notebook's own data. The gate runs before the final page round and feeds it, rephrased as suggestions.
+
+**Everything the user decides is asked, never drawn.** Suggestions and findings arrive as options they select, one at a time — a checklist printed into the transcript is a control the reader cannot operate, and a list too long for one screen asks whether the recommendation stands before it asks about any single row. `eval/register.py` greps transcripts for tick-boxes and arrow-led recommendation lists.
+
+**A user-facing turn is capped at 200 words and never contains the framework's own vocabulary** — cell classes, harvesting, probes, sweeps, gates, screenshots, `DEFAULTS`/`OUTPUTS`. `eval/register.py` checks both over a transcript.
+
+**The skills never name the evaluation corpus.** Rules are earned by running three specific notebooks, so worked examples drift toward quoting them — at which point an agent handed one of those notebooks can read its expected answer out of the skill it is being measured against. Measured values are written as placeholders (`<n> of <total> spectra`, `df.head(<n>)`, `cell <k>`) and filled from the run at hand. `eval/generality.py` fails a skill for naming a corpus notebook, an identifier lifted from one, or an outcome measured on one.
+
+Design and rationale: `docs/notebook-to-webapp-design.md`, `docs/adr/0001..0005`, glossary in `CONTEXT.md`. The user-facing walkthrough is `docs/notebook_to_webapp.md`, rendered in-app. `eval/` holds the self-improvement loop (`eval/README.md`), the hand-built baseline evidence (`eval/baseline-task2.md`), artifact scoring (`run_eval.py`), blind pairwise guidance judging (`judge.py`), the user-facing-turn check (`register.py`), the corpus-leak check (`generality.py`) and the check that generated apps obey the docs (`conformance.py`). Artifacts are the regression guard and are saturated at 1.00; guidance is what a tick is decided on.
 
 ## Conventions and gotchas
 

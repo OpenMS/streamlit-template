@@ -1,3 +1,8 @@
+---
+name: add-python-tool
+description: Use when adding a custom Python analysis script to src/python-tools, or when a workflow step needs parameter widgets generated from a DEFAULTS list.
+---
+
 # Add a Python Analysis Tool
 
 Add a custom Python analysis script for MS data processing to `src/python-tools/` with auto-generated UI.
