@@ -107,11 +107,18 @@ itself. Only the first is ever the user's to do.
 _Avoid_: browser access, Chrome integration, headless browser
 
 **The attached browser**:
-The browser the extension answers for — the user's own window, on whatever
-machine their desktop happens to be. The only browser this framework ever
-considers. Where it runs is a property of the deployment, not a fault to
-diagnose and never something to ask the user to change.
+The browser the extension answers for. Attached is not theirs: it may be a
+window nobody is sitting at, and a run drove one for a whole preflight while
+the user was asking what it was looking at. Where it runs is a property of the
+deployment, never a fault to diagnose. One thing earns it their app — that it
+loads a page this host serves.
 _Avoid_: their browser, the local browser, the Chrome instance
+
+**The decline**:
+An explicit no to the browser ask. It is the only thing that licenses a run to
+judge its own pages in the gate's headless browser instead of the user's
+window. Silence is not a decline; neither is moving on to the next question.
+_Avoid_: no control, the fallback, going without
 
 **Control unreachable**:
 Control that answers and drives pages, attached to a browser that cannot load

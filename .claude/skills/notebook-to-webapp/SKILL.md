@@ -201,23 +201,28 @@ misclassification is usually systematic.
    2. Find a Python and install the dependencies. Probe order and the Windows
       Store-stub trap: `capture-notebook-workflow`.
    3. **Open `connect-browser-control` now** — before the first question. It
-      connects control and confirms it by driving a page this machine serves, or
-      leaves the page checks to the headless browser. Its rules are there and
-      not here.
-   4. Install the gate's headless browser.
+      connects control and confirms it by driving a page this machine serves,
+      or it asks them for the one click that would. Its rules are there and not
+      here, including the one that stops this stage until they answer.
+   4. Install the gate's headless browser. It runs the gate's hard assertions
+      either way — what it never becomes is where a run quietly settles for
+      judging pages the user cannot see.
 
    Where the browser runs, what is checking what, and what you can or cannot see
    are this framework's plumbing, and none of it is something they can act on.
    **Never let any of it stop you opening their app**, which needs none of it.
 
-   **This stage produces at most two user-facing turns, and no others:**
+   **This stage produces at most three user-facing turns, and no others:**
 
    1. Optionally one line saying you are setting up — *"Setting up — a minute,
       then I'll ask about your notebook."*
-   2. **The install request, whenever step 3 earns one.** It is a click only
-      they can make; `connect-browser-control` has its wording and the table
-      that decides it. This turn is required when earned, and no rule on this
-      page suppresses it.
+   2. **The ask, whenever step 3 earns one.** A click, a restart, or a browser
+      to install; `connect-browser-control` has the wording and the table that
+      picks between them. This turn is required when earned, no rule on this
+      page suppresses it, and **the notebook question waits behind it** — a run
+      that asks and presses on regardless has taken the answer for them.
+   3. **One line if they decline** — *"I'll ask you to look at a page or two as
+      we go."* What they will be asked to do, and nothing about why.
 
    Nothing else: not the step list, not the word `preflight`, not the browser.
    *"Now preflight — Python, dependencies, and browser setup, before I ask you
