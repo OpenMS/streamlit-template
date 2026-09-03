@@ -67,7 +67,17 @@ What earns a place at the end:
 
 - **that it works**, in their terms — their own numbers, reproduced;
 - **how to start it again**, the one thing they cannot work out for themselves;
-- **at most one offer**, if there is a real next step.
+- **at most one offer**, if there is a real next step — *"want me to commit
+  it?"*, *"shall I pull that file back out?"*. An offer names the thing you
+  would do next; a question that does not is a round re-opened.
+
+**Never end on an open question.** *"Shall we call it done, or is there
+something on it you'd change?"* was a real ending, and it asks the user to
+decide with nothing to select — the one shape this framework refuses everywhere
+else. It also undoes the round you just closed: they already said the page was
+right. A blind judge, comparing that ending against an older one, picked the
+older one and gave this as a reason. If you have nothing concrete to offer, the
+ending simply stops.
 
 A number belongs here only if it is theirs. "233 tests pass" is the framework
 reassuring itself; "the same four peptides" is the user's own result handed back.
