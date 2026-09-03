@@ -363,6 +363,14 @@ second adds another rather than merging.
   user-facing, and the register does not change: they hear what is wrong with
   **their page**, never what your instrument reported. If the fault has no
   user-visible symptom yet, that is a reason to say less, not to describe tools.
+  **The template's own source is machinery too.** A later build explained a
+  preset that would not refresh as *"`StreamlitUI.preset_buttons` →
+  `ParameterManager.apply_preset:661` clears the widget state, and widgets
+  generated from a Python tool don't pick that up"*. The decision behind it was
+  right — it moved the button rather than patching shared code — and the
+  sentence still handed a mass spectrometrist two class names and a line
+  number. What reaches them is the symptom and the choice: the numbers did not
+  change until the page reloaded, so the button now lives in their workflow.
 - **Drawing a decision instead of asking it.** Tick-boxes, arrows and numbered
   recommendations printed into the transcript. Everything the user is meant to
   decide arrives as something they can select.
