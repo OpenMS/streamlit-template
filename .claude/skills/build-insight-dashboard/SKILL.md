@@ -45,6 +45,14 @@ One round:
    yourself — that is how you see the truncated header and the flattened axis —
    and never mention having done so. Taking a screenshot is not news; the panel
    is.
+
+   **A panel that renders unchanged after you changed it is a stale cache, not a
+   failed edit.** Insight keys its cache by config hash under `cache_path`, so
+   the first suspect is the cache and the first move is to clear it — before
+   re-reading the config, before doubting the change, before restarting
+   anything. Runs lose whole stretches to this by debugging the edit instead,
+   and it is the same symptom as the un-restarted server (`rounds.md`): what you
+   see is the previous configuration, faithfully served.
 2. **Resolve every candidate to its edit before offering it.** In thinking, name
    the file and the change that implements it. A candidate whose edit you cannot
    name is dropped; one whose edit turns out bigger or smaller than the wording
@@ -135,9 +143,16 @@ colour meaning one thing throughout, and what the page looks like before anythin
 is selected.
 
 Repeat until the user ships it — or, when nothing on the page is worth changing,
-say so **in the page's own terms** and offer to ship: *"the page reads well as it
-is — shall we call it done?"*, not a report on what passed. A clean page is the
-goal, not a failure to find fault with.
+say so **in the page's own terms** and offer to ship, not a report on what
+passed. A clean page is the goal, not a failure to find fault with.
+
+**Offer to ship; do not ask an open question.** *"Shall we call it done, or is
+there something you'd change?"* asks them to decide with nothing to select, and
+a run that used it as its last turn was judged worse than the build before it
+for exactly that. The offer names what you would do — ship it — and leaves the
+alternative as something they can pick, not something they must compose. When
+this round is also the last turn of the run, `scaffold-workflow-app/handover.md`
+governs it, and endings there never end on a question.
 
 ## Component rules that are not obvious
 

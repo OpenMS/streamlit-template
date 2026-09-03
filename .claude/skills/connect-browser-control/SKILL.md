@@ -17,11 +17,22 @@ extension and there will not be one from here: the native messaging host Claude
 Code registers declares a `chrome-extension://` origin, which Firefox cannot
 load, and it is registered for Chrome, Edge and Chromium alone.
 
-**Open the app in the browser you drive.** When control is confirmed, that is
-where the user's app opens too — otherwise a design round discusses two
-renderings, and a header truncated in one sits fine in the other. Say only
-*"it's open at <url>"*; which browser, and why, is not their problem. With no
-control, open their default and never imply you can see it.
+**Open the app in the browser you drive — by name, not by default.** When
+control is confirmed, that is where the user's app opens too; otherwise a design
+round discusses two renderings, and a header truncated in one sits fine in the
+other. **`start <url>`, `open <url>` and `xdg-open <url>` all open their
+*default* browser**, which is how a user who had just installed the extension in
+Chrome was shown their app in Firefox. Name the executable instead — the same
+one you found above, the same two forms that launch it:
+
+```
+PowerShell:   Start-Process '<path found above>' '<url>'
+POSIX shell:  "<path found above>" "<url>" >/dev/null 2>&1 &
+```
+
+Say only *"it's open at <url>"*; which browser, and why, is not their problem.
+With no control there is no such constraint: open their default, and never imply
+you can see it.
 
 ## Find a Chromium browser
 
