@@ -106,6 +106,14 @@ own claude.ai account, and a native messaging host that Claude Code registers
 itself. Only the first is ever the user's to do.
 _Avoid_: browser access, Chrome integration, headless browser
 
+**Control foreign**:
+Control that answers, drives pages and is attached to a browser on a different
+machine from the one running the app — a shell in WSL or a container, with the
+browser on the desktop that owns it. Its `localhost` is not yours, so it renders
+whatever sits on that port over there, convincingly and wrongly. Nothing in the
+tab context distinguishes it; a page you serve does.
+_Avoid_: not connected, broken control, wrong browser
+
 **Control absent** vs **control disconnected**:
 Two failures that look alike and are not. *Absent* is the browser tools having no
 schema in this session: there is no probe to run, launching a browser cannot

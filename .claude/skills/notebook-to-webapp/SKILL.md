@@ -288,8 +288,58 @@ misclassification is usually systematic.
       navigate to any ordinary web page and take one screenshot. Not
       `about:blank` — the screenshot tool refuses browser-internal URLs with
       *"Can't interact with browser-internal or unparseable URLs"*, so a blank
-      tab fails the check while control is in fact working. If that works, control
-      is real and nothing more is said about it. Announcing control *before*
+      tab fails the check while control is in fact working.
+
+      **Then confirm it is *your* browser, with a page you serve.** A browser
+      answering is not the same as the browser on this machine answering, and
+      the difference is invisible: a run drove a browser successfully for an
+      entire build, pointed it at `localhost:8577`, and read **a different
+      Streamlit app** on that port — reporting its pages back as if they were
+      the user's. Nothing in the tab context distinguishes them; it reads
+      `"New Tab" chrome://newtab/` either way. Only a page you serve can:
+
+      ```
+      write  <tmp>/<random-token>.txt containing that token
+      serve  python -m http.server <port> --bind 127.0.0.1 --directory <tmp>
+      drive  browser -> http://127.0.0.1:<port>/<token>.txt
+      read   the page
+
+      token back  ->  it is this machine's browser. Say nothing; use it.
+      anything else -> a browser answered, but not yours.
+      ```
+
+      **A browser that fails the marker is never driven.** Not for the smoke
+      run, not for a design round, not once. It renders other people's pages
+      convincingly, and a screenshot of the wrong app is worse than no
+      screenshot — it is a finding about someone else's software delivered to
+      your user as theirs.
+
+      **Ask the extension where that browser is before guessing why.** It
+      reports whether the browser is local, and the two causes take different
+      fixes:
+
+      - **not local** — the browser is on another machine. A shell inside WSL, a
+        container or an SSH host with the browser on the desktop that owns it is
+        the ordinary case, and there is no second browser to switch to. Do not
+        stop here: the app binds every interface (`streamlit run` with no
+        `--server.address`), so the question is only which address that host can
+        route to. Try one it can reach and re-marker.
+      - **local, marker still fails** — the extension is answering for a browser
+        that is not signed in as you. The probe's own error names the
+        requirement: logged into claude.ai under the same account as Claude
+        Code. Open claude.ai in their browser, ask for the sign-in, re-probe and
+        re-marker.
+
+      Either way: **once**. Then stop asking.
+
+      **"Nothing to fix from here" is not an ending.** A run said exactly that
+      and moved on. If the checks have to run in the local headless browser, the
+      user hears the cost once, in their terms — *"I'll ask you to glance at a
+      page or two near the end"* — and, where the browser is on another machine,
+      the one thing that would change it: running this where their browser is.
+      Never a tour of which browser is checking what.
+
+      If control is real and it is theirs, nothing more is said about it. Announcing control *before*
       driving anything is how a session ends up claiming a capability it has not
       established, or disclaiming one it has.
 
