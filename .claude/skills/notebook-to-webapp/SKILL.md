@@ -212,12 +212,30 @@ misclassification is usually systematic.
       probe:
 
       ```
+      no schema?    ->  control does not exist in this session at all. There is
+                        no probe to run and launching a browser will not create
+                        one; go straight to the offer below.
       probe empty?  ->  launch the browser step 3 found, wait ~5s, probe again
                         PowerShell:  Start-Process '<path from step 3>'
                         POSIX shell: "<path from step 3>" >/dev/null 2>&1 &
-      still empty?  ->  the extension is missing from that browser. Offer to
-                        walk them through installing it, once, here.
+      still empty?  ->  the extension is missing from that browser.
       ```
+
+      **The offer happens here or not at all.** *"That needs the Claude
+      extension connected — want me to walk you through it?"*, once, in
+      preflight, while they are not yet in the middle of anything. A run that
+      carried on and raised it later — *"I'd have to ask you to set that up"* —
+      landed the request in the middle of a design decision, which is the exact
+      thing this step exists to prevent. If they decline, that is settled for
+      the run and is not raised again.
+
+      **Two failure shapes, and they are not the same.** `ToolSearch` returning
+      no schema means this session has no browser control to connect to — the
+      offer is about installing the extension for future sessions, and nothing
+      you do now will change this run. A schema that loads and then answers
+      *"not connected"* means control exists and the browser is shut or the
+      extension is missing from it: that one you can still fix, here, by
+      launching and re-probing.
 
       **Check that it started; `start` on Windows does not.** A measured run
       issued `cmd /c start "" "<path>"`, saw its own `launched` echo, probed,
@@ -237,6 +255,14 @@ misclassification is usually systematic.
       is real and nothing more is said about it. Announcing control *before*
       driving anything is how a session ends up claiming a capability it has not
       established, or disclaiming one it has.
+
+      **The setup summary claims nothing you have not done.** A run ended
+      preflight with *"Everything's set up ... and I can open pages in your
+      Chrome and check them myself"*, and had to retract the second half later:
+      *"Correct — I can't."* Opening and checking are the two rows of the table
+      above and they have different requirements, so a sentence joining them is
+      half true at best. Until you have driven a page, the summary says what was
+      installed and nothing about checking.
 
       Only if the machine has **no** Chromium browser at all does the run go
       without: say what it costs *them* — *"I won't be able to check the
