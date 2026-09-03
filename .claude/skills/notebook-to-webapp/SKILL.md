@@ -206,19 +206,25 @@ misclassification is usually systematic.
       not here.
    4. Install the gate's headless browser.
 
-   Either way the user hears nothing about it, then or later: where the browser
-   runs, what is checking what, and what you can or cannot see are this
-   framework's plumbing, and none of it is something they can act on. **Never
-   let any of it stop you opening their app**, which needs none of it.
+   Where the browser runs, what is checking what, and what you can or cannot see
+   are this framework's plumbing, and none of it is something they can act on.
+   **Never let any of it stop you opening their app**, which needs none of it.
 
-   **And never narrate this stage.** *"Now preflight — Python, dependencies, and
-   browser setup, before I ask you anything"* was measured in **10 builds of
-   19**, across fifteen wordings: *"Preflight — probing environment in
-   parallel"*, *"Now the browser side of the preflight"*, *"Preflight: Python,
-   browser, dependencies"*. Each one hands a mass spectrometrist a list of this
-   framework's own steps, and the word `preflight` means nothing to them. The
-   silence is fine; it is short. If you fill it, fill it with what they get and
-   when — *"Setting up — a minute, then I'll ask about your notebook."*
+   **This stage produces at most two user-facing turns, and no others:**
+
+   1. Optionally one line saying you are setting up — *"Setting up — a minute,
+      then I'll ask about your notebook."*
+   2. **The install request, whenever step 3 earns one.** It is a click only
+      they can make; `connect-browser-control` has its wording and the table
+      that decides it. This turn is required when earned, and no rule on this
+      page suppresses it.
+
+   Nothing else: not the step list, not the word `preflight`, not the browser.
+   *"Now preflight — Python, dependencies, and browser setup, before I ask you
+   anything"* was measured in **10 builds of 19**, across fifteen wordings:
+   *"Preflight — probing environment in parallel"*, *"Now the browser side of
+   the preflight"*. Each hands a mass spectrometrist a list of this framework's
+   own steps, and the word `preflight` means nothing to them.
 2. **Ask for the notebook's path.** One question, no list. Do not scan the folder
    the prompt was pasted in, and never the clone's parent. A user who pastes a
    prompt into a working directory has not invited an inventory of it, and the

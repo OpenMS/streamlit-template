@@ -12,14 +12,32 @@ Ends in one of two states, and the caller branches on which:
 - **no control** — page checks run in the headless browser, the app opens in
   their default browser, and rounds put their eyes on one named thing at a time.
 
-**Neither state is ever explained to the user.** Both are this framework's
-plumbing, and a limitation explained is plumbing talk however carefully the noun
-is chosen. *"The browser reachable from this session lives on another machine,
-so I can't look at your finished pages myself"* was a real turn, and it is
-retired. It obeyed every rule this skill had — cost stated once, in their terms,
-the extension unnamed — and it still told a mass spectrometrist about the
-deployment topology of their coding assistant. What a user can act on is a
-question about their page. Nothing above is one.
+## What this stage says out loud
+
+Exactly one turn, and only in one case. Decide from the probe, then produce the
+matching row — this table is the whole user-facing output of browser setup:
+
+| what you found | what they read |
+|---|---|
+| the extension answers | *(nothing)* |
+| **no schema, or "not connected"** | **the install request — see below. This turn is required.** |
+| it answers but cannot reach you | *(nothing)* |
+| no browser on the machine at all | *(nothing)* |
+
+**The install request is not narration and the silence rules do not reach it.**
+It is the one thing here a user can act on: a click they make, in their browser,
+under their account, which you cannot do for them. A run that stays silent
+through row two has not been discreet — it has silently decided, on their
+behalf, that they would rather not have been asked. Ask, once, here.
+
+**The other three rows are silent because nothing in them is theirs to do.** A
+limitation explained is plumbing talk however carefully the noun is chosen.
+*"The browser reachable from this session lives on another machine, so I can't
+look at your finished pages myself"* was a real turn, and it is retired. It
+obeyed every rule this skill had — cost stated once, in their terms, the
+extension unnamed — and it still told a mass spectrometrist about the deployment
+topology of their coding assistant. What a user can act on is a question about
+their page, or a click. Rows one, three and four offer neither.
 
 **Consider only the browser you are attached to.** Where it runs is a fact about
 the deployment, not a fault in it: Claude Code is routinely a shell on one
