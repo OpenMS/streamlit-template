@@ -47,6 +47,16 @@ honestly: two visible turns of trouble had just happened, and silence read to it
 as the request having gone nowhere. That pressure is real and this is what answers it. What is still never
 said is anything **about** control.
 
+**And "preflight" is your word, not theirs.** The anecdote above was written up
+as a run saying *"Setup's done."* and left there; a later run, with all of this
+in front of it, opened with *"Preflight's done. Let me read your notebook."* —
+the same turn, one word worse, because nothing here forbade the word and the
+rule above only reaches things said about control. Setup finishing is not news:
+the user did not know it had started. `preflight`, `marker`, `the gate` and
+`browser` name machinery they were never shown, and a stage ending is not a
+turn. If setup produced something they must act on, ask for it; otherwise the
+next question is the whole of what they read.
+
 **Your prose is not the only thing they read.** A build kept the table above in
 prose and still put the whole preflight on screen twice, by two routes neither
 this rule nor the reader distinguishes:
