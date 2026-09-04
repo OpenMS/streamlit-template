@@ -47,6 +47,28 @@ honestly: two visible turns of trouble had just happened, and silence read to it
 as the request having gone nowhere. That pressure is real and this is what answers it. What is still never
 said is anything **about** control.
 
+**There is no turn before the first question.** Not a short one, not a framing
+one. Whatever setup did, the first thing the user reads is you asking for the
+notebook — and if the ask in the table above applied, that click, and then the
+question.
+
+This is a slot, not a vocabulary. Three builds on three different notebooks
+each opened by filling it, each with wording the last rule did not cover:
+
+| what the user read first | what had been forbidden by then |
+|---|---|
+| *"Now preflight — Python, dependencies, and browser setup, before I ask you anything."* | nothing yet |
+| *"Preflight's done. Let me read your notebook."* | narrating control |
+| *"Control confirmed — nothing to ask. Now the gate's browser and a look at the notebook."* | that, and the word `preflight` |
+
+Each ran with the rules the one before it earned, and each found a phrasing
+around them, because the pressure is not the words. It is that setup took real
+time and finished, and saying nothing about it feels like saying nothing at
+all. **The user did not know setup had started, so its ending is not news to
+them.** An opening line that accounts for it is the whole failure, whatever it
+is made of — and *"nothing to ask"* is that failure at its purest, a sentence
+whose entire content is that there was no sentence to write.
+
 **And "preflight" is your word, not theirs.** The anecdote above was written up
 as a run saying *"Setup's done."* and left there; a later run, with all of this
 in front of it, opened with *"Preflight's done. Let me read your notebook."* —

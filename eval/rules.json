@@ -1,0 +1,1322 @@
+{
+  "notebook-to-webapp": [
+    {
+      "id": "stages run in order, no skipped review",
+      "needle": "never skip a review",
+      "earned": "base"
+    },
+    {
+      "id": "show it before you ask about it",
+      "needle": "Show it before you ask",
+      "earned": "base"
+    },
+    {
+      "id": "recommendation at every fork",
+      "needle": "Carry a recommendation into every fork",
+      "earned": "base"
+    },
+    {
+      "id": "report conclusions, not process",
+      "needle": "Report conclusions, not process",
+      "earned": "t010"
+    },
+    {
+      "id": "never ask what you can determine",
+      "needle": "Never ask for what you can determine",
+      "earned": "base"
+    },
+    {
+      "id": "re-derive a rejected decision",
+      "needle": "re-derive it",
+      "earned": "t018"
+    },
+    {
+      "id": "re-check whatever shared the reasoning",
+      "needle": "same reasoning",
+      "earned": "t018"
+    },
+    {
+      "id": "derivation covers tool/dashboard/test",
+      "needle": "python tool, dashboard, test",
+      "earned": "t005"
+    },
+    {
+      "id": "tool name is a string literal",
+      "needle": "string literal",
+      "earned": "t005"
+    },
+    {
+      "id": "grep for the old stem after renaming",
+      "needle": "Grep for the old stem",
+      "earned": "t005"
+    },
+    {
+      "id": "rename before the app is launched",
+      "needle": "before the app is ever launched",
+      "earned": "base"
+    },
+    {
+      "id": "exercise-cell prior evidence handoff",
+      "needle": "prior evidence",
+      "earned": "t003"
+    },
+    {
+      "id": "hardcoded selection -> filter_defaults",
+      "needle": "hardcoded selection",
+      "earned": "t009"
+    },
+    {
+      "id": "gate findings feed the final round",
+      "needle": "gate findings as material",
+      "earned": "t002"
+    },
+    {
+      "id": "mode=auto is the only sanctioned skip",
+      "needle": "mode=auto",
+      "earned": "base"
+    },
+    {
+      "id": "a user may accept a review at once, not skip seeing it",
+      "needle": "they may not skip seeing them",
+      "earned": "t068"
+    },
+    {
+      "id": "determinable is not the same as yours to decide",
+      "needle": "determinable is not the same as yours to decide",
+      "earned": "t068"
+    },
+    {
+      "id": "in order means by dependency, not wall clock",
+      "needle": "In order means by dependency, not by wall clock",
+      "earned": "t071"
+    },
+    {
+      "id": "say what is now under way after every answer",
+      "needle": "After every answer, say what is now under way",
+      "earned": "t113"
+    },
+    {
+      "id": "an interview is asked, not drawn",
+      "needle": "asked, not drawn",
+      "earned": "t113"
+    },
+    {
+      "id": "route presets to add-presets",
+      "needle": "add-presets` owns `presets.json",
+      "earned": "t113"
+    },
+    {
+      "id": "a findings list is bounded by rows, not words",
+      "needle": "bounded by rows, not words",
+      "earned": "t116"
+    },
+    {
+      "id": "opening a browser and driving one are different capabilities",
+      "needle": "Opening a browser and driving one are different capabilities",
+      "earned": "t137"
+    },
+    {
+      "id": "a number belongs in any turn only if it is theirs",
+      "needle": "belongs in a user-facing turn only if it is theirs",
+      "earned": "t139"
+    },
+    {
+      "id": "one progress line per stage, not per step",
+      "needle": "One progress line per stage, not per step",
+      "earned": "t140"
+    },
+    {
+      "id": "trouble is still user-facing; the register does not change when debugging",
+      "needle": "**Slipping into instrument language when something goes wrong.**",
+      "earned": "t159",
+      "baseline": "t159: 4 leaks in one build, all progress lines during a debugging detour (OUTPUTS, the gate, iframe, screenshot)"
+    },
+    {
+      "id": "the template's own source is machinery; say the symptom and the choice",
+      "needle": "**The template's own source is machinery too.**",
+      "earned": "t170",
+      "baseline": "t170: one leak in a progress line naming two class names and a line number, in a build that otherwise scored clean"
+    },
+    {
+      "id": "never resolve a fork yourself and report it as applied",
+      "needle": "**Never resolve a fork yourself and report it as applied.**",
+      "earned": "t179",
+      "baseline": "t179: judge.py, blind, preferred the pre-session build on a second notebook and named this; register.py scored the same build 0 findings | t183: held on its first test — 0903-1317-t1p put four hand-picked values as menus (turns 8-10) and answered 'Four for four'; no 'Applied:' turn anywhere"
+    },
+    {
+      "id": "preflight produces at most three user-facing turns",
+      "needle": "at most three user-facing turns",
+      "earned": "t190",
+      "baseline": "t188: 10 builds of 19 announced preflight by name | t189: a live run on the user's own notebook produced no install request at all"
+    },
+    {
+      "id": "the notebook question waits behind the ask",
+      "needle": "the notebook question waits behind it",
+      "earned": "t190"
+    },
+    {
+      "id": "opening a page in one specific browser needs that browser's path",
+      "needle": "| **open** a page in **one** browser |",
+      "earned": "t192",
+      "baseline": "t192: the open/drive table offered start/open/xdg-open with no caveat at the point of use, while the correction sat in another file behind a 'With control' lead-in that a run read as scoping it elsewhere"
+    },
+    {
+      "id": "an ask at step 3 does not block step 4",
+      "needle": "**An ask at step 3 stops the question, not step 4.**",
+      "earned": "t192",
+      "baseline": "t192: preflight idled through the user's click instead of installing the gate's headless browser, which is already sequenced after the ask"
+    },
+    {
+      "id": "the acknowledgement rides on the notebook question",
+      "needle": "*\"Thanks — what's the path to your notebook?\"*",
+      "earned": "t192",
+      "baseline": "t192: preflight's three-turn budget had no home for acknowledging a click, so a run invented a fourth turn to fill it"
+    }
+  ],
+  "capture-notebook-workflow": [
+    {
+      "id": "never extract before the notebook has run",
+      "needle": "Never write the extracted script before",
+      "earned": "base"
+    },
+    {
+      "id": "python probe order",
+      "needle": "active virtualenv",
+      "earned": "base"
+    },
+    {
+      "id": "report the interpreter, not the search",
+      "needle": "the one you chose, not the search",
+      "earned": "t010"
+    },
+    {
+      "id": "Microsoft Store stub warning",
+      "needle": "Microsoft Store stub",
+      "earned": "base"
+    },
+    {
+      "id": "classification confirmation is a gate",
+      "needle": "get confirmation",
+      "earned": "t017"
+    },
+    {
+      "id": "re-derive a rejected split",
+      "needle": "re-derive it",
+      "earned": "t018"
+    },
+    {
+      "id": "pre-stage inputs, do not rewrite them",
+      "needle": "Pre-stage inputs",
+      "earned": "base"
+    },
+    {
+      "id": "report runtime with its cause",
+      "needle": "Report the runtime with its cause",
+      "earned": "t010"
+    },
+    {
+      "id": "refine against the execution trace",
+      "needle": "execution trace",
+      "earned": "base"
+    },
+    {
+      "id": "no numbers before the notebook runs",
+      "needle": "may require having run the notebook",
+      "earned": "t010"
+    },
+    {
+      "id": "name what needs attention",
+      "needle": "Name what needs attention",
+      "earned": "t010"
+    },
+    {
+      "id": "exercise cell output is harvested",
+      "needle": "output harvested",
+      "earned": "t003"
+    },
+    {
+      "id": "a flat sweep is a finding",
+      "needle": "flat sweep is a finding",
+      "earned": "t003"
+    },
+    {
+      "id": "flat sweep is masking until proven otherwise",
+      "needle": "masking until proven",
+      "earned": "t003"
+    },
+    {
+      "id": "parallel outputs must be declared",
+      "needle": "outputs are parallel",
+      "earned": "base"
+    },
+    {
+      "id": "discarded result finding class",
+      "needle": "discarded result",
+      "earned": "base"
+    },
+    {
+      "id": "hardcoded selection finding class",
+      "needle": "hardcoded selection",
+      "earned": "t009"
+    },
+    {
+      "id": "scan all six cell classes",
+      "needle": "Scan all six cell classes",
+      "earned": "t009"
+    },
+    {
+      "id": "route findings from dropped cells",
+      "needle": "hand it to the stage that owns the cell",
+      "earned": "t009"
+    },
+    {
+      "id": "isolation: no Streamlit in the tool",
+      "needle": "imports no Streamlit",
+      "earned": "base"
+    },
+    {
+      "id": "golden values recorded before findings resolve",
+      "needle": "before resolving any finding",
+      "earned": "base"
+    },
+    {
+      "id": "printed golden values round, use round()",
+      "needle": "Assert with round",
+      "earned": "t005"
+    },
+    {
+      "id": "pyOpenMS objects are not serialisable",
+      "needle": "serialisable",
+      "earned": "base"
+    },
+    {
+      "id": "display constant finding class",
+      "needle": "encoding an assumption about the magnitude",
+      "earned": "t031"
+    },
+    {
+      "id": "numeric DEFAULTS need explicit min/max",
+      "needle": "explicit min and max",
+      "earned": "t034"
+    },
+    {
+      "id": "say the script reproduces their notebook, not the check total",
+      "needle": "the extracted script reproduces your notebook",
+      "earned": "t139"
+    },
+    {
+      "id": "the tool takes its parameters as a JSON file on argv",
+      "needle": "`argv`, reads inputs from paths",
+      "earned": "t169"
+    },
+    {
+      "id": "OUTPUTS declares each file, its role, its columns and its link id",
+      "needle": "`OUTPUTS` declares each file, its `role`, its `columns`",
+      "earned": "t169"
+    },
+    {
+      "id": "role comes from a fixed vocabulary, and a coined role says so",
+      "needle": "**`role` comes from a fixed vocabulary, because the dashboard stage looks it up",
+      "earned": "t193",
+      "baseline": "t193: the role vocabulary was documented nowhere while the dashboard stage was told to 'map each role to a component', so both ends of the output contract were unpinned"
+    }
+  ],
+  "interview-parameters": [
+    {
+      "id": "never HARDCODE on a one-at-a-time sweep",
+      "needle": "never recommended HARDCODE on the evidence of a one-at-a-time",
+      "earned": "base"
+    },
+    {
+      "id": "masking is a comparison, not a zero test",
+      "needle": "never a test for zero",
+      "earned": "base"
+    },
+    {
+      "id": "worked example: a masked sweep moves fully once unmasked",
+      "needle": "moves the result completely",
+      "earned": "base"
+    },
+    {
+      "id": "shortcuts resolve before probing",
+      "needle": "invalid until this resolves",
+      "earned": "base"
+    },
+    {
+      "id": "truncation becomes a parameter with a default",
+      "needle": "default reproduces the notebook",
+      "earned": "base"
+    },
+    {
+      "id": "start from harvested prior evidence",
+      "needle": "prior evidence",
+      "earned": "t003"
+    },
+    {
+      "id": "flat sweep is a masking candidate",
+      "needle": "flat sweep is a masking candidate",
+      "earned": "t003"
+    },
+    {
+      "id": "label notebook rows vs probe rows",
+      "needle": "which rows came from the notebook",
+      "earned": "t003"
+    },
+    {
+      "id": "provenance ranking",
+      "needle": "Rank by provenance",
+      "earned": "base"
+    },
+    {
+      "id": "state probe cost before starting",
+      "needle": "Say what it will cost before starting",
+      "earned": "t004"
+    },
+    {
+      "id": "never leave the user watching nothing",
+      "needle": "never leave the user watching",
+      "earned": "t004"
+    },
+    {
+      "id": "explicit widget_type for preset-driven params",
+      "needle": "double-prefix their session key",
+      "earned": "base"
+    },
+    {
+      "id": "masking verdict carries its scope",
+      "needle": "only valid over the parameter set it was computed on",
+      "earned": "t016"
+    },
+    {
+      "id": "say what the numbers were measured over",
+      "needle": "measured over every time you show them",
+      "earned": "t016"
+    },
+    {
+      "id": "probe is O(n^2), bound it first",
+      "needle": "The probe is O(n²) — bound it first",
+      "earned": "t016"
+    },
+    {
+      "id": "refuse a long masking pass without --allow-long",
+      "needle": "allow-long",
+      "earned": "t016"
+    },
+    {
+      "id": "--no-masking cannot tell inert from masked",
+      "needle": "cannot distinguish inert from masked",
+      "earned": "t016"
+    },
+    {
+      "id": "an unmeasured parameter has no verdict",
+      "needle": "never measured has no verdict",
+      "earned": "t016"
+    },
+    {
+      "id": "never show unmeasured beside measured",
+      "needle": "Never show an unmeasured parameter beside",
+      "earned": "t016"
+    },
+    {
+      "id": "a masked pair is indivisible",
+      "needle": "masked pair is indivisible",
+      "earned": "t014"
+    },
+    {
+      "id": "measured harm: 367 vs 94 spectra",
+      "needle": "367 spectra with candidates instead of 94",
+      "earned": "t014"
+    },
+    {
+      "id": "hidden overriding visible is worse",
+      "needle": "worse than an extra visible parameter",
+      "earned": "t014"
+    },
+    {
+      "id": "three options when a budget splits a pair",
+      "needle": "collapse into one derived control",
+      "earned": "t014"
+    },
+    {
+      "id": "cannot hide what contradicts something visible",
+      "needle": "it cannot be hidden",
+      "earned": "t014"
+    },
+    {
+      "id": "budget key must limit work before the expensive step",
+      "needle": "must limit work before the expensive step",
+      "earned": "t033"
+    },
+    {
+      "id": "a sweep that lost points has no verdict",
+      "needle": "sweep that lost points has no verdict",
+      "earned": "t034"
+    },
+    {
+      "id": "show the batch before a user can waive it",
+      "needle": "Show the batch, then let them clear it in one word",
+      "earned": "t069"
+    },
+    {
+      "id": "the parameter list is offered whole before it is opened row by row",
+      "needle": "Ask once, whole",
+      "earned": "t113"
+    },
+    {
+      "id": "only a request to change opens the list, and then in groups",
+      "needle": "opens the list",
+      "earned": "t113"
+    },
+    {
+      "id": "offer the probe in the user's words, not this skill's",
+      "needle": "Offer it in the user's words, not in this skill's",
+      "earned": "t118"
+    },
+    {
+      "id": "refer back by what it does, never by what this skill calls it",
+      "needle": "Refer back by what it **does**",
+      "earned": "t131"
+    }
+  ],
+  "build-insight-dashboard": [
+    {
+      "id": "one panel at a time, designed with the user",
+      "needle": "Build one panel at a time",
+      "earned": "base"
+    },
+    {
+      "id": "skipped components stated explicitly",
+      "needle": "State skipped components explicitly",
+      "earned": "base"
+    },
+    {
+      "id": "fallback declared in the wireframe",
+      "needle": "A fallback panel carries its reason here",
+      "earned": "base"
+    },
+    {
+      "id": "parallel outputs: choose the master panel",
+      "needle": "parallel rather than chained",
+      "earned": "t003"
+    },
+    {
+      "id": "wireframe before writing code",
+      "needle": "before writing code",
+      "earned": "base"
+    },
+    {
+      "id": "restart the server after applying",
+      "needle": "restart the server",
+      "earned": "base"
+    },
+    {
+      "id": "three axes: data, layout, behaviour",
+      "needle": "one per axis",
+      "earned": "base"
+    },
+    {
+      "id": "three is a ceiling, not a quota",
+      "needle": "ceiling, not a quota",
+      "earned": "t007"
+    },
+    {
+      "id": "offering none must be earned",
+      "needle": "only after the gate has run",
+      "earned": "t007"
+    },
+    {
+      "id": "a clean page is the goal",
+      "needle": "clean page is the goal",
+      "earned": "t007"
+    },
+    {
+      "id": "first panel names the panel it prepares for",
+      "needle": "first panel has nothing to link to",
+      "earned": "base"
+    },
+    {
+      "id": "five shapes for the free field",
+      "needle": "five shapes",
+      "earned": "t012"
+    },
+    {
+      "id": "never silently substitute",
+      "needle": "Never silently substitute",
+      "earned": "t012"
+    },
+    {
+      "id": "run the gate before the final round",
+      "needle": "Run the usability gate first",
+      "earned": "t002"
+    },
+    {
+      "id": "explicit height or the iframe is invisible",
+      "needle": "renders its iframe at height",
+      "earned": "base"
+    },
+    {
+      "id": "filter_defaults or the panel loads forever",
+      "needle": "The panel sits on",
+      "earned": "base"
+    },
+    {
+      "id": "capture may have supplied the default",
+      "needle": "hardcoded selection in the notebook",
+      "earned": "t009"
+    },
+    {
+      "id": "mirror halves need disjoint identifiers",
+      "needle": "disjoint identifiers",
+      "earned": "base"
+    },
+    {
+      "id": "pin a constant per side",
+      "needle": "Pin a constant per side",
+      "earned": "base"
+    },
+    {
+      "id": "budget header text, not column count",
+      "needle": "Budget the header text, not the column count",
+      "earned": "t002"
+    },
+    {
+      "id": "gate measures the real property",
+      "needle": "measures the real property",
+      "earned": "t002"
+    },
+    {
+      "id": "normalise per side before a mirror plot",
+      "needle": "Normalise per side",
+      "earned": "base"
+    },
+    {
+      "id": "highlight_column enables annotations",
+      "needle": "is what makes annotations appear",
+      "earned": "base"
+    },
+    {
+      "id": "Insight caches by config hash",
+      "needle": "caches by config hash",
+      "earned": "base"
+    },
+    {
+      "id": "SequenceView matches fragments internally",
+      "needle": "SequenceView",
+      "earned": "base"
+    },
+    {
+      "id": "style contract: summary strip first",
+      "needle": "summary strip of 3–5 headline numbers",
+      "earned": "base"
+    },
+    {
+      "id": "style contract: axis labels carry units",
+      "needle": "axis labels carry units",
+      "earned": "base"
+    },
+    {
+      "id": "style contract: empty states written first",
+      "needle": "Write these first",
+      "earned": "base"
+    },
+    {
+      "id": "data-dependent defaults computed from this run",
+      "needle": "must be computed from this run's data",
+      "earned": "t029"
+    },
+    {
+      "id": "a suggestion is resolved to its edit before it is offered",
+      "needle": "Resolve every candidate to its edit before offering it",
+      "earned": "t113"
+    },
+    {
+      "id": "panel suggestions are asked one at a time",
+      "needle": "one at a time**, best first",
+      "earned": "t113"
+    },
+    {
+      "id": "never name the gate or give its score",
+      "needle": "Never name the gate, and never give its score",
+      "earned": "t126",
+      "confirmed": "t130: Task2_ID leaked twice, rebuilt clean"
+    },
+    {
+      "id": "no user-facing sentence pairs a check's verdict with what the picture showed",
+      "needle": "There is no\nuser-facing sentence in which the two halves appear together.",
+      "earned": "t155",
+      "baseline": "t155: 'the gate' is 6 of the 10 vocabulary leaks across 19 builds -- 4 as 'The gate', 2 as 'the gate', and the two most recent builds both leaked it. Everything else is a one- or two-off. A rebuild that reaches a results round without it is what confirms this rule. | t157: 0903-0308-t3q reached a results round and a commit with no leak, in 76 user-facing turns. Task3_Quant had leaked it before, so this counts -- but at a ~21% base rate one clean build is evidence, not confirmation. | t159: 'the gate' back in 0903-0349-t2i, but as a status line during debugging, not the round turn this rule governs. Neither confirmed nor refuted."
+    },
+    {
+      "id": "a panel unchanged after an edit is a stale cache first",
+      "needle": "**A panel that renders unchanged after you changed it is a stale cache, not a\n   failed edit.**",
+      "earned": "t186"
+    },
+    {
+      "id": "offer to ship; do not ask an open question",
+      "needle": "**Offer to ship; do not ask an open question.**",
+      "earned": "t186"
+    },
+    {
+      "id": "Insight is installed and imported before anything is mapped",
+      "needle": "**Establish Insight before you map anything.**",
+      "earned": "t193",
+      "baseline": "t193: a run wrote a whole dashboard on a machine where openms_insight was absent; the framework had no install step anywhere and worked only where a venv already carried the package"
+    },
+    {
+      "id": "role maps to a component by lookup, not by judgement",
+      "needle": "**This is a lookup, not\na judgement:**",
+      "earned": "t193",
+      "baseline": "t193: a run fell back to pyopenms-viz for roles `table` and `mirror`, both of which have exact components in this skill's own example -- the mapping was a judgement and there was no table to check it against"
+    },
+    {
+      "id": "a fallback carries its reason, and there are exactly two",
+      "needle": "**A fallback carries its reason, and there are exactly two.**",
+      "earned": "t193",
+      "baseline": "t193: an import failure was recorded as neither reason and narrated as continuity with the user's notebook"
+    },
+    {
+      "id": "an unavailable component is never described to the user as a design choice",
+      "needle": "**Never let \"unavailable\" reach the user dressed as design.**",
+      "earned": "t193",
+      "baseline": "t193: 'the mirror plot is drawn with pyopenms-viz, the same backend your notebook used' -- true, and it reads as considered; the environment fact appeared nowhere in the transcript"
+    },
+    {
+      "id": "every wireframe panel names its role and its component",
+      "needle": "**Every panel in the wireframe names the role it came from and the component it\nuses.**",
+      "earned": "t193",
+      "baseline": "t193: a run produced no link graph at all and went straight to the wireframe, so the catalogue was never consulted"
+    },
+    {
+      "id": "the panel count comes from the link graph and is never lowered to reach PASS",
+      "needle": "**Lowering the number until the gate passes is the one thing you may\nnever do**",
+      "earned": "t193",
+      "baseline": "t193: a run turned a real 9/10 failure into a green 10/10 by changing --expect-components from 2 to 1 on a page missing its table"
+    },
+    {
+      "id": "a failing background command is not narrated to the user",
+      "needle": "A restart that fails is yours to fix, not theirs to watch",
+      "earned": "t196",
+      "baseline": "t196: one build printed `Background command \"Restart the app\" failed with exit code 1` on three separate screens, and the reader flagged every one of them as more than it could take in; too_much stood promoted across five builds and all three notebooks"
+    }
+  ],
+  "scaffold-workflow-app": [
+    {
+      "id": "execution() returns bool, gate every call",
+      "needle": "returns True only when every step succeeded",
+      "earned": "base"
+    },
+    {
+      "id": "page_setup runs before the workflow",
+      "needle": "page_setup() runs before the workflow",
+      "earned": "base"
+    },
+    {
+      "id": "one stem, used in all four places",
+      "needle": "is one stem",
+      "earned": "t005"
+    },
+    {
+      "id": "stem appears as a string literal",
+      "needle": "string literal",
+      "earned": "t005"
+    },
+    {
+      "id": "grep for the old stem after renaming",
+      "needle": "grep for the old stem",
+      "earned": "t005"
+    },
+    {
+      "id": "design rounds on Upload and Configure",
+      "needle": "Design rounds on Upload and Configure",
+      "earned": "base"
+    },
+    {
+      "id": "three is a ceiling, not a quota",
+      "needle": "ceiling, not a quota",
+      "earned": "t007"
+    },
+    {
+      "id": "never silently substitute",
+      "needle": "Never silently substitute",
+      "earned": "t012"
+    },
+    {
+      "id": "order config parameters by measured effect",
+      "needle": "order config parameters by measured effect",
+      "earned": "base"
+    },
+    {
+      "id": "save resolved values as a preset",
+      "needle": "save the resolved notebook values as a preset",
+      "earned": "base"
+    },
+    {
+      "id": "declare step_size on non-integer parameters",
+      "needle": "input_python defaults it to 1",
+      "earned": "t035"
+    },
+    {
+      "id": "run_python spawns sys.executable",
+      "needle": "It must\n  spawn `sys.executable`",
+      "earned": "t098"
+    },
+    {
+      "id": "a generated app starts at version 1.0.0",
+      "needle": "Set it to `1.0.0`",
+      "earned": "t113"
+    },
+    {
+      "id": "every template section is hidden, including the toolbox",
+      "needle": "Hide **every** template section",
+      "earned": "t113"
+    },
+    {
+      "id": "Documentation is rewritten from the notebook's markdown cells",
+      "needle": "its body is replaced",
+      "earned": "t113"
+    },
+    {
+      "id": "restart and re-run the smoke run before handover",
+      "needle": "Restart, then smoke-run again",
+      "earned": "t113"
+    },
+    {
+      "id": "Upload and Configure rounds are bounded to template functionality",
+      "needle": "Bounded to what the template already does",
+      "earned": "t113"
+    },
+    {
+      "id": "suggestions arrive one at a time",
+      "needle": "One suggestion at a time",
+      "earned": "t113"
+    },
+    {
+      "id": "rewriting Documentation means rewriting its test list",
+      "needle": "test_gui.py:50-61",
+      "earned": "t113"
+    },
+    {
+      "id": "notebook markdown splits at headings, not at cells",
+      "needle": "A markdown cell is not a chapter",
+      "earned": "t113"
+    },
+    {
+      "id": "notebook scaffolding and troubleshooting are not documentation",
+      "needle": "Not all of it is documentation",
+      "earned": "t113"
+    },
+    {
+      "id": "the four new pages are added to test_gui.py",
+      "needle": "Unless the\nfour new pages are added to it",
+      "earned": "t113"
+    },
+    {
+      "id": "widget_type has a closed list and fails silently outside it",
+      "needle": "Anything else renders nothing at all",
+      "earned": "t115"
+    },
+    {
+      "id": "template code in a clone is not yours to change",
+      "needle": "The template's code is not yours to change",
+      "earned": "t115",
+      "confirmed": "t120: Task1_Peaks produced 3 crossings, rebuilt with 0"
+    },
+    {
+      "id": "never edit the template's tests to match a change",
+      "needle": "converts a visible divergence",
+      "earned": "t115"
+    },
+    {
+      "id": "the test list has two halves: add yours, remove theirs",
+      "needle": "Add yours and remove theirs",
+      "earned": "t115"
+    },
+    {
+      "id": "test_gui.py has three hand-written lists, all need updating",
+      "needle": "all three of its hand-written lists",
+      "earned": "t118"
+    },
+    {
+      "id": "the closing turn is short and carries only the user's own numbers",
+      "needle": "The last thing they read is short",
+      "earned": "t124"
+    },
+    {
+      "id": "the cleanup line is said while doing it, not at the sign-off",
+      "needle": "said here, while you",
+      "earned": "t128"
+    },
+    {
+      "id": "after committing, verify the app's files are in the commit",
+      "needle": "check that the app is in the commit",
+      "earned": "t133"
+    },
+    {
+      "id": "a commit confirmation is an ending and follows the same rules",
+      "needle": "Report the commit the way you report everything else",
+      "earned": "t134"
+    },
+    {
+      "id": "the page-specific tests for hidden pages go too",
+      "needle": "The page-specific tests below it",
+      "earned": "t136"
+    },
+    {
+      "id": "the cleanup line does not belong in the ending",
+      "needle": "**The cleanup line does not belong here.**",
+      "earned": "t153",
+      "baseline": "t163: present in the clone and worked around via the genuinely-new clause; see [new means new to you, not merely unmentioned]"
+    },
+    {
+      "id": "the rounds pointer names the act, not the framework's word for it",
+      "needle": "when you are about to put a page in front of the user and ask what they would change",
+      "earned": "t157",
+      "baseline": "t157: rounds.md opened in 4 of 6 builds; cleanup.md and handover.md in 6 of 6, with identical pointer wording | t159: first build under the new wording carried it in the clone and still did not open rounds.md | t168: re-tallied with a reader that also counts a cat'd file (0903-0737-t1p read all three in one Bash command and scored zero). Corrected: 4 of 6 before the rewording, 4 of 5 after -- the one miss after was the build begun minutes later. Weak, not decisive."
+    },
+    {
+      "id": "new means new to you, not merely unmentioned",
+      "needle": "**\"They haven't seen it yet\" does not\nqualify work you simply never mentioned.**",
+      "earned": "t163",
+      "baseline": "t163: the t153 rule was in the clone and the ending still carried the cleanup line, reached through the genuinely-new clause"
+    },
+    {
+      "id": "nothing reachable from execution() may touch session_state",
+      "needle": "Nothing reachable from `execution()` may touch `st.session_state`",
+      "earned": "t169"
+    },
+    {
+      "id": "guard the selection before get_files, which raises on an empty list",
+      "needle": "Guard the user's selection before `get_files()`",
+      "earned": "t169"
+    },
+    {
+      "id": "restart the server after editing src/, or you show an unchanged page",
+      "needle": "Streamlit does not re-import an edited",
+      "earned": "t169",
+      "file": "rounds.md"
+    },
+    {
+      "id": "the ending never asks an open question",
+      "needle": "**Never end on an open question.**",
+      "earned": "t177",
+      "baseline": "t177: judge.py, blind, preferred a 2026-09-02 transcript over a 2026-09-03 one and named this ending as a reason"
+    },
+    {
+      "id": "an app declares what it imports",
+      "needle": "**An app declares what it imports.**",
+      "earned": "t193",
+      "baseline": "t193: two consecutive builds shipped apps importing openms_insight with no such line in requirements.txt; a clean install of either dies on import"
+    }
+  ],
+  "verify-webapp-usability": [
+    {
+      "id": "AppTest cannot see Insight components",
+      "needle": "cannot be verified with",
+      "earned": "base"
+    },
+    {
+      "id": "no panel is stuck loading",
+      "needle": "no panel is stuck loading",
+      "earned": "base"
+    },
+    {
+      "id": "the gate also produces design input",
+      "needle": "design notes",
+      "earned": "t002"
+    },
+    {
+      "id": "phrase gate findings for a user",
+      "needle": "keep them in the user's language",
+      "earned": "t002"
+    },
+    {
+      "id": "look at the screenshot",
+      "needle": "Look at it",
+      "earned": "base"
+    },
+    {
+      "id": "wait on the status widget, not a fixed sleep",
+      "needle": "Never sample after a fixed sleep",
+      "earned": "base"
+    },
+    {
+      "id": "ignore-console entries must be justified",
+      "needle": "An ignore entry with no justification",
+      "earned": "base"
+    },
+    {
+      "id": "never wait on a count mixing iframes and native panels",
+      "needle": "Never wait on a count that mixes iframes",
+      "earned": "t036"
+    },
+    {
+      "id": "green means it works, not that it is good",
+      "needle": "Green means it works",
+      "earned": "base"
+    },
+    {
+      "id": "a green gate says nothing about the pipeline",
+      "needle": "cannot tell an output\n  `execution()` wrote from one dropped into the results directory by hand",
+      "earned": "t101"
+    },
+    {
+      "id": "the results page is gated, never launch-tested",
+      "needle": "keep the Results page out of `test_launch`",
+      "earned": "t114"
+    },
+    {
+      "id": "a timed-out screenshot is a rerun; re-navigate rather than retry",
+      "needle": "**A screenshot that times out is a page mid-rerun — re-navigate, don't retry.**",
+      "earned": "t146"
+    }
+  ],
+  "add-presets": [
+    {
+      "id": "a preset that does not move a widget is a widget_type problem",
+      "needle": "The fix is in the parameter, not in the mechanism",
+      "earned": "t115"
+    }
+  ],
+  "connect-browser-control": [
+    {
+      "id": "interview vs design round distinction",
+      "needle": "design round",
+      "earned": "base"
+    },
+    {
+      "id": "everything installs before the first question",
+      "needle": "Preflight stops here until they answer",
+      "earned": "t113"
+    },
+    {
+      "id": "find a Chromium browser in preflight and enable control",
+      "needle": "## Find a Chromium browser",
+      "earned": "t137"
+    },
+    {
+      "id": "an empty probe is a step, not the answer",
+      "needle": "**An empty probe is a step, not the answer.**",
+      "earned": "t142"
+    },
+    {
+      "id": "confirm browser control by driving, not by probing",
+      "needle": "Confirm by driving, not by probing",
+      "earned": "t143"
+    },
+    {
+      "id": "re-probe after opening a page: opening one starts a browser",
+      "needle": "**opening a page starts a browser**",
+      "earned": "t144"
+    },
+    {
+      "id": "confirm the browser process exists; `start` returns without launching",
+      "needle": "**Check that it started; `start` on Windows does not.**",
+      "earned": "t144",
+      "confirmed": "t146: NOT DRIVEN in 7 consecutive builds on the broken `cmd /c start`; Task3_Quant rebuilt with Start-Process and drove the app with 48 browser calls"
+    },
+    {
+      "id": "confirm control on a real page; screenshots refuse browser-internal URLs",
+      "needle": "the screenshot tool refuses browser-internal URLs",
+      "earned": "t149"
+    },
+    {
+      "id": "no ToolSearch schema means control is absent, not merely disconnected",
+      "needle": "**Two failure shapes, and they are not the same.**",
+      "earned": "t178",
+      "baseline": "t178: a real Linux run announced 'I can open pages in your Chrome and check them myself' at preflight, retracted it mid-run, and raised the extension only then"
+    },
+    {
+      "id": "the extension offer happens in preflight or not at all",
+      "needle": "it is settled and it is never raised again",
+      "earned": "t178",
+      "baseline": "t178: a real Linux run announced 'I can open pages in your Chrome and check them myself' at preflight, retracted it mid-run, and raised the extension only then"
+    },
+    {
+      "id": "the setup summary claims nothing you have not done",
+      "needle": "**The setup summary claims nothing you have not done.**",
+      "earned": "t178",
+      "baseline": "t178: a real Linux run announced 'I can open pages in your Chrome and check them myself' at preflight, retracted it mid-run, and raised the extension only then | t181: held on its first build — 0903-1317-t1p probed, navigated and screenshotted (events 14-16) before saying 'I can open pages in your Chrome and drive them' (event 22)"
+    },
+    {
+      "id": "take them to the install; never defer it to next time",
+      "needle": "do not offer to mention it later",
+      "earned": "t181"
+    },
+    {
+      "id": "name the extension only inside a request, never to explain a limit",
+      "needle": "**Name the extension only to act on it.**",
+      "earned": "t181"
+    },
+    {
+      "id": "confirm the browser can reach this machine with a page you serve",
+      "needle": "**Confirm it can reach *this* machine, with a page you serve.**",
+      "earned": "t182",
+      "baseline": "t182: a real run drove a Windows browser from a Linux shell, read a different Streamlit app on the same port, and closed with 'Nothing to fix from here'"
+    },
+    {
+      "id": "a browser that fails every candidate is never driven",
+      "needle": "fails the marker is never driven",
+      "earned": "t182",
+      "baseline": "t182: a real run drove a Windows browser from a Linux shell, read a different Streamlit app on the same port, and closed with 'Nothing to fix from here'"
+    },
+    {
+      "id": "read the browser list to route the fix, never to show it",
+      "needle": "Read it to route\nyourself. **It does not reach the user.**",
+      "earned": "t182",
+      "baseline": "t182: a real run drove a Windows browser from a Linux shell, read a different Streamlit app on the same port, and closed with 'Nothing to fix from here'"
+    },
+    {
+      "id": "silence is earned by confirmed control or by a decline",
+      "needle": "Silence is earned by confirmed control, or by a decline",
+      "earned": "t182",
+      "baseline": "t182: a real run drove a Windows browser from a Linux shell, read a different Streamlit app on the same port, and closed with 'Nothing to fix from here'"
+    },
+    {
+      "id": "with control, open the app by driving to it",
+      "needle": "**With control, open the app by driving to it.**",
+      "earned": "t187",
+      "baseline": "t187: a real run told the user the browser lived on another machine and offered relocation as the fix"
+    },
+    {
+      "id": "with control, never launch anything to open the app",
+      "needle": "**With control, never launch anything to do it.**",
+      "earned": "t187",
+      "baseline": "t187: a real run told the user the browser lived on another machine and offered relocation as the fix"
+    },
+    {
+      "id": "once they have declined, open their default and say nothing about why",
+      "needle": "Once they have declined, open their default",
+      "earned": "t187",
+      "baseline": "t187: a real run told the user the browser lived on another machine and offered relocation as the fix"
+    },
+    {
+      "id": "the URL the user is given is always localhost",
+      "needle": "**That URL is always `localhost:<port>`**",
+      "earned": "t187",
+      "baseline": "t187: a real run told the user the browser lived on another machine and offered relocation as the fix"
+    },
+    {
+      "id": "no preamble: never announce in advance what you cannot check",
+      "needle": "No preamble, ever",
+      "earned": "t187",
+      "baseline": "t187: a real run told the user the browser lived on another machine and offered relocation as the fix"
+    },
+    {
+      "id": "the install request is required when earned and never suppressed",
+      "needle": "## What this stage says out loud",
+      "earned": "t189",
+      "baseline": "t189: a live run stayed silent through preflight and never offered the install"
+    },
+    {
+      "id": "a run never settles for headless on its own judgement",
+      "needle": "never settles for the headless browser on its own",
+      "earned": "t190"
+    },
+    {
+      "id": "only a decline ends the run without control",
+      "needle": "no control, declined",
+      "earned": "t190"
+    },
+    {
+      "id": "attached is not theirs",
+      "needle": "Attached is not theirs",
+      "earned": "t190"
+    },
+    {
+      "id": "where the browser runs is never a finding",
+      "needle": "Where the browser runs is never a finding",
+      "earned": "t190"
+    },
+    {
+      "id": "search for a browser whenever control is not confirmed",
+      "needle": "Whenever control is not confirmed",
+      "earned": "t190"
+    },
+    {
+      "id": "a candidate you cannot test is a candidate that failed",
+      "needle": "cannot test is a candidate that failed",
+      "earned": "t190"
+    },
+    {
+      "id": "scale the ask to the road it is on",
+      "needle": "scale the request to the row you are on",
+      "earned": "t190"
+    },
+    {
+      "id": "preflight waits for the answer",
+      "needle": "Preflight stops here until they answer",
+      "earned": "t190"
+    },
+    {
+      "id": "only an explicit no is a decline",
+      "needle": "Only an explicit no is a decline",
+      "earned": "t190"
+    },
+    {
+      "id": "on the decline, one line, and it is about them",
+      "needle": "On the decline, one line, and it is about them",
+      "earned": "t190"
+    },
+    {
+      "id": "asked directly, answer fully",
+      "needle": "Asked directly, answer fully",
+      "earned": "t190"
+    },
+    {
+      "id": "the marker token is at least ten characters after trimming",
+      "needle": "**The token is at least ten characters, after trimming.**",
+      "earned": "t191",
+      "baseline": "t191: a run's nine-character token returned 'No text content found'; it diagnosed the extractor and abandoned a working browser. Bisected on a live server: 10 passes, 9 fails, whitespace padding does not help"
+    },
+    {
+      "id": "write --bind 127.0.0.1 out; http.server defaults to 0.0.0.0",
+      "needle": "**Write the bind out.** `python -m http.server` defaults to `0.0.0.0`",
+      "earned": "t191",
+      "baseline": "t191: dropping the flag widens the bind rather than narrowing it, and the wide bind is the one command the classifier refuses -- denied 2 of 4 trials on one host and every trial on another"
+    },
+    {
+      "id": "loopback is the only candidate; there is no walk",
+      "needle": "**Loopback is the only candidate.** There is no walk.",
+      "earned": "t191",
+      "baseline": "t191: a routable interface has never returned a token in any recorded run, and the classifier's treatment of named routable addresses differs by host"
+    },
+    {
+      "id": "curl from this shell before driving the browser at it",
+      "needle": "**Curl before you drive, or you cannot read the answer.**",
+      "earned": "t191",
+      "baseline": "t191: a run's server died on a port collision, it navigated at the corpse and read the error page as a marker failure -- four calls chasing a browser that was fine"
+    },
+    {
+      "id": "never read the token from the URL or the tab title",
+      "needle": "**Never read the token from the URL or the tab title.**",
+      "earned": "t191",
+      "baseline": "t191: tab context echoes the URL you requested, token and all, after a navigation that totally failed -- a token seen there is your own input read back as proof"
+    },
+    {
+      "id": "switch_browser excludes the browser you are attached to",
+      "needle": "**Do not reach for it to confirm the browser you already\nhold**",
+      "earned": "t191",
+      "baseline": "t191: measured -- one browser connected returns 'No other browsers available to switch to' in under six seconds; two browsers with the user at the attached one timed out at ~124s three times while they watched their own Chrome and reported 'Nothing appears..'"
+    },
+    {
+      "id": "only deviceId is stable; the names are positional",
+      "needle": "**Only `deviceId` is stable. The names are positional.**",
+      "earned": "t191",
+      "baseline": "t191: the same device was 'Browser 2' in one listing and 'Browser 1' in the next; two orderings fit every listing measured and neither could be separated"
+    },
+    {
+      "id": "nothing says which browser you are attached to, and you do not need it",
+      "needle": "**Nothing in the list says which browser you are attached to.**",
+      "earned": "t191",
+      "baseline": "t191: a run reported 'the session was attached to the wrong one' having inferred it by elimination from a list holding exactly one non-local device -- an inference that fails with two"
+    },
+    {
+      "id": "a live process is not a connected device, and navigate returning success is not evidence",
+      "needle": "**Two things are not evidence, and both look like it.**",
+      "earned": "t191",
+      "baseline": "t191: pgrep counted three live Chrome processes after that device had left the list, and navigate went on returning 'Navigated to <url>' while rendering on another machine"
+    },
+    {
+      "id": "when a page comes back wrong, re-enumerate rather than re-probe",
+      "needle": "**When a page comes back wrong, re-enumerate — do not re-probe.**",
+      "earned": "t191",
+      "baseline": "t191: a run re-probed twice after its user acted, saw the same healthy answer both times, and missed a browser that had appeared five calls earlier"
+    },
+    {
+      "id": "the repair for a vanished device is the user reopening their browser",
+      "needle": "**The repair is one action and it is theirs: reopen the browser.**",
+      "earned": "t191",
+      "baseline": "t191: measured -- the device returns to the list on its own with a fresh connectedAt, no reinstall and no sign-in, then select_browser connects first try"
+    },
+    {
+      "id": "tabGroupId is per-attachment; a change never means reselect",
+      "needle": "**`tabGroupId` is per-attachment, not per-device.**",
+      "earned": "t191",
+      "baseline": "t191: reattaching to the same deviceId yielded a new group (1787560439 -> 1987147521), so a change is equally a reconnect and a failover"
+    },
+    {
+      "id": "check the port is held by the process this run launched",
+      "needle": "**Before you point it at the app, check the port is yours.**",
+      "earned": "t191",
+      "baseline": "t191: with no marker between preflight and the app, the port is the only thing standing between a run and a stale build of the user's own on 8501"
+    },
+    {
+      "id": "pick the port at random and mean it",
+      "needle": "**Pick the port at random and mean it.**",
+      "earned": "t191",
+      "baseline": "t191: three separate recorded builds all used 8791, which is how one of them collided with itself"
+    },
+    {
+      "id": "the default browser is often the one you launched; look rather than assume",
+      "needle": "**Their default is whatever they set it to, so look rather than assume.**",
+      "earned": "t191",
+      "baseline": "t191: notebook-to-webapp-preflight missed its re-probe probe on a Windows 11 case where the default WAS the Edge the run had just launched -- the skill scoped the rule to the browser you launched and never said the two can be one window"
+    },
+    {
+      "id": "the store page opens in the browser you found, never via the default",
+      "needle": "**Never `start`, `open` or `xdg-open` here.**",
+      "earned": "t192",
+      "baseline": "t192: a run searched the family, found /usr/bin/google-chrome, launched it, probed -- then opened the store page with xdg-open, which resolved to Firefox, where a chrome-extension:// origin cannot be installed at all"
+    },
+    {
+      "id": "look for the device rather than waiting to be told",
+      "needle": "**Then look for the device yourself. Do not wait to be told.**",
+      "earned": "t192",
+      "baseline": "t192: the device's connectedAt proved it had connected BEFORE the user typed 'continue' to unstick a run that was waiting on their turn"
+    },
+    {
+      "id": "the ask stops the question, not the rest of preflight",
+      "needle": "but what stops is the question, not",
+      "earned": "t192",
+      "baseline": "t192: the old wording halted every other preflight step too, which idled the slow headless-browser install behind a click that takes seconds"
+    },
+    {
+      "id": "tabs_context_mcp answers for the MCP tab group, not the browser",
+      "needle": "**`tabs_context_mcp` answers for the MCP tab group, not for the browser.**",
+      "earned": "t192",
+      "baseline": "t192: measured byte-identical tab lists after a launch whose page had demonstrably been fetched; a run read it as 'the browser's tabs' for a whole session"
+    },
+    {
+      "id": "the screenshot goes on the marker page, one navigation",
+      "needle": "**One navigation proves both tools.**",
+      "earned": "t192",
+      "baseline": "t192: computer returned 'Successfully captured screenshot (1470x751, jpeg)' on the served text/plain page with the token legible; a live run had skipped the separate ordinary-page step as redundant"
+    },
+    {
+      "id": "manifest paths list registrations, not installations",
+      "needle": "**Those paths list registrations, not installations.**",
+      "earned": "t192",
+      "baseline": "t192: a Windows box registered Chromium and Vivaldi with neither installed (only Edge); a Linux box had manifests in five browser directories and one browser on PATH"
+    },
+    {
+      "id": "silence after a visible ask is not the user hearing nothing",
+      "needle": "**Silence here is not the user hearing nothing.**",
+      "earned": "t192",
+      "baseline": "t192: a run wrote the unlicensed turn 'Setup's done.' because silence after two visible turns of trouble read to it as the request having gone nowhere"
+    },
+    {
+      "id": "there is nothing to watch when the schema never loaded",
+      "needle": "**There is nothing to watch on the no-schema road.**",
+      "earned": "t192",
+      "baseline": "t192: the watch was written unconditionally, and on the road where ToolSearch returns no schema there is no list_connected_browsers to poll -- a run would have sat polling a tool it does not have"
+    },
+    {
+      "id": "a background command's description is user-facing text",
+      "needle": "never for the machinery",
+      "earned": "t194",
+      "baseline": "t194: a build kept the silence table in prose and still put the preflight on screen twice -- `Now the browser side.` and `Background command \"Install headless browser for the gate\" completed`, the second being the harness printing the description the run gave its own Bash call. register.py's browser rules had existed for dozens of ticks and had never been run against a build's screens, so neither leak had ever been seen"
+    },
+    {
+      "id": "the run's own words for its setup never reach the user",
+      "needle": "And \"preflight\" is your word, not theirs",
+      "earned": "t197",
+      "baseline": "t197: this skill already recorded a run writing 'Setup's done.' as a mistake, and left it as an anecdote; a later run with all of it in front of it opened with 'Preflight's done. Let me read your notebook.' -- the same turn, using the internal word, because the rule beside it only reached things said about control"
+    },
+    {
+      "id": "there is no turn before the first question",
+      "needle": "There is no turn before the first question",
+      "earned": "t198",
+      "baseline": "t198: three builds on three different notebooks each opened with a status line accounting for setup -- 'Now preflight...', 'Preflight's done...', 'Control confirmed - nothing to ask...' -- each running with the rules the previous one earned and each finding a phrasing around them. The slot is the failure, not the vocabulary; t194 held by naming a channel while t197 was evaded by naming a word"
+    }
+  ]
+}
