@@ -1,3 +1,8 @@
+---
+name: configure-docker-compose-deployment
+description: Use when deploying an OpenMS Streamlit app with docker-compose, or when choosing between the full OpenMS image and the pyOpenMS-only one.
+---
+
 # Configure Docker Compose Deployment
 
 Set up docker-compose-specific configuration for a new or forked OpenMS streamlit app.

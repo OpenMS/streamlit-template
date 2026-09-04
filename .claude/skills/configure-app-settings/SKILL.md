@@ -1,3 +1,8 @@
+---
+name: configure-app-settings
+description: Use when changing an OpenMS app's name, version, deployment mode, workspaces, thread limits, analytics or legal links in settings.json.
+---
+
 # Configure App Settings
 
 Set up app-level configuration (settings, Dockerfile, README) for a new or forked OpenMS streamlit app. Run before `configure-docker-compose-deployment` or `configure-k8s-deployment`.
