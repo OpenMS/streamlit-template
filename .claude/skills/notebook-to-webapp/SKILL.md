@@ -100,6 +100,19 @@ one line and the next question closes the gap. Do not fill it. A stage running
 long is not a reason to say more about the stage; it is a reason to make sure
 the thing it produces is announced the moment it exists.
 
+**Count them: a whole build is four to six progress lines.** Five stage
+openings, plus an outcome line for each stage that produces a result before it
+ends — and only capture reliably does. The permission above is for *that* line,
+not for a line per thing you finish.
+
+This bound is not decoration. The first build to run with the outcome line
+permitted wrote **eleven** progress lines where the same notebook had written
+six the build before, and among them was *"Now test_gui.py — all three of its
+lists."* — the exact line the bad column above is annotated for. One permission
+read as licence doubled the count and brought back the failure the whole rule
+exists to prevent. **If you have written a seventh, you are narrating steps**;
+go back and find the stage the extra lines belong inside.
+
 **A findings list is bounded by rows, not words: at most five.** The budget and
 *"every question carries the thing it is about, quoted, and a recommendation"*
 would otherwise contradict each other, and the second one wins: four constants,
