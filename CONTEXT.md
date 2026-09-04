@@ -111,8 +111,17 @@ The browser the extension answers for. Attached is not theirs: it may be a
 window nobody is sitting at, and a run drove one for a whole preflight while
 the user was asking what it was looking at. Where it runs is a property of the
 deployment, never a fault to diagnose. One thing earns it their app — that it
-loads a page this host serves.
+loads a page this host serves **on loopback**. Nothing available proves a human
+is in front of it, so the framework does not claim that and does not measure it.
 _Avoid_: their browser, the local browser, the Chrome instance
+
+**The marker**:
+A token of at least ten characters, served from this host on `127.0.0.1` and
+read back out of the page body in the browser under control. The single
+instrument that separates a browser which can load what you serve from one that
+merely answers. Its verdict is reach, never presence and never location: a
+token returned proves the pair works, not where either end is.
+_Avoid_: the test page, the handshake, the ping, the reachability check
 
 **The decline**:
 An explicit no to the browser ask. It is the only thing that licenses a run to
@@ -122,11 +131,20 @@ _Avoid_: no control, the fallback, going without
 
 **Control unreachable**:
 Control that answers and drives pages, attached to a browser that cannot load
-what this host serves. Its `localhost` is not this machine's, so it renders
-whatever sits on that port over there — convincingly, and as though it were the
-app under construction. Nothing in the tab context distinguishes it; a page you
-serve does. A property of the pair, never a verdict on the browser.
+what this host serves on loopback. Its `localhost` is not this machine's, so it
+renders whatever sits on that port over there — convincingly, and as though it
+were the app under construction. Nothing in the tab context distinguishes it; a
+page you serve does. A property of the pair, never a verdict on the browser.
 _Avoid_: control foreign, wrong browser, broken control, not connected
+
+**Control lost**:
+Confirmed control that has silently stopped being true. The user closes their
+browser, the device leaves the account's list on its own, and the session is
+re-attached to another one without a word — after which `navigate` keeps
+returning success on a screen nobody is watching. It fails in the success
+direction, which is why no return value detects it and why the repair is the
+user reopening their browser rather than anything the run can do alone.
+_Avoid_: disconnected (that is a different failure), the browser crashed, stale control
 
 **Control absent** vs **control disconnected**:
 Two failures that look alike and are not. *Absent* is the browser tools having no
