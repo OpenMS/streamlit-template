@@ -194,6 +194,23 @@ failure, and declares `DEFAULTS` and `OUTPUTS` at module level.
 links on. The dashboard stage reads it without executing anything, so it must be
 accurate; the generated test asserts a real run matches it.
 
+**`role` comes from a fixed vocabulary, because the dashboard stage looks it up
+rather than interpreting it:**
+
+```
+table         a row per record, the thing a user scans and clicks
+mirror        two spectra face to face
+peakmap       retention time against m/z, as a density
+chromatogram  a signal against retention time
+```
+
+An output that is none of these may coin a new role — but **say so in the
+declaration**, because a coined role has no component waiting for it and the
+dashboard will draw it with pyopenms-viz instead. Reaching for a new word when
+one of these four fits is how a page loses the component it should have had: the
+vocabulary was undocumented until a run mapped nothing at all and every role it
+had was on this list.
+
 Give every numeric entry in `DEFAULTS` an explicit `min` and `max`. Without them
 the parameter probe invents bounds — `lo = 0` for a positive value — and sweeps a
 value the tool rejects. The failed run is dropped from the effect calculation, so

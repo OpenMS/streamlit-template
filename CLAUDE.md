@@ -215,7 +215,7 @@ Simple-page workflow outputs go to `<workspace>/mzML-workflow-results/<timestamp
 
 `src/view.py` plots via the pyopenms-viz **`ms_plotly`** backend on `MSExperiment.get_df()` DataFrames (`df.plot(backend="ms_plotly", kind="chromatogram"|"spectrum"|"peakmap")`), with a 3D peak map only under 2500 points. Use `show_fig()` / `show_table()` from `src/common/common.py` so downloads and the configured image format work consistently.
 
-Downstream apps also use **OpenMS-Insight** (`Table`, `LinePlot`, `Heatmap`, `VolcanoPlot`, `SequenceView`) for very large datasets with server-side pagination and cross-component linking — note it is **not** a dependency of this template.
+Downstream apps also use **OpenMS-Insight** (`Table`, `LinePlot`, `Heatmap`, `VolcanoPlot`, `SequenceView`) for very large datasets with server-side pagination and cross-component linking — note it is **not** a dependency of this template, and does not become one. It belongs to the **generated app**, which declares `openms-insight>=0.2.0` in its own `requirements.txt`; `build-insight-dashboard` puts it there, syncs the app's venv and confirms the import before mapping anything. Insight is the first solution, not a preference: `role` is a fixed vocabulary (`table`, `mirror`, `peakmap`, `chromatogram`) and each entry maps to a component by lookup, so pyopenms-viz is reached only when the role is outside that list or the import failed — and the wireframe names which. The framework had neither the install step nor the vocabulary until a run built a whole dashboard on a machine where the package was absent and told its user the fallback was for continuity with their notebook.
 
 ## Documentation and deployment
 

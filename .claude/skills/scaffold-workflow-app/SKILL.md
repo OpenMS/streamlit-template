@@ -54,6 +54,20 @@ added and the hidden template pages were left behind, so the suite passed while
 launching three pages the sidebar no longer offers. Until then only opening the page can catch this. After any
 rename, grep for the old stem and expect zero hits outside comments.
 
+## Dependencies
+
+**An app declares what it imports.** Anything the generated code imports that the
+template's own `requirements.txt` does not already list goes into the app's,
+pinned. The template stays as it is — it is a template, and the app is what has
+the dependency.
+
+Measured: two consecutive builds shipped apps whose dashboard did
+`from openms_insight import ...` while their `requirements.txt` never mentioned
+it. Both ran, because the venv on that machine already carried the package; a
+clean `pip install -r requirements.txt` of either produces an app that dies on
+import. Three earlier apps carry the line, so this is something that stopped
+happening rather than something never done.
+
 ## Non-negotiables
 
 Each is a way to produce an app that looks fine and is broken.
@@ -120,6 +134,13 @@ inherited, not code you own. Changing them there is not a local fix: every futur
 rebase carries it, and nobody reviewing the app sees a diff against the template
 that was supposed to be identical.
 
+**The page list in the root `test_gui.py` is not in that set.** `tests/` above
+means the directory; `test_gui.py` is a root file and a different suite, and its
+hand-written list is the app's page registry written out a second time. It
+changes when the registry changes — adding yours and removing the template's is
+required above, and it is not a template edit. Read the two rules together and
+this is the seam between them.
+
 There is exactly **one** sanctioned edit in that area, and it is named in Common
 mistakes below: `run_python()` spawning `sys.executable` instead of the literal
 `"python"`. Everything else is a finding, not a task.
@@ -135,8 +156,8 @@ Measured on a real build. Asked to add a preset button, the framework found the
 preset mechanism did not move an already-mounted widget, rewrote `apply_preset`
 in `ParameterManager.py` from delete-keys to assign-values, adjusted
 `StreamlitUI.py` to match, and then rewrote `tests/test_parameter_presets.py` so
-the suite went green. The diagnosis was good. The three files were the wrong
-place to put it, and the fourth removed the evidence.
+the suite went green. The diagnosis was good. The two shared modules were the
+wrong place to put it, and the test rewrite removed the evidence.
 
 ## Common mistakes
 

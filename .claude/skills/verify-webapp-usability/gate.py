@@ -93,11 +93,19 @@ def component_frames(page):
 # role, build-insight-dashboard prescribes falling back to pyopenms-viz through
 # show_fig(), which renders a native Streamlit chart rather than an iframe.
 # Counting iframes alone marks that dashboard down for following the guidance.
+# stDataFrame is here for the TABLE role specifically. A plot falling back to
+# pyopenms-viz renders Plotly and was always counted; a table has no plot to fall
+# back to, so it becomes st.dataframe and was counted as nothing. A run hit that,
+# read a real 9/10 on a page missing its table, and reached PASS by lowering
+# --expect-components from 2 to 1 -- changing the measurement to fit the result.
+# Counting it removes that pressure. The size filter below is what keeps an
+# incidental show_table() in a collapsed expander from inflating the count.
 NATIVE_PANEL_SELECTORS = (
     "[data-testid='stPlotlyChart']",
     "[data-testid='stVegaLiteChart']",
     "[data-testid='stArrowVegaLiteChart']",
     "[data-testid='stPyplotChart']",
+    "[data-testid='stDataFrame']",
 )
 
 

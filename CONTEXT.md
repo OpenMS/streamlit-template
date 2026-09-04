@@ -86,6 +86,24 @@ One visualization region on a results page, bound to one output and one componen
 The unit of dashboard construction and of dashboard review.
 _Avoid_: widget, chart, plot, tile, card, block
 
+**Role**:
+The word in the output contract that says what kind of thing a file holds —
+`table`, `mirror`, `peakmap`, `chromatogram`. A fixed vocabulary, because the
+dashboard stage *looks it up* to get a component rather than interpreting it. A
+step may coin a role outside the four, and then must say it has, because a coined
+role has no component waiting for it.
+_Avoid_: kind, type, category, output type
+
+**Fallback panel**:
+A panel drawn with pyopenms-viz instead of the Insight component. Legal for
+exactly two reasons, and it always carries which: the role is outside the
+vocabulary, or Insight could not be imported. It is never described to the user
+as a design choice — a run whose import had failed called its fallback *"the same
+backend your notebook used"*, which was true and read as deliberate. **Always
+qualified**: bare *"the fallback"* already means going without browser control
+(see **The decline**), and the two have nothing to do with each other.
+_Avoid_: static panel, simple panel, plain plot, degraded panel, bare "the fallback"
+
 **Link identifier**:
 The shared name through which panels communicate a selection — set by one panel,
 consumed as a filter by others.

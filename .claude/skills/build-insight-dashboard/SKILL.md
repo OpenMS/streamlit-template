@@ -15,9 +15,36 @@ building the next.**
 
 ## 1. Link graph
 
-Read `OUTPUTS`. Map each `role` to a component and each `links` entry to a link
-identifier. State skipped components explicitly — a component with no matching
-output is a decision, not an omission.
+**Establish Insight before you map anything.** It is a dependency of the app you
+are building, never of the template — so put it in the app's own
+`requirements.txt`, sync the app's venv, and confirm the import:
+
+```
+ensure   openms-insight>=0.2.0 in <app>/requirements.txt
+sync     the app's .venv from that file
+verify   python -c "import openms_insight"
+```
+
+**Verify by importing, not by assuming.** A run wrote a whole dashboard without
+ever checking, on a machine where the package was absent, because nothing here
+told it to look. The framework had no install step at all: the package is not in
+the template's `requirements.txt` and no skill in the chain added it, so it
+worked only where a venv happened to carry it already.
+
+Then read `OUTPUTS` and map each `role` to its component. **This is a lookup, not
+a judgement:**
+
+| role | component |
+|---|---|
+| `table` | `Table` |
+| `mirror` | `MirrorPlot` |
+| `peakmap` | `Heatmap` |
+| `chromatogram` | `LinePlot` |
+
+`StateManager` wires the links; it is not something a role maps to. A role **in**
+this table gets that component — there is no choice to make. A role **not** in it
+falls back, and so does every role when the import above failed. Those are the
+only two roads to pyopenms-viz.
 
 ```
 psms.parquet          role=table   -> Table         sets    'psm'
@@ -25,8 +52,26 @@ mirror_peaks.parquet  role=mirror  -> MirrorPlot    filters 'psm'
                                    -> VolcanoPlot   SKIPPED, no groups
 ```
 
-Where no Insight component fits, fall back to pyopenms-viz via `show_fig()` **and
-say so in the wireframe**.
+State skipped components explicitly — a component with no matching output is a
+decision, not an omission.
+
+**A fallback carries its reason, and there are exactly two.** Either the role is
+not in the table above, or the import failed. Write which:
+
+```
+role not in the table  ->  pyopenms-viz via show_fig()
+                             reason: no component for this role
+import failed          ->  pyopenms-viz via show_fig(), every panel
+                             reason: unavailable
+```
+
+**Never let "unavailable" reach the user dressed as design.** A run whose import
+had failed told its user *"the mirror plot is drawn with pyopenms-viz, the same
+backend your notebook used"* — true, and it reads as a considered choice about
+continuity. Both of that run's roles were `table` and `mirror`, which are in the
+table above; nothing about them failed to fit. The environment fact appeared
+nowhere in the transcript, and its own later self would have read the wireframe
+as a design decision.
 
 Where outputs are **parallel** rather than chained, no panel inherits the link
 identifier. Choose one and say why — usually the table, being what a user looks at
@@ -36,6 +81,29 @@ first.
 
 Approve placement, sizes, and what each panel sets and filters on, **before
 writing code**.
+
+**Every panel in the wireframe names the role it came from and the component it
+uses.** This is required, and it is what makes §1 impossible to skip: you cannot
+fill it in without having done the mapping. A run produced no link graph at all —
+*"not one line reached the user or my own reasoning"* — and went straight to a
+wireframe, which is how the catalogue above never got consulted.
+
+```
+[ Identifications ]   role=table   -> Table
+[ Mirror plot     ]   role=mirror  -> MirrorPlot
+[ Coverage        ]   role=coverage -> pyopenms-viz, no component for this role
+```
+
+A fallback panel carries its reason here, in the user's own terms and in one
+clause — *"drawn with static plots, because I couldn't install the interactive
+components on this machine"*. That clause is the whole of what is said about it;
+it is not a turn of its own, and nothing else about the machinery is named.
+
+**The panel count for the gate comes from this graph.** `--expect-components` is
+what the mapping says the page should have, and a short count means a panel is
+missing. **Lowering the number until the gate passes is the one thing you may
+never do** — a run took a real 9/10 failure, changed `2` to `1`, and recorded a
+green 10/10 on a page that was missing its table.
 
 ## 3. Panels, one at a time — each with a design round
 
