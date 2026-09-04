@@ -16,7 +16,9 @@ Ends in one of two states, and the caller branches on which:
 **There is no third ending, and a run never settles for the headless browser on
 its own judgement.** The only thing that puts a run there is a user who was asked
 and said no. Every road that does not reach confirmed control reaches the ask,
-and preflight does not move past it.
+and the notebook question waits behind it. What waits is that question, not the
+rest of setup, and not the run's own looking: while they act, preflight finishes
+and the browser list is watched.
 
 ## What this stage says out loud
 
@@ -35,6 +37,15 @@ is spoken, and none of this governs what you say when asked directly.
 | no schema at all | the click, and the restart |
 | no Chromium browser on this machine at all | the request to install one |
 | they have already said no | *(nothing further — the decline had its one line, and it is settled)* |
+
+**Silence here is not the user hearing nothing.** After a visible ask they
+acted on, the acknowledgement rides on the next question rather than becoming a
+turn of its own — *"Thanks — what's the path to your notebook?"* That sentence
+belongs to the question following this stage, not to this skill, so it costs the
+table above nothing. A run that instead wrote *"Setup's done."* explained itself
+honestly: two visible turns of trouble had just happened, and silence read to it
+as the request having gone nowhere. That pressure is real and this is what answers it. What is still never
+said is anything **about** control.
 
 **Silence is earned by confirmed control, or by a decline. Nothing else earns
 it.** An earlier table had three silent rows and a run walked one of them: the
@@ -76,6 +87,12 @@ user watched their own Chrome and reported *"Nothing appears.."*. There was
 nothing to click. **Do not reach for it to confirm the browser you already
 hold** — it is structurally incapable of prompting that one.
 
+**Loopback reach is the closest thing to *their* window this framework can
+establish, and it is treated as such on purpose.** So where the rest of this file
+says the app opens in the user's window, it means the window that loaded what
+this host served — the best available proxy, and the only one. It is never a
+claim that someone is sitting at it.
+
 **Chromium only, but that is a wide family.** Claude Code registers its native
 messaging host for Chrome, Edge, Chromium, Brave, Arc, Opera and Vivaldi — check
 the machine rather than assuming, since the list is the installer's and can
@@ -86,6 +103,13 @@ Windows:  HKCU:\Software\**\NativeMessagingHosts\com.anthropic.claude_code_brows
 macOS:    ~/Library/Application Support/*/NativeMessagingHosts/
 Linux:    ~/.config/*/NativeMessagingHosts/
 ```
+
+**Those paths list registrations, not installations.** They say which browsers
+the installer wrote a host manifest for, which is not which browsers are on the
+machine: a Windows box registering Chromium and Vivaldi had neither installed —
+only Edge — and a Linux box carried manifests in five browser directories with
+one browser on `PATH`. Read them to ask whether a browser you *found* is
+driveable. Never to find one.
 
 **There is no Firefox extension and there will not be one from here.** The host
 manifest declares a `chrome-extension://` origin, which Firefox cannot load, and
@@ -122,6 +146,32 @@ Say only *"it's open at <url>"*. **That URL is always `localhost:<port>`** —
 whatever address you had to use to reach the app yourself is machinery, and
 theirs resolves from where they are sitting.
 
+And later, on that same road, **opening a page starts a browser** — but only a
+Chromium one is driveable.
+Opening the app after a decline opens their *default*, and re-probing after that
+finds nothing when there is nothing there to find. So a page opening is worth a
+re-probe only when what opened was a Chromium browser; the ask has its own
+re-check, and this rule does not govern it.
+
+**Their default is whatever they set it to, so look rather than assume.** An
+earlier version of this rule asserted that Edge ships as the default on Windows
+and that `start <url>` therefore reopens the browser you just launched. It is
+false — a Windows machine with Edge installed was measured defaulting to
+Firefox — and it did damage before it was caught: a run on Linux read it as
+licence to expect `xdg-open` to resolve to the Chrome it had launched moments
+earlier. It resolved to Firefox. When it matters what a page you opened landed
+in, ask the machine:
+
+```
+Windows:  HKCU:\Software\Microsoft\Windows\Shell\Associations\
+            UrlAssociations\http\UserChoice   ->  ProgId
+Linux:    xdg-settings get default-web-browser
+macOS:    the LaunchServices http handler
+```
+
+Chromium means that page just started something worth probing again. Anything
+else means there is nothing there to find.
+
 ## Find a Chromium browser
 
 **Whenever control is not confirmed.** Not only when the probe came back empty —
@@ -156,8 +206,17 @@ mcp__claude-in-chrome__tabs_context_mcp   {"createIfEmpty": true}
 closed one, and the extension is what answers the probe — so with the
 browser shut, control is unavailable and the probe rightly says so.
 
+**`tabs_context_mcp` answers for the MCP tab group, not for the browser.** Its
+own description says it returns the tabs *"inside the group"*, and that is
+literal: a tab opened by launching the browser executable at a URL does not
+appear in it. Measured, the tab list came back byte-identical after a launch
+whose page had demonstrably been fetched. So it can confirm nothing you opened
+by other means, and a run read it as *"the browser's tabs"* for an entire
+session before a measurement corrected it.
+
 **An empty probe is a step, not the answer.** Control is worth real effort —
-it is what puts the app in the user's own window instead of a second rendering
+it is what puts the app in the window that proved it can load what you serve,
+instead of a second rendering
 of it — so the next move after an empty probe is a command, never another
 probe:
 
@@ -207,12 +266,9 @@ you, and that is the whole question.
 
 ## Confirm by driving, not by probing
 
-A probe that returns is not proof: navigate to any ordinary web page and take
-one screenshot. Not `about:blank` — the screenshot tool refuses browser-internal
-URLs with *"Can't interact with browser-internal or unparseable URLs"*, so a
-blank tab fails the check while control is in fact working.
+A probe that returns is not proof.
 
-**Then confirm it can reach *this* machine, with a page you serve.** A browser
+**Confirm it can reach *this* machine, with a page you serve.** A browser
 that answers is not the same as a browser that can load what you are serving,
 and the difference is invisible: a run drove a browser successfully for an
 entire build, pointed it at `localhost:8577`, and read **a different Streamlit
@@ -228,10 +284,22 @@ serve  python -m http.server <random port> --bind 127.0.0.1 --directory <tmp>
 check  curl the URL from this shell first -- the token must come back
 drive  browser -> http://127.0.0.1:<port>/<token>.txt
 read   get_page_text, and match the token exactly
+see    computer screenshot, on that same page
 
 token back    ->  it can reach you. Use it, and say nothing.
 anything else ->  it cannot. Go to the ask.
 ```
+
+**One navigation proves both tools.** The screenshot goes on the marker page and
+not on a page of its own — measured, `computer` returns *"Successfully captured
+screenshot (1470x751, jpeg)"* on the served `text/plain` page, with the token
+legible in the image. An earlier version sent a run to "any ordinary web page"
+first, and a live run skipped that step as redundant, correctly: the marker is
+strictly the stronger check. Putting the screenshot on the page the run already
+had to load makes it unskippable and costs nothing. Point neither at
+`about:blank` — the screenshot tool refuses browser-internal URLs with *"Can't
+interact with browser-internal or unparseable URLs"*, so a blank tab fails the
+check while control is in fact working.
 
 **The token is at least ten characters, after trimming.** Nine fails. This was
 bisected on a live server, same tab, same `Content-type: text/plain`, varying
@@ -319,11 +387,34 @@ attachment you verified; changed means re-marker. It never means reselect.
 **Take them to it; do not offer to mention it later.** You cannot finish this
 yourself — the extension comes from the store, in their browser, under their
 claude.ai account, and the click and the sign-in are theirs. Everything up to
-that is yours. Open `https://claude.ai/chrome` the same way you open any page,
-say the one thing to click, and scale the request to the row you are on:
+that is yours. Open `https://claude.ai/chrome` **in the browser you found, by
+naming it**, say the one thing to click, and scale the request to the row you
+are on:
 
 ```
-marker failed, browser here  ->  launch it, take them to the store page:
+PowerShell:  Start-Process '<path found above>' 'https://claude.ai/chrome'
+POSIX shell: "<path found above>" 'https://claude.ai/chrome' >/dev/null 2>&1 &
+```
+
+**Never `start`, `open` or `xdg-open` here.** The extension goes into *one*
+browser, and those three resolve the *default*, which is a different browser
+until proven otherwise. A run did every earlier step correctly — searched the
+family, found `/usr/bin/google-chrome`, launched it, probed — and then opened
+the store page with `xdg-open`. It landed in Firefox, which cannot install a
+`chrome-extension://` origin at all, and the run told the user *"I've opened a
+page in your Chrome"* on no evidence whatever.
+
+Measured, naming the executable hands the URL to an **already-running** instance
+rather than starting a second one: the command returned in 94ms, the served
+page's own log showed a `/favicon.ico` fetch that `curl` never makes, and the
+browser process count rose by exactly one — a renderer, not a second window.
+**Do not confirm it with `tabs_context_mcp`**, which came back byte-identical
+after that same launch. Nothing needs to confirm it: the watch below is what
+says whether the extension arrived, and that is the only outcome that matters.
+
+```
+marker failed, browser here  ->  the command above opens the store page in it,
+                                    launching it if it is not running:
                                     "one click to add the Claude browser
                                     extension and I can check the finished
                                     pages myself."
@@ -336,15 +427,42 @@ no Chromium browser at all   ->  ask them to install one -- Chrome, Edge,
                                     and as something they may say no to.
 ```
 
-**Preflight stops here until they answer.** The notebook question does not go
-out first, and neither does anything else that moves the run forward; this is
-the one place a run waits. Asking and pressing on regardless is how a run
-reaches the headless browser without a decline, which is the thing that must not
-happen.
+**Preflight stops here until they answer — but what stops is the question, not
+the work.** The notebook question does not go out, and neither does anything
+else that moves the run *past* them; asking and pressing on regardless is how a
+run reaches the headless browser without a decline, which is the thing that must
+not happen. Setup that has to happen anyway does not stop. Finish the rest of
+preflight while they click — the gate's headless browser is the slow one, and it
+is already sequenced after this step.
 
-**Only an explicit no is a decline.** Read the list before reading their words:
-whatever they reply, re-enumerate, re-select and re-marker once, and if control
-now answers, use it and say nothing further. Their click may have created a
+**Then look for the device yourself. Do not wait to be told.** The extension
+announces itself by appearing in `list_connected_browsers`. Their words are not
+the signal and never were:
+
+```
+end of preflight  ->  list_connected_browsers, once
+   device there?  ->  select by deviceId, marker it, say nothing
+   nothing yet?   ->  look again every 15 seconds
+```
+
+Keep looking until the device appears or they say something. A run that waited
+for a turn instead had its user type *"continue"* to unstick it — and that
+device's `connectedAt` proved it had connected **before** they typed. The entire
+wait was invented. Nothing here ever forbade a loop; the wording simply
+described enumeration as a response to their reply, which pinned it to a turn
+boundary instead of to the clock.
+
+**There is nothing to watch on the no-schema road.** `list_connected_browsers`
+is one of the tools that did not load, so there is no list to poll and no device
+that can appear in *this* session — which is precisely why that row of the ask
+asks for a restart and not for a click alone. Watch on every road where the
+schema loaded. On that one road the ask is the end of what this session can do,
+and pretending to watch is how a run would sit polling a tool it does not have.
+
+**Only an explicit no is a decline.** If they speak before the watch has found
+anything, read the list before reading their words: whatever they reply,
+re-enumerate, re-select and re-marker once, and if control now answers, use it
+and say nothing further. Their click may have created a
 device that was not there when you asked — one appeared nineteen minutes into a
 preflight, and the run that only re-probed did not see it for five more calls.
 If control still does not answer and they have not plainly declined — they said
@@ -375,22 +493,15 @@ does that read right to you?"*
 **Check that it started; `start` on Windows does not.** A measured run
 issued `cmd /c start "" "<path>"`, saw its own `launched` echo, probed,
 and moved on — and no browser had opened. `start` hands off and returns
-whether or not anything ran. Both launch forms above were verified to leave a
-process behind; after either, confirm the process exists before probing — and
-remember a live process is not a connected device, so the probe still decides.
+whether or not anything ran. **This governs the bare launch that precedes a
+probe** — the one under "an empty probe is a step" — because a browser that never
+started and a browser missing the extension produce the same empty probe, and
+nothing afterwards tells them apart. Both forms in that block were verified to
+leave a process behind, and you confirm the process anyway, because the form that
+failed was a third one. A live process is still not a connected device: the probe
+decides. **The store-page launch is not this case** — nothing there waits on a
+probe, and the watch is what settles it.
 
-The same applies later: **opening a page starts a browser** — but only a
-Chromium one is driveable. Opening the app after a decline opens their
-*default*, which may be Firefox, and re-probing after that finds nothing
-because there is nothing there to find. So a page opening is worth a re-probe
-only when what opened was a Chromium browser; the ask has its own re-check, and
-this rule does not govern it.
-
-**Often the default and the one you launched are the same window.** Edge ships
-as the default on Windows, so `start <url>` there opens the browser you already
-launched and probed — one window, not two. Look at what the default actually
-resolves to rather than assuming a page you opened landed somewhere else: if it
-is Chromium, that page just started something worth probing again.
 
 ## What is said, and what is not
 
@@ -407,7 +518,10 @@ decline, which follows their own answer and tells them what they just chose.
 *before* driving anything is how a session ends up claiming a capability it has
 not established, or disclaiming one it has.
 
-**The setup summary claims nothing you have not done.** A run ended preflight
+**The setup summary claims nothing you have not done.** A summary exists only
+where something else licenses one — a direct question, or the orchestrator's
+optional one-line *"setting up"*. Nothing here licenses volunteering one; this
+governs the wording of a summary already licensed elsewhere. A run ended preflight
 with *"Everything's set up ... and I can open pages in your Chrome and check
 them myself"*, and had to retract the second half later: *"Correct — I can't."*
 Opening and checking have different requirements, so a sentence joining them is

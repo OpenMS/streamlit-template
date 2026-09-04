@@ -120,8 +120,19 @@ A token of at least ten characters, served from this host on `127.0.0.1` and
 read back out of the page body in the browser under control. The single
 instrument that separates a browser which can load what you serve from one that
 merely answers. Its verdict is reach, never presence and never location: a
-token returned proves the pair works, not where either end is.
+token returned proves the pair works, not where either end is. One navigation
+carries both checks — the token out of the page body, and the screenshot that
+proves the other tool, taken on that same served page.
 _Avoid_: the test page, the handshake, the ping, the reachability check
+
+**The watch**:
+What a run does between the browser ask and its answer: it looks for the device
+in the connected-browser list — once when the rest of setup is done, then every
+fifteen seconds — rather than waiting to be told the click has happened. The
+user's words are a backstop, not the signal, and a device has been measured
+connecting before its user typed anything at all. There is no watch on the road
+where the tool schemas never loaded, because there is no list to read.
+_Avoid_: polling, the handshake wait, waiting for confirmation
 
 **The decline**:
 An explicit no to the browser ask. It is the only thing that licenses a run to

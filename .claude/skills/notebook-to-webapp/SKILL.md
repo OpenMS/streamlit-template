@@ -50,8 +50,12 @@ determinable rule to justify it.
 and a skimmed recommendation is an unmade decision. The work is not what has to
 shrink — classifying, probing, cross-checking, reading the screenshot all still
 happen, in thinking. What reaches the screen is a **progress line** while
-something slow runs, and an **interview** when something needs deciding. Between
-those two there is nothing to say.
+something slow runs, an **interview** when something *measured* needs deciding,
+and a **design round** when something *rendered* does. Those three are what
+reaches the screen *unprompted*. Everything else a user reads is prescribed by
+name somewhere in this file — the notebook question, the confirmation of the
+summary, the browser ask and its decline line, the handover — and nothing outside
+the named set is volunteered.
 
 **One progress line per stage, not per step.** The stages are the five in the
 table near the end of this file, and nothing else is one — a line goes out when
@@ -63,7 +67,7 @@ loud:
 
 ```
 Now pulling the analysis out into a script.        Now pulling the analysis out into a script.
-Created eubic_task3_quant.py +376-0
+Created <tool>.py +<n>-0
 Now the golden test against your numbers.          Verified it reproduces your notebook.
 The extracted script reproduces your notebook.
 Now the workflow class and its four pages.         Now building the app.
@@ -73,8 +77,8 @@ Now test_gui.py — all three of its lists.
 Now the Results page. Here's what I'd build:       Now the Results page. Here's what I'd build:
 ```
 
-Eight lines against four. Note what the third one on the left is doing: *"all
-three of its hand-written lists"* is a phrase out of `cleanup.md`, read aloud.
+Eight lines against four. Note what the `test_gui.py` line on the left is doing:
+*"all three of its lists"* is a phrase out of `cleanup.md`, read aloud.
 A step that only exists because this framework has a rule about it is not a step
 the user is waiting on.
 
@@ -185,8 +189,15 @@ misclassification is usually systematic.
 
    | | needs | used for |
    |---|---|---|
-   | **open** a page | nothing — `start <url>`, `open <url>`, `xdg-open <url>` | every design round, and the handover |
+   | **open** a page, any browser | nothing — `start <url>`, `open <url>`, `xdg-open <url>` | every design round, and the handover |
+   | **open** a page in **one** browser | that browser's executable path | the extension store page |
    | **drive** a page | browser control | the usability gate: screenshots, clicking, reading the DOM |
+
+   **The middle row is a whole failure on its own.** Those three commands
+   resolve the *default* browser, which is fine when any window will do and
+   wrong when a specific one must receive the page. A run opened the extension
+   store with `xdg-open` after finding and launching Chrome, and it landed in
+   Firefox, where that extension cannot be installed at all.
 
    So a page always opens. Saying "my browser extension isn't connected" instead of opening the page fails twice: it withholds the app, and it names this framework's plumbing to a mass spectrometrist.
 
@@ -203,10 +214,19 @@ misclassification is usually systematic.
    3. **Open `connect-browser-control` now** — before the first question. It
       connects control and confirms it by driving a page this machine serves,
       or it asks them for the one click that would. Its rules are there and not
-      here, including the one that stops this stage until they answer.
+      here, including the one that holds the notebook question until they
+      answer.
    4. Install the gate's headless browser. It runs the gate's hard assertions
       either way — what it never becomes is where a run quietly settles for
       judging pages the user cannot see.
+
+   **An ask at step 3 stops the question, not step 4.** What must never go out
+   ahead of their answer is the notebook question and anything else that moves
+   the run *past* them. Setup that has to happen regardless keeps going, and the
+   ordering above is why: step 4 is the slow one, so it runs while they click.
+   Then look for the device — `connect-browser-control` owns how, and the short
+   version is that you look rather than wait to be told. A run that waited for a
+   turn made its user type *"continue"* at a browser that had already connected.
 
    Where the browser runs, what is checking what, and what you can or cannot see
    are this framework's plumbing, and none of it is something they can act on.
@@ -230,7 +250,13 @@ misclassification is usually systematic.
    *"Preflight — probing environment in parallel"*, *"Now the browser side of
    the preflight"*. Each hands a mass spectrometrist a list of this framework's
    own steps, and the word `preflight` means nothing to them.
-2. **Ask for the notebook's path.** One question, no list. Do not scan the folder
+2. **Ask for the notebook's path.** One question, no list. **If they were
+   visibly asked for something in preflight and did it, this question carries
+   the thanks** — *"Thanks — what's the path to your notebook?"* — and that is
+   the whole acknowledgement. It is not a turn of its own, and it says nothing
+   about the browser. Silence right after a user has done what you asked reads
+   as the request having gone nowhere, and a run that felt that pull invented
+   *"Setup's done."* to fill it. Do not scan the folder
    the prompt was pasted in, and never the clone's parent. A user who pastes a
    prompt into a working directory has not invited an inventory of it, and the
    parent scan reports their other projects back to them. Listing their notebooks and the webapps beside them reads as snooping.

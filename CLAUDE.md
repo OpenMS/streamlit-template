@@ -243,7 +243,7 @@ Fifteen loadable skills live here, each as `<name>/SKILL.md` with YAML frontmatt
 
 Plus `connect-browser-control`, run from preflight: it connects the Claude browser
 extension and proves the attached browser can load a page this host serves **on
-loopback**, so design rounds put the app in the user's own window. **Attached is
+loopback**, so design rounds put the app in that same window. **Attached is
 not theirs** — the extension answering proves a browser exists somewhere
 reachable, not that anyone is sitting at it, and only the marker separates the
 two. The marker's verdict is reach, never presence: `switch_browser` was measured
@@ -252,8 +252,14 @@ proves a human is there and the framework does not pretend otherwise. Where the
 browser runs is never a finding and never reaches the user; what does reach them
 is the one thing they can act on. **A run never settles for the gate's headless
 browser on its own judgement**: every road short of confirmed control ends in an
-ask — the click, the click and a restart, or a browser to install — preflight
-waits there, and only an explicit no licenses going without. Control is confirmed
+ask — the click, the click and a restart, or a browser to install — and only an
+explicit no licenses going without. The ask stops the *question*, not the setup:
+the store page opens in the browser the run found, **by naming that executable**
+(`start`/`open`/`xdg-open` resolve the default, which sent one run's store page
+to Firefox), the rest of preflight runs while the user clicks, and then the run
+**watches** `list_connected_browsers` every fifteen seconds rather than waiting
+to be told — a device has been measured connecting before its user typed
+anything. Control is confirmed
 **once**, and it can go stale silently — a user closing their browser re-attaches
 the session elsewhere while `navigate` keeps returning success — so a page that
 comes back wrong is repaired by re-enumerating, never by re-probing.
