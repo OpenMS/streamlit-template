@@ -456,7 +456,7 @@ class CommandExecutor:
         if defaults is None:
             self.logger.log(f"WARNING: No DEFAULTS found in {path.name}")
             # run command without params
-            return self.run_command(["python", str(path)])
+            return self.run_command([sys.executable, str(path)])
         elif isinstance(defaults, list):
             defaults = {entry["key"]: entry["value"] for entry in defaults}
             # load paramters from JSON file
@@ -471,7 +471,9 @@ class CommandExecutor:
             with open(tmp_params_file, "w", encoding="utf-8") as f:
                 json.dump(defaults, f, indent=4)
             # run command
-            success = self.run_command(["python", str(path), str(tmp_params_file)])
+            success = self.run_command(
+                [sys.executable, str(path), str(tmp_params_file)]
+            )
             # remove tmp params file
             tmp_params_file.unlink()
             return success

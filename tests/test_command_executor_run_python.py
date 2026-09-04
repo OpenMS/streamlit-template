@@ -109,7 +109,7 @@ def test_run_python_without_defaults_reports_the_exit_status(tmp_path):
     script = _write_tool(tmp_path, SCRIPT_WITHOUT_DEFAULTS, "bare_tool.py")
 
     assert executor.run_python(str(script)) is False
-    assert executor.run_command.call_args.args[0] == ["python", str(script)]
+    assert executor.run_command.call_args.args[0] == [sys.executable, str(script)]
 
 
 def test_run_python_passes_the_parameters_file_and_cleans_it_up(tmp_path):
@@ -124,7 +124,7 @@ def test_run_python_passes_the_parameters_file_and_cleans_it_up(tmp_path):
     executor.run_python(str(script), {"in": ["a.mzML"]})
 
     command = executor.run_command.call_args.args[0]
-    assert command[:2] == ["python", str(script)]
+    assert command[:2] == [sys.executable, str(script)]
     assert not Path(command[2]).exists(), (
         "the temporary parameter file was left behind in the workflow directory"
     )
