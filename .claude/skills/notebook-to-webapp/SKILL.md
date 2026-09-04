@@ -57,7 +57,8 @@ name somewhere in this file — the notebook question, the confirmation of the
 summary, the browser ask and its decline line, the handover — and nothing outside
 the named set is volunteered.
 
-**One progress line per stage, not per step.** The stages are the five in the
+**A line when a stage starts, and a line when it produces something they can
+check — never one per step.** The stages are the five in the
 table near the end of this file, and nothing else is one — a line goes out when
 a stage starts, and the wording is whatever a user would recognise as a piece of
 their own work: pulling the analysis out, building the app. The workflow class,
@@ -81,6 +82,23 @@ Eight lines against four. Note what the `test_gui.py` line on the left is doing:
 *"all three of its lists"* is a phrase out of `cleanup.md`, read aloud.
 A step that only exists because this framework has a rule about it is not a step
 the user is waiting on.
+
+**Count the outcome line, not just the opening one.** This rule read *"one
+progress line per stage"* until two builds on two notebooks followed it exactly
+and reported the two longest silences in their runs — capture covering the
+script, the golden test and a real transcription bug on a single line, scaffold
+covering the workflow class, four pages, registration, the template cleanup,
+three test lists and the dashboard on another. One of them put it plainly:
+*"nothing in it says what to do when a single stage runs long."* The count was
+wrong against this skill's own example, which gives capture two: it opens, and
+then *"Verified it reproduces your notebook"* — a result the user can check.
+That second line is not narration, it is the answer to the question the silence
+is making them ask.
+
+Where a stage genuinely produces nothing checkable until it ends, it gets the
+one line and the next question closes the gap. Do not fill it. A stage running
+long is not a reason to say more about the stage; it is a reason to make sure
+the thing it produces is announced the moment it exists.
 
 **A findings list is bounded by rows, not words: at most five.** The budget and
 *"every question carries the thing it is about, quoted, and a recommendation"*
