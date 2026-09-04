@@ -287,6 +287,34 @@ selects everything else. Any decision the clicker cannot reach is a decision tha
 was drawn instead of asked.
 _Avoid_: mock user, actor, simulated user, role
 
+**The implementer** and **the responder**:
+The two agents in a driven build. The implementer is the Claude Code session
+that reads the skills and builds the app; the responder is the persona that
+answers its questions. Alike only in being agents. The implementer holds the
+whole build and is still alive at the end, so it can simply be asked. The
+responder is a fresh process per screen with no memory of any other, so there is
+nobody left to ask and its side is read back off the screens it saw.
+_Avoid_: the builder, the user agent, the driver (that is the harness itself)
+
+**Debrief**:
+Asking an agent in a finished build what went wrong, and classifying what it
+answers against evidence. Not an *interview*, which is the framework asking the
+user to adjudicate findings it has already made: a debrief runs after the work,
+is addressed to an agent, and never reaches a user's screen. An account is
+**confirmed** when the session's own record or the skill snapshot bears it out,
+**contradicted** when they do not, and **uncheckable** when it asserted nothing
+either can settle. A contradiction indicts the checker at least as often as the
+account, so it is surfaced rather than dropped.
+_Avoid_: interview, retro, post-mortem, self-review
+
+**Pitfall**:
+A debrief item, not contradicted, that has occurred in more than one build. A
+single occurrence is a finding; recurrence is what makes it a pitfall, and a
+pitfall binds the next tick to an edit. It stops being one by ceasing to appear
+in new builds — the only verdict a pitfall ever gets, since preference cannot
+settle whether something keeps happening.
+_Avoid_: issue, defect, complaint, friction
+
 **Judge**:
 The model that reads two persona transcripts of the same task, without being told
 which came from the edited skill, and says which one guided the user better and
@@ -300,7 +328,9 @@ its stated reason is the lead for the next tick.
 _Avoid_: rubric score, guidance score, rating, win rate
 
 **Tick**:
-One iteration of the self-improvement loop: evaluate the corpus, make a single
-skill edit, re-measure, keep or revert. Not a *design round*, which is the user
-improving their own app.
+One iteration of the self-improvement loop: evaluate the corpus, make a skill
+edit, re-measure, keep or revert. A single edit, so the verdict attributes to
+it — except where pitfalls are promoted, which bind every one of themselves to
+the same tick and are judged as one batch. Not a *design round*, which is the
+user improving their own app.
 _Avoid_: round, cycle, epoch, run

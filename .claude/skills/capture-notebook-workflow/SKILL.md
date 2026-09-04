@@ -201,12 +201,15 @@ rather than interpreting it:**
 table         a row per record, the thing a user scans and clicks
 mirror        two spectra face to face
 peakmap       retention time against m/z, as a density
-chromatogram  a signal against retention time
+chromatogram  a signal against retention time  (drawn with pyopenms-viz —
+              Insight has no component that draws a continuous trace)
 ```
 
 An output that is none of these may coin a new role — but **say so in the
 declaration**, because a coined role has no component waiting for it and the
-dashboard will draw it with pyopenms-viz instead. Reaching for a new word when
+dashboard will draw it with pyopenms-viz instead. `chromatogram` is on the list
+and drawn that way too: being in the vocabulary is what makes the dashboard's
+choice a lookup, not a promise that Insight has something for it. Reaching for a new word when
 one of these four fits is how a page loses the component it should have had: the
 vocabulary was undocumented until a run mapped nothing at all and every role it
 had was on this list.

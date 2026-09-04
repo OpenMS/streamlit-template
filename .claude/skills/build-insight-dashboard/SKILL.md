@@ -39,12 +39,22 @@ a judgement:**
 | `table` | `Table` |
 | `mirror` | `MirrorPlot` |
 | `peakmap` | `Heatmap` |
-| `chromatogram` | `LinePlot` |
+| `chromatogram` | *(none — pyopenms-viz)* |
+
+**`LinePlot` is a stick plot, whatever its name says.** Its own docstring reads
+*"Interactive stick plot component"* and *"Stick-style peak visualization
+(vertical lines from baseline)"*. A build read the name, mapped a chromatogram
+onto it, and drew a 156-point elution profile as a comb of 156 vertical bars.
+Insight ships eight components and not one of them draws a continuous trace, so
+`chromatogram` is the role that legitimately has no component: it takes
+pyopenms-viz, and the reason it carries is *no component fits* — never *the
+import failed*.
 
 `StateManager` wires the links; it is not something a role maps to. A role **in**
-this table gets that component — there is no choice to make. A role **not** in it
-falls back, and so does every role when the import above failed. Those are the
-only two roads to pyopenms-viz.
+this table gets what its row names — there is no choice to make, and for
+`chromatogram` what the row names is pyopenms-viz. A role **not** in the table
+falls back too, and so does every role when the import above failed. The lookup
+is the row, not the membership.
 
 ```
 psms.parquet          role=table   -> Table         sets    'psm'
@@ -55,12 +65,14 @@ mirror_peaks.parquet  role=mirror  -> MirrorPlot    filters 'psm'
 State skipped components explicitly — a component with no matching output is a
 decision, not an omission.
 
-**A fallback carries its reason, and there are exactly two.** Either the role is
-not in the table above, or the import failed. Write which:
+**A fallback carries its reason, and there are exactly two.** Either Insight has
+no component for this role, or the import failed. Write which:
 
 ```
-role not in the table  ->  pyopenms-viz via show_fig()
-                             reason: no component for this role
+row names a component  ->  use it
+row names none, or the
+  role is not in the    ->  pyopenms-viz via show_fig()
+  table at all               reason: no component for this role
 import failed          ->  pyopenms-viz via show_fig(), every panel
                              reason: unavailable
 ```
@@ -105,6 +117,15 @@ missing. **Lowering the number until the gate passes is the one thing you may
 never do** — a run took a real 9/10 failure, changed `2` to `1`, and recorded a
 green 10/10 on a page that was missing its table.
 
+**A panel behind an inactive tab is hidden, not missing, and the two are not the
+same finding.** A build accepted a two-tab layout in its design round and the
+gate's total fell from 5 to 4, because an inactive tab's iframe reports 0x0 —
+leaving it with a rule that forbade the only number that could pass. Count what
+one screen shows: **gate each tab separately, with the count for that tab.** The
+number never drops to accommodate a panel that failed to render; it is scoped to
+what is on screen when the gate looks. If you cannot say which of the two you are
+doing, you are doing the forbidden one.
+
 ## 3. Panels, one at a time — each with a design round
 
 One round:
@@ -135,6 +156,14 @@ One round:
 5. Apply, restart the server, tell them to refresh, offer another round. Without
    the restart you show the user their unchanged panel — Streamlit does not
    re-import an edited `src/` module.
+
+   **A restart that fails is yours to fix, not theirs to watch.** The harness
+   prints the outcome of every background command, so a failing one narrates
+   itself: one build put `Background command "Restart the app" failed with exit
+   code 1` on screen three times across three turns, and the reader flagged the
+   screen as more than they could take in each time. Diagnose it in the
+   foreground, where nothing is printed until you speak. What reaches them is
+   the panel, or one sentence saying it is not ready yet — never the attempts.
 
 | axis | means | example |
 |---|---|---|

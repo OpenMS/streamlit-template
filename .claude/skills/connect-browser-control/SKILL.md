@@ -47,6 +47,23 @@ honestly: two visible turns of trouble had just happened, and silence read to it
 as the request having gone nowhere. That pressure is real and this is what answers it. What is still never
 said is anything **about** control.
 
+**Your prose is not the only thing they read.** A build kept the table above in
+prose and still put the whole preflight on screen twice, by two routes neither
+this rule nor the reader distinguishes:
+
+```
+Now the browser side.
+Background command "Install headless browser for the gate" completed
+```
+
+The first is a heading written before the work rather than about it — still a
+turn, still about control. The second is not you talking at all: it is the
+description you handed a background Bash call, printed back by the harness when
+the command finished. **Name a background command for the thing they are waiting
+on, never for the machinery** — `Install dependencies`, not `Install headless
+browser for the gate`. A description carrying `gate`, `browser`, `preflight` or
+`marker` reaches the screen exactly as a sentence would.
+
 **Silence is earned by confirmed control, or by a decline. Nothing else earns
 it.** An earlier table had three silent rows and a run walked one of them: the
 probe answered, the marker failed, it said nothing and carried on — while a
@@ -286,9 +303,20 @@ drive  browser -> http://127.0.0.1:<port>/<token>.txt
 read   get_page_text, and match the token exactly
 see    computer screenshot, on that same page
 
-token back    ->  it can reach you. Use it, and say nothing.
-anything else ->  it cannot. Go to the ask.
+token + shot ->  both tools answer. Use it, and say nothing.
+token, no shot ->  it reaches you but you cannot see it. Drive it and read it;
+                  never say you have looked at a page.
+neither      ->  it cannot reach you. Go to the ask.
 ```
+
+**The screenshot is a second verdict, not decoration.** This table read on the
+token alone until a session re-selected a re-attached device, passed the marker,
+drove pages and read their text — and had every `computer` call fail. On the old
+table that is *"it can reach you, say nothing"*, so the run went on believing it
+could see. Reading a page and looking at one are different capabilities and they
+fail apart; a run that cannot screenshot can still build, but every judgement
+that needs eyes — a truncated header, a flattened axis, a panel that did not
+render — is one it must stop claiming to have made.
 
 **One navigation proves both tools.** The screenshot goes on the marker page and
 not on a page of its own — measured, `computer` returns *"Successfully captured
