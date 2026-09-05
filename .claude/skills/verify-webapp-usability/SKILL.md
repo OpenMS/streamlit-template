@@ -97,6 +97,25 @@ mid-navigation"*. Retrying the screenshot fails again for the same reason; one
 run lost three calls to that twice over. Navigating to the page's URL again
 returns it in a settled state, and the screenshot then works.
 
+**When re-navigating does not fix it, the tab is wedged — open a new one.**
+Re-navigation recovers a page mid-rerun. It does not recover a tab that has
+stopped answering, and the two are indistinguishable from the timeout message.
+Three builds on three notebooks hit this: one re-navigated the same tab three
+times over ~40 seconds with every screenshot still timing out while the server
+answered `curl` in 1.5ms; another wedged twice, both times just after the File
+Upload page re-copied a 37 MB fallback file. A fresh tab fixed it instantly in
+every case.
+
+**A wedged tab reads as a broken app, and that is the expensive part.** One run
+took three dead `Start Workflow` clicks as the button being broken and went
+through the log, the pid directory, the process table and the multiprocessing
+spawn path before the tab turned out to be the fault. If the server answers
+`curl` and the page does not answer you, suspect the tab before the app.
+
+**Opening a new tab moves the MCP tab group**, so a `tabId` recorded before the
+switch is stale — re-read it rather than reusing it, or a batch of calls lands
+on nothing.
+
 **Never wait on a count that mixes iframes with native panels.** `settle()` also
 exits once the app is idle and the iframe count has stopped changing, because
 `--expect-components` is the *total* — a page with two Insight iframes plus one
