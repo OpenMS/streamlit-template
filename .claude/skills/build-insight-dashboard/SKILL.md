@@ -157,6 +157,21 @@ One round:
    the restart you show the user their unchanged panel — Streamlit does not
    re-import an edited `src/` module.
 
+   **A round that keeps failing says once that it is still going.** One line, in
+   their terms, naming the panel and nothing about the fault — *"Still on the
+   peptide table — a couple more minutes."* It is spent from the build's
+   four-to-six progress lines (`notebook-to-webapp`), not added to them.
+
+   A build described this loop exactly: *"each iteration was edit → clear the
+   Insight cache → restart → render → read the screenshot, and each one ended in
+   a fault I am specifically told not to describe — phantom-wrapped rows,
+   truncated headers, a column-not-found on the sort field, a failed restart —
+   so the rule that keeps instrument language off the screen also guarantees
+   that the stretch with the most going wrong is the one with nothing said."*
+   Four builds reported that inversion, in three different skills. Saying you
+   are still on it describes no fault; it answers the only question the silence
+   leaves them.
+
    **A restart that fails is yours to fix, not theirs to watch.** The harness
    prints the outcome of every background command, so a failing one narrates
    itself: one build put `Background command "Restart the app" failed with exit
