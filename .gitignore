@@ -7,7 +7,7 @@ clean-up-workspaces.log
 *-embed-amd64
 get-pip.py
 run_app.bat
-python*
+/python*
 **/__pycache__/
 gdpr_consent/node_modules/
 *~
@@ -23,3 +23,20 @@ docs/superpowers/
 # .github/scripts/ci-assertions.sh red from a clean checkout, and a committed
 # copy silently outranks the version pin the chart is deliberately held at.
 k8s/storage/charts/
+
+# notebook-to-webapp capture scratch (holds staged mzML/FASTA, executed notebooks)
+.capture-baseline/
+
+# eval run artifacts (screenshots, server logs) are regenerable; scores.jsonl is not
+eval/tick-*/
+
+# blind-judging key files: opening one before recording a verdict defeats the
+# point, and committing them would make every past verdict re-derivable
+eval/tick-*/.judge-*-key.json
+
+# End-to-end build runs: disposable, one directory per tick
+eval/builds/
+eval/b/
+
+# the eval harness is not part of the template
+eval/
