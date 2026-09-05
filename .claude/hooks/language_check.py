@@ -26,6 +26,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 CATALOG = ROOT / ".claude" / "language.json"
 LOG = ROOT / ".claude" / "language-violations.jsonl"
+BEAT = ROOT / ".claude" / "language-check-ran"
 
 
 def last_assistant_text(transcript: Path) -> str:
@@ -79,6 +80,21 @@ def main() -> int:
                 continue          # one bad pattern must not silence the rest
             for m in found:
                 hits.append({"term": m.group(0), "instead": instead})
+
+    # A heartbeat, written whether or not there were hits. An empty violations
+    # log used to be ambiguous between "nothing to report" and "never ran" --
+    # and the first live deployment was the second, silently, because the
+    # command said `python` and this box answers that with the Store stub. The
+    # count is proof the check happened.
+    try:
+        beats = 0
+        if BEAT.exists():
+            beats = int(BEAT.read_text(encoding="utf-8").split()[0] or 0)
+        BEAT.write_text(f"{beats + 1} turns checked, last "
+                        f"{datetime.now().isoformat(timespec='seconds')}\n",
+                        encoding="utf-8")
+    except Exception:
+        pass
 
     if not hits:
         return 0
