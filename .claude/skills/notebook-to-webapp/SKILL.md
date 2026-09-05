@@ -120,10 +120,19 @@ time gets a line. It is not a stage. **If you are about to write a progress line
 name which of the five it belongs to; if the answer is "setup", you have your
 answer.**
 
-**A stage in trouble spends one of its lines saying it is still going.** Not an
-extra line — one of the four to six below, taken from the budget. It names what
+**A stage in trouble may say once that it is still going, and that line is not
+counted.** One per stage, never two, and only for a stage actually stuck. It names what
 they are waiting for and nothing about the fault: *"Still on the results page —
 a few more minutes."*
+
+Written first as a line *taken from* the four to six, on the reasoning that a
+permission which adds is a permission that gets stretched. A build then spent it
+and reported the result: *"spending it made the next silence longer, not
+shorter — I said 'Still on the results page' once during the peak-map rebuild
+and then held the rest of that stage silent through seventeen shell commands
+because a second line would have broken the count."* Rationing the relief with
+the budget it relieves is worse than either. One per stage, uncounted, bounds it
+without that.
 
 Two builds on two notebooks reported the same inversion, and one stated it
 exactly: *"the stretch where I had least to report was the stretch where I was
