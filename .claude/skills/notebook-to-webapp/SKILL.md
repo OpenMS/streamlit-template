@@ -67,21 +67,26 @@ steps of *one* stage, and four lines saying so is the framework thinking out
 loud:
 
 ```
-Now pulling the analysis out into a script.        Now pulling the analysis out into a script.
-Created <tool>.py +<n>-0
-Now the golden test against your numbers.          Verified it reproduces your notebook.
-The extracted script reproduces your notebook.
-Now the workflow class and its four pages.         Now building the app.
-Now registering the pages and clearing the
-  template's own.
-Now test_gui.py — all three of its lists.
-Now the Results page. Here's what I'd build:       Now the Results page. Here's what I'd build:
+Now pulling the analysis out into a script.
+Verified it reproduces your notebook.
+Now building the app.
+Now the Results page. Here's what I'd build:
 ```
 
-Eight lines against four. Note what the `test_gui.py` line on the left is doing:
-*"all three of its lists"* is a phrase out of `cleanup.md`, read aloud.
-A step that only exists because this framework has a rule about it is not a step
-the user is waiting on.
+Four lines. The same build narrated step by step runs to eight: a line for the
+extracted file, one for the golden test, one for the workflow class and its
+pages, one for registering them, one for the template cleanup, one for the test
+lists. Each is a step inside a stage, and the last of them reads a phrase
+straight out of `cleanup.md` — a step that only exists because this framework
+has a rule about it is not a step the user is waiting on.
+
+**The bad version is described here and not written out, deliberately.** It used
+to sit in a left-hand column beside the four above, spelled out in full. Three
+builds on two notebooks then produced its `test_gui.py` line almost verbatim —
+*"Now test_gui.py…"*, *"Now updating test_gui.py — all three of its
+hand-written lists."* A well-formed sentence in a skill is a sentence that can
+be copied, whichever column it is in, and the anti-example was the most
+copyable thing on the page.
 
 **Count the outcome line, not just the opening one.** This rule read *"one
 progress line per stage"* until two builds on two notebooks followed it exactly
