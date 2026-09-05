@@ -219,6 +219,52 @@ def design_notes(page, frames, native, viewport_height):
     return notes
 
 
+def wrapped_headers(frames):
+    """Table column headers that have folded onto a second line.
+
+    Not the same failure as truncation, and invisible to it: a wrapped header
+    shows all of its text, so `scrollWidth > clientWidth` never trips. The row
+    simply grows a phantom second line and the table looks broken.
+
+    Three builds on three notebooks hit this and every one of them reported the
+    same thing -- the gate returned a full pass while the screenshot showed
+    'Quality 3.0' folded onto a second line. Each then spent four or five
+    edit-restart-gate cycles finding a width by trial, because the instrument
+    that was supposed to catch it could not see it.
+
+    A header cell that fits on one line is about one line-height tall. One that
+    wrapped is about two, so comparing the cell's height against its own
+    line-height is exact rather than a guess at pixels.
+    """
+    wrapped = []
+    for el, _, _ in frames:
+        try:
+            frame = el.content_frame()
+            if frame is None:
+                continue
+            found = frame.evaluate(
+                """() => {
+                    const out = [];
+                    const sel = '.tabulator-col-title, .tabulator-col .tabulator-title';
+                    for (const n of document.querySelectorAll(sel)) {
+                        const cs = getComputedStyle(n);
+                        let lh = parseFloat(cs.lineHeight);
+                        if (!isFinite(lh)) lh = parseFloat(cs.fontSize) * 1.2;
+                        if (!isFinite(lh) || lh <= 0) continue;
+                        // 1.5 line-heights: comfortably above one line, below two.
+                        if (n.scrollHeight > lh * 1.5) {
+                            out.push((n.textContent || '').trim().slice(0, 40));
+                        }
+                    }
+                    return out;
+                }"""
+            )
+        except Exception:
+            continue
+        wrapped.extend(h for h in found if h)
+    return wrapped
+
+
 def truncated_headers(frames):
     """Table column headers whose text does not fit the column it sits in.
 
@@ -373,6 +419,18 @@ def main() -> int:
             "no table header is truncated",
             not clipped,
             "clipped: " + ", ".join(repr(h) for h in clipped[:3]) if clipped else "",
+        )
+
+        # A header that WRAPPED shows all its text, so the truncation check
+        # above never sees it -- and three builds shipped a table folded onto a
+        # phantom second row while this gate reported a full pass. Each then
+        # spent four or five edit-restart-gate cycles finding a width by trial,
+        # because the check that should have caught it was blind to it.
+        folded = wrapped_headers(rendered)
+        gate.check(
+            "no table header has wrapped onto a second line",
+            not folded,
+            "wrapped: " + ", ".join(repr(h) for h in folded[:3]) if folded else "",
         )
 
         # Empty state, not a blank page.
