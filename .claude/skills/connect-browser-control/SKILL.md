@@ -340,7 +340,8 @@ way. Only a page you serve can:
 
 ```
 write  <tmp>/<token>.txt containing that token
-serve  python -m http.server <random port> --bind 127.0.0.1 --directory <tmp>
+serve  <the interpreter you resolved> -m http.server <random port>
+         --bind 127.0.0.1 --directory <tmp>
 check  curl the URL from this shell first -- the token must come back
 drive  browser -> http://127.0.0.1:<port>/<token>.txt
 read   get_page_text, and match the token exactly
@@ -378,6 +379,14 @@ only the body: `abcdefghij` passes, `abcdefghi` fails, and padding the nine with
 newlines or spaces still fails — the threshold applies to the trimmed text. A
 trailing newline is free. A run lost its marker to a nine-character token and
 diagnosed the extractor instead.
+
+**Never `python` here — use the interpreter you already resolved.** Bare
+`python` on `PATH` is a Microsoft Store stub on a default Windows box: it prints
+help and exits, so the server never starts and the marker fails as though
+control were broken. `capture-notebook-workflow` probes for a real interpreter
+and `notebook-to-webapp` names this trap twice; this recipe walked into it
+anyway, and a build following the line as written lost the check to it. Use
+`sys.executable`, the venv's python, or whatever the probe returned.
 
 **Write the bind out.** `python -m http.server` defaults to `0.0.0.0`, so
 dropping the flag does not narrow the bind, it widens it — and the wide bind is
