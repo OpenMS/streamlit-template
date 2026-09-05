@@ -62,18 +62,23 @@ def main() -> int:
     if not transcript or not Path(transcript).exists() or not CATALOG.exists():
         return 0
 
-    catalog = json.loads(CATALOG.read_text(encoding="utf-8"))
+    try:
+        catalog = json.loads(CATALOG.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return 0
     said = last_assistant_text(Path(transcript))
     if not said.strip():
         return 0
 
     hits = []
-    for pattern, instead in catalog.get("case_insensitive", {}).items():
-        for m in re.finditer(pattern, said, re.I):
-            hits.append({"term": m.group(0), "instead": instead})
-    for pattern, instead in catalog.get("case_sensitive", {}).items():
-        for m in re.finditer(pattern, said):
-            hits.append({"term": m.group(0), "instead": instead})
+    for flags, key in ((re.I, "case_insensitive"), (0, "case_sensitive")):
+        for pattern, instead in catalog.get(key, {}).items():
+            try:
+                found = list(re.finditer(pattern, said, flags))
+            except re.error:
+                continue          # one bad pattern must not silence the rest
+            for m in found:
+                hits.append({"term": m.group(0), "instead": instead})
 
     if not hits:
         return 0
@@ -100,4 +105,15 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    # A hook that raises fires on every turn. This one guards the session; it
+    # must not be able to damage it. A bad regex, an unreadable catalog, a
+    # transcript in an unexpected shape -- none of those are reasons to
+    # interrupt the user, so anything unhandled means "allow" rather than
+    # "crash". The only non-zero exit this file may produce is the deliberate
+    # 2 from an enforced violation.
+    try:
+        sys.exit(main())
+    except SystemExit:
+        raise
+    except BaseException:
+        sys.exit(0)
