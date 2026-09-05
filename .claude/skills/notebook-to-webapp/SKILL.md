@@ -109,15 +109,11 @@ the thing it produces is announced the moment it exists.
 optional forward-looking sentence before the first question is the whole of what
 setup may say. Not a second one, not a numbered one.
 
-Two builds on two notebooks, both carrying every rule here, wrote:
+Two builds on two notebooks, both carrying every rule here, wrote three of them
+anyway: a heading for the browser probe, a sentence reporting control confirmed
+and naming what came back, and one that numbered the setup steps.
 
-```
-Now the browser control probe.
-Control confirmed — token and screenshot both came back. Now the gate's headless browser.
-Now step 3 of setup — browser control.
-```
-
-*"Step 3 of setup"* is the tell: it numbers something the user never knew had
+That last is the tell: it numbers something the user never knew had
 steps. Setup is not in the table at the end of this file, and the sentence above
 it — *the stages are the five, and nothing else is one* — already forbade this;
 both runs read past it because setup genuinely takes time and a stage that takes
@@ -325,8 +321,7 @@ misclassification is usually systematic.
       we go."* What they will be asked to do, and nothing about why.
 
    Nothing else: not the step list, not the word `preflight`, not the browser.
-   *"Now preflight — Python, dependencies, and browser setup, before I ask you
-   anything"* was measured in **10 builds of 19**, across fifteen wordings:
+   a line naming the machinery setup is about to run
    *"Preflight — probing environment in parallel"*, *"Now the browser side of
    the preflight"*. Each hands a mass spectrometrist a list of this framework's
    own steps, and the word `preflight` means nothing to them.

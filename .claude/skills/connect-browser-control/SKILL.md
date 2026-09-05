@@ -58,10 +58,15 @@ each opened by filling it, each with wording the last rule did not cover:
 
 | what the user read first | direction |
 |---|---|
-| *"Now preflight — Python, dependencies, and browser setup, before I ask you anything."* | backward — names the work |
-| *"Preflight's done. Let me read your notebook."* | backward — reports it ended |
-| *"Control confirmed — nothing to ask. Now the gate's browser and a look at the notebook."* | backward, twice over |
+| a heading naming the machinery setup was about to run | backward — names the work |
+| a sentence reporting that setup had finished | backward — reports it ended |
+| a sentence confirming control and naming the next internal step | backward, twice over |
 | *"Setting up — a minute, then I'll ask about your notebook."* | **forward — this one is fine** |
+
+Only the last is written out. **A skill that spells out the sentence it forbids
+is handing over a usable line** — three builds reproduced `notebook-to-webapp`'s
+`test_gui.py` anti-example almost verbatim, and it stopped on the first build
+after that example was removed.
 
 The first three ran with the rules the one before them earned, and each found a
 phrasing around them, because the pressure is not the words. It is that setup took real
@@ -83,16 +88,13 @@ next question is the whole of what they read.
 
 **Your prose is not the only thing they read.** A build kept the table above in
 prose and still put the whole preflight on screen twice, by two routes neither
-this rule nor the reader distinguishes:
+this rule nor the reader distinguishes: a heading naming the browser half of
+setup, and a background command whose description named the gate. The lines are
+described rather than quoted, for the reason at the end of this section.
 
-```
-Now the browser side.
-Background command "Install headless browser for the gate" completed
-```
-
-The first is a heading written before the work rather than about it — still a
-turn, still about control. The second is not you talking at all: it is the
-description you handed a background Bash call, printed back by the harness when
+The first was a heading written before the work rather than about it — still a
+turn, still about control. The second was not the run talking at all: it was the
+description handed to a background Bash call, printed back by the harness when
 the command finished. **Name a background command for the thing they are waiting
 on, never for the machinery** — `Install dependencies`, not `Install headless
 browser for the gate`. A description carrying `gate`, `browser`, `preflight` or
