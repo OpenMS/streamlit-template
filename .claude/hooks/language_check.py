@@ -29,6 +29,27 @@ LOG = ROOT / ".claude" / "language-violations.jsonl"
 BEAT = ROOT / ".claude" / "language-check-ran"
 
 
+# The evaluation harness interviews a finished build about how it went. Those
+# answers are addressed to the harness, not to the user, and discuss the
+# framework's own mechanics by design -- the first violation this hook ever
+# logged was a debrief answer naming `interview` and `preflight`, which is
+# correct English for what it was doing. Enforcing here would have blocked every
+# debrief and read as the model failing to comply.
+#
+# The harness writes this marker into the session before it asks anything, so
+# the boundary is already in the transcript. Real users never see it.
+DEBRIEF_MARKER = "DEBRIEF-BEGIN-8f2c1a"
+
+
+def in_debrief(transcript: Path) -> bool:
+    """Has the harness started interviewing this session?"""
+    try:
+        return DEBRIEF_MARKER in transcript.read_text(encoding="utf-8",
+                                                      errors="replace")
+    except OSError:
+        return False
+
+
 def last_assistant_text(transcript: Path) -> str:
     """The final assistant message, which is what the user just read."""
     text = ""
@@ -88,6 +109,9 @@ def main() -> int:
         catalog = json.loads(CATALOG.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return 0
+    if in_debrief(Path(transcript)):
+        return 0          # answers to the harness, not to the user
+
     said = last_assistant_text(Path(transcript))
     if not said.strip():
         return 0
