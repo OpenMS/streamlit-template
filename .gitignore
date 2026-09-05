@@ -40,3 +40,6 @@ eval/b/
 
 # the eval harness is not part of the template
 eval/
+
+# the hook log is per-installation, not part of the framework
+.claude/language-violations.jsonl
