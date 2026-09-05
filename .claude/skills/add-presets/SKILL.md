@@ -42,6 +42,12 @@ Add or modify parameter presets for a TOPP workflow in `presets.json`.
    - TOPP tool names match those used in `input_TOPP()` calls
    - Parameter paths use colon-separated format matching the TOPP tool's .ini structure
    - `_general` keys match widget keys from `input_widget()` calls
+- **A python tool's parameters are keyed `<script>.py:<param>`**, still under
+  `_general`. `input_python()` prefixes every key with the script filename, so a
+  preset written against the bare parameter name silently sets nothing. Three
+  builds on three notebooks each derived this by reading
+  `CommandExecutor.run_python` and `ParameterManager.apply_preset`, because this
+  list described `_general` only in terms of `input_widget()`.
    - JSON is valid
 
 ## Schema Rules
