@@ -100,6 +100,26 @@ one line and the next question closes the gap. Do not fill it. A stage running
 long is not a reason to say more about the stage; it is a reason to make sure
 the thing it produces is announced the moment it exists.
 
+**Setup is not one of the five, so it gets no progress line at all.** The one
+optional forward-looking sentence before the first question is the whole of what
+setup may say. Not a second one, not a numbered one.
+
+Two builds on two notebooks, both carrying every rule here, wrote:
+
+```
+Now the browser control probe.
+Control confirmed — token and screenshot both came back. Now the gate's headless browser.
+Now step 3 of setup — browser control.
+```
+
+*"Step 3 of setup"* is the tell: it numbers something the user never knew had
+steps. Setup is not in the table at the end of this file, and the sentence above
+it — *the stages are the five, and nothing else is one* — already forbade this;
+both runs read past it because setup genuinely takes time and a stage that takes
+time gets a line. It is not a stage. **If you are about to write a progress line,
+name which of the five it belongs to; if the answer is "setup", you have your
+answer.**
+
 **A stage in trouble spends one of its lines saying it is still going.** Not an
 extra line — one of the four to six below, taken from the budget. It names what
 they are waiting for and nothing about the fault: *"Still on the results page —
