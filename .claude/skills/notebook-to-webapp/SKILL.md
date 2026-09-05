@@ -100,6 +100,21 @@ one line and the next question closes the gap. Do not fill it. A stage running
 long is not a reason to say more about the stage; it is a reason to make sure
 the thing it produces is announced the moment it exists.
 
+**A stage in trouble spends one of its lines saying it is still going.** Not an
+extra line — one of the four to six below, taken from the budget. It names what
+they are waiting for and nothing about the fault: *"Still on the results page —
+a few more minutes."*
+
+Two builds on two notebooks reported the same inversion, and one stated it
+exactly: *"the stretch where I had least to report was the stretch where I was
+busiest, and the user saw nothing for longest precisely when something was
+wrong."* The longest run in one was a held port, an unsupported widget type and
+three silent server exits. Every rule here correctly forbids narrating those,
+and *"a fault with no user-visible symptom is a reason to say less"* then makes
+the busiest stretch the quietest by construction. Saying you are still going is
+not describing the fault; it is the one fact the silence is making them guess
+at.
+
 **Count them: a whole build is four to six progress lines.** Five stage
 openings, plus an outcome line for each stage that produces a result before it
 ends — and only capture reliably does. The permission above is for *that* line,
