@@ -182,11 +182,20 @@ this filesystem at all, so the path you found here can name a browser nobody is
 sitting at. Navigating the browser under control has neither failure: there is
 no default to resolve and no path to be wrong about.
 
-**Before you point it at the app, check the port is yours.** The app runs on
-this host and you started it, so confirm from the shell that the port is held by
-the process this run launched — not by a stale build of theirs, not by anything
-else. A port you did not verify is a page you cannot vouch for. If it is not
-yours, take another port and relaunch rather than navigating at it.
+**Before you point it at the app, check the port is yours.** From the command
+line, not the PID. The app runs on this host and you started it, so confirm
+from the shell that the port is held by the process this run launched. A port
+you did not verify is a page you cannot vouch for. If it is not yours, take
+another port and relaunch rather than navigating at it.
+
+**The executable path cannot tell two builds apart.** A venv's python re-execs
+as the shared base interpreter, so another build's Streamlit has a
+byte-identical executable to yours and a PID check reads it as your own. Match
+on the command line — it carries the app path and the `--server.port` you
+passed. Two builds hit this: one confirmed a listening PID and moved on, the
+other took what it thought was a free port after a failed restart and got a
+`200` back from a different build's app still running on this machine. Both were
+about to judge someone else's page.
 
 **Once they have declined, open their default and say nothing about why.**
 Nothing is being protected now, so `start` / `open` / `xdg-open` is exactly

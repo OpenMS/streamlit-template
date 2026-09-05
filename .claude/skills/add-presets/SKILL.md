@@ -56,6 +56,12 @@ Add or modify parameter presets for a TOPP workflow in `presets.json`.
 ## How Presets Work at Runtime
 
 1. Preset buttons auto-appear in `parameter_section()` via `StreamlitUI.preset_buttons()`
+   — **so never call `preset_buttons()` yourself.** It is the one `ui.*` method
+   the framework already invokes, and the rest of the family being yours to call
+   is exactly why two builds on two notebooks added it to the end of
+   `configure()` anyway. One rendered the presets twice; the other crashed the
+   Configure page on duplicate widget keys. If presets are not appearing, the
+   fault is `presets.json` or the workflow name in it — never a missing call.
 2. Only presets matching the current workflow name are displayed
 3. Clicking a preset updates `params.json` in the workspace and refreshes the UI
 4. If no `presets.json` exists or no presets match, no buttons are shown
