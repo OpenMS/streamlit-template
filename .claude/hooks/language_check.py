@@ -84,7 +84,7 @@ def in_debrief(transcript: Path) -> bool:
 
 def last_assistant_text(transcript: Path) -> str:
     """The final assistant message, which is what the user just read."""
-    text = ""
+    said: list = []
     for line in transcript.read_text(encoding="utf-8", errors="replace").splitlines():
         line = line.strip()
         if not line:
@@ -93,17 +93,31 @@ def last_assistant_text(transcript: Path) -> str:
             event = json.loads(line)
         except json.JSONDecodeError:
             continue
-        if event.get("type") != "assistant":
-            continue
+        kind = event.get("type")
         content = (event.get("message") or {}).get("content")
+
+        if kind == "user":
+            spoke = False
+            if isinstance(content, str) and content.strip():
+                spoke = True
+            elif isinstance(content, list):
+                spoke = any(isinstance(b, dict) and b.get("type") == "text"
+                            and (b.get("text") or "").strip() for b in content)
+            if spoke:
+                said = []          # a new turn begins; the rest is read
+            continue
+
+        if kind != "assistant":
+            continue
         if isinstance(content, str):
-            text = content
+            if content.strip():
+                said.append(content)
         elif isinstance(content, list):
             parts = [b.get("text", "") for b in content
                      if isinstance(b, dict) and b.get("type") == "text"]
             if any(p.strip() for p in parts):
-                text = "\n".join(parts)
-    return text
+                said.append("\n".join(parts))
+    return "\n".join(said)
 
 
 def beat(event: str = "?") -> None:
