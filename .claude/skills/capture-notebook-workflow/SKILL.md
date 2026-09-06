@@ -200,11 +200,11 @@ description you may paraphrase:
 ```python
 OUTPUTS = [
     {
-        "key": "psms",                      # short, stable, unique in this list
-        "file": "psms.parquet",             # written into the out dir
+        "key": "hits",                      # short, stable, unique in this list
+        "file": "hits.parquet",             # written into the out dir
         "role": "table",                    # from the fixed vocabulary below
-        "columns": ["spectrum_idx", "peptide", "score"],
-        "links_on": "spectrum_idx",         # or None where nothing links
+        "columns": ["item_id", "label", "score"],
+        "links_on": "item_id",              # or None where nothing links
     },
 ]
 ```
@@ -217,8 +217,9 @@ reads it on every numeric output, so **39 builds wrote an `OUTPUTS` their own
 parameter probe raises `KeyError` on**. Nobody saw it, because the probe runs
 inside a stage that reports its findings and not its crashes.
 
-`links_on` is the name. Write `None` rather than omitting it when an output links
-on nothing — an absent key and a declared "nothing" read the same to a human and
+`links_on` is the name, and the column it names is one of your own — the example
+above is shaped like an entry, not filled with identifiers to copy. Write `None`
+rather than omitting it when an output links on nothing — an absent key and a declared "nothing" read the same to a human and
 differently to the dashboard stage.
 
 **`role` comes from a fixed vocabulary, because the dashboard stage looks it up
