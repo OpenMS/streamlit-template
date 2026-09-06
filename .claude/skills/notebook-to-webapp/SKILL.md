@@ -370,6 +370,14 @@ Rename the clone before the app is ever launched. Workspaces live in
 `../workspaces-<repository-name>`, and the slug owns the workflow directory, the
 `presets.json` key and every session-state prefix.
 
+**Rename it from the parent directory, then list the parent and confirm the new
+name is there.** You are inside the clone, and a directory cannot be renamed out
+from under the shell sitting in it: one build got `Device or resource busy` and
+had to kill a helper process, and a second got **no error at all** — `Rename-Item`
+returned quietly, the folder kept its old name, and the whole run continued
+against the wrong one. So an error is the good case here. The check is the
+listing, not the exit code.
+
 ## Stages
 
 | # | skill | produces | review |
