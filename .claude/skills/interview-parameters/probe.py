@@ -100,13 +100,34 @@ def run_once(script: Path, base: dict, overrides: dict, outputs) -> dict | None:
         metrics = {}
         for spec in outputs:
             path = out_dir / spec["file"]
-            if not path.exists() or path.suffix != ".parquet":
+            if not path.exists():
                 continue
-            df = pd.read_parquet(path)
-            metrics[f"{spec['key']}.rows"] = float(len(df))
+            # Two assumptions this made about a contract described only in
+            # prose, both measured across 57 builds on disk:
+            #
+            #   spec["key"]  declared by 11 of them. The other 39 that reach
+            #                this line raise KeyError -- inside a stage that
+            #                reports findings and not crashes, so it never
+            #                surfaced. The file stem is what the declaring
+            #                builds put there anyway.
+            #   .parquet     never required by capture-notebook-workflow; 17
+            #                builds write .tsv and the probe skipped every one,
+            #                reporting no measurable effect for every parameter
+            #                rather than reporting that it measured nothing.
+            key = spec.get("key") or path.stem
+            try:
+                if path.suffix == ".parquet":
+                    df = pd.read_parquet(path)
+                elif path.suffix in (".tsv", ".csv"):
+                    df = pd.read_csv(path, sep="	" if path.suffix == ".tsv" else ",")
+                else:
+                    continue
+            except Exception:
+                continue
+            metrics[f"{key}.rows"] = float(len(df))
             for col in df.select_dtypes("number").columns:
                 if len(df):
-                    metrics[f"{spec['key']}.{col}.mean"] = float(df[col].mean())
+                    metrics[f"{key}.{col}.mean"] = float(df[col].mean())
         return metrics
 
 

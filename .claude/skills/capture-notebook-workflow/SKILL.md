@@ -194,6 +194,33 @@ failure, and declares `DEFAULTS` and `OUTPUTS` at module level.
 links on. The dashboard stage reads it without executing anything, so it must be
 accurate; the generated test asserts a real run matches it.
 
+**Use exactly these keys.** They are a contract with two later readers, not a
+description you may paraphrase:
+
+```python
+OUTPUTS = [
+    {
+        "key": "psms",                      # short, stable, unique in this list
+        "file": "psms.parquet",             # written into the out dir
+        "role": "table",                    # from the fixed vocabulary below
+        "columns": ["spectrum_idx", "peptide", "score"],
+        "links_on": "spectrum_idx",         # or None where nothing links
+    },
+]
+```
+
+Written as prose, this went 18 different ways across 57 builds. Only `role` and
+`columns` were universal; the linking identifier was `links_on` in 31 builds and
+`links` in 18, and eleven other names appeared — `sets`, `filters`, `id`, `help`,
+`title`, `note`. `key` was declared in 11 builds of 57 and `interview-parameters`
+reads it on every numeric output, so **39 builds wrote an `OUTPUTS` their own
+parameter probe raises `KeyError` on**. Nobody saw it, because the probe runs
+inside a stage that reports its findings and not its crashes.
+
+`links_on` is the name. Write `None` rather than omitting it when an output links
+on nothing — an absent key and a declared "nothing" read the same to a human and
+differently to the dashboard stage.
+
 **`role` comes from a fixed vocabulary, because the dashboard stage looks it up
 rather than interpreting it:**
 
