@@ -30,12 +30,25 @@ Add or modify parameter presets for a TOPP workflow in `presets.json`.
         "algorithm:section:param_name": value
       },
       "_general": {
-        "custom-widget-key": value
+        "custom-widget-key": value,
+        "<script>.py:<param>": value
       }
     }
   }
 }
 ```
+
+**The second `_general` form is the one that gets missed.** `input_python()`
+prefixes every key with the script filename, so a python tool's parameter is
+`my_tool.py:threshold`, not `threshold` — and a preset written against the bare
+name is valid JSON, loads without error, and sets nothing at all.
+
+This was already stated below, in the checklist that verifies a finished
+`presets.json`. Two builds wrote their presets after that was added and still
+derived the form by reading `CommandExecutor.run_python` and
+`ParameterManager.apply_preset` — because a build reads the schema at the moment
+it writes the file, and reads the checklist, if at all, afterwards. So it is
+here, in the block being copied.
 
 4. **Verify the result** by checking that:
    - Workflow name key matches the name passed to `WorkflowManager.__init__()` (lowercased, hyphenated)
