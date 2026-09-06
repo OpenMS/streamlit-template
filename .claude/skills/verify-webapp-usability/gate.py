@@ -23,6 +23,24 @@ from playwright.sync_api import sync_playwright
 VIEWPORT = {"width": 1280, "height": 800}
 
 
+# Console noise this template emits that no app change can stop. Named here
+# rather than in prose, because prose is not what a run is reading at the
+# moment the gate fails.
+#
+# Three builds hit the Tabulator one and each spent two or more
+# edit-restart-gate cycles on it: one dropped `initial_sort` and widened
+# columns, one bisected a minimal app three ways, and one turned server-side
+# pagination off on a 333-row table -- losing the page-size control and the
+# page buttons -- to silence a message the skill already documents as
+# harmless. All three eventually found the sentence saying so. The skill was
+# never wrong; it was in the wrong place. A build reads the FAIL line.
+KNOWN_BENIGN = {
+    "Scroll Error - Row not visible":
+        "the table scrolls to a default row before layout completes; "
+        "harmless, and not fixable from the app",
+}
+
+
 class Gate:
     def __init__(self):
         self.checks: list[tuple[str, bool, str]] = []
@@ -358,13 +376,25 @@ def main() -> int:
         settle(page, 3.0, expect_frames=args.expect_components)
         first_paint = time.time() - t0
 
+        # Ignored by default, but never silently: a check that quietly drops
+        # what it was asked to look at is the failure this file exists to
+        # prevent. It says what it dropped and why, and everything not on the
+        # list still fails.
+        benign = [e for e in console_errors + page_errors
+                  if any(k in e for k in KNOWN_BENIGN)]
+        for text in dict.fromkeys(benign):
+            why = next(v for k, v in KNOWN_BENIGN.items() if k in text)
+            print(f"  known-benign, ignored: {text[:70]} -- {why}")
+
         console_errors[:] = [
             e for e in console_errors
             if not any(pat in e for pat in args.ignore_console)
+            and not any(k in e for k in KNOWN_BENIGN)
         ]
         page_errors[:] = [
             e for e in page_errors
             if not any(pat in e for pat in args.ignore_console)
+            and not any(k in e for k in KNOWN_BENIGN)
         ]
         failed_requests[:] = [
             r for r in failed_requests
