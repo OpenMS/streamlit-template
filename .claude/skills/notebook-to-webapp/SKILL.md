@@ -109,6 +109,24 @@ the thing it produces is announced the moment it exists.
 optional forward-looking sentence before the first question is the whole of what
 setup may say. Not a second one, not a numbered one.
 
+**That sentence says what the user is about to be asked, or what they will
+have. It is the only thing they hear before the first question, so it is
+theirs.** Write it as a time and a next step:
+
+> Setting up — a minute, then I'll ask about your notebook.
+
+The shape that keeps replacing it is `Now <internal mechanism>.` — a report of
+what you are touching this second. **41 builds opened with one, including every
+one of the last twelve**, and each time the noun was different, because each ban
+was answered with a fresh noun for the same machinery. That is why this says what
+the sentence *is* instead of listing what it may not contain: a reader who knows
+what the slot is for does not need the list, and the list is what the previous
+four generations of this rule consisted of.
+
+The test is whether the sentence would still make sense to someone who does not
+know this app is being generated. If it names a thing only you can see, it is the
+wrong sentence, however the noun is spelled.
+
 Two builds on two notebooks, both carrying every rule here, wrote three of them
 anyway: a heading for the browser probe, a sentence reporting control confirmed
 and naming what came back, and one that numbered the setup steps.
@@ -320,11 +338,13 @@ misclassification is usually systematic.
    3. **One line if they decline** — *"I'll ask you to look at a page or two as
       we go."* What they will be asked to do, and nothing about why.
 
-   Nothing else: not the step list, not the word `preflight`, not the browser.
-   a line naming the machinery setup is about to run
-   *"Preflight — probing environment in parallel"*, *"Now the browser side of
-   the preflight"*. Each hands a mass spectrometrist a list of this framework's
-   own steps, and the word `preflight` means nothing to them.
+   Nothing else. The failure this keeps meeting is a fourth turn that names the
+   machinery setup is about to run — the phase, the probe, the browser, whatever
+   this framework calls the thing it is doing this second. Written out here as
+   examples to avoid, that failed in **ten consecutive builds**, each one
+   answering the banned noun with a fresh one, so the examples are gone and the
+   test is the one above: a turn that would not make sense to someone who does
+   not know this app is being generated is not one of the three.
 2. **Ask for the notebook's path.** One question, no list. **If they were
    visibly asked for something in preflight and did it, this question carries
    the thanks** — *"Thanks — what's the path to your notebook?"* — and that is
