@@ -42,12 +42,44 @@ DEBRIEF_MARKER = "DEBRIEF-BEGIN-8f2c1a"
 
 
 def in_debrief(transcript: Path) -> bool:
-    """Has the harness started interviewing this session?"""
+    """Has the harness started interviewing this session?
+
+    The marker has to be found in something the *user* said. It used to be a
+    substring test over the whole file, and this file is tracked -- so it ships
+    into every build's clone, and a session that read its own hook would put the
+    marker in a tool result and exempt itself from every check for the rest of
+    the run, silently and with a clean log. No build has done it (0 of 61 read
+    .claude/hooks at all), which is why it was still here to find rather than
+    something already lost.
+
+    The harness sends the debrief as user input. Reading a file does not.
+    """
     try:
-        return DEBRIEF_MARKER in transcript.read_text(encoding="utf-8",
-                                                      errors="replace")
+        lines = transcript.read_text(encoding="utf-8",
+                                     errors="replace").splitlines()
     except OSError:
         return False
+    for line in lines:
+        line = line.strip()
+        if not line or DEBRIEF_MARKER not in line:
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if event.get("type") != "user":
+            continue
+        content = (event.get("message") or {}).get("content")
+        if isinstance(content, str):
+            if DEBRIEF_MARKER in content:
+                return True
+        elif isinstance(content, list):
+            for b in content:
+                # A tool result is carried inside a user event too, and that is
+                # exactly the path a file read takes. Only spoken text counts.
+                if isinstance(b, dict) and b.get("type") == "text"                         and DEBRIEF_MARKER in (b.get("text") or ""):
+                    return True
+    return False
 
 
 def last_assistant_text(transcript: Path) -> str:
@@ -74,7 +106,7 @@ def last_assistant_text(transcript: Path) -> str:
     return text
 
 
-def beat() -> None:
+def beat(event: str = "?") -> None:
     """Record that the hook ran, before anything can return early.
 
     This is proof of invocation, so it must not sit behind a check that can
@@ -87,7 +119,7 @@ def beat() -> None:
         n = 0
         if BEAT.exists():
             n = int(BEAT.read_text(encoding="utf-8").split()[0] or 0)
-        BEAT.write_text(f"{n + 1} turns checked, last "
+        BEAT.write_text(f"{n + 1} turns checked ({event}), last "
                         f"{datetime.now().isoformat(timespec='seconds')}\n",
                         encoding="utf-8")
     except Exception:
@@ -95,11 +127,14 @@ def beat() -> None:
 
 
 def main() -> int:
-    beat()
+    # Read first, then beat -- the beat records which event fired, and a
+    # payload that fails to parse still gets a beat below.
     try:
         payload = json.loads(sys.stdin.read() or "{}")
     except json.JSONDecodeError:
+        beat("unparseable")
         return 0
+    beat(payload.get("hook_event_name") or "?")
 
     transcript = payload.get("transcript_path")
     if not transcript or not Path(transcript).exists() or not CATALOG.exists():
@@ -113,6 +148,25 @@ def main() -> int:
         return 0          # answers to the harness, not to the user
 
     said = last_assistant_text(Path(transcript))
+
+    # On `Stop` the turn ended in prose and that prose is the whole of what
+    # the user read. On `PreToolUse`/`AskUserQuestion` the turn ends in a
+    # question, and the question -- its header, its option labels, their
+    # descriptions -- is read just as closely as the narration above it. A
+    # `Stop` hook never sees either half: measured over the last twelve
+    # builds, every one of the 34 vocabulary and setup findings sat on a
+    # screen that ended in a question or in setup, and none on a screen the
+    # `Stop` hook could reach.
+    if payload.get("tool_name") == "AskUserQuestion":
+        parts = [said]
+        for q in (payload.get("tool_input") or {}).get("questions") or []:
+            parts.append(str(q.get("question") or ""))
+            parts.append(str(q.get("header") or ""))
+            for opt in q.get("options") or []:
+                parts.append(str(opt.get("label") or ""))
+                parts.append(str(opt.get("description") or ""))
+        said = chr(10).join(x for x in parts if x)
+
     if not said.strip():
         return 0
 
@@ -134,6 +188,8 @@ def main() -> int:
             fh.write(json.dumps({
                 "at": datetime.now().isoformat(timespec="seconds"),
                 "session": payload.get("session_id", ""),
+                "event": payload.get("hook_event_name", ""),
+                "tool": payload.get("tool_name", ""),
                 "hits": hits,
                 "said": said[:400],
             }, ensure_ascii=False) + "\n")

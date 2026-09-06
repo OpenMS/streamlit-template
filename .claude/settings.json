@@ -9,11 +9,23 @@
     "empty log looked exactly like a clean session. An exit-code chain",
     "cannot catch that, so each candidate is tested by whether it prints.",
     "The project venv comes first because on such a machine it is the only",
-    "real interpreter present."
+    "real interpreter present.",
+    "PreToolUse/AskUserQuestion covers what Stop structurally cannot. A Stop hook fires only on a turn that ends in prose; in a build most turns end in a question, and all 34 findings measured across twelve builds sat on those screens. Same script, same catalog, same log."
   ],
   "hooks": {
     "Stop": [
       {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "for p in \"$CLAUDE_PROJECT_DIR/.venv/Scripts/python.exe\" \"$CLAUDE_PROJECT_DIR/.venv/bin/python\" \"$HOME/.local/bin/python.exe\" \"$HOME/.local/bin/python\" py python3 python; do if [ \"$(\"$p\" -c 'print(1)' 2>/dev/null)\" = \"1\" ]; then \"$p\" \"$CLAUDE_PROJECT_DIR/.claude/hooks/language_check.py\"; exit $?; fi; done; exit 0"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "AskUserQuestion",
         "hooks": [
           {
             "type": "command",
