@@ -237,6 +237,50 @@ def design_notes(page, frames, native, viewport_height):
     return notes
 
 
+def collapsed_columns(frames):
+    """Columns Tabulator folded into stacked label/value rows under each record.
+
+    A third failure, invisible to both header checks. The headers that remain
+    are neither truncated nor wrapped -- the columns that would have been are
+    simply gone from the header row and reappear beneath every record as
+    label/value pairs. Four builds on three notebooks hit it, and the most
+    recent states the problem exactly: `[ok] no table header is truncated` and
+    `[ok] no table header has wrapped onto a second line` both passed while the
+    screenshot showed three columns stacked under each row.
+
+    It is not predicted by the width budget either. `responsiveLayout:
+    "collapse"` is hardcoded in the component, so it fires on Tabulator's own
+    minimum-width measurement at mount time -- one build hit it with declared
+    widths summing to well under the panel width.
+
+    The collapse holder exists in every row whether or not anything collapsed,
+    so emptiness is the signal, not absence.
+    """
+    collapsed = []
+    for el, _, _ in frames:
+        try:
+            frame = el.content_frame()
+            if frame is None:
+                continue
+            found = frame.evaluate(
+                """() => {
+                    const out = [];
+                    for (const holder of document.querySelectorAll(
+                            '.tabulator-responsive-collapse')) {
+                        const txt = (holder.textContent || '').trim();
+                        if (txt && holder.offsetHeight > 0) {
+                            out.push(txt.slice(0, 40));
+                        }
+                    }
+                    return out;
+                }"""
+            )
+        except Exception:
+            continue
+        collapsed.extend(t for t in found if t)
+    return collapsed
+
+
 def wrapped_headers(frames):
     """Table column headers that have folded onto a second line.
 
@@ -461,6 +505,14 @@ def main() -> int:
             "no table header has wrapped onto a second line",
             not folded,
             "wrapped: " + ", ".join(repr(h) for h in folded[:3]) if folded else "",
+        )
+
+        stacked = collapsed_columns(rendered)
+        gate.check(
+            "no table column collapsed into stacked rows",
+            not stacked,
+            "collapsed: " + ", ".join(repr(t) for t in stacked[:3])
+            if stacked else "",
         )
 
         # Empty state, not a blank page.
