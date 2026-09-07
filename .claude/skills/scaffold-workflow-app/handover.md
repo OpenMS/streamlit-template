@@ -36,6 +36,25 @@ So the **last** action before handover is: stop the server, start it again, and
 drive the smoke run once more on the restarted process. A smoke run from before
 the final `src/` edit is evidence about a different app.
 
+**Stopping it is the part that fails silently.** `pkill` is not in this shell —
+one build got `pkill: command not found`, another got a clean exit that killed
+nothing — and in both the replacement server then failed to bind while `curl`
+kept returning 200 from the process still holding the old modules. A run that
+does not notice judges its next page against code it already replaced.
+
+Find the listener by port and stop it by PID, then confirm the port is free
+before starting anything:
+
+```bash
+netstat -ano | grep ":<port>.*LISTENING"        # -> PID in the last column
+powershell -NoProfile -Command "Stop-Process -Id <pid> -Force"
+netstat -ano | grep ":<port>.*LISTENING"        # must print nothing
+```
+
+The third line is the check. A stop command that exits 0 is not evidence the
+port was released — both builds had exactly that, and both read a stale page
+afterwards.
+
 
 ### The closing turn
 
