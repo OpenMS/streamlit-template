@@ -242,6 +242,21 @@ one of these four fits is how a page loses the component it should have had: the
 vocabulary was undocumented until a run mapped nothing at all and every role it
 had was on this list.
 
+**`widget_type` is a closed list:** `text`, `textarea`, `number`, `selectbox`,
+`slider`, `checkbox`, `multiselect`, `password`, `auto`. Anything else renders
+nothing at all — the dispatch is a run of `elif`s with no final `else`. Not
+Streamlit's function names: `number_input` is not one of these, and two builds
+wrote it here, from Streamlit's API, while composing `DEFAULTS` in this file.
+
+**Every key you name in `DEFAULTS` is stored as `<script>.py:<key>`**, under
+`_general` — `input_python()` prefixes it with the script filename. Anything
+written against the bare key later (a preset, a read of `params.json`) is valid
+JSON, loads without error, and sets nothing.
+
+Both facts are also in `add-python-tool`, which is where the tool is registered.
+They are repeated here because `DEFAULTS` is *written* here, and four builds
+proved that a fact in the neighbouring skill is a fact nobody reads.
+
 Give every numeric entry in `DEFAULTS` an explicit `min` and `max`. Without them
 the parameter probe invents bounds — `lo = 0` for a positive value — and sweeps a
 value the tool rejects. The failed run is dropped from the effect calculation, so
