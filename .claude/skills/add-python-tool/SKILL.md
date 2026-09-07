@@ -1,3 +1,8 @@
+---
+name: add-python-tool
+description: Use when adding a custom Python analysis script to src/python-tools, or when a workflow step needs parameter widgets generated from a DEFAULTS list.
+---
+
 # Add a Python Analysis Tool
 
 Add a custom Python analysis script for MS data processing to `src/python-tools/` with auto-generated UI.
@@ -100,8 +105,18 @@ self.executor.run_python("tool_name", {"in": input_files})
 | `min` | No | number | Minimum value for numeric inputs |
 | `max` | No | number | Maximum value for numeric inputs |
 | `step_size` | No | number | Step size for numeric inputs |
-| `widget_type` | No | str | Override widget type: `"slider"`, `"textarea"`, `"number"`, `"text"`, etc. |
+| `widget_type` | No | str | Exactly one of `text`, `textarea`, `number`, `selectbox`, `slider`, `checkbox`, `multiselect`, `password`, `auto`. **Anything else renders nothing at all** — the dispatch is a run of `elif`s with no final `else` (`StreamlitUI.py:593`). Not Streamlit's function names: `number_input` is not one of these. |
 | `advanced` | No | bool | If `True`, only shown when user expands advanced parameters |
+
+**Every key you name here is stored as `<script>.py:<key>`.** `input_python()`
+prefixes it with the script filename, under `_general`. It matters the moment
+anyone writes a preset or reads `params.json`: a preset written against the bare
+key is valid JSON, loads without error, and sets nothing.
+
+`add-presets` has said this for four builds and four builds derived it again
+from `ParameterManager.apply_preset` and `StreamlitUI.input_python` — because
+they were writing a tool, not reading a preset skill. It is one line, so it
+lives in both places.
 
 ## Reference Files
 

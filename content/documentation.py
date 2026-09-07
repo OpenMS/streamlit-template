@@ -16,12 +16,18 @@ pages = [
     "Developers Guide: How to build app based on this template",
     "Developers Guide: TOPP Workflow Framework",
     "Developer Guide: Windows Executables",
+    "Developers Guide: From Notebook to Web App",
     "Developers Guide: Deployment",
     "Developers Guide: Kubernetes Deployment",
 ]
 page = cols[0].selectbox(
     "**Content**",
     pages,
+    # Keyed so another page can land the reader on a chapter: the Quickstart card
+    # seeds this key before switching here. Without it this always opens on the
+    # first entry, and the only way to reach a chapter was to tell the reader to
+    # go find it in the menu.
+    key="doc_chapter",
 )
 
 #############################################################################################
@@ -104,7 +110,7 @@ This guide explains how to package OpenMS apps into Windows executables using tw
 # Deployment
 #############################################################################################
 
-if page == pages[5]:
+if page == pages[6]:
     with open(Path("docs", "deployment.md"), "r", encoding="utf-8") as f:
         content = f.read()
     st.markdown(content)
@@ -113,7 +119,15 @@ if page == pages[5]:
 # Kubernetes Deployment
 #############################################################################################
 
-if page == pages[6]:
+if page == pages[7]:
     with open(Path("docs", "kubernetes-deployment.md"), "r", encoding="utf-8") as f:
+        content = f.read()
+    st.markdown(content)
+#############################################################################################
+# From Notebook to Web App
+#############################################################################################
+
+if page == pages[5]:
+    with open(Path("docs", "notebook_to_webapp.md"), "r", encoding="utf-8") as f:
         content = f.read()
     st.markdown(content)

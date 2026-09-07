@@ -1,0 +1,32 @@
+{
+  "_comment": [
+    "The vocabulary a user never reads. One source of truth: the Stop hook",
+    "in .claude/hooks/language_check.py enforces it, and eval/register.py",
+    "reads it rather than keeping its own copy -- a second list is a list",
+    "that drifts, and every rule added to one and not the other reads as",
+    "the two checks disagreeing.",
+    "Each entry maps a pattern to what the user should read instead."
+  ],
+  "case_insensitive": {
+    "\\bharvest(?:ed|ing)?\\b": "your notebook already tested this -- I'll reuse its numbers",
+    "\\bcell class(?:es)?\\b": "what each step does",
+    "\\bdemo shortcut\\b": "quote the line: `df.head(5)`, cell 9",
+    "\\bgolden value(?:s)?\\b": "checked it still gives your notebook's answers",
+    "\\bthe probe\\b": "measuring what each setting does",
+    "\\bmasking\\b|\\bmasked by\\b": "these two interact",
+    "\\bfilter_defaults\\b|\\blink identifier\\b": "which spectrum the plot opens on",
+    "\\bthe gate\\b|\\bgate (?:passed|failed|found)\\b": "(say the finding, not the check)",
+    "\\bscreenshot\\b": "(say nothing -- open their browser)",
+    "\\bWorkflowManager\\b|\\bpython tool\\b|\\bstage skill\\b": "(internal -- name the page or the analysis)",
+    "\\bAppTest\\b|\\biframe\\b|\\bInsight component\\b": "the panel",
+    "\\bdesign round\\b|\\binterview\\b|\\bpersona\\b": "(internal -- just ask)",
+    "\\bmode=auto\\b|\\bprior evidence\\b|\\bsuggestion axis\\b": "(internal)",
+    "\\bmateriality threshold\\b|\\beffect size\\b": "how much it moves the result",
+    "\\bpreflight\\b": "(say nothing, or: setting up -- a minute)",
+    "\\bbrowser (?:control|setup|side|probe)\\b|\\bdriving the browser\\b": "(internal -- never narrate the browser)"
+  },
+  "case_sensitive": {
+    "\\bHARDCODE\\b|\\bADVANCED\\b|\\bDASHBOARD CONTROL\\b": "keep it / hide it / put it on the results page",
+    "\\bDEFAULTS\\b|\\bOUTPUTS\\b": "the settings / what it produces"
+  }
+}

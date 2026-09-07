@@ -1,3 +1,8 @@
+---
+name: configure-k8s-deployment
+description: Use when deploying an OpenMS Streamlit app to Kubernetes, or when working with the kustomize base, overlays or the separate storage root.
+---
+
 # Configure Kubernetes Deployment
 
 Conduct a short interview, then edit the Kustomize overlay (and optionally the workspace PVC) so a forked OpenMS Streamlit app is ready to deploy to the OpenMS Kubernetes cluster.

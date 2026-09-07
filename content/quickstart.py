@@ -23,10 +23,46 @@ import streamlit as st
 
 from src.common.common import page_setup, v_space
 
+# Spell the skill out by file path rather than by name. Skills are registered
+# from .claude/skills/ when a session starts, so a repository cloned mid-session
+# puts them on disk but not into the running session's registry -- "use the
+# notebook-to-webapp skill" can fail on the very first move, and looks like the
+# framework does not exist. The path also works in terminals that have no notion
+# of skills at all. Do not shorten this to the skill name.
+#
+# One line, no newlines. A terminal without bracketed paste submits at the first
+# newline, sending "Clone ... then read" on its own -- a first move that fails for
+# a reason the user cannot see. It is also the form every driven build has sent.
+NOTEBOOK_TO_WEBAPP_PROMPT = (
+    "Clone https://github.com/OpenMS/streamlit-template into a new folder, then "
+    "read .claude/skills/notebook-to-webapp/SKILL.md inside that clone and follow "
+    "it to turn my Jupyter notebook into a web app. Ask me for the path to the "
+    "notebook, what to call the app, and how each page should look as you build it."
+)
+
 page_setup(page="main")
 
 st.markdown("# 👋 Quick Start")
-st.markdown("## Template for OpenMS web apps using the **streamlit** framework")
+st.markdown("## Mass spectrometry analysis, as web apps anyone can open")
+st.caption("The Streamlit template behind **FLASHApp**, **Umetaflow** and **OpenDDA**.")
+
+st.markdown("## 📓 Turn a Jupyter notebook into an app")
+with st.container(border=True):
+    st.markdown(
+        """
+**It builds the app with you, page by page.**
+
+Paste the prompt below into **Claude Code**. It reads your notebook, shows you how
+it read it, then works through the Upload, Configure and Results pages: three
+suggestions at a time, in your own browser, until each page is the one you wanted.
+"""
+    )
+    st.caption("Support for other agentic terminals is in the works.")
+    st.code(NOTEBOOK_TO_WEBAPP_PROMPT, language="text", wrap_lines=True)
+    if st.button("Read the walkthrough", icon="➡️"):
+        st.session_state["doc_chapter"] = "Developers Guide: From Notebook to Web App"
+        st.switch_page("content/documentation.py")
+
 c1, c2 = st.columns(2)
 c1.markdown(
     """

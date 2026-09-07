@@ -1,3 +1,8 @@
+---
+name: add-presets
+description: Use when adding named parameter presets to a TOPP workflow, or when users need one-click parameter sets such as 'High Sensitivity' or 'Fast'.
+---
+
 # Add Parameter Presets
 
 Add or modify parameter presets for a TOPP workflow in `presets.json`.
@@ -25,18 +30,37 @@ Add or modify parameter presets for a TOPP workflow in `presets.json`.
         "algorithm:section:param_name": value
       },
       "_general": {
-        "custom-widget-key": value
+        "custom-widget-key": value,
+        "<script>.py:<param>": value
       }
     }
   }
 }
 ```
 
+**The second `_general` form is the one that gets missed.** `input_python()`
+prefixes every key with the script filename, so a python tool's parameter is
+`my_tool.py:threshold`, not `threshold` — and a preset written against the bare
+name is valid JSON, loads without error, and sets nothing at all.
+
+This was already stated below, in the checklist that verifies a finished
+`presets.json`. Two builds wrote their presets after that was added and still
+derived the form by reading `CommandExecutor.run_python` and
+`ParameterManager.apply_preset` — because a build reads the schema at the moment
+it writes the file, and reads the checklist, if at all, afterwards. So it is
+here, in the block being copied.
+
 4. **Verify the result** by checking that:
    - Workflow name key matches the name passed to `WorkflowManager.__init__()` (lowercased, hyphenated)
    - TOPP tool names match those used in `input_TOPP()` calls
    - Parameter paths use colon-separated format matching the TOPP tool's .ini structure
    - `_general` keys match widget keys from `input_widget()` calls
+- **A python tool's parameters are keyed `<script>.py:<param>`**, still under
+  `_general`. `input_python()` prefixes every key with the script filename, so a
+  preset written against the bare parameter name silently sets nothing. Three
+  builds on three notebooks each derived this by reading
+  `CommandExecutor.run_python` and `ParameterManager.apply_preset`, because this
+  list described `_general` only in terms of `input_widget()`.
    - JSON is valid
 
 ## Schema Rules
@@ -51,6 +75,12 @@ Add or modify parameter presets for a TOPP workflow in `presets.json`.
 ## How Presets Work at Runtime
 
 1. Preset buttons auto-appear in `parameter_section()` via `StreamlitUI.preset_buttons()`
+   — **so never call `preset_buttons()` yourself.** It is the one `ui.*` method
+   the framework already invokes, and the rest of the family being yours to call
+   is exactly why two builds on two notebooks added it to the end of
+   `configure()` anyway. One rendered the presets twice; the other crashed the
+   Configure page on duplicate widget keys. If presets are not appearing, the
+   fault is `presets.json` or the workflow name in it — never a missing call.
 2. Only presets matching the current workflow name are displayed
 3. Clicking a preset updates `params.json` in the workspace and refreshes the UI
 4. If no `presets.json` exists or no presets match, no buttons are shown
@@ -96,3 +126,24 @@ For a workflow initialized as `super().__init__("Feature Analysis", ...)`:
 - [ ] TOPP tool names match exactly
 - [ ] Parameter paths use colon-separated format
 - [ ] `presets.json` is valid JSON
+
+
+## When a preset does not move the widget
+
+The symptom: the preset writes the right values into `params.json`, and the
+number on screen does not change.
+
+The cause is not the preset. `apply_preset` works by *deleting* the matching
+session-state keys so the widgets re-initialise from the file — and a widget
+left at `widget_type="auto"` for a numeric, selectbox or multiselect type
+prefixes its session key twice, so the delete misses it and the stale value
+overwrites the preset on the next rerun.
+
+**The fix is in the parameter, not in the mechanism:** give every parameter a
+preset should drive an explicit `widget_type`. The legal values are `text`,
+`textarea`, `number`, `selectbox`, `slider`, `checkbox`, `multiselect`,
+`password`, `auto` — and anything else renders nothing at all.
+
+Do not rewrite `apply_preset`. It is template code shared with every other app
+built from this template; see `scaffold-workflow-app`, "The template's code is
+not yours to change".

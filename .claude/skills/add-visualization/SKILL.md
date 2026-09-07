@@ -1,3 +1,8 @@
+---
+name: add-visualization
+description: Use when adding a plot, chart or mass spectrometry visualization to an OpenMS Streamlit page with pyopenms-viz or plotly.
+---
+
 # Add MS Data Visualization
 
 Add mass spectrometry data visualizations using pyopenms-viz or OpenMS-Insight components.
@@ -116,7 +121,8 @@ def results(self) -> None:
 ## Reference Files
 
 - Display utilities: `src/common/common.py` — `show_fig()`, `show_table()`
-- Dependencies: `requirements.txt` — `pyopenms-viz`, `openms-insight`
+- Dependencies: the **app's** `requirements.txt` — `pyopenms-viz` is in the
+  template's; `openms-insight` is not, and belongs to the app that uses it
 - Example workflow results: `src/Workflow.py` — `results()` method
 
 ## Library Repositories
