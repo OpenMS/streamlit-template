@@ -215,6 +215,19 @@ user who asks "what is it doing?" has already been failed.
 | none, and not masked | **HARDCODE** (omit from `DEFAULTS`) |
 | display-time only | **DASHBOARD CONTROL**, hand to the dashboard stage |
 
+**ADVANCED is hiding, so it is offered and not applied.** The other verdicts
+change what the app computes; this one changes only what the user can see, and
+that makes it theirs. Three builds on two notebooks put parameters behind an
+`advanced` toggle on the strength of a small effect size and told the user
+afterwards — *"under `advanced`: peptide length min/max, limit on spectra
+searched"* — and all three readers flagged the same thing: they were being shown
+a decision, not asked one. This page already says an unmeasured parameter may be
+exposed and never hidden; a measured-small one is no different, because *small*
+is a property of the sweep and *worth seeing* is a property of the person.
+
+Put the ADVANCED candidates in the interview beside the rest, name the effect
+that puts them there, and let anything come back out.
+
 Propose a widget type with every kept parameter, and give an **explicit**
 `widget_type` to anything a preset should drive — auto-typed numeric, selectbox
 and multiselect widgets double-prefix their session key, so presets silently fail
