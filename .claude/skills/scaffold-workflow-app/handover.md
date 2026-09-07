@@ -43,17 +43,28 @@ kept returning 200 from the process still holding the old modules. A run that
 does not notice judges its next page against code it already replaced.
 
 Find the listener by port and stop it by PID, then confirm the port is free
-before starting anything:
+before starting anything. Ask Windows for the connection **as an object** —
+never by matching words in `netstat` output:
 
-```bash
-netstat -ano | grep ":<port>.*LISTENING"        # -> PID in the last column
-powershell -NoProfile -Command "Stop-Process -Id <pid> -Force"
-netstat -ano | grep ":<port>.*LISTENING"        # must print nothing
+```powershell
+$owner = (Get-NetTCPConnection -LocalPort <port> -State Listen `
+          -ErrorAction SilentlyContinue).OwningProcess
+if ($owner) { Stop-Process -Id $owner -Force }
+Get-NetTCPConnection -LocalPort <port> -State Listen `
+    -ErrorAction SilentlyContinue        # must return nothing
 ```
 
-The third line is the check. A stop command that exits 0 is not evidence the
-port was released — both builds had exactly that, and both read a stale page
-afterwards.
+The last line is the check, and it has to be a check that can fail. This rule
+first said `netstat -ano | grep ":<port>.*LISTENING"`, which cannot work on a
+localised Windows: the machine it was written on prints `ABHÖREN`, so the grep
+matched zero lines — and zero lines is exactly what "the port is free" looks
+like. The build that hit it got an empty PID, a `Stop-Process` that failed, and
+a verification line that reported success. It then judged pages served by the
+process it had not stopped.
+
+`netstat` is a localised text report. `Get-NetTCPConnection` returns objects
+whose fields do not change with the display language, and an empty result is a
+real absence rather than a failed match.
 
 
 ### The closing turn

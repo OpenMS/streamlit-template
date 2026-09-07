@@ -280,7 +280,19 @@ governs it, and endings there never end on a question.
 
 45px is the sort arrow and padding; 8px is one character of the header font. Measured, not assumed: rendering ten real headers at the table's own 14px semibold system sans gives a mean of **6.86 px/char** and a worst case of **7.52** — short headers cost more per character than long ones, so the mean is the wrong figure to build on. 8 clears the worst case with margin, and erring wide is the right direction because a column that is too narrow wraps and a column that is too wide does not.
 
-Sum those widths, compare against the panel width you measured, and only then shorten headers if the total overflows. Three builds on two notebooks had the 45px figure and the observed panel fits and still converged by trial across four and five gate cycles, because nothing here turned a panel width into a column width.
+Sum those widths and compare against the panel width. **Measure that width; do not infer it from the viewport.** One build sized eight columns with the formula above, summed 881px against an assumed panel, folded, and spent four gate cycles converging — then read the real width in one command and settled it in a single pass:
+
+```python
+# against the running app, in the gate's viewport width
+page.set_viewport_size({"width": 1280, "height": 900})
+page.goto(url); page.wait_for_timeout(3000)
+print(page.frame_locator("iframe").first.locator("body")
+      .evaluate("e => e.clientWidth"))
+```
+
+Only then shorten headers if the total overflows. Three builds on two notebooks had the 45px figure and the observed panel fits and still converged by trial across four and five gate cycles, because nothing here turned a panel width into a column width. A fourth had the formula and converged anyway, because the formula is only the numerator.
+
+**And do not buy the fit by dropping a column.** The same build removed one to make the sum work and disclosed it in its closing turn, which is the one place `handover.md` says a decision must never first appear. A column that does not fit is a question, not a silent edit.
 
 **The gate does not see the wrap.** A build reported *"875 wrapped onto a phantom row, 800 clipped 'Score', 815 fit"* and added that only the screenshot showed it — the gate returned 11/11 on the wrapped page. So a green gate is not evidence the table fits; the screenshot is. Read it before believing the count, and never treat a passing gate as the check for this. This rule used to name a fixed figure for a 1280px window until two builds on two notebooks sized their columns against it and wrapped anyway: one measured ~830px at a 1280px window, the other 864px with the wrap at a 865px sum. Both then re-derived the budget from a screenshot and repeated gate runs, which is the cost of a number that was one layout's measurement rather than something to compute. `verify-webapp-usability` measures the real property and fails on it; shorten a long header rather than widening its column |
 | **Normalise per side before a mirror plot** | The halves share one symmetric axis; raw counts (~7e4) against theoretical intensities (~1) flatten one onto the baseline |
