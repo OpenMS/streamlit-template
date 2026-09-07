@@ -117,6 +117,17 @@ def last_assistant_text(transcript: Path) -> str:
                      if isinstance(b, dict) and b.get("type") == "text"]
             if any(p.strip() for p in parts):
                 said.append("\n".join(parts))
+        # Asking IS the boundary. In a driven build the answer to an
+        # AskUserQuestion comes back as a tool result, not as typed text,
+        # so resetting only on a typed message left the whole build as one
+        # unbroken turn: 0907-0518-t3q reported the same two sentences five
+        # times, once per later question. What the reader has in front of
+        # them when a question appears is what was said since the previous
+        # question -- so the last one recorded ends the stretch.
+        if isinstance(content, list) and any(
+                isinstance(b, dict) and b.get("type") == "tool_use"
+                and b.get("name") == "AskUserQuestion" for b in content):
+            said = []
     return "\n".join(said)
 
 
