@@ -23,6 +23,11 @@ pages = [
 page = cols[0].selectbox(
     "**Content**",
     pages,
+    # Keyed so another page can land the reader on a chapter: the Quickstart card
+    # seeds this key before switching here. Without it this always opens on the
+    # first entry, and the only way to reach a chapter was to tell the reader to
+    # go find it in the menu.
+    key="doc_chapter",
 )
 
 #############################################################################################

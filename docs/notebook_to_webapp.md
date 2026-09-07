@@ -5,9 +5,9 @@ want. This walkthrough converts the EuBIC winter-school identification notebook
 (`EUBIC_Task2_ID.ipynb`) into an app with a configuration page you chose and a
 results dashboard you designed.
 
-**Time:** about 30 minutes. **You need:** a notebook, an agentic terminal (Claude
-Code, Codex, Gemini CLI), and a Python 3.10+ environment. If you have none, `uv`
-is enough — the framework finds whatever is there and tells you what it picked.
+**Time:** about 30 minutes. **You need:** a notebook, `git`, **Claude Code**, and a
+Python 3.10+ environment. If you have none, `uv` is enough — the framework finds
+whatever is there and tells you what it picked.
 
 ---
 
