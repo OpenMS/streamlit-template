@@ -105,13 +105,22 @@ one line and the next question closes the gap. Do not fill it. A stage running
 long is not a reason to say more about the stage; it is a reason to make sure
 the thing it produces is announced the moment it exists.
 
-**Setup is not one of the five, so it gets no progress line at all.** The one
-optional forward-looking sentence before the first question is the whole of what
-setup may say. Not a second one, not a numbered one.
+**Setup is not one of the five, so it gets no progress line at all.** What it
+may say is governed by *what the sentences are*, not by how many there are.
 
-**That sentence says what the user is about to be asked, or what they will
-have. It is the only thing they hear before the first question, so it is
-theirs.** Write it as a time and a next step:
+Counting them was the rule here for five generations — ban the word, forbid the
+turn, narrow it to one forward-looking line, declare setup not a stage — and it
+never once held: builds wrote two or three anyway, in essentially every run
+measured. It also turned out to be defending nothing. Across 165 things the
+reader actually objected to in the corpus, **two** were on the setup screen and
+**163** were later; and both of those two were about *vocabulary* —
+`Playwright`, `Chromium`, `headless browser` — never about there being more than
+one sentence. A rule that cannot be followed and protects nothing measurable is
+not a rule, so the count is gone and the constraint that earned its place stays.
+
+**Each sentence says what the user is about to be asked, or what they will
+have. These are the only things they hear before the first question, so they are
+theirs.** Write them as a time and a next step:
 
 > Setting up — a minute, then I'll ask about your notebook.
 
