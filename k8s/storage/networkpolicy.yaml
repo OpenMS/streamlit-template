@@ -126,22 +126,38 @@ spec:
 # contain the POD network hands every pod in the cluster, NuXL included, root
 # over every workspace, and nothing about that is visible from the outside.
 #
-# Set it to the range covering the INTERNAL IPs of the cluster's nodes. The
-# addresses are in `kubectl get nodes -o wide` under INTERNAL-IP. Then check
-# the range against the pod and service networks before applying - if it
-# overlaps either, narrow it. One /32 per node is perfectly acceptable, and is
-# what a small fixed cluster should use. Note that a hostNetwork pod shares
-# its node's address and is admitted by this rule whatever its labels say;
-# that is inherent to naming nodes by address, and is the reason the range
-# should be as tight as the cluster allows.
+# DO NOT EDIT THIS VALUE IN PLACE. Pipe the rendered root through
+# k8s/storage/set-node-cidrs.sh, which reads the cluster's own node addresses
+# and patches the STREAM:
 #
-# docs/a16-storage-runbook.md section 3 step 5 carries this as an explicit cutover step.
+#   kubectl kustomize --enable-helm k8s/storage/ \
+#     | k8s/storage/set-node-cidrs.sh \
+#     | kubectl apply -f -
+#
+# Editing it here would put cluster-specific configuration inside a tracked
+# manifest, so a fork's tree diverges from upstream on exactly this line and
+# every pull can conflict on it. The script emits one /32 per node - tighter
+# than any range a human would pick - and refuses outright if a node address
+# falls inside the pod network, or if the cluster runs a Cilium that would
+# ignore the rule (see below). The placeholder stays here so that an operator
+# who bypasses the script still gets the loud, safe failure rather than a
+# wide-open policy.
+#
+# A hostNetwork pod shares its node's address and is admitted by this rule
+# whatever its labels say. That is inherent to naming nodes by address, and is
+# why the script emits /32s rather than a covering range.
+#
+# docs/a16-storage-runbook.md section 3 step 5 and
+# docs/kubernetes-deployment.md step 6 both carry this as a cutover step.
 #
 # Cilium, which is what the de.NBI user clusters run: from 1.14 remote nodes
 # carry the `remote-node` identity, and CIDR rules do not select node
-# identities unless the agent runs with `policy-cidr-match-mode=nodes`. If
-# mounts still hang with the correct CIDR in place, that flag is the next
-# thing to check - not a wider selector here.
+# identities unless the agent runs with `policy-cidr-match-mode=nodes`. The
+# script detects this and refuses, because the symptom is otherwise identical
+# to the placeholder being left in place - every mount hangs, with nothing
+# naming the cause. CI cannot catch it: kind runs kindnetd, which enforces
+# ipBlock normally. If mounts hang with correct /32s in place, that flag is
+# the next thing to check - not a wider selector here.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:

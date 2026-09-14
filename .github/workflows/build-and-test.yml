@@ -900,32 +900,24 @@ jobs:
           # podSelector and no ipBlock. Left alone, every mount on a node not
           # running Ganesha hangs, which the worker's DoNotSchedule spread
           # guarantees will happen to exactly one replica.
-          if ! grep -q 'cidr: 192.0.2.0/24' /tmp/storage.yaml; then
-            echo "::error::k8s/storage/networkpolicy.yaml no longer carries the 192.0.2.0/24 placeholder; this rewrite would silently no-op and every cross-node mount would hang"
-            exit 1
-          fi
-          # Derived, not hardcoded: kind pins only its IPv6 subnet, so the IPv4
-          # one comes from Docker's default address pool and is not 172.18/16
-          # by contract.
-          NODE_CIDR=$(docker network inspect kind \
-            -f '{{range .IPAM.Config}}{{.Subnet}} {{end}}' \
-            | tr ' ' '\n' | grep -v ':' | grep -E '^[0-9.]+/[0-9]+$' | head -n1)
-          if [ -z "$NODE_CIDR" ]; then
-            echo "::error::could not read an IPv4 subnet from the kind docker network"
-            docker network inspect kind -f '{{json .IPAM.Config}}'
-            exit 1
-          fi
-          echo "admitting kind nodes on 2049 from $NODE_CIDR"
-          sed -i "s|cidr: 192.0.2.0/24|cidr: ${NODE_CIDR}|" /tmp/storage.yaml
-          # kubeconform validated /tmp/storage-rendered.yaml, not the file that
-          # is actually applied. Re-check the one value the seds above compute
-          # rather than copy, so a malformed CIDR fails here and names itself
-          # instead of surfacing as an API-server rejection mid-retry-loop.
-          if ! grep -Eq '^[[:space:]]*cidr: [0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/[0-9]+$' /tmp/storage.yaml; then
-            echo "::error::the rewritten NetworkPolicy CIDR is not a bare IPv4 block"
-            grep -n 'cidr:' /tmp/storage.yaml
-            exit 1
-          fi
+          # The SAME script the deploy documentation tells an operator to run,
+          # not a kind-only reimplementation of it. It reads node InternalIPs
+          # from the cluster, emits one /32 each, refuses if any of them falls
+          # inside the pod network, and refuses on a Cilium whose
+          # policy-cidr-match-mode would ignore CIDR rules against nodes.
+          #
+          # Running it here is the only validation it gets, and it is a real
+          # one: this executes eight times per run against a two-node cluster,
+          # and assert_netpol_admits_every_node downstream then proves the
+          # policy it wrote actually admits every kubelet. The inline version
+          # this replaces derived the range from `docker network inspect kind`,
+          # which no production cluster has - so the path an operator actually
+          # runs was exercised by nothing.
+          #
+          # Its own placeholder and CIDR-shape guards replace the ones that
+          # used to live here; it exits non-zero rather than emitting YAML.
+          k8s/storage/set-node-cidrs.sh < /tmp/storage.yaml > /tmp/storage-patched.yaml
+          mv /tmp/storage-patched.yaml /tmp/storage.yaml
           applied=0
           for i in 1 2 3 4 5; do
             if kubectl apply -f /tmp/storage.yaml; then
@@ -1585,32 +1577,24 @@ jobs:
           # podSelector and no ipBlock. Left alone, every mount on a node not
           # running Ganesha hangs, which the worker's DoNotSchedule spread
           # guarantees will happen to exactly one replica.
-          if ! grep -q 'cidr: 192.0.2.0/24' /tmp/storage.yaml; then
-            echo "::error::k8s/storage/networkpolicy.yaml no longer carries the 192.0.2.0/24 placeholder; this rewrite would silently no-op and every cross-node mount would hang"
-            exit 1
-          fi
-          # Derived, not hardcoded: kind pins only its IPv6 subnet, so the IPv4
-          # one comes from Docker's default address pool and is not 172.18/16
-          # by contract.
-          NODE_CIDR=$(docker network inspect kind \
-            -f '{{range .IPAM.Config}}{{.Subnet}} {{end}}' \
-            | tr ' ' '\n' | grep -v ':' | grep -E '^[0-9.]+/[0-9]+$' | head -n1)
-          if [ -z "$NODE_CIDR" ]; then
-            echo "::error::could not read an IPv4 subnet from the kind docker network"
-            docker network inspect kind -f '{{json .IPAM.Config}}'
-            exit 1
-          fi
-          echo "admitting kind nodes on 2049 from $NODE_CIDR"
-          sed -i "s|cidr: 192.0.2.0/24|cidr: ${NODE_CIDR}|" /tmp/storage.yaml
-          # kubeconform validated /tmp/storage-rendered.yaml, not the file that
-          # is actually applied. Re-check the one value the seds above compute
-          # rather than copy, so a malformed CIDR fails here and names itself
-          # instead of surfacing as an API-server rejection mid-retry-loop.
-          if ! grep -Eq '^[[:space:]]*cidr: [0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/[0-9]+$' /tmp/storage.yaml; then
-            echo "::error::the rewritten NetworkPolicy CIDR is not a bare IPv4 block"
-            grep -n 'cidr:' /tmp/storage.yaml
-            exit 1
-          fi
+          # The SAME script the deploy documentation tells an operator to run,
+          # not a kind-only reimplementation of it. It reads node InternalIPs
+          # from the cluster, emits one /32 each, refuses if any of them falls
+          # inside the pod network, and refuses on a Cilium whose
+          # policy-cidr-match-mode would ignore CIDR rules against nodes.
+          #
+          # Running it here is the only validation it gets, and it is a real
+          # one: this executes eight times per run against a two-node cluster,
+          # and assert_netpol_admits_every_node downstream then proves the
+          # policy it wrote actually admits every kubelet. The inline version
+          # this replaces derived the range from `docker network inspect kind`,
+          # which no production cluster has - so the path an operator actually
+          # runs was exercised by nothing.
+          #
+          # Its own placeholder and CIDR-shape guards replace the ones that
+          # used to live here; it exits non-zero rather than emitting YAML.
+          k8s/storage/set-node-cidrs.sh < /tmp/storage.yaml > /tmp/storage-patched.yaml
+          mv /tmp/storage-patched.yaml /tmp/storage.yaml
           applied=0
           for i in 1 2 3 4 5; do
             if kubectl apply -f /tmp/storage.yaml; then
