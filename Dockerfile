@@ -76,6 +76,21 @@ RUN mkdir /thirdparty && \
     chmod -R +x /thirdparty
 ENV PATH="/thirdparty/LuciPHOr2:/thirdparty/MSGFPlus:/thirdparty/Sirius:/thirdparty/ThermoRawFileParser:/thirdparty/Comet:/thirdparty/Fido:/thirdparty/MaRaCluster:/thirdparty/MyriMatch:/thirdparty/OMSSA:/thirdparty/Percolator:/thirdparty/SpectraST:/thirdparty/XTandem:/thirdparty/crux:${PATH}"
 
+# Build the OpenMS-Insight package (Python + Vue bundle) from the migration branch.
+# Insight's Vue dist is gitignored and it has no pip build hook, so build the bundle
+# here and sync it into the package tree; the compile-openms stage pip-installs it.
+FROM node:21 AS insight-build
+ARG INSIGHT_REPO=https://github.com/t0mdavid-m/openms-insight.git
+ARG INSIGHT_BRANCH=claude/kind-heisenberg-u6dVm
+ADD https://api.github.com/repos/t0mdavid-m/openms-insight/git/refs/heads/${INSIGHT_BRANCH} insight-ref.json
+RUN git clone -b ${INSIGHT_BRANCH} --single-branch ${INSIGHT_REPO} /openms-insight
+WORKDIR /openms-insight/js-component
+RUN npm install && npm run build
+RUN mkdir -p /openms-insight/openms_insight/js-component \
+    && rm -rf /openms-insight/openms_insight/js-component/dist \
+    && cp -r /openms-insight/js-component/dist /openms-insight/openms_insight/js-component/dist \
+    && rm -rf /openms-insight/js-component/node_modules
+
 # Build OpenMS and pyOpenMS.
 FROM setup-build-system AS compile-openms
 WORKDIR /
@@ -99,6 +114,11 @@ RUN pip install dist/*.whl
 # Install other dependencies (excluding pyopenms)
 COPY requirements.txt ./requirements.txt 
 RUN grep -Ev '^pyopenms([=<>!~].*)?$' requirements.txt > requirements_cleaned.txt && mv requirements_cleaned.txt requirements.txt
+# OpenMS-Insight: install from the migration branch built in the insight-build stage
+# (with its Vue bundle). The template's viewer page (visualization_template.py) imports
+# it; installing from source means no PyPI publish is required.
+COPY --from=insight-build /openms-insight /tmp/openms-insight
+RUN pip install /tmp/openms-insight && rm -rf /tmp/openms-insight
 RUN pip install -r requirements.txt
 
 WORKDIR /

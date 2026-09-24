@@ -15,10 +15,22 @@ jobs:
     - uses: actions/setup-python@v4
       with:
         python-version: ${{ matrix.python-version }}
+    - uses: actions/setup-node@v4
+      with:
+        node-version: "21"
 
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
+        # OpenMS-Insight (Phase-3) is not on PyPI: build it from the migration branch
+        # (Vue bundle + Python) and install from source -- mirrors the Dockerfiles.
+        git clone -b claude/kind-heisenberg-u6dVm --single-branch --depth 1 \
+          https://github.com/t0mdavid-m/openms-insight.git /tmp/openms-insight
+        ( cd /tmp/openms-insight/js-component && npm install && npm run build )
+        mkdir -p /tmp/openms-insight/openms_insight/js-component
+        cp -r /tmp/openms-insight/js-component/dist \
+              /tmp/openms-insight/openms_insight/js-component/dist
+        pip install /tmp/openms-insight
         pip install -r requirements.txt # test with requirements file so can easily bump with dependabot
         pip install pytest fakeredis
     - name: Test
