@@ -1732,6 +1732,123 @@ Started: {status.get('started_at', 'N/A')}""")
     def results_section(self, custom_results_function) -> None:
         custom_results_function()
 
+    def results_download_section(
+        self, exclude: list[str] | None = None, results_dir: str | Path | None = None
+    ) -> None:
+        """
+        Offer every file under the workflow's results directory for download.
+
+        Lists the files, lets the user download any single one, and builds a
+        ZIP of the chosen result folders on request. Only the selected file (or
+        the ZIP) is read into memory, so large result sets stay cheap to render.
+
+        Args:
+            exclude: Names of files or folders to leave out (matched against
+                every part of a file's path relative to the results directory,
+                glob patterns allowed), e.g. caches: ``["insight_cache", "*.tmp"]``.
+            results_dir: Directory to offer. Defaults to ``<workflow_dir>/results``.
+        """
+        from fnmatch import fnmatch
+
+        results_dir = Path(results_dir or Path(self.workflow_dir, "results"))
+        exclude = list(exclude or [])
+
+        def excluded(rel: Path) -> bool:
+            return any(fnmatch(part, pattern) for part in rel.parts for pattern in exclude)
+
+        files = []
+        if results_dir.exists():
+            for path in sorted(results_dir.rglob("*")):
+                rel = path.relative_to(results_dir)
+                if path.is_file() and not excluded(rel):
+                    files.append(rel)
+
+        if not files:
+            st.info("No results to download yet. Run the workflow first.")
+            return
+
+        def folder_of(rel: Path) -> str:
+            return rel.parts[0] if len(rel.parts) > 1 else "."
+
+        def human_size(n_bytes: float) -> str:
+            for unit in ["B", "KB", "MB", "GB"]:
+                if n_bytes < 1024 or unit == "GB":
+                    return f"{n_bytes:.0f} {unit}" if unit == "B" else f"{n_bytes:.1f} {unit}"
+                n_bytes /= 1024
+
+        st.dataframe(
+            [
+                {
+                    "Folder": folder_of(rel),
+                    "File": str(rel.relative_to(folder_of(rel))),
+                    "Size": human_size(Path(results_dir, rel).stat().st_size),
+                    "Modified": datetime.fromtimestamp(
+                        Path(results_dir, rel).stat().st_mtime
+                    ).strftime("%Y-%m-%d %H:%M"),
+                }
+                for rel in files
+            ],
+            hide_index=True,
+            width="stretch",
+        )
+
+        key_prefix = f"results-download-{Path(self.workflow_dir).name}"
+        c1, c2 = st.columns(2)
+
+        with c1:
+            st.markdown("**Single file**")
+            selected = st.selectbox(
+                "File",
+                files,
+                format_func=str,
+                key=f"{key_prefix}-file",
+                label_visibility="collapsed",
+            )
+            if selected is not None:
+                st.download_button(
+                    "⬇️ Download file",
+                    data=Path(results_dir, selected).read_bytes(),
+                    file_name=Path(selected).name,
+                    key=f"{key_prefix}-file-button",
+                    width="stretch",
+                )
+
+        with c2:
+            st.markdown("**ZIP archive**")
+            folders = sorted({folder_of(rel) for rel in files})
+            chosen = st.multiselect(
+                "Folders",
+                folders,
+                default=folders,
+                key=f"{key_prefix}-folders",
+                label_visibility="collapsed",
+            )
+            zip_path = Path(self.workflow_dir, "downloads", "results.zip")
+            prepared_key = f"{key_prefix}-prepared"
+            if st.button(
+                "📦 Prepare ZIP",
+                disabled=not chosen,
+                key=f"{key_prefix}-zip",
+                width="stretch",
+            ):
+                zip_path.parent.mkdir(parents=True, exist_ok=True)
+                selected_files = [rel for rel in files if folder_of(rel) in chosen]
+                with st.spinner(f"Compressing {len(selected_files)} files..."):
+                    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zip_file:
+                        for rel in selected_files:
+                            zip_file.write(Path(results_dir, rel), Path("results", rel))
+                st.session_state[prepared_key] = sorted(chosen)
+            if st.session_state.get(prepared_key) == sorted(chosen) and zip_path.exists():
+                with open(zip_path, "rb") as f:
+                    st.download_button(
+                        "⬇️ Download ZIP",
+                        data=f,
+                        file_name=f"{Path(self.workflow_dir).name}-results.zip",
+                        mime="application/zip",
+                        key=f"{key_prefix}-zip-button",
+                        width="stretch",
+                    )
+
     def non_default_params_summary(self):
         # Display a summary of non-default TOPP parameters and all others (custom and python scripts)
 
