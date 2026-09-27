@@ -1,0 +1,34 @@
+{
+  "streamlit-template": {
+    "repo": "OpenMS/streamlit-template",
+    "dir": "streamlit-template",
+    "demo": "example_demo",
+    "exampleWorkflow": true,
+    "live": "https://template.webapps.openms.de"
+  },
+  "quantms-web": {
+    "repo": "OpenMS/quantms-web",
+    "dir": "quantms-web",
+    "demo": "example_demo",
+    "live": "https://opendda.webapps.openms.de"
+  },
+  "OpenDIAKiosk": {
+    "repo": "OpenMS/OpenDIAKiosk",
+    "dir": "OpenDIAKiosk",
+    "demo": "example_demo",
+    "exampleWorkflow": true,
+    "live": "https://opendia.webapps.openms.de"
+  },
+  "FLASHApp": {
+    "repo": "OpenMS/FLASHApp",
+    "dir": "FLASHApp",
+    "demo": "example_demo",
+    "live": "https://flashapp.webapps.openms.de"
+  },
+  "umetaflow": {
+    "repo": "OpenMS/umetaflow",
+    "dir": "umetaflow",
+    "demo": null,
+    "live": null
+  }
+}
