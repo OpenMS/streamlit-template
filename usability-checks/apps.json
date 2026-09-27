@@ -16,7 +16,6 @@
     "repo": "OpenMS/OpenDIAKiosk",
     "dir": "OpenDIAKiosk",
     "demo": "example_demo",
-    "exampleWorkflow": true,
     "live": "https://opendia.webapps.openms.de"
   },
   "FLASHApp": {

@@ -30,7 +30,7 @@ for (let i = 2; i < process.argv.length; i++) {
 }
 if (!args.workspace.length) args.workspace.push(null);
 
-const EXPECTED_ERRORS = /TOPP tool '[^']+' not found|No results to show yet/i;
+const EXPECTED_ERRORS = /TOPP tool '[^']+' not found|could not be found on the system PATH|No results to show yet/i;
 const RUN_TIMEOUT = Number(process.env.PAGE_TIMEOUT_MS || 120000);
 // Third-party noise that says nothing about the app.
 const CONSOLE_IGNORE = /matomo|piwik|googletagmanager|google-analytics|favicon|ERR_TUNNEL_CONNECTION_FAILED|ERR_CONNECTION|net::ERR_|Failed to load resource/i;
@@ -102,8 +102,14 @@ async function visit(page, browserErrors, url, label) {
   let loadError = null;
   let idle = false;
   try {
-    const resp = await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 });
-    if (resp && resp.status() >= 400) loadError = `HTTP ${resp.status()}`;
+    if (typeof url === "function") {
+      await url();
+      await page.waitForTimeout(750); // let the rerun start before waiting for it to end
+      url = page.url();
+    } else {
+      const resp = await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 });
+      if (resp && resp.status() >= 400) loadError = `HTTP ${resp.status()}`;
+    }
     idle = await waitForIdle(page);
   } catch (e) {
     loadError = e.message.split("\n")[0];
@@ -119,7 +125,10 @@ async function visit(page, browserErrors, url, label) {
   for (const e of browserErrors) if (e.startsWith("pageerror")) failures.push(e);
   // Messages that describe this container (no TOPP binaries) or an empty
   // workspace rather than a defect; reported once per app as notes.
-  const topp = found.errors.map((e) => e.match(/TOPP tool '([^']+)' not found/)).filter(Boolean).map((m) => m[1]);
+  const topp = found.errors
+    .map((e) => e.match(/TOPP tool '([^']+)' not found/) || e.match(/(\w+) could not be found on the system PATH/))
+    .filter(Boolean)
+    .map((m) => m[1]);
   const errors = found.errors.filter((e) => !EXPECTED_ERRORS.test(e));
   const warnings = [
     ...errors.map((e) => `st.error: ${e}`),
@@ -149,26 +158,41 @@ async function navLinks(page) {
   return links.filter((l) => !seen.has(l.href) && seen.add(l.href));
 }
 
-for (const ws of args.workspace) {
-  const wsLabel = !ws ? "fresh" : /demo/.test(ws) ? "demo" : "fresh";
+// Pass 1+: each workspace, moving between pages by clicking the sidebar the way
+// a user does (one Streamlit session). Last pass: every page opened directly by
+// URL in a new session, as after a refresh or from a bookmark.
+const passes = args.workspace.map((ws) => ({ ws, how: "click" }));
+if (!args.live) passes.push({ ws: args.workspace[0], how: "direct" });
+
+for (const { ws, how } of passes) {
+  const wsLabel = how === "direct" ? "direct link" : !ws ? "fresh" : /demo/.test(ws) ? "demo" : "fresh";
   const { context, page, browserErrors } = await newPage();
-  const home = await visit(page, browserErrors, withWorkspace(args.url, ws), `${wsLabel}__home`);
+  const home = await visit(page, browserErrors, withWorkspace(args.url, ws), `${slug(wsLabel)}__home`);
   home.workspace = wsLabel;
-  results.pages.push(home);
+  home.page = "Home";
+  if (how !== "direct") results.pages.push(home);
   let links = [];
   try {
     links = await navLinks(page);
   } catch {}
-  if (!links.length && !home.failures.length) {
+  if (!links.length && !home.failures.length && how !== "direct") {
     home.warnings.push(args.live ? "no page navigation visible (captcha / consent gate?)" : "no sidebar navigation found");
   }
   for (const l of links) {
     const u = new URL(l.href);
     if (u.pathname === new URL(args.url).pathname || u.pathname === "/") continue; // home, already visited
-    const label = `${wsLabel}__${l.section ? l.section + "_" : ""}${l.text}`;
-    const r = await visit(page, browserErrors, withWorkspace(l.href, ws), label);
+    const label = `${slug(wsLabel)}__${l.section ? l.section + "_" : ""}${l.text}`;
+    const target =
+      how === "direct"
+        ? withWorkspace(l.href, ws)
+        : async () => {
+            await navLinks(page); // re-expands "View more" if the rerun collapsed it
+            await page.locator(`[data-testid="stSidebarNav"] a[href="${l.href}"]`).first().click({ timeout: 15000 });
+          };
+    const r = await visit(page, browserErrors, target, label);
     r.workspace = wsLabel;
     r.page = `${l.section ? l.section + " / " : ""}${l.text}`;
+    r.how = how;
     results.pages.push(r);
   }
   await context.close();
@@ -211,6 +235,17 @@ if (args["example-workflow"] && !args.live) {
   results.scenarios.push(scen);
   await context.close();
 }
+
+const clicked = new Map(results.pages.filter((p) => p.how === "click").map((p) => [p.page, p]));
+results.pages = results.pages.filter((p) => {
+  if (p.how !== "direct") return true;
+  const c = clicked.get(p.page);
+  const seen = new Set(c ? c.failures : []);
+  p.failures = p.failures.filter((f) => !seen.has(f));
+  p.warnings = [];
+  p.missingTopp = [];
+  return p.failures.length > 0;
+});
 
 await browser.close();
 results.finished = new Date().toISOString();
