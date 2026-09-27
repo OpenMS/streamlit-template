@@ -49,3 +49,4 @@ eval/
 electron/node_modules/
 electron/payload/
 electron/dist/
+!electron/build/
