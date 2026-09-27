@@ -132,7 +132,7 @@ Subclass `WorkflowManager` (see `src/Workflow.py`) and implement four methods:
 - `execution()` — `self.file_manager.get_files()` to derive paths, then `self.executor.run_topp()` / `run_python()`
 - `results()` — display outputs
 
-Each workflow gets four thin content pages calling `wf.show_file_upload_section()` / `show_parameter_section()` / `show_execution_section()` / `show_results_section()`. Decorate `configure()` and `results()` with `@st.fragment`.
+Each workflow gets four thin content pages calling `wf.show_file_upload_section()` / `show_parameter_section()` / `show_execution_section()` / `show_results_section()`. An optional fifth page calls `wf.show_results_download_section(exclude=[...])`, which offers every file under `<workflow_dir>/results/` singly or as a ZIP (pass `exclude` for caches that are not results). Decorate `configure()` and `results()` with `@st.fragment`.
 
 **`execution()` must be annotated `-> bool` and `return True` only when every step succeeded.** Both callers — `workflow_process()` locally and `tasks.execute_workflow()` in queue mode — log the `WORKFLOW FINISHED` marker only for a truthy return, and a missing marker is classified as an error. `run_topp()` and `run_python()` both return `False` on failure; gate every call on it, or a run whose third tool died is still reported as a success. The shipped example (`src/Workflow.py`) does exactly this — copy its structure *and* its return type.
 
