@@ -82,6 +82,25 @@ def is_safe_workspace_name(name: str) -> bool:
     return "/" not in name and "\\" not in name and name not in ("..", ".")
 
 
+def local_workspaces_dir(settings: dict) -> Path:
+    """
+    Resolve the directory holding workspaces in local mode.
+
+    ``LOCAL_WORKSPACES_DIR`` wins when set, so a desktop launcher (the
+    Electron shell) can keep workspaces in the user profile instead of next
+    to a read-only install folder. Otherwise ``workspaces_dir`` from
+    settings.json is used, falling back to the parent directory.
+    """
+    override = os.environ.get("LOCAL_WORKSPACES_DIR")
+    if override:
+        return Path(override)
+    if settings.get("workspaces_dir"):
+        return Path(
+            settings["workspaces_dir"], "workspaces-" + settings["repository-name"]
+        )
+    return Path("..")
+
+
 def get_demo_source_dirs() -> list[Path]:
     """
     Get list of demo workspace source directories from settings.
@@ -587,14 +606,8 @@ def page_setup(page: str = "") -> dict[str, Any]:
         if "windows" in sys.argv:
             os.chdir("../streamlit-template")
         # Define the directory where all workspaces will be stored
-        if (
-            st.session_state.settings["workspaces_dir"]
-            and st.session_state.location == "local"
-        ):
-            workspaces_dir = Path(
-                st.session_state.settings["workspaces_dir"],
-                "workspaces-" + st.session_state.settings["repository-name"],
-            )
+        if st.session_state.location == "local":
+            workspaces_dir = local_workspaces_dir(st.session_state.settings)
         elif st.session_state.location == "online":
             workspaces_dir = Path(
                 os.environ.get("WORKSPACES_DIR", "/workspaces-streamlit-template")
@@ -705,14 +718,8 @@ def render_sidebar(page: str = "") -> None:
         # Display workspace switcher if workspace is enabled in local mode
         if st.session_state.settings["enable_workspaces"]:
             # Workspaces directory specified in the settings.json
-            if (
-                st.session_state.settings["workspaces_dir"]
-                and st.session_state.location == "local"
-            ):
-                workspaces_dir = Path(
-                    st.session_state.settings["workspaces_dir"],
-                    "workspaces-" + st.session_state.settings["repository-name"],
-                )
+            if st.session_state.location == "local":
+                workspaces_dir = local_workspaces_dir(st.session_state.settings)
             else:
                 workspaces_dir = ".."
             # Online: show current workspace name in info text and option to change to other existing workspace

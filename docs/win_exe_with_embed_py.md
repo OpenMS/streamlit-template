@@ -276,3 +276,17 @@ To generate a new GUID for your application's UpgradeCode, you can use:
 For more detailed customization options, refer to the [WiX Toolset documentation](https://wixtoolset.org/documentation/).
 
 :warning: The `APP_UpgradeCode` GUID should be unique for your application. Generate a new one if you're creating a different app.
+
+## Electron desktop app (per-user installer)
+
+Next to the MSI, the Windows build also produces `<APP_NAME>-Setup.exe`, which packages the same folder (embedded Python, pyOpenMS, TOPP tools, `share/OpenMS`) in the Electron shell from `electron/`. It differs from the MSI in the following ways:
+
+- It installs per user to `%LOCALAPPDATA%\Programs\<APP_NAME>` and needs no admin rights.
+- The app opens in its own window. The shell starts Streamlit on a free loopback port and stops it, together with any running TOPP tools, when the window closes.
+- Workspaces live in `%APPDATA%\<APP_NAME>\workspaces`. The shell passes that location to the app in `LOCAL_WORKSPACES_DIR`, which takes precedence over `workspaces_dir` from `settings.json` in local mode.
+- On start, it checks the latest release of `github-user`/`repository-name` from `settings.json` and links to the release page when a newer version exists. It never downloads anything by itself.
+- Streamlit's output is written to `%APPDATA%\<APP_NAME>\logs\streamlit.log`.
+
+The shell sets the same environment as the MSI's `.bat` file: the install folder and every `share\OpenMS\THIRDPARTY\*` folder go on `PATH`, and `OPENMS_DATA_PATH` points to `share\OpenMS`. CI installs the result silently and checks pyOpenMS, every tool in `TOPP_TOOLS`, and the app page before uploading it.
+
+To try the shell from a checkout, run `npm install` and then `npm start` in `electron/`. It runs `app.py` from the repository with the `python` on your `PATH`. Set `OPENMS_APP_PAYLOAD` to use a built payload folder instead.
