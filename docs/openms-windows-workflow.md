@@ -61,7 +61,7 @@ It checks out the ref with the `vcpkg` and `THIRDPARTY` submodules (not `contrib
 
 **Source mode needs OpenMS sources with the vcpkg CMake presets**: OpenMS 3.6 and later, and develop from about 2026-08 on. A fork based on an older develop must rebase first; the job stops with that message if `CMakePresets.json` has no `windows-x64-release` preset.
 
-The vcpkg binaries (a `files` binary source, keyed on `vcpkg.json`, `vcpkg-configuration.json`, the overlays and the vcpkg commit) and ccache are cached with `actions/cache`, in the calling repository's cache. A cold build compiles every dependency and takes hours; later runs reuse the cache.
+The vcpkg binaries (a `files` binary source, keyed on `vcpkg.json`, `vcpkg-configuration.json`, the overlays and the vcpkg commit) and ccache are cached with `actions/cache`, in the calling repository's cache. Measured on `windows-2025` against OpenMS develop: a cold run (empty caches) takes about 2 h 50 min, 1 h 23 min of it building the vcpkg dependencies and 1 h 24 min compiling OpenMS; a warm run takes about 8 min. The job allows 6 h, so the first run has headroom; the caches are per repository and branch scope, so each app pays the cold run once.
 
 ### Which `<ref>` to use
 
