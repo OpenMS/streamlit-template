@@ -286,8 +286,9 @@ This rule exists because the naive version fails on the hero example. Task 2's
 `absolute_tolerance` moves candidate counts by 0.7% as shipped — because
 `relative_tolerance=0.1` opens a ±169 Da window that swamps it — yet it is the
 most important parameter in the notebook. Inert-in-isolation and genuinely-inert
-are different findings and must not share a recommendation. Evidence:
-[`eval/baseline-task2.md`](../eval/baseline-task2.md).
+are different findings and must not share a recommendation. The evidence is
+the hand-built task 2 baseline in the `eval/` loop, which is not committed to
+this repository.
 
 Each row resolves to one of: **shown**, **advanced** (`"advanced": True`),
 **hardcoded** (absent from `DEFAULTS`), or **dashboard control** (a display-time

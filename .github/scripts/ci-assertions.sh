@@ -925,6 +925,23 @@ assert_doc_links_resolve() {
         if git ls-files --error-unmatch "docs/$_ci_ref" >/dev/null 2>&1; then
             continue
         fi
+        # Skills cite their own supporting files by bare name (`cleanup.md`)
+        # or relative to the skills root (`scaffold-workflow-app/handover.md`).
+        if git ls-files --error-unmatch ".claude/skills/$_ci_ref" >/dev/null 2>&1; then
+            continue
+        fi
+        # Last, relative to the directory of any tracked Markdown file citing it.
+        _ci_sibling=0
+        for _ci_citer in $(git ls-files '*.md' -z 2>/dev/null \
+                | xargs -0 grep -l -- "\`$_ci_ref\`" 2>/dev/null); do
+            if git ls-files --error-unmatch "$(dirname "$_ci_citer")/$_ci_ref" >/dev/null 2>&1; then
+                _ci_sibling=1
+                break
+            fi
+        done
+        if [ "$_ci_sibling" -eq 1 ]; then
+            continue
+        fi
         _ci_dangling="$_ci_dangling $_ci_ref"
     done
 
