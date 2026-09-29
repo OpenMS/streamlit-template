@@ -77,7 +77,7 @@ Four lines. The same build narrated step by step runs to eight: a line for the
 extracted file, one for the golden test, one for the workflow class and its
 pages, one for registering them, one for the template cleanup, one for the test
 lists. Each is a step inside a stage, and the last of them reads a phrase
-straight out of `cleanup.md` — a step that only exists because this framework
+straight out of `scaffold-workflow-app/cleanup.md` — a step that only exists because this framework
 has a rule about it is not a step the user is waiting on.
 
 **The bad version is described here and not written out, deliberately.** It used

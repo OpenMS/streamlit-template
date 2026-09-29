@@ -916,6 +916,7 @@ assert_doc_links_resolve() {
     # `docs/a16-storage-runbook.md`, while a sibling reference inside docs/
     # may reasonably write just `build_app.md`.
     _ci_dangling=""
+    _ci_dangling_at=""
     _ci_checked=0
     for _ci_ref in $_ci_refs; do
         _ci_checked=$((_ci_checked + 1))
@@ -930,26 +931,31 @@ assert_doc_links_resolve() {
         if git ls-files --error-unmatch ".claude/skills/$_ci_ref" >/dev/null 2>&1; then
             continue
         fi
-        # Last, relative to the directory of any tracked Markdown file citing it.
-        _ci_sibling=0
+        # Last, relative to the directory of the Markdown file citing it. Every
+        # citing file has to resolve it on its own: one file with a sibling of
+        # that name says nothing about another file citing the same name.
+        _ci_unresolved=""
         for _ci_citer in $(git ls-files '*.md' -z 2>/dev/null \
                 | xargs -0 grep -l -- "\`$_ci_ref\`" 2>/dev/null); do
-            if git ls-files --error-unmatch "$(dirname "$_ci_citer")/$_ci_ref" >/dev/null 2>&1; then
-                _ci_sibling=1
-                break
+            if ! git ls-files --error-unmatch "$(dirname "$_ci_citer")/$_ci_ref" >/dev/null 2>&1; then
+                _ci_unresolved="$_ci_unresolved $_ci_citer"
             fi
         done
-        if [ "$_ci_sibling" -eq 1 ]; then
+        if [ -z "$_ci_unresolved" ]; then
             continue
         fi
         _ci_dangling="$_ci_dangling $_ci_ref"
+        for _ci_citer in $_ci_unresolved; do
+            _ci_dangling_at="$_ci_dangling_at $_ci_citer:$_ci_ref"
+        done
     done
 
     if [ -n "$_ci_dangling" ]; then
         _ci_fail "tracked Markdown cites .md paths that do not exist:$_ci_dangling"
-        printf '%s\n' "$_ci_dangling" | tr ' ' '\n' | grep -v '^$' | while read -r _ci_d; do
-            git ls-files '*.md' -z 2>/dev/null \
-                | xargs -0 grep -n -- "\`$_ci_d\`" 2>/dev/null | sed 's|^|  |' >&2 || true
+        # Only the citing files that cannot resolve the reference.
+        for _ci_d in $_ci_dangling_at; do
+            grep -n -- "\`${_ci_d#*:}\`" "${_ci_d%%:*}" 2>/dev/null \
+                | sed "s|^|  ${_ci_d%%:*}:|" >&2 || true
         done
         _ci_rc=1
     fi

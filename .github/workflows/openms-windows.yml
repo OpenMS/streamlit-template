@@ -207,9 +207,11 @@ jobs:
     - name: Check for the vcpkg presets
       if: inputs.mode == 'source'
       shell: bash
+      env:
+        OPENMS_REF: ${{ steps.ref.outputs.ref }}
       run: |
         if ! grep -q '"windows-x64-release"' CMakePresets.json 2>/dev/null || [[ ! -f vcpkg.json ]]; then
-          echo "::error::${OPENMS_REPOSITORY}@${{ steps.ref.outputs.ref }} has no vcpkg CMake presets (CMakePresets.json with windows-x64-release, vcpkg.json)."
+          echo "::error::${OPENMS_REPOSITORY}@${OPENMS_REF} has no vcpkg CMake presets (CMakePresets.json with windows-x64-release, vcpkg.json)."
           echo "::error::Source mode needs OpenMS 3.6+ or a develop from about 2026-08 on. Rebase the fork, or use installer mode for a released version."
           exit 1
         fi
@@ -370,6 +372,12 @@ jobs:
     ############################################################################
     - name: Repackage bin/ and share/
       shell: bash
+      # Passed through the environment, never expanded into the script: a Git
+      # ref or a release asset name may contain `$(...)` or backticks.
+      env:
+        OPENMS_REF: ${{ steps.ref.outputs.ref }}
+        RELEASE_TAG: ${{ steps.download.outputs.tag }}
+        RELEASE_ASSET: ${{ steps.download.outputs.asset }}
       run: |
         set -euo pipefail
         raw="$(cygpath -u "$RAW_ROOT")"
@@ -423,9 +431,9 @@ jobs:
         {
           echo "### OpenMS for Windows ($MODE)"
           if [[ "$MODE" == installer ]]; then
-            echo "- Source: \`${OPENMS_REPOSITORY}\` release \`${{ steps.download.outputs.tag }}\`, asset \`${{ steps.download.outputs.asset }}\`"
+            echo "- Source: \`${OPENMS_REPOSITORY}\` release \`${RELEASE_TAG}\`, asset \`${RELEASE_ASSET}\`"
           else
-            echo "- Source: \`${OPENMS_REPOSITORY}@${{ steps.ref.outputs.ref }}\` (\`$(git rev-parse HEAD 2>/dev/null || echo ?)\`)"
+            echo "- Source: \`${OPENMS_REPOSITORY}@${OPENMS_REF}\` (\`$(git rev-parse HEAD 2>/dev/null || echo ?)\`)"
           fi
           echo "- ${n_exe} TOPP tools, ${n_dll} DLLs"
           echo "- THIRDPARTY: $(for e in "${engines[@]}"; do basename "$e"; done | tr '\n' ' ')"
