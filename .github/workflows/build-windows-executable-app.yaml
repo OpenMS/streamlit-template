@@ -13,10 +13,6 @@ permissions:
   contents: write
 
 env:
-  OPENMS_VERSION: 3.5.0
-  # Override to pin contrib to a specific release when OPENMS_VERSION is a non-release branch (e.g. "develop").
-  # Leave empty to use OPENMS_VERSION.
-  OPENMS_CONTRIB_VERSION: ""
   PYTHON_VERSION: 3.11.0
   # Name of the installer
   APP_NAME: OpenMS-StreamlitTemplateApp
@@ -26,160 +22,28 @@ env:
   TOPP_TOOLS: "FeatureFinderMetabo FeatureLinkerUnlabeledKD SiriusExport"
 
 jobs:
-  build-openms:
-    runs-on: windows-2022
-
+  # `with:` of a reusable-workflow call cannot read `env`, so this job hands
+  # TOPP_TOOLS over as an output and it stays defined in one place.
+  config:
+    runs-on: ubuntu-latest
+    outputs:
+      topp-tools: ${{ steps.out.outputs.topp-tools }}
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-      with:
-        repository: OpenMS/OpenMS
-        ref: release/${{ env.OPENMS_VERSION }}
-        path: 'OpenMS'
+    - id: out
+      run: echo "topp-tools=$TOPP_TOOLS" >> "$GITHUB_OUTPUT"
 
-    - name: Install Qt (Windows)
-      uses: jurplel/install-qt-action@v4
-      with:
-        version: '6.8.3'    ## Note this version is build with win64_msvc2022_64 and should always match what we use
-        arch: 'win64_msvc2022_64'
-        cache: 'false'
-        archives: 'qtsvg qtimageformats qtbase'
-
-    # https://github.com/marketplace/actions/visual-studio-shell
-    - name: Set up Visual Studio shell
-      uses: egor-tensin/vs-shell@v2
-      with:
-        arch: x64
-
-    - name: Setup build tools
-      shell: bash
-      run: |
-        choco install ccache ninja -y --no-progress
-        choco install cmake --version=3.31.12 -y --no-progress --force
-        ## GH CLI "SHOULD BE" installed. Sometimes I had to manually install nonetheless. Super weird.
-        # https://github.com/actions/runner-images/blob/main/images/win/scripts/Installers/Install-GitHub-CLI.ps1
-        echo "C:/Program Files (x86)/GitHub CLI" >> $GITHUB_PATH
-
-    - name: Extract branch/PR infos
-      shell: bash
-      run: |
-        cd OpenMS
-        RUN_NAME_LOCAL=$(echo ${GITHUB_REF#refs/heads/} | tr / -)
-        echo "RUN_NAME=${RUN_NAME_LOCAL}" >> $GITHUB_ENV
-        echo "BASE_REF=$(gh pr view --json baseRefName -q .baseRefName || echo ${RUN_NAME_LOCAL})" >> $GITHUB_ENV
-      id: extract_branch
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Cache contrib
-      id: cache-contrib-win
-      uses: actions/cache@v4
-      with:
-        path: ${{ github.workspace }}/OpenMS/contrib
-        key: ${{ runner.os }}-contrib-${{ env.OPENMS_CONTRIB_VERSION || env.OPENMS_VERSION }}
-
-    - name: Load contrib build
-      if: steps.cache-contrib-win.outputs.cache-hit != 'true'
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: |
-        cd OpenMS/contrib
-        # Download the file using the URL fetched from GitHub
-        gh release download release/${{ env.OPENMS_CONTRIB_VERSION || env.OPENMS_VERSION }} -R OpenMS/contrib --pattern 'contrib_build-Windows.tar.gz'
-        # Extract the archive
-        7z x -so contrib_build-Windows.tar.gz | 7z x -si -ttar
-        rm contrib_build-Windows.tar.gz
-        ls
-
-    - name: Add contrib to PATH
-      shell: bash
-      run: |
-        # Add contrib library path for runtime DLL resolution
-        echo "${{ github.workspace }}/OpenMS/contrib/lib" >> $GITHUB_PATH
-
-    - name: Setup ccache cache
-      uses: actions/cache@v4
-      with:
-        path: .ccache
-        key: ${{ runner.os }}-ccache-${{ env.RUN_NAME }}-${{ github.run_number }}
-        # Restoring: From current branch, otherwise from base branch, otherwise from any branch.
-        restore-keys: |
-          ${{ runner.os }}-ccache-${{ env.RUN_NAME }}
-          ${{ runner.os }}-ccache-${{ env.BASE_REF }}
-          ${{ runner.os }}-ccache-
-
-    - name: Add THIRDPARTY
-      shell: bash
-      run: |
-          # initialize THIRDPARTY
-          cd OpenMS
-          git submodule update --init THIRDPARTY
-          cd ..
-          # add third-party binaries to PATH
-          # use flat THIRDPARTY structure
-          mkdir -p _thirdparty
-          cp -R OpenMS/THIRDPARTY/Windows/x86_64/* _thirdparty/
-          cp -R OpenMS/THIRDPARTY/All/* _thirdparty/
-          # add third-party binaries to PATH
-          for thirdpartytool in ${{ github.workspace }}/_thirdparty/*
-          do
-            echo $thirdpartytool >> $GITHUB_PATH
-          done
-
-    - name: Build Windows
-      shell: bash
-      run: |
-          mkdir $GITHUB_WORKSPACE/OpenMS/bld/
-          bash OpenMS/tools/ci/capture-env.sh -v $GITHUB_WORKSPACE/OpenMS/bld/CMakeCache.txt
-          ctest --output-on-failure -V -S $GITHUB_WORKSPACE/OpenMS/tools/ci/cibuild.cmake
-      env:
-          OPENMS_CONTRIB_LIBS: "${{ github.workspace }}/OpenMS/contrib"
-          CI_PROVIDER: "GitHub-Actions"
-          CMAKE_GENERATOR: "Ninja"
-          SOURCE_DIRECTORY: "${{ github.workspace }}/OpenMS"
-          BUILD_NAME: "${{ env.RUN_NAME }}-Win64-class-topp-${{ github.run_number }}"
-          ENABLE_STYLE_TESTING: "OFF"
-          ENABLE_TOPP_TESTING: "ON"
-          ENABLE_CLASS_TESTING: "ON"
-          WITH_GUI: "OFF"
-          WITH_PARQUET: "OFF"
-          ADDRESS_SANITIZER: "Off"
-          BUILD_TYPE: "Release"
-          OPENMP: "Off"
-          USE_STATIC_BOOST: "On"
-          #  BUILD_FLAGS: "-p:CL_MPCount=2" # For VS Generator and MSBuild
-          BUILD_FLAGS: "-j2" # Ninja will otherwise use all cores (doesn't go well in GHA)
-          CMAKE_CCACHE_EXE: "ccache"
-          CCACHE_BASEDIR: ${{ github.workspace }}
-          CCACHE_DIR: ${{ github.workspace }}/.ccache
-          CCACHE_COMPRESS: true
-          CCACHE_COMPRESSLEVEL: 12
-          CCACHE_MAXSIZE: 400M
-
-    - name: Test Windows
-      shell: bash
-      run: ctest --output-on-failure -V -S $GITHUB_WORKSPACE/OpenMS/tools/ci/citest.cmake
-      env:
-          SOURCE_DIRECTORY: "${{ github.workspace }}/OpenMS"
-          CI_PROVIDER: "GitHub-Actions"
-          BUILD_NAME: "${{ env.RUN_NAME }}-Win64-class-topp-${{ github.run_number }}"
-
-    - name: Package
-      shell: bash
-      run: |
-          ctest --output-on-failure -V -S $GITHUB_WORKSPACE/OpenMS/tools/ci/cipackage.cmake
-      env:
-          SOURCE_DIRECTORY: "${{ github.workspace }}/OpenMS"
-          PACKAGE_TYPE: zip
-          SEARCH_ENGINES_DIRECTORY: "${{ github.workspace }}/_thirdparty"
-          CI_PROVIDER: "GitHub-Actions"
-          CPACK_PACKAGE_FILE_NAME: "openms-package"
-
-    - name: Upload package as artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: openms-package
-        path: ${{ github.workspace }}/OpenMS/bld/*.zip
+  # OpenMS TOPP tools, DLLs and share/ from the official Windows installer.
+  # See docs/openms-windows-workflow.md for the inputs, including `mode: source`
+  # for building a branch or fork. App repositories call the same workflow as
+  # OpenMS/streamlit-template/.github/workflows/openms-windows.yml@<ref>.
+  build-openms:
+    needs: config
+    uses: ./.github/workflows/openms-windows.yml
+    with:
+      openms-version: "3.5.0"
+      mode: installer
+      topp-tools: ${{ needs.config.outputs.topp-tools }}
+      artifact-name: openms-package
 
   build-executable:
     runs-on: windows-2022

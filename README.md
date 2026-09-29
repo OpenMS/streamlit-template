@@ -10,7 +10,7 @@ This repository contains a template app for OpenMS workflows in a web applicatio
 - Persistent parameters and input files within a workspace
 - local and online mode
 - Captcha control
-- Packaged executables for Windows
+- Packaged executables for Windows (OpenMS TOPP tools via the reusable [`openms-windows.yml`](docs/openms-windows-workflow.md) workflow)
 - framework for workflows with OpenMS TOPP tools
 - Deployment [with docker-compose](https://github.com/OpenMS/streamlit-deployment)
 
