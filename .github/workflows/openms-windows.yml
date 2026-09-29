@@ -1,0 +1,484 @@
+# Reusable workflow: OpenMS TOPP tools for Windows, packaged for a web app installer.
+#
+# Produces the artifact that the `build-executable` job of
+# build-windows-executable-app.yaml consumes: a single zip whose top level is
+#
+#   openms-package/bin/    TOPP tool .exe files and every DLL they need
+#   openms-package/share/  share/OpenMS, including share/OpenMS/THIRDPARTY/<engine>
+#
+# Two ways to get there:
+#
+#   mode: installer (default)
+#     Takes the official Windows installer attached to the OpenMS GitHub release
+#     of `openms-version`, installs it silently and repackages bin/ and share/.
+#     No compiler, no contrib. The official installers are tested upstream, so no
+#     OpenMS tests run here -- only a `--help` smoke test of the kept tools.
+#
+#   mode: source
+#     Builds `openms-repository`@`openms-ref` with the vcpkg CMake presets
+#     (`windows-x64-release`) and packages it with CPack's ZIP generator. Needs
+#     OpenMS sources that carry the vcpkg presets: OpenMS 3.6 and later, and
+#     develop from about 2026-08 on. A fork of an older develop must rebase first.
+#     vcpkg binaries and ccache are cached, but a cold build takes hours.
+#
+# Usage from an app repository: see docs/openms-windows-workflow.md.
+
+name: OpenMS for Windows
+
+on:
+  workflow_call:
+    inputs:
+      openms-version:
+        description: >-
+          OpenMS release to package, e.g. "3.5.0". In installer mode this selects
+          the GitHub release; in source mode it only supplies the default ref
+          (release/<version>).
+        type: string
+        default: "3.5.0"
+      mode:
+        description: '"installer" (repackage the official installer) or "source" (build with vcpkg).'
+        type: string
+        default: installer
+      openms-repository:
+        description: Repository whose releases (installer mode) or sources (source mode) are used.
+        type: string
+        default: OpenMS/OpenMS
+      openms-ref:
+        description: Branch, tag or SHA to build in source mode. Empty means release/<openms-version>.
+        type: string
+        default: ""
+      topp-tools:
+        description: >-
+          Space-separated TOPP tools to keep, e.g. "FeatureFinderMetabo SiriusExport".
+          Every listed tool must exist. Empty keeps all tools. DLLs and share/ are
+          always kept in full.
+        type: string
+        default: ""
+      artifact-name:
+        description: Name of the uploaded artifact.
+        type: string
+        default: openms-package
+      runs-on:
+        description: Windows runner label.
+        type: string
+        default: windows-2025
+    outputs:
+      artifact-name:
+        description: Name of the uploaded artifact.
+        value: ${{ jobs.openms.outputs.artifact-name }}
+
+jobs:
+  openms:
+    name: OpenMS (${{ inputs.mode }})
+    runs-on: ${{ inputs.runs-on }}
+    # A cold source build compiles the vcpkg dependencies (Arrow, Boost, ...) and
+    # OpenMS itself; installer mode finishes in minutes.
+    timeout-minutes: ${{ inputs.mode == 'source' && 360 || 60 }}
+    permissions:
+      contents: read
+    outputs:
+      artifact-name: ${{ inputs.artifact-name }}
+    env:
+      MODE: ${{ inputs.mode }}
+      OPENMS_VERSION: ${{ inputs.openms-version }}
+      OPENMS_REPOSITORY: ${{ inputs.openms-repository }}
+      TOPP_TOOLS: ${{ inputs.topp-tools }}
+
+    steps:
+    - name: Validate inputs
+      shell: bash
+      run: |
+        case "$MODE" in
+          installer|source) ;;
+          *) echo "::error::mode must be 'installer' or 'source', got '$MODE'"; exit 1 ;;
+        esac
+        if [[ "$MODE" == installer && -z "$OPENMS_VERSION" ]]; then
+          echo "::error::installer mode needs openms-version"; exit 1
+        fi
+
+    ############################################################################
+    # installer mode
+    ############################################################################
+    - name: Download the official installer
+      if: inputs.mode == 'installer'
+      id: download
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        set -euo pipefail
+        # Tag schemes, newest first: v3.6.0 (release.yml pushes v* tags from 3.6
+        # on), release/3.5.0 ... release/3.2.0, Release3.0.0.
+        tag=""
+        for candidate in "v${OPENMS_VERSION}" "release/${OPENMS_VERSION}" "Release${OPENMS_VERSION}"; do
+          if gh release view "$candidate" -R "$OPENMS_REPOSITORY" --json tagName >/dev/null 2>&1; then
+            tag="$candidate"
+            break
+          fi
+        done
+        if [[ -z "$tag" ]]; then
+          echo "::error::No release for OpenMS ${OPENMS_VERSION} in ${OPENMS_REPOSITORY} (tried v${OPENMS_VERSION}, release/${OPENMS_VERSION}, Release${OPENMS_VERSION})"
+          exit 1
+        fi
+
+        # The release carries the installers of every platform; the Windows one is
+        # the only .exe (CPack names it OpenMS-<version>-Win64.exe).
+        mapfile -t exes < <(gh release view "$tag" -R "$OPENMS_REPOSITORY" --json assets -q '.assets[].name' | grep -i '\.exe$' || true)
+        asset=""
+        if [[ ${#exes[@]} -eq 1 ]]; then
+          asset="${exes[0]}"
+        else
+          for e in "${exes[@]}"; do
+            if [[ "$e" =~ [Ww]in(dows)?[-_]?(64|x64|x86_64) ]]; then asset="$e"; break; fi
+          done
+        fi
+        if [[ -z "$asset" ]]; then
+          echo "::error::Could not pick the Windows installer of release '$tag'. .exe assets: ${exes[*]:-none}"
+          exit 1
+        fi
+
+        mkdir -p "$RUNNER_TEMP/installer"
+        gh release download "$tag" -R "$OPENMS_REPOSITORY" --pattern "$asset" --dir "$RUNNER_TEMP/installer" --clobber
+        echo "Release: $tag, asset: $asset"
+        {
+          echo "tag=$tag"
+          echo "asset=$asset"
+          echo "path=$(cygpath -w "$RUNNER_TEMP/installer/$asset")"
+        } >> "$GITHUB_OUTPUT"
+
+    - name: Install silently (7-Zip extraction as fallback)
+      if: inputs.mode == 'installer'
+      shell: pwsh
+      env:
+        INSTALLER: ${{ steps.download.outputs.path }}
+      run: |
+        $ErrorActionPreference = 'Stop'
+        # A short path without spaces: NSIS takes /D= unquoted and as the last argument.
+        $dir = 'C:\OpenMS-install'
+        if (Test-Path $dir) { Remove-Item -Recurse -Force $dir }
+
+        $installed = $false
+        # /allusers is required by the OpenMS installer in silent mode.
+        $p = Start-Process -FilePath $env:INSTALLER -ArgumentList '/S', '/allusers', "/D=$dir" -PassThru
+        if ($p.WaitForExit(15 * 60 * 1000)) {
+          Write-Host "Installer exit code: $($p.ExitCode)"
+          $tools = @(Get-ChildItem -Path "$dir\bin" -Filter *.exe -ErrorAction SilentlyContinue)
+          if ($p.ExitCode -eq 0 -and $tools.Count -gt 0) { $installed = $true }
+        } else {
+          Write-Host "::warning::Silent install did not finish within 15 minutes; killing it."
+          $p | Stop-Process -Force -ErrorAction SilentlyContinue
+        }
+
+        $root = $dir
+        if (-not $installed) {
+          Write-Host "::warning::Silent install failed; extracting the installer with 7-Zip instead."
+          $x = 'C:\OpenMS-extract'
+          if (Test-Path $x) { Remove-Item -Recurse -Force $x }
+          7z x $env:INSTALLER "-o$x" -y | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "7-Zip extraction failed ($LASTEXITCODE)" }
+          # Depending on the 7-Zip version, NSIS $INSTDIR content lands at the top or under '$INSTDIR'.
+          $root = if (Test-Path "$x\`$INSTDIR\bin") { "$x\`$INSTDIR" } else { $x }
+        }
+        if (-not (Test-Path "$root\bin")) { throw "No bin\ directory under $root" }
+        "RAW_ROOT=$root" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+        Get-ChildItem $root | Format-Table -AutoSize | Out-String | Write-Host
+
+    ############################################################################
+    # source mode
+    ############################################################################
+    - name: Resolve the ref
+      if: inputs.mode == 'source'
+      id: ref
+      shell: bash
+      env:
+        OPENMS_REF: ${{ inputs.openms-ref }}
+      run: echo "ref=${OPENMS_REF:-release/${OPENMS_VERSION}}" >> "$GITHUB_OUTPUT"
+
+    # Checked out at the workspace root, as OpenMS's own CI does: vcpkg's build
+    # trees are deep, and Windows paths are limited to 260 characters.
+    - name: Checkout OpenMS
+      if: inputs.mode == 'source'
+      uses: actions/checkout@v4
+      with:
+        repository: ${{ inputs.openms-repository }}
+        ref: ${{ steps.ref.outputs.ref }}
+        persist-credentials: false
+
+    - name: Check for the vcpkg presets
+      if: inputs.mode == 'source'
+      shell: bash
+      env:
+        OPENMS_REF: ${{ steps.ref.outputs.ref }}
+      run: |
+        if ! grep -q '"windows-x64-release"' CMakePresets.json 2>/dev/null || [[ ! -f vcpkg.json ]]; then
+          echo "::error::${OPENMS_REPOSITORY}@${OPENMS_REF} has no vcpkg CMake presets (CMakePresets.json with windows-x64-release, vcpkg.json)."
+          echo "::error::Source mode needs OpenMS 3.6+ or a develop from about 2026-08 on. Rebase the fork, or use installer mode for a released version."
+          exit 1
+        fi
+
+    # Only these two submodules: contrib is what this workflow replaces.
+    - name: Fetch the vcpkg and THIRDPARTY submodules
+      if: inputs.mode == 'source'
+      id: submodules
+      shell: bash
+      run: |
+        set -euo pipefail
+        git submodule update --init --depth 1 THIRDPARTY
+        # vcpkg resolves its baseline from the submodule's git history, so no --depth.
+        git submodule update --init vcpkg
+        echo "vcpkg=$(git rev-parse HEAD:vcpkg)" >> "$GITHUB_OUTPUT"
+
+    - name: Flatten THIRDPARTY for packaging
+      if: inputs.mode == 'source'
+      shell: bash
+      run: |
+        mkdir -p _thirdparty
+        cp -R THIRDPARTY/Windows/x86_64/* _thirdparty/
+        cp -R THIRDPARTY/All/* _thirdparty/
+        ls _thirdparty
+
+    - name: Set up a Visual Studio shell
+      if: inputs.mode == 'source'
+      uses: egor-tensin/vs-shell@v2
+      with:
+        arch: x64
+
+    - name: Install build tools
+      if: inputs.mode == 'source'
+      shell: bash
+      run: |
+        choco install -y --no-progress ninja ccache
+        cmake --version
+        ninja --version
+        ccache --version
+
+    - name: Restore the vcpkg binary cache
+      if: inputs.mode == 'source'
+      id: vcpkg-cache
+      uses: actions/cache/restore@v4
+      with:
+        path: ${{ github.workspace }}/.vcpkg-cache
+        key: openms-win-vcpkg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'vcpkg-overlays/**') }}-${{ steps.submodules.outputs.vcpkg }}
+        # The files provider keys every package by its ABI hash, so an older cache
+        # is safe to start from: whatever still matches is reused.
+        restore-keys: |
+          openms-win-vcpkg-${{ runner.os }}-${{ runner.arch }}-
+
+    - name: Restore the ccache cache
+      if: inputs.mode == 'source'
+      id: ccache-cache
+      uses: actions/cache/restore@v4
+      with:
+        path: ${{ github.workspace }}/.ccache
+        key: openms-win-ccache-${{ inputs.openms-repository }}-${{ steps.ref.outputs.ref }}-${{ github.run_id }}-${{ github.run_attempt }}
+        restore-keys: |
+          openms-win-ccache-${{ inputs.openms-repository }}-${{ steps.ref.outputs.ref }}-
+          openms-win-ccache-${{ inputs.openms-repository }}-
+          openms-win-ccache-
+
+    - name: Configure
+      if: inputs.mode == 'source'
+      id: configure
+      shell: bash
+      run: |
+        set -euxo pipefail
+        mkdir -p "$GITHUB_WORKSPACE/.vcpkg-cache" "$GITHUB_WORKSPACE/.ccache"
+        {
+          echo "VCPKG_BINARY_SOURCES=clear;files,$GITHUB_WORKSPACE/.vcpkg-cache,readwrite"
+          echo "CCACHE_DIR=$GITHUB_WORKSPACE/.ccache"
+          echo "CCACHE_BASEDIR=$GITHUB_WORKSPACE"
+          echo "CCACHE_COMPRESS=true"
+          echo "CCACHE_MAXSIZE=2G"
+        } >> "$GITHUB_ENV"
+        export VCPKG_BINARY_SOURCES="clear;files,$GITHUB_WORKSPACE/.vcpkg-cache,readwrite"
+        export CCACHE_DIR="$GITHUB_WORKSPACE/.ccache" CCACHE_BASEDIR="$GITHUB_WORKSPACE"
+
+        ./vcpkg/bootstrap-vcpkg.bat -disableMetrics
+
+        # A TOPP-only build. The optional dependencies match OpenMS's windows-x64-ci
+        # preset, i.e. what the official installer ships, minus GUI, docs and tests.
+        cmake --preset windows-x64-release \
+          -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+          -DWITH_GUI=OFF \
+          -DENABLE_DOCS=OFF \
+          -DENABLE_TUTORIALS=OFF \
+          -DHAS_XSERVER=OFF \
+          -DPYOPENMS=OFF \
+          -DWITH_HDF5=OFF \
+          -DWITH_ONNX=OFF \
+          -DWITH_WNETALIGN=OFF \
+          -DWITH_THERMO_RAW=ON \
+          -DWITH_OPENTIMS=ON \
+          -DUSE_EXTERNAL_JSON=ON \
+          -DUSE_EXTERNAL_SQLITECPP=ON \
+          -DUSE_EXTERNAL_SIMDE=ON \
+          -DUSE_EXTERNAL_ISOSPEC=ON \
+          -DUSE_EXTERNAL_EOLBSPLINE=ON \
+          "-DVCPKG_MANIFEST_FEATURES=isospec;eol-bspline;simde;nlohmann-json;sqlitecpp;openms-thermo-bridge;opentims" \
+          -DENABLE_CLASS_TESTING=OFF \
+          -DENABLE_TOPP_TESTING=OFF \
+          -DENABLE_PIPELINE_TESTING=OFF
+
+    # Saved as soon as configure (which runs `vcpkg install`) succeeded, so a
+    # failing compile does not throw away hours of dependency builds.
+    - name: Save the vcpkg binary cache
+      if: always() && inputs.mode == 'source' && steps.configure.outcome == 'success' && steps.vcpkg-cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: ${{ github.workspace }}/.vcpkg-cache
+        key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
+
+    - name: Build
+      if: inputs.mode == 'source'
+      id: build
+      shell: bash
+      run: |
+        set -euxo pipefail
+        ccache --zero-stats
+        # Two jobs keep the MSVC compiler within the hosted runner's memory.
+        cmake --build --preset windows-x64-release --parallel 2
+        ccache --show-stats || true
+
+    - name: Save the ccache cache
+      if: always() && inputs.mode == 'source' && steps.build.outcome == 'success'
+      uses: actions/cache/save@v4
+      with:
+        path: ${{ github.workspace }}/.ccache
+        key: ${{ steps.ccache-cache.outputs.cache-primary-key }}
+
+    - name: Package with CPack (ZIP)
+      if: inputs.mode == 'source'
+      shell: bash
+      env:
+        # Names the zip and its top-level folder (cmake/package_nsis.cmake).
+        CPACK_PACKAGE_FILE_NAME: openms-package
+      run: |
+        set -euxo pipefail
+        # Stage in a short directory: CPack's default under the build tree can
+        # exceed MAX_PATH (see OpenMS's release.yml).
+        rm -rf /c/cpk && mkdir -p /c/cpk
+        cmake -S . -B build/windows-x64-release \
+          -DPACKAGE_TYPE=zip \
+          "-DSEARCH_ENGINES_DIRECTORY=$GITHUB_WORKSPACE/_thirdparty" \
+          -DCPACK_PACKAGE_DIRECTORY=C:/cpk
+        cmake --build build/windows-x64-release --target dist
+        rm -rf "$RUNNER_TEMP/cpack-out" && mkdir -p "$RUNNER_TEMP/cpack-out"
+        7z x /c/cpk/openms-package.zip -o"$RUNNER_TEMP/cpack-out" -y > /dev/null
+        echo "RAW_ROOT=$(cygpath -m "$RUNNER_TEMP/cpack-out/openms-package")" >> "$GITHUB_ENV"
+
+    ############################################################################
+    # both modes: repackage, check, smoke test, upload
+    ############################################################################
+    - name: Repackage bin/ and share/
+      shell: bash
+      # Passed through the environment, never expanded into the script: a Git
+      # ref or a release asset name may contain `$(...)` or backticks.
+      env:
+        OPENMS_REF: ${{ steps.ref.outputs.ref }}
+        RELEASE_TAG: ${{ steps.download.outputs.tag }}
+        RELEASE_ASSET: ${{ steps.download.outputs.asset }}
+      run: |
+        set -euo pipefail
+        raw="$(cygpath -u "$RAW_ROOT")"
+        pkg="$RUNNER_TEMP/staging/openms-package"
+        rm -rf "$RUNNER_TEMP/staging" && mkdir -p "$pkg/bin"
+
+        [[ -d "$raw/bin" ]] || { echo "::error::$RAW_ROOT has no bin/"; exit 1; }
+        [[ -d "$raw/share/OpenMS" ]] || { echo "::error::$RAW_ROOT has no share/OpenMS/"; exit 1; }
+
+        cp "$raw"/bin/*.dll "$pkg/bin/"
+        # Qt plugins (e.g. the SQLite driver) where the build ships them.
+        if [[ -d "$raw/bin/plugins" ]]; then cp -R "$raw/bin/plugins" "$pkg/bin/"; fi
+
+        if [[ -n "${TOPP_TOOLS// /}" ]]; then
+          missing=()
+          for tool in $TOPP_TOOLS; do
+            if [[ -f "$raw/bin/$tool.exe" ]]; then cp "$raw/bin/$tool.exe" "$pkg/bin/"; else missing+=("$tool"); fi
+          done
+          if [[ ${#missing[@]} -gt 0 ]]; then
+            echo "::error::TOPP tools not in this OpenMS package: ${missing[*]}"
+            exit 1
+          fi
+        else
+          cp "$raw"/bin/*.exe "$pkg/bin/"
+        fi
+
+        cp -R "$raw/share" "$pkg/share"
+        # HTML documentation is not needed by the tools and only bloats the app installer.
+        rm -rf "$pkg/share/doc"
+
+        # The .bat of the app installer puts every share\OpenMS\THIRDPARTY\* folder on PATH.
+        shopt -s nullglob
+        engines=("$pkg"/share/OpenMS/THIRDPARTY/*/)
+        if [[ ${#engines[@]} -eq 0 ]]; then
+          echo "::error::share/OpenMS/THIRDPARTY is missing or empty; the search engine adapters would not work"
+          exit 1
+        fi
+
+        # The MSVC and OpenMP runtimes. OpenMS packages normally carry them
+        # (InstallRequiredSystemLibraries); if one does not, take the runner's copy
+        # so the app does not depend on a VC++ redistributable on the user's machine.
+        for dll in vcruntime140.dll vcruntime140_1.dll msvcp140.dll msvcp140_1.dll msvcp140_2.dll concrt140.dll vcomp140.dll; do
+          if [[ ! -f "$pkg/bin/$dll" && -f "/c/Windows/System32/$dll" ]]; then
+            cp "/c/Windows/System32/$dll" "$pkg/bin/"
+            echo "::notice::Added $dll from the runner (the OpenMS package did not ship it)"
+          fi
+        done
+
+        n_exe=$(ls "$pkg"/bin/*.exe | wc -l)
+        n_dll=$(ls "$pkg"/bin/*.dll | wc -l)
+        {
+          echo "### OpenMS for Windows ($MODE)"
+          if [[ "$MODE" == installer ]]; then
+            echo "- Source: \`${OPENMS_REPOSITORY}\` release \`${RELEASE_TAG}\`, asset \`${RELEASE_ASSET}\`"
+          else
+            echo "- Source: \`${OPENMS_REPOSITORY}@${OPENMS_REF}\` (\`$(git rev-parse HEAD 2>/dev/null || echo ?)\`)"
+          fi
+          echo "- ${n_exe} TOPP tools, ${n_dll} DLLs"
+          echo "- THIRDPARTY: $(for e in "${engines[@]}"; do basename "$e"; done | tr '\n' ' ')"
+        } >> "$GITHUB_STEP_SUMMARY"
+        cat "$GITHUB_STEP_SUMMARY"
+
+    - name: Smoke-test the TOPP tools
+      shell: bash
+      run: |
+        set -euo pipefail
+        pkg="$RUNNER_TEMP/staging/openms-package"
+        tools="${TOPP_TOOLS// /}"
+        if [[ -n "$tools" ]]; then
+          tools="$TOPP_TOOLS"
+        elif [[ -f "$pkg/bin/FeatureFinderMetabo.exe" ]]; then
+          tools="FeatureFinderMetabo"
+        else
+          tools="$(basename "$(ls "$pkg"/bin/*.exe | head -1)" .exe)"
+        fi
+        export OPENMS_DATA_PATH="$(cygpath -w "$pkg/share/OpenMS")"
+        for tool in $tools; do
+          echo "::group::$tool --help"
+          # A bare system PATH: every DLL must come from the package itself, not
+          # from the install directory or anything else on the runner.
+          if ! PATH="/c/Windows/System32:/c/Windows" "$pkg/bin/$tool.exe" --help; then
+            echo "::endgroup::"
+            echo "::error::$tool --help failed; a DLL is probably missing from bin/"
+            exit 1
+          fi
+          echo "::endgroup::"
+        done
+
+    - name: Zip the package
+      shell: bash
+      run: |
+        set -euo pipefail
+        cd "$RUNNER_TEMP/staging"
+        # build-executable unzips "*.zip" and expects openms-package/{bin,share} inside.
+        7z a -tzip -mx=5 "$RUNNER_TEMP/openms-package.zip" openms-package > /dev/null
+        ls -l "$RUNNER_TEMP/openms-package.zip"
+
+    - name: Upload the package
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ${{ runner.temp }}/openms-package.zip
+        compression-level: 0
+        if-no-files-found: error
