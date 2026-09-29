@@ -25,7 +25,7 @@ for res_file in sorted(out.glob("*/results.json")):
         summary.append(f"- **{name}**: could not start ({r['setupError']})")
         continue
     if r.get("unreachable"):
-        summary.append(f"- **{name}**: not reachable from the check environment ({r.get('url')})")
+        summary.append(f"- **{name}**: not reachable ({r.get('url')}): {r.get('detail') or 'no response'}")
         continue
     bad = [p for p in r["pages"] + r["scenarios"] if p["failures"]]
     warn = [p for p in r["pages"] + r["scenarios"] if p["warnings"] and not p["failures"]]
@@ -35,6 +35,8 @@ for res_file in sorted(out.glob("*/results.json")):
         + (f", {len(warn)} with warnings" if warn else "")
         + (f" (commit {commit[:8]})" if commit else "")
     )
+    if r.get("live"):
+        summary[-1] += "; content sits behind the consent and captcha gate, so this covers loading and navigation only"
     topp = sorted({t for p in r["pages"] for t in p.get("missingTopp", [])})
     if topp:
         summary[-1] += f"; TOPP-dependent pages not exercised (no {', '.join(topp)} in the check environment)"

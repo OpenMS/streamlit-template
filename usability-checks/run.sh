@@ -83,7 +83,8 @@ for app in "${APPS[@]}"; do
     liveout="$OUT/$app-live"; mkdir -p "$liveout"
     code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 "$live/")"
     if [ "$code" = "000" ]; then
-      echo '{"app":"'"$app"' (live)","url":"'"$live"'","unreachable":true,"pages":[],"scenarios":[],"failed":0}' >"$liveout/results.json"
+      detail="$(curl -sS -o /dev/null --max-time 30 "$live/" 2>&1 | head -1 | tr -d '"\\')"
+      echo '{"app":"'"$app"' (live)","url":"'"$live"'","unreachable":true,"detail":"'"$detail"'","pages":[],"scenarios":[],"failed":0}' >"$liveout/results.json"
     else
       node "$HERE/check.mjs" --app "$app (live)" --url "$live" --out "$liveout" --live
     fi

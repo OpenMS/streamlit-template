@@ -9,6 +9,7 @@
 //          [--workspace NAME]... [--example-workflow] [--live]
 import { createRequire } from "node:module";
 import { execSync } from "node:child_process";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -38,7 +39,35 @@ const CONSOLE_IGNORE = /matomo|piwik|googletagmanager|google-analytics|favicon|E
 fs.mkdirSync(path.join(args.out, "screenshots"), { recursive: true });
 const results = { app: args.app, url: args.url, live: !!args.live, started: new Date().toISOString(), pages: [], scenarios: [] };
 
-const browser = await playwright.chromium.launch();
+// In Claude Code cloud sessions HTTPS is re-terminated by an egress proxy whose
+// CAs Chromium does not trust. Trust exactly those CAs (by public key) so live
+// deployments load; every other certificate is still verified as usual.
+function proxyCaSpkis() {
+  const bundle = "/root/.ccr/ca-bundle.crt";
+  if (!fs.existsSync(bundle)) return [];
+  const pems = fs.readFileSync(bundle, "utf8").match(/-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g) || [];
+  const spkis = new Set();
+  for (const pem of pems) {
+    const cert = new crypto.X509Certificate(pem);
+    if (!/Anthropic/.test(cert.subject)) continue;
+    const der = cert.publicKey.export({ type: "spki", format: "der" });
+    spkis.add(crypto.createHash("sha256").update(der).digest("base64"));
+  }
+  return [...spkis];
+}
+const spkis = proxyCaSpkis();
+const browser = await playwright.chromium.launch({
+  args: spkis.length ? [`--ignore-certificate-errors-spki-list=${spkis.join(",")}`] : [],
+});
+
+// Live deployments behind the session's HTTPS proxy go through a local
+// forwarder, because the proxy path the browser takes rejects WebSockets.
+let forwarder = null;
+if (args.live && process.env.HTTPS_PROXY) {
+  const { startForwarder } = await import("./live-forwarder.mjs");
+  forwarder = await startForwarder(args.url, process.env.HTTPS_PROXY);
+  args.url = forwarder.url;
+}
 
 function withWorkspace(url, ws) {
   const u = new URL(url);
@@ -248,6 +277,7 @@ results.pages = results.pages.filter((p) => {
 });
 
 await browser.close();
+forwarder?.close();
 results.finished = new Date().toISOString();
 results.failed = results.pages.filter((p) => p.failures.length).length + results.scenarios.filter((s) => s.failures.length).length;
 fs.writeFileSync(path.join(args.out, "results.json"), JSON.stringify(results, null, 2));
