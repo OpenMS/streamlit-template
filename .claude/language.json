@@ -1,10 +1,7 @@
 {
   "_comment": [
     "The vocabulary a user never reads. One source of truth: the Stop hook",
-    "in .claude/hooks/language_check.py enforces it, and eval/register.py",
-    "reads it rather than keeping its own copy -- a second list is a list",
-    "that drifts, and every rule added to one and not the other reads as",
-    "the two checks disagreeing.",
+    "in .claude/hooks/language_check.py enforces it.",
     "Each entry maps a pattern to what the user should read instead."
   ],
   "case_insensitive": {

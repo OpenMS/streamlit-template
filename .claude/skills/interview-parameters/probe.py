@@ -294,7 +294,7 @@ def main() -> int:
                 if (
                     re_eff > MATERIAL_THRESHOLD
                     and re_eff >= MASKING_RATIO * max(eff, EFFECT_THRESHOLD)
-                    and (best_unmask is None or re_eff > best_unmask[1])
+                    and (best_unmask is None or re_eff > best_unmask[1])  # pylint: disable=unsubscriptable-object
                 ):
                     best_unmask = (other["key"], re_eff)
             if best_unmask:
