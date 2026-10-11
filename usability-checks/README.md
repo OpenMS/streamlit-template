@@ -22,7 +22,14 @@ starts Streamlit and runs `check.mjs`, which:
   pyOpenMS example workflow end to end.
 
 Apps with a `live` URL are also opened at their deployment. Those run in online
-mode behind the captcha, so the live check covers the landing page only.
+mode behind a consent banner and a 5-character image captcha. `check.mjs` reads
+the captcha with `captcha/solve.py`, a small Keras model trained by
+`captcha/train.py` on images from the same `captcha` package the apps use
+(model at `$CAPTCHA_MODEL`, default
+`/mnt/project-files/usability-checks/captcha-solver.keras`; Python at
+`$CAPTCHA_PYTHON`, default `$VENV_DIR/solver/bin/python`, which `run.sh` sets
+up). A wrong answer just draws a new captcha, so it retries up to 8 times.
+Without a model the live check covers loading and navigation only.
 
 The check environment has pyOpenMS but no TOPP binaries, so pages that need a
 TOPP tool report it as a note, not a failure.

@@ -35,8 +35,12 @@ for res_file in sorted(out.glob("*/results.json")):
         + (f", {len(warn)} with warnings" if warn else "")
         + (f" (commit {commit[:8]})" if commit else "")
     )
-    if r.get("live"):
-        summary[-1] += "; content sits behind the consent and captcha gate, so this covers loading and navigation only"
+    cap = r.get("captcha")
+    if cap and cap.get("passed"):
+        summary[-1] += f"; captcha solved in {cap['tries']} {'try' if cap['tries'] == 1 else 'tries'}"
+    elif r.get("live"):
+        why = f" ({cap['reason']})" if cap else ""
+        summary[-1] += f"; captcha gate not passed{why}, so this covers loading and navigation only"
     topp = sorted({t for p in r["pages"] for t in p.get("missingTopp", [])})
     if topp:
         summary[-1] += f"; TOPP-dependent pages not exercised (no {', '.join(topp)} in the check environment)"

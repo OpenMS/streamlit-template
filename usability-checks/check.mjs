@@ -8,7 +8,7 @@
 // usage: node check.mjs --app NAME --url http://localhost:8601 --out DIR
 //          [--workspace NAME]... [--example-workflow] [--live]
 import { createRequire } from "node:module";
-import { execSync } from "node:child_process";
+import { execSync, spawn } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -67,6 +67,79 @@ if (args.live && process.env.HTTPS_PROXY) {
   const { startForwarder } = await import("./live-forwarder.mjs");
   forwarder = await startForwarder(args.url, process.env.HTTPS_PROXY);
   args.url = forwarder.url;
+}
+
+// Online deployments put every session behind a 5-character image captcha
+// (src/common/captcha_.py). captcha/solve.py reads it with a model trained on
+// images from the same `captcha` package; a wrong answer only draws a new one.
+const SOLVER_MODEL = process.env.CAPTCHA_MODEL || "/mnt/project-files/usability-checks/captcha-solver.keras";
+const SOLVER_PYTHON = process.env.CAPTCHA_PYTHON || "/tmp/venvs/solver/bin/python";
+let solver = null;
+function solveCaptcha(b64) {
+  if (!solver) {
+    const here = path.dirname(new URL(import.meta.url).pathname);
+    const proc = spawn(SOLVER_PYTHON, [path.join(here, "captcha", "solve.py"), SOLVER_MODEL], { stdio: ["pipe", "pipe", "inherit"] });
+    const waiting = [];
+    let buf = "";
+    proc.stdout.on("data", (d) => {
+      buf += d;
+      let i;
+      while ((i = buf.indexOf("\n")) >= 0) {
+        waiting.shift()?.(buf.slice(0, i).trim());
+        buf = buf.slice(i + 1);
+      }
+    });
+    proc.on("exit", () => waiting.splice(0).forEach((r) => r(null)));
+    solver = { proc, waiting };
+  }
+  return new Promise((resolve) => {
+    solver.waiting.push(resolve);
+    solver.proc.stdin.write(b64 + "\n");
+  });
+}
+
+// With analytics enabled, a Klaro consent banner (gdpr_consent component,
+// script from cdn.kiprotect.com) comes before the captcha. Decline tracking so
+// the check never shows up in the apps' analytics.
+async function passConsent(page) {
+  const frame = page.frameLocator('iframe[src*="gdpr_consent"]');
+  if (!(await page.locator('iframe[src*="gdpr_consent"]').count())) return null;
+  const decline = frame.locator("button.cm-btn-decline, button:has-text('decline')").first();
+  try {
+    await decline.waitFor({ timeout: 20000 });
+  } catch {
+    return { passed: false, reason: "consent banner stayed empty (its script from cdn.kiprotect.com did not load)" };
+  }
+  await decline.click();
+  await page.waitForTimeout(1000);
+  await waitForIdle(page);
+  return { passed: true };
+}
+
+// Returns null when no captcha was shown, else { passed, tries }.
+async function passCaptcha(page) {
+  const consent = await passConsent(page);
+  if (consent && !consent.passed) return { passed: false, tries: 0, reason: consent.reason };
+  const gate = page.getByText("Make sure you are not a robot", { exact: false });
+  if (!(await gate.count())) return null;
+  if (!fs.existsSync(SOLVER_MODEL) || !fs.existsSync(SOLVER_PYTHON)) return { passed: false, tries: 0, reason: "no captcha solver installed" };
+  for (let tries = 1; tries <= 8; tries++) {
+    const src = await page.locator('[data-testid="stForm"] img').first().getAttribute("src");
+    const b64 = await page.evaluate(async (s) => {
+      const bytes = new Uint8Array(await (await fetch(s)).arrayBuffer());
+      let bin = "";
+      for (const b of bytes) bin += String.fromCharCode(b);
+      return btoa(bin);
+    }, src);
+    const text = await solveCaptcha(b64);
+    if (!text) return { passed: false, tries, reason: "captcha solver exited" };
+    await page.getByLabel("Enter captcha text").fill(text);
+    await page.getByRole("button", { name: "Verify the code" }).click();
+    await page.waitForTimeout(1000);
+    await waitForIdle(page);
+    if (!(await gate.count())) return { passed: true, tries };
+  }
+  return { passed: false, tries: 8, reason: "no correct answer in 8 tries" };
 }
 
 function withWorkspace(url, ws) {
@@ -196,7 +269,14 @@ if (!args.live) passes.push({ ws: args.workspace[0], how: "direct" });
 for (const { ws, how } of passes) {
   const wsLabel = how === "direct" ? "direct link" : !ws ? "fresh" : /demo/.test(ws) ? "demo" : "fresh";
   const { context, page, browserErrors } = await newPage();
-  const home = await visit(page, browserErrors, withWorkspace(args.url, ws), `${slug(wsLabel)}__home`);
+  let home = await visit(page, browserErrors, withWorkspace(args.url, ws), `${slug(wsLabel)}__home`);
+  const captcha = await passCaptcha(page).catch((e) => ({ passed: false, tries: 0, reason: e.message.split("\n")[0] }));
+  if (captcha) {
+    results.captcha = captcha;
+    // Look at the home page again now that it shows its content.
+    if (captcha.passed) home = await visit(page, browserErrors, async () => {}, `${slug(wsLabel)}__home`);
+    else home.warnings.push(`captcha not passed: ${captcha.reason}`);
+  }
   home.workspace = wsLabel;
   home.page = "Home";
   if (how !== "direct") results.pages.push(home);
@@ -277,6 +357,7 @@ results.pages = results.pages.filter((p) => {
 });
 
 await browser.close();
+solver?.proc.stdin.end();
 forwarder?.close();
 results.finished = new Date().toISOString();
 results.failed = results.pages.filter((p) => p.failures.length).length + results.scenarios.filter((s) => s.failures.length).length;

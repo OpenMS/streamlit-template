@@ -27,6 +27,12 @@ fi
 
 cfg() { python3 -c "import json,sys;v=json.load(open('$HERE/apps.json'))['$1'].get('$2');print('' if v is None else ('1' if v is True else v))"; }
 
+# The live deployments' captcha is read by captcha/solve.py (see check.mjs).
+if [ -z "${SKIP_LIVE:-}" ] && [ ! -x "$VENVS/solver/bin/python" ]; then
+  uv venv -q -p 3.11 "$VENVS/solver" >>"$OUT/solver-setup.log" 2>&1 &&
+    UV_HTTP_TIMEOUT=600 VIRTUAL_ENV="$VENVS/solver" uv pip install -q tensorflow-cpu captcha==0.7.1 pillow numpy >>"$OUT/solver-setup.log" 2>&1
+fi
+
 port=8601
 for app in "${APPS[@]}"; do
   repo="$(cfg "$app" repo)"; demo="$(cfg "$app" demo)"; live="$(cfg "$app" live)"; exwf="$(cfg "$app" exampleWorkflow)"
