@@ -22,8 +22,7 @@ names the next tick's edit, which a number never does.
 
 Guidance has no absolute scale, so there is no guidance figure to plot across
 ticks and no way to compare a transcript against one from a distant tick without
-re-judging the pair. The history in `eval/scores.jsonl` records verdicts and
-reasons rather than a guidance score.
+re-judging the pair.
 
 Every tick must retain the previous transcript for each persona, which makes the
 persona transcripts a stored artifact rather than a byproduct, and doubles the
