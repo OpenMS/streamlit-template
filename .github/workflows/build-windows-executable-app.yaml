@@ -342,6 +342,56 @@ jobs:
         Thank you for using ${{ env.APP_NAME }}!
         EOF
         
+    - name: Set up Node.js for the Electron installer
+      uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+        cache: 'npm'
+        cache-dependency-path: electron/package-lock.json
+
+    - name: Build Electron installer
+      # Same payload as the MSI, wrapped in the Electron shell (electron/) as a
+      # per-user NSIS installer that needs no admin rights.
+      run: |
+        Copy-Item -Recurse streamlit_exe electron/payload
+        Remove-Item "electron/payload/${{ env.APP_NAME }}.bat"
+        # electron-builder needs a semver version; take the numeric part of the release tag.
+        $version = "1.0.0"
+        if ("${{ github.event.release.tag_name }}" -match '(\d+)(?:\.(\d+))?(?:\.(\d+))?') {
+          $version = "$($Matches[1]).$(if ($Matches[2]) { $Matches[2] } else { 0 }).$(if ($Matches[3]) { $Matches[3] } else { 0 })"
+        }
+        cd electron
+        npm ci
+        npx electron-builder --win nsis --publish never `
+          "-c.productName=${{ env.APP_NAME }}" `
+          "-c.appId=de.openms.${{ env.APP_NAME }}" `
+          "-c.extraMetadata.productName=${{ env.APP_NAME }}" `
+          "-c.extraMetadata.version=$version" `
+          ('-c.nsis.artifactName=${{ env.APP_NAME }}-Setup.${ext}')
+
+    - name: Smoke test Electron installer
+      # Installs silently, then checks pyOpenMS, every TOPP tool and the
+      # Streamlit server with the shell's environment, and finally launches the
+      # installed app, which exits 0 once the page has created a workspace.
+      run: |
+        Start-Process -FilePath "electron/dist/${{ env.APP_NAME }}-Setup.exe" -ArgumentList "/S" -Wait
+        $inst = Join-Path $env:LOCALAPPDATA "Programs/${{ env.APP_NAME }}"
+        node electron/scripts/smoke-payload.js "$inst/resources/app-payload" @($env:TOPP_TOOLS -split ' ')
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+        $env:OPENMS_APP_SMOKE_TEST = "1"
+        $app = Start-Process -FilePath "$inst/${{ env.APP_NAME }}.exe" -PassThru
+        if (-not $app.WaitForExit(300000)) { Stop-Process -Id $app.Id -Force; throw "Electron app did not finish its smoke test" }
+        $log = Join-Path $env:APPDATA "${{ env.APP_NAME }}/logs/streamlit.log"
+        if (Test-Path $log) { Get-Content $log }
+        if ($app.ExitCode -ne 0) { throw "Electron app smoke test failed with exit code $($app.ExitCode)" }
+
+    - name: Archive Electron installer
+      uses: actions/upload-artifact@v4
+      with:
+        name: OpenMS-App-Electron
+        path: electron/dist/${{ env.APP_NAME }}-Setup.exe
+
     - name: Install WiX Toolset
       run: |
         curl -LO https://github.com/wixtoolset/wix3/releases/download/wix3111rtm/wix311-binaries.zip
@@ -468,5 +518,7 @@ jobs:
       if: github.event_name == 'release'
       uses: softprops/action-gh-release@v2
       with:
-        files: OpenMS-App.zip
+        files: |
+          OpenMS-App.zip
+          electron/dist/${{ env.APP_NAME }}-Setup.exe
         token: ${{ github.token }}
