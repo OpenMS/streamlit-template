@@ -286,7 +286,8 @@ This rule exists because the naive version fails on the hero example. Task 2's
 `absolute_tolerance` moves candidate counts by 0.7% as shipped — because
 `relative_tolerance=0.1` opens a ±169 Da window that swamps it — yet it is the
 most important parameter in the notebook. Inert-in-isolation and genuinely-inert
-are different findings and must not share a recommendation.
+are different findings and must not share a recommendation. Evidence:
+[`eval/baseline-task2.md`](../eval/baseline-task2.md).
 
 Each row resolves to one of: **shown**, **advanced** (`"advanced": True`),
 **hardcoded** (absent from `DEFAULTS`), or **dashboard control** (a display-time
@@ -454,6 +455,79 @@ demonstrably worth doing.
 
 Output lands in a sibling directory (`../eubic-id-app`), cloned from the template,
 so the template checkout stays clean and the result is a real standalone app.
+
+---
+
+## The self-improvement loop
+
+Driven by `/loop` with no interval — ticks cost real compute and pace themselves.
+
+### Each tick
+
+1. Run the corpus headless and score artifacts. A drop stops the tick.
+2. Run the framework end to end under a persona (below), saving the transcript.
+3. Pick the single worst moment in that transcript.
+4. Make **one** skill edit.
+5. Re-run the same persona, saving the new transcript.
+6. Judge the two transcripts blind. One persona is judged per tick by default, so
+   its verdict is the tick's verdict; a tie counts against the edit. Where a tick
+   judges several personas — worth doing for a change that touches every
+   stage — a majority is required, and a split is a revert.
+7. All corpus notebooks above threshold → add a notebook by a different author.
+
+Stop after three consecutive ticks with no commit, and report the plateau rather
+than churning.
+
+### Two measurements, measured differently
+
+**Artifacts** — capture split accepted, golden values reproduced, tests pass, app
+boots, panels built vs. planned, usability gate result, minus human fixes. Scored
+numerically by `eval/run_eval.py`. These are **saturated at 1.00** across the
+current corpus and no longer discriminate between skill edits; they are retained
+as the regression guard, which has already caught one broken harness.
+
+**Guidance** — how well the skill guided its user. Has no absolute scale. Judged
+by `eval/judge.py`, which shuffles the before-edit and after-edit transcripts into
+X and Y, hides the mapping, and asks a judge which guided better and why. The
+reason is as valuable as the verdict: it names the next tick's edit, which a
+number never does.
+
+An absolute rubric was rejected because it varies by roughly ±0.4 on a 5-point
+scale between reruns of an *unchanged* skill — larger than a typical skill edit's
+effect, so a ratchet built on it keeps edits that changed nothing, invisibly. See
+[`adr/0004`](./adr/0004-guidance-is-judged-pairwise.md).
+
+The judge must not be the context that made the edit. Blindness is enforced
+mechanically as far as it can be — separate key file, revealed only on `record` —
+but nothing stops a judge opening it, so this is finally a discipline.
+
+### Personas
+
+Auto-accept alone would only ever measure code generation — the interviews and
+design rounds, which are the product, would go unmeasured. So ticks rotate a
+persona:
+
+| persona | behaviour | measures |
+|---|---|---|
+| `auto` | takes every recommendation and first suggestion | baseline generation quality |
+| `sceptic` | rejects the first split, demands a redo | does it re-derive or repeat itself? |
+| `novice` | asks what a term means | does it explain, or restate the question? |
+| `expert` | wants the full algorithm surface exposed | does it degrade gracefully? |
+| `minimal` | wants two parameters, everything else hidden | does it respect a hard constraint? |
+| `designer` | rejects all three suggestions, always uses the free field | are the axes real, or only its own ideas handled? |
+
+`designer` exists because the design round is the newest mechanism in the
+framework and the free field is the part most likely to be handled badly.
+
+### Corpus
+
+Starts at EuBIC Task 1, Task 2, Task 3. Grows when all members clear threshold —
+the guard against tuning the skills into three notebooks by one author.
+
+### Artifacts
+
+`eval/scores.jsonl` holds one row per tick; `eval/tick-NNN/` holds that tick's
+screenshots, transcripts and diff.
 
 ---
 

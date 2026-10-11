@@ -942,6 +942,11 @@ assert_doc_links_resolve() {
         if [ "$_ci_sibling" -eq 1 ]; then
             continue
         fi
+        # Design docs cite files that are deliberately kept out of the
+        # repository (eval/ is gitignored); those are not broken links.
+        if git check-ignore -q --no-index "$_ci_ref" 2>/dev/null; then
+            continue
+        fi
         _ci_dangling="$_ci_dangling $_ci_ref"
     done
 
