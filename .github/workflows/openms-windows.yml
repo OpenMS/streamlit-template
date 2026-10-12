@@ -1,27 +1,7 @@
-# Reusable workflow: OpenMS TOPP tools for Windows, packaged for a web app installer.
-#
-# Produces the artifact that the `build-executable` job of
-# build-windows-executable-app.yaml consumes: a single zip whose top level is
-#
-#   openms-package/bin/    TOPP tool .exe files and every DLL they need
-#   openms-package/share/  share/OpenMS, including share/OpenMS/THIRDPARTY/<engine>
-#
-# Two ways to get there:
-#
-#   mode: installer (default)
-#     Takes the official Windows installer attached to the OpenMS GitHub release
-#     of `openms-version`, installs it silently and repackages bin/ and share/.
-#     No compiler, no contrib. The official installers are tested upstream, so no
-#     OpenMS tests run here -- only a `--help` smoke test of the kept tools.
-#
-#   mode: source
-#     Builds `openms-repository`@`openms-ref` with the vcpkg CMake presets
-#     (`windows-x64-release`) and packages it with CPack's ZIP generator. Needs
-#     OpenMS sources that carry the vcpkg presets: OpenMS 3.6 and later, and
-#     develop from about 2026-08 on. A fork of an older develop must rebase first.
-#     vcpkg binaries and ccache are cached, but a cold build takes hours.
-#
-# Usage from an app repository: see docs/openms-windows-workflow.md.
+# Reusable workflow: OpenMS TOPP tools for Windows, uploaded as the artifact that
+# build-executable consumes (a zip of openms-package/{bin,share}).
+# `installer` repackages the official release installer; `source` builds
+# openms-ref with the vcpkg presets (a cold build takes hours).
 
 name: OpenMS for Windows
 

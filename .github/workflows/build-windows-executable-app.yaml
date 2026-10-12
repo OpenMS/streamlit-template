@@ -32,10 +32,9 @@ jobs:
     - id: out
       run: echo "topp-tools=$TOPP_TOOLS" >> "$GITHUB_OUTPUT"
 
-  # OpenMS TOPP tools, DLLs and share/ from the official Windows installer.
-  # See docs/openms-windows-workflow.md for the inputs, including `mode: source`
-  # for building a branch or fork. App repositories call the same workflow as
-  # OpenMS/streamlit-template/.github/workflows/openms-windows.yml@<ref>.
+  # OpenMS TOPP tools, DLLs and share/ from the official Windows installer
+  # (`mode: source` builds a branch or fork instead). App repositories call the
+  # same workflow as OpenMS/streamlit-template/.github/workflows/openms-windows.yml@<ref>.
   build-openms:
     needs: config
     uses: ./.github/workflows/openms-windows.yml
