@@ -14,7 +14,9 @@ st.title("View raw MS data")
 cols = st.columns(3)
 
 mzML_dir = Path(st.session_state.workspace, "mzML-files")
-file_options = [f.name for f in mzML_dir.iterdir() if "external_files.txt" not in f.name]
+# Only mzML files: the directory also holds external_files.txt and, in the
+# shipped demo workspaces, a .gitkeep that pyOpenMS cannot parse.
+file_options = [f.name for f in mzML_dir.iterdir() if f.suffix.lower() == ".mzml"]
 
 # Check if local files are available
 external_files = Path(mzML_dir, "external_files.txt")
