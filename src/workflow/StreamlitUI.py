@@ -5,6 +5,7 @@ import shutil
 import subprocess
 from typing import Any, Union, List, Literal, Callable
 import json
+import math
 import os
 import sys
 import importlib.util
@@ -105,11 +106,14 @@ class StreamlitUI:
             name = key.replace("-", " ")
 
         c1, c2 = st.columns(2)
-        c1.markdown("**Upload file(s)**")
 
         mount_root = _mounted_data_root() if st.session_state.location == "online" else None
 
         if st.session_state.location == "local":
+            # A local install reads files straight from disk, so the browser
+            # upload widget (which streams every byte through the browser) is
+            # not offered. Files are picked from disk and copied or referenced.
+            c1.markdown("**Add file(s) from your computer**")
             c2_text, c2_checkbox = c2.columns([1.5, 1], gap="large")
             c2_text.markdown("**OR add files from local folder**")
             use_copy = c2_checkbox.checkbox(
@@ -119,20 +123,21 @@ class StreamlitUI:
                 help="Create a copy of files in workspace.",
             )
         else:
+            c1.markdown("**Upload file(s)**")
             use_copy = True
 
         # Convert file_types to a list if it's a string
         if isinstance(file_types, str):
             file_types = [file_types]
 
-        if use_copy:
+        if st.session_state.location != "local":
             with c1.form(f"{key}-upload", clear_on_submit=True):
                 # Streamlit file uploader accepts file types as a list or None
                 file_type_for_uploader = file_types if file_types else None
 
                 files = st.file_uploader(
                     f"{name}",
-                    accept_multiple_files=(st.session_state.location == "local"),
+                    accept_multiple_files=False,
                     type=file_type_for_uploader,
                     label_visibility="collapsed",
                 )
@@ -154,29 +159,20 @@ class StreamlitUI:
                     else:
                         st.error("Nothing to add, please upload file.")
         else:
-            # Create a temporary file to store the path to the local directories
             external_files = Path(files_dir, "external_files.txt")
-            # Check if the file exists, if not create it
-            if not external_files.exists():
-                external_files.touch()
             c1.write("\n")
             with c1.container(border=True):
                 dialog_button = st.button(
                     rf"$\textsf{{\Large 📁 Add }} \textsf{{ \Large \textbf{{{name}}} }}$",
                     type="primary",
                     use_container_width=True,
-                    key="local_browse_single",
+                    key=f"local_browse_single_{key}",
                     help="Browse for your local MS data files.",
                     disabled=not TK_AVAILABLE,
                 )
 
                 # Tk file dialog requires file types to be a list of tuples
-                if isinstance(file_types, str):
-                    tk_file_types = [(f"{file_types}", f"*.{file_types}")]
-                elif isinstance(file_types, list):
-                    tk_file_types = [(f"{ft}", f"*.{ft}") for ft in file_types]
-                else:
-                    raise ValueError("'file_types' must be either of type str or list")
+                tk_file_types = [(f"{ft}", f"*.{ft}") for ft in file_types]
 
                 if dialog_button:
                     local_files = tk_file_dialog(
@@ -187,8 +183,19 @@ class StreamlitUI:
                     if local_files:
                         my_bar = st.progress(0)
                         for i, f in enumerate(local_files):
-                            with open(external_files, "a") as f_handle:
-                                f_handle.write(f"{f}\n")
+                            my_bar.progress((i + 1) / len(local_files))
+                            if use_copy:
+                                if os.path.isdir(f):
+                                    shutil.copytree(
+                                        f,
+                                        Path(files_dir, Path(f).name),
+                                        dirs_exist_ok=True,
+                                    )
+                                else:
+                                    shutil.copy(f, Path(files_dir, Path(f).name))
+                            else:
+                                with open(external_files, "a") as f_handle:
+                                    f_handle.write(f"{f}\n")
                         my_bar.empty()
                         st.success("Successfully added files!")
 
@@ -706,7 +713,9 @@ class StreamlitUI:
                 min_value=min_value,
                 max_value=max_value,
                 step=step_size,
-                format=None,
+                # "%g" keeps every decimal the user types; Streamlit's float
+                # default "%0.2f" rounds to two.
+                format="%g" if number_type is float else None,
                 key=key,
                 help=help,
                 on_change=on_change,
@@ -1237,10 +1246,21 @@ class StreamlitUI:
 
                     # floats
                     elif isinstance(p["value"], float):
+                        value = float(p["value"])
+                        # Streamlit's default "%0.2f" rounds what the user
+                        # types to two decimals, which makes tolerances such as
+                        # 0.015 Da impossible to enter. "%g" shows the value as
+                        # typed, and small defaults step in their own decade.
+                        step = (
+                            10.0 ** math.floor(math.log10(abs(value)))
+                            if 0 < abs(value) < 1
+                            else 1.0
+                        )
                         cols[i].number_input(
                             name,
-                            value=float(p["value"]),
-                            step=1.0,
+                            value=value,
+                            step=step,
+                            format="%g",
                             help=p["description"],
                             key=key,
                         )
