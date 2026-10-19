@@ -28,6 +28,7 @@ def launch(request):
         "content/topp_workflow_parameter.py",
         "content/topp_workflow_execution.py",
         "content/topp_workflow_results.py",
+        "content/topp_workflow_download.py",
         "content/file_upload.py",
         "content/raw_data_viewer.py",
         "content/run_example_workflow.py",

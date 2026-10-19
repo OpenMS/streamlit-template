@@ -258,6 +258,14 @@ class WorkflowManager:
         """
         self.ui.results_section(self.results)
 
+    def show_results_download_section(self, exclude: list[str] | None = None) -> None:
+        """
+        Shows a page offering every file in the workflow's results directory for
+        download, singly or as a ZIP. Pass ``exclude`` to hide folders or files
+        that are not results, such as visualization caches.
+        """
+        self.ui.results_download_section(exclude=exclude)
+
     def upload(self) -> None:
         """
         Add your file upload widgets here

@@ -25,6 +25,7 @@ if __name__ == '__main__':
             st.Page(Path("content", "topp_workflow_parameter.py"), title="Configure", icon="⚙️"),
             st.Page(Path("content", "topp_workflow_execution.py"), title="Run", icon="🚀"),
             st.Page(Path("content", "topp_workflow_results.py"), title="Results", icon="📊"),
+            st.Page(Path("content", "topp_workflow_download.py"), title="Download", icon="⬇️"),
         ],
         "pyOpenMS Workflow" : [
             st.Page(Path("content", "file_upload.py"), title="File Upload", icon="📂"),
