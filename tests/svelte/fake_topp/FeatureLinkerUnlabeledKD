@@ -1,0 +1,2 @@
+#!/bin/sh
+exec "${PYTHON:-python3}" "$(dirname "$0")/fake_topp.py" FeatureLinkerUnlabeledKD "$@"

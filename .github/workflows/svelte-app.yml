@@ -1,0 +1,39 @@
+name: svelte-app
+
+on:
+  push:
+    paths: ["frontend/**", "server/**", "src/**", "tests/svelte/**", "requirements*.txt", ".github/workflows/svelte-app.yml"]
+  pull_request:
+    paths: ["frontend/**", "server/**", "src/**", "tests/svelte/**", "requirements*.txt", ".github/workflows/svelte-app.yml"]
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-node@v4
+      with:
+        node-version: "22"
+        cache: npm
+        cache-dependency-path: frontend/package-lock.json
+    - run: npm ci
+    - run: npm run check
+    - run: npm run build
+
+  server:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v4
+      with:
+        python-version: "3.10"
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements-svelte.txt pytest
+    - name: Test
+      # TOPP tools are replaced by the pyOpenMS stand-ins in tests/svelte/fake_topp
+      run: python -m pytest tests/svelte -v

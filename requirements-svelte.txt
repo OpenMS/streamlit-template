@@ -1,0 +1,7 @@
+# The Svelte app's local server (python -m server), on top of the template's requirements
+-r requirements.txt
+fastapi
+uvicorn
+python-multipart
+# tests/svelte
+httpx
