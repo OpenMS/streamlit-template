@@ -1,6 +1,6 @@
 <script lang="ts">
   // content/peptide_mz_calculator.py
-  import { api } from "../lib/api";
+  import { engine } from "../lib/engine/client";
   import StaticTable from "../lib/components/StaticTable.svelte";
 
   let sequence = $state("PEPTIDE");
@@ -15,7 +15,7 @@
   async function calc() {
     busy = true;
     try {
-      result = await api.post("/tools/mz", { sequence, min_charge: minCharge, max_charge: maxCharge });
+      result = await engine.call("toolbox.peptideMz", sequence, minCharge, maxCharge);
       error = "";
     } catch (e: any) {
       error = e.message;
@@ -51,7 +51,7 @@
   </div>
   {#if error}<div class="alert alert-error">{error}</div>{/if}
   {#if result}
-    {@const first = Object.values(result.charge_results)[0] as any}
+    {@const first = result as any}
     <div class="grid gap-3 sm:grid-cols-3">
       <div class="card"><div class="text-sm muted">Monoisotopic mass</div><div class="text-xl font-semibold">{first.monoisotopic_mass.toFixed(6)} Da</div></div>
       <div class="card"><div class="text-sm muted">Molecular formula</div><div class="text-xl font-semibold">{first.molecular_formula}</div></div>

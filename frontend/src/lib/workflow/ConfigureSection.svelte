@@ -1,18 +1,21 @@
 <script lang="ts">
   // StreamlitUI.parameter_section: advanced toggle, threads, presets, the
   // workflow's configure items, and parameter reset/export/import.
-  import { api, download, enc, saveText } from "../api";
-  import { app, toast, toastError } from "../state.svelte";
+  import * as WF from "../backend/workflow";
+  import { saveBlob, saveText } from "../backend/files";
+  import { engine } from "../engine/client";
+  import { app, store, toast, toastError } from "../state.svelte";
   import ConfigItems from "./ConfigItems.svelte";
+  import type { Tool, WorkflowSpec } from "./spec";
 
-  let { slug, spec }: { slug: string; spec: any } = $props();
+  let { ws, spec }: { ws: string; spec: WorkflowSpec } = $props();
 
-  const base = $derived(`/ws/${enc(app.workspace)}/wf/${slug}`);
-  let cfg = $state<any>(null);
+  let cfg = $state<Awaited<ReturnType<typeof WF.configure>> | null>(null);
   let values = $state<Record<string, any>>({});
   let error = $state("");
   let advanced = $state(localStorage.getItem("advanced-params") === "true");
   let importInput = $state<HTMLInputElement>();
+  const presets = $derived(WF.presetList(spec));
 
   $effect(() => {
     try {
@@ -22,18 +25,8 @@
 
   async function load() {
     try {
-      cfg = await api.get(`${base}/configure`);
-      const v: Record<string, any> = { ...cfg.values, max_threads: cfg.max_threads };
-      // seed widget values that are not stored yet with their defaults
-      const seed = (items: any[]) => {
-        for (const it of items) {
-          if (it.type === "tab") seed(it.items);
-          else if ((it.type === "widget" || it.type === "select-files") && !(it.key in v)) v[it.key] = it.state.value;
-          else if (it.type === "python") for (const p of it.schema.params) if (!(p.key in v)) v[p.key] = p.value;
-        }
-      };
-      seed(cfg.items);
-      values = v;
+      cfg = await WF.configure(store, ws, spec);
+      values = { ...cfg.values, max_threads: cfg.max_threads };
       error = "";
     } catch (e: any) {
       error = e.message;
@@ -44,15 +37,15 @@
   async function setValue(key: string, v: any) {
     values[key] = v;
     try {
-      await api.put(`${base}/params`, { values: { [key]: v } });
+      await WF.saveParams(store, ws, spec, { [key]: v });
     } catch (e) {
       toastError(e);
     }
   }
 
-  async function setTopp(item: any, key: string, v: any) {
+  async function setTool(item: Tool & { schema: WF.ToolSchema }, key: string, v: any) {
     try {
-      item.schema = await api.put(`${base}/topp/${enc(item.tool_instance_name || item.tool)}`, { values: { [key]: v } });
+      item.schema = await WF.saveTool(store, ws, spec, item, { [key]: v });
     } catch (e) {
       toastError(e);
     }
@@ -60,7 +53,7 @@
 
   async function preset(name: string) {
     try {
-      await api.post(`${base}/presets/${enc(name)}`);
+      await WF.applyPreset(store, ws, spec, name);
       await load();
       toast(`Applied preset: ${name}`);
     } catch (e) {
@@ -71,9 +64,17 @@
   async function reset() {
     if (!confirm("Reset all parameters of this workflow to their defaults?")) return;
     try {
-      const r = await api.post(`${base}/params/reset`);
+      const backup = await WF.resetParams(store, ws, spec);
       await load();
-      toast(r.backup ? `Parameters reset to defaults, previous file kept as ${r.backup}` : "Parameters reset to defaults");
+      toast(backup ? `Parameters reset to defaults, previous file kept as ${backup}` : "Parameters reset to defaults");
+    } catch (e) {
+      toastError(e);
+    }
+  }
+
+  async function exportParams() {
+    try {
+      saveBlob(await WF.exportParams(store, ws, spec), "parameters.json");
     } catch (e) {
       toastError(e);
     }
@@ -81,7 +82,8 @@
 
   async function methodSummary() {
     try {
-      saveText(await api.get<string>(`${base}/method-summary`), "method-summary.md", "text/markdown");
+      const version = await engine.call("openms.version").catch(() => "");
+      saveText(await WF.methodSummary(store, ws, spec, version), "method-summary.md", "text/markdown");
     } catch (e) {
       toastError(e);
     }
@@ -91,7 +93,7 @@
     const f = importInput?.files?.[0];
     if (!f) return;
     try {
-      await api.upload(`${base}/params/import`, [f], "file");
+      await WF.importParams(store, ws, spec, f);
       await load();
       toast("Parameters imported");
     } catch (e) {
@@ -105,7 +107,7 @@
 {#if error}
   <div class="alert alert-error">
     {error}
-    {#if error.includes("reset")}<button class="btn btn-danger ml-2" onclick={reset}>⚠️ Reset parameters to defaults</button>{/if}
+    {#if error.includes("default parameters")}<button class="btn btn-danger ml-2" onclick={reset}>⚠️ Reset parameters to defaults</button>{/if}
   </div>
 {:else if !cfg}
   <p class="muted">Loading parameters…</p>
@@ -116,7 +118,7 @@
         <input type="checkbox" role="switch" bind:checked={advanced} /> Show advanced parameters
       </label>
       <label class="w-40">
-        <span class="label" title="Maximum threads for parallel processing. Threads are distributed between parallel commands and per-tool thread allocation.">Threads</span>
+        <span class="label" title="Threads OpenMS uses for a run (needs a cross-origin isolated page).">Threads</span>
         <input
           class="input"
           type="number"
@@ -131,23 +133,23 @@
       </label>
     </div>
 
-    {#if spec.presets.length}
+    {#if presets.length}
       <div>
         <div class="font-semibold">Parameter presets</div>
         <div class="mb-2 text-sm muted">Click a preset to apply optimized parameters.</div>
         <div class="flex flex-wrap gap-2">
-          {#each spec.presets as p}
+          {#each presets as p}
             <button class="btn" title={p.description} onclick={() => preset(p.name)}>{p.name}</button>
           {/each}
         </div>
       </div>
     {/if}
 
-    <ConfigItems items={cfg.items} {values} {advanced} {setValue} {setTopp} />
+    <ConfigItems items={cfg.items} {values} {advanced} {setValue} {setTool} />
 
     <div class="flex flex-wrap gap-2 border-t pt-4" style="border-color: var(--border)">
       <button class="btn btn-danger" onclick={reset}>⚠️ Load default parameters</button>
-      <button class="btn" onclick={() => download(`${base}/params/export`)}>⬇️ Export parameters</button>
+      <button class="btn" onclick={exportParams}>⬇️ Export parameters</button>
       <button class="btn" onclick={methodSummary}>📑 Method summary</button>
       <button class="btn" onclick={() => importInput?.click()}>⬆️ Import parameters</button>
       <input bind:this={importInput} type="file" accept=".json" class="hidden" onchange={importParams} />

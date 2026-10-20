@@ -1,16 +1,15 @@
 <script lang="ts">
   // content/isotope_pattern_generator.py
-  import { api } from "../lib/api";
+  import { engine } from "../lib/engine/client";
   import Plot from "../lib/components/Plot.svelte";
   import StaticTable from "../lib/components/StaticTable.svelte";
 
   const METHODS = [
     { id: "formula", label: "Elemental formula", placeholder: "C6H12O6", example: "C100H150N26O30S" },
     { id: "peptide", label: "Peptide / protein sequence", placeholder: "PEPTIDE", example: "PEPTIDEK" },
-    { id: "oligonucleotide", label: "Oligonucleotide sequence", placeholder: "ACGU", example: "AUGCAUGC" },
     { id: "mass", label: "Mass (averagine)", placeholder: "1500", example: "2500" },
   ];
-  let method = $state("formula");
+  let method = $state<"formula" | "peptide" | "mass">("formula");
   let value = $state("C100H150N26O30S");
   let fine = $state(false);
   let result = $state<any>(null);
@@ -23,7 +22,7 @@
 
   async function run() {
     try {
-      result = await api.post("/tools/isotope", { method, value, fine });
+      result = await engine.call("toolbox.isotopePattern", { method, value, fine });
       error = "";
     } catch (e: any) {
       error = e.message;
@@ -35,7 +34,7 @@
 <div class="flex max-w-5xl flex-col gap-4">
   <div>
     <h1 class="h1">📶 Isotopic Pattern Calculator</h1>
-    <p class="muted">Isotopic distributions from a formula, a sequence or a mass, computed with pyOpenMS.</p>
+    <p class="muted">Isotopic distributions from a formula, a sequence or a mass, computed with OpenMS.</p>
   </div>
   <div class="card grid gap-3 md:grid-cols-[14rem_1fr_auto_auto] md:items-end">
     <label><span class="label">Input method</span>

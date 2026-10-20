@@ -2,9 +2,9 @@ name: svelte-app
 
 on:
   push:
-    paths: ["frontend/**", "server/**", "src/**", "tests/svelte/**", "requirements*.txt", ".github/workflows/svelte-app.yml"]
+    paths: ["frontend/**", "share-server/**", "settings.json", "presets.json", "default-parameters.json", "docs/**", "example-data/**", ".github/workflows/svelte-app.yml"]
   pull_request:
-    paths: ["frontend/**", "server/**", "src/**", "tests/svelte/**", "requirements*.txt", ".github/workflows/svelte-app.yml"]
+    paths: ["frontend/**", "share-server/**", "settings.json", "presets.json", "default-parameters.json", "docs/**", "example-data/**", ".github/workflows/svelte-app.yml"]
 
 jobs:
   frontend:
@@ -19,22 +19,12 @@ jobs:
         node-version: "22"
         cache: npm
         cache-dependency-path: frontend/package-lock.json
+    # postinstall fetches the pinned OpenMS WebAssembly package (checksummed)
     - run: npm ci
     - run: npm run check
+    # the engine, workflow framework and example workflow on the WebAssembly module, in Node
+    - run: npm test
     - run: npm run build
-
-  server:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-python@v4
-      with:
-        python-version: "3.10"
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        # openms-insight is optional for the app; installed here to test hosting it
-        pip install -r requirements-svelte.txt pytest openms-insight
-    - name: Test
-      # TOPP tools are replaced by the pyOpenMS stand-ins in tests/svelte/fake_topp
-      run: python -m pytest tests/svelte -v
+    - name: Share service starts
+      working-directory: share-server
+      run: python3 share.py --help > /dev/null

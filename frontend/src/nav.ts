@@ -48,7 +48,7 @@ export function sections(appName: string): Section[] {
       ],
     },
     {
-      title: "pyOpenMS Toolbox",
+      title: "OpenMS Toolbox",
       pages: [
         { route: "digest", title: "In Silico Digest", icon: "✂️", component: Digest },
         { route: "mz-calculator", title: "m/z Calculator", icon: "⚖️", component: MzCalculator },
@@ -58,7 +58,7 @@ export function sections(appName: string): Section[] {
     },
     { title: "TOPP Workflow Framework", pages: workflowPages("topp-workflow") },
     {
-      title: "pyOpenMS Workflow",
+      title: "OpenMS Workflow",
       pages: [
         { route: "mzml/upload", title: "File Upload", icon: "📂", component: MzmlUpload },
         { route: "mzml/view", title: "View MS data", icon: "👀", component: MzmlViewer },
@@ -70,7 +70,7 @@ export function sections(appName: string): Section[] {
       title: "Others Topics",
       pages: [
         { route: "simple-workflow", title: "Simple Workflow", icon: "⚙️", component: SimpleWorkflow },
-        { route: "run-subprocess", title: "Run Subprocess", icon: "🖥️", component: RunSubprocess },
+        { route: "run-subprocess", title: "Run in the Background", icon: "🖥️", component: RunSubprocess },
       ],
     },
   ];

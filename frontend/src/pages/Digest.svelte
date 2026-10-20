@@ -1,6 +1,6 @@
 <script lang="ts">
-  // content/digest.py: in silico protein digest with pyOpenMS ProteaseDigestion.
-  import { api } from "../lib/api";
+  // content/digest.py: in silico protein digest with OpenMS ProteaseDigestion.
+  import { engine } from "../lib/engine/client";
   import StaticTable from "../lib/components/StaticTable.svelte";
 
   const EXAMPLE = `>sp|P02769|ALBU_BOVIN Albumin OS=Bos taurus OX=9913 GN=ALB PE=1 SV=4
@@ -17,12 +17,12 @@ MKWVTFISLLLLFSSAYSRGVFRRDTHKSEIAHRFKDLGEEHFKGLVLIAFSQYLQQCPFDEHVKLVNELTEFAKTCVAD
   let error = $state("");
   let busy = $state(false);
 
-  api.get<string[]>("/tools/enzymes").then((e) => (enzymes = e)).catch((e) => (error = e.message));
+  engine.call("toolbox.enzymes").then((e) => (enzymes = e)).catch((e) => (error = e.message));
 
   async function run() {
     busy = true;
     try {
-      result = await api.post("/tools/digest", { fasta, enzyme, missed_cleavages: missed, max_charges: maxCharges, min_length: minLen, max_length: maxLen });
+      result = await engine.call("toolbox.digest", { fasta, enzyme, missed_cleavages: missed, max_charges: maxCharges, min_length: minLen, max_length: maxLen });
       error = "";
     } catch (e: any) {
       error = e.message;

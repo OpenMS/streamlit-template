@@ -1,8 +1,9 @@
 <script lang="ts">
   // The workflow's results page: one registered component per ResultView.
   import { resultComponents } from "../results/registry";
+  import type { WorkflowSpec } from "./spec";
 
-  let { slug, spec }: { slug: string; spec: any } = $props();
+  let { workflowDir, spec }: { workflowDir: string; spec: WorkflowSpec } = $props();
 </script>
 
 <div class="flex flex-col gap-6">
@@ -11,7 +12,7 @@
     <section>
       {#if view.title}<h2 class="h2">{view.title}</h2>{/if}
       {#if Comp}
-        <Comp {slug} {...view.props} />
+        <Comp {workflowDir} {...view.props} />
       {:else}
         <div class="alert alert-error">No result component named "{view.component}" in frontend/src/lib/results/registry.ts.</div>
       {/if}

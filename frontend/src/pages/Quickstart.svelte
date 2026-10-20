@@ -16,10 +16,11 @@
 <div class="flex max-w-4xl flex-col gap-6">
   <div>
     <h1 class="h1">👋 Quick Start</h1>
-    <p class="text-lg">Mass spectrometry analysis, as web apps that run on your own computer.</p>
+    <p class="text-lg">Mass spectrometry analysis, as web apps that run in your browser, on your own computer.</p>
     <p class="text-sm muted">
       {app.settings?.app_name}: the Svelte edition of the OpenMS WebApp template, the template behind FLASHApp, Umetaflow and OpenDDA. Everything here
-      runs locally: the processing is done by OpenMS TOPP tools and pyOpenMS on this machine, and your data never leaves it.
+      runs locally: OpenMS itself runs in this browser as WebAssembly, your files are kept in the browser's storage on this machine, and nothing is
+      uploaded unless you click "Share workspace".
     </p>
   </div>
 
@@ -36,11 +37,11 @@
   <section>
     <h2 class="h2">⭐ Features</h2>
     <ul class="list-disc pl-6 text-sm leading-relaxed">
-      <li>Simple workflows with <b>pyOpenMS</b></li>
-      <li>Complex workflows built from <b>OpenMS TOPP tools</b>, with parallel execution</li>
-      <li>Workspaces holding input files, parameters and results, shared with the Streamlit app</li>
+      <li>Simple workflows on <b>OpenMS</b>, compiled to WebAssembly</li>
+      <li>Complex workflows built from <b>OpenMS tools</b>, run in a background worker with OpenMS threads</li>
+      <li>Workspaces holding input files, parameters and results, in the layout of the Streamlit app, exported and imported as ZIP</li>
       <li>Persistent parameters, presets, and parameter import and export</li>
-      <li>A local server bound to this computer only; no account, upload or internet connection needed</li>
+      <li>No server, account or internet connection needed once loaded; sharing a workspace is one optional click</li>
     </ul>
   </section>
 
@@ -55,17 +56,17 @@
   <section>
     <h2 class="h2">Example pages</h2>
     <h3 class="font-semibold">1. 🚀 TOPP Workflow Framework</h3>
-    <p class="text-sm">A standard four-step interface: <b>File Upload</b>, <b>Configure</b> (widgets for every TOPP tool parameter, generated from its .ini), <b>Run</b> (start, stop, live log) and <b>Results</b>.</p>
+    <p class="text-sm">A standard four-step interface: <b>File Upload</b>, <b>Configure</b> (widgets for every tool parameter, generated from the OpenMS algorithm defaults), <b>Run</b> (start, stop, live log) and <b>Results</b>.</p>
     <div class="my-2 flex flex-wrap gap-2">
       <button class="btn" onclick={() => navigate("topp-workflow/upload")}>➡️ Play with the example workflow</button>
     </div>
-    <h3 class="mt-3 font-semibold">2. 🐍 Custom workflows with pyOpenMS</h3>
+    <h3 class="mt-3 font-semibold">2. 🐍 Custom workflows with OpenMS</h3>
     <div class="my-2 flex flex-wrap gap-2">
       <button class="btn" onclick={() => navigate("mzml/upload")}>➡️ Upload mzML files</button>
       <button class="btn" onclick={() => navigate("mzml/view")}>➡️ View MS data</button>
       <button class="btn" onclick={() => navigate("mzml/workflow")}>➡️ Run a small workflow</button>
     </div>
-    <h3 class="mt-3 font-semibold">3. 🧰 pyOpenMS toolbox</h3>
+    <h3 class="mt-3 font-semibold">3. 🧰 OpenMS toolbox</h3>
     <div class="my-2 flex flex-wrap gap-2">
       <button class="btn" onclick={() => navigate("digest")}>✂️ In silico digest</button>
       <button class="btn" onclick={() => navigate("mz-calculator")}>⚖️ m/z calculator</button>

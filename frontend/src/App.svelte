@@ -1,14 +1,17 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { app, loadSettings, navigate, toasts } from "./lib/state.svelte";
+  import { app, init, navigate, toasts } from "./lib/state.svelte";
   import { sections } from "./nav";
   import Sidebar from "./lib/components/Sidebar.svelte";
 
   let error = $state("");
+  let ready = $state(false);
   let menuOpen = $state(false);
 
   onMount(() => {
-    loadSettings().catch((e) => (error = `Cannot reach the local server: ${e.message}`));
+    init()
+      .then(() => (ready = true))
+      .catch((e) => (error = `The app could not start: ${e.message}`));
   });
 
   const nav = $derived(sections(app.settings?.app_name ?? "OpenMS WebApp"));
@@ -16,7 +19,7 @@
 
   $effect(() => {
     // unknown route: back to the start page
-    if (app.settings && !page) navigate("quickstart");
+    if (ready && !page) navigate("quickstart");
   });
 </script>
 
@@ -26,19 +29,30 @@
     class:-translate-x-full={!menuOpen}
     style="border-color: var(--border); background: var(--panel)"
   >
-    <Sidebar {nav} onnavigate={() => (menuOpen = false)} />
+    {#if ready}<Sidebar {nav} onnavigate={() => (menuOpen = false)} />{/if}
   </aside>
 
   <main class="min-w-0 flex-1 px-4 py-6 md:px-10">
     <button class="btn mb-4 md:hidden" onclick={() => (menuOpen = !menuOpen)} aria-label="Menu">☰ Menu</button>
     {#if error}
       <div class="alert alert-error">{error}</div>
-    {:else if !app.settings}
+    {:else if !ready}
       <p class="muted">Loading…</p>
-    {:else if page}
-      {#key `${page.route}|${app.workspace}|${app.epoch}`}
-        <page.component {...page.props ?? {}} />
-      {/key}
+    {:else}
+      {#if !crossOriginIsolated}
+        <div class="alert alert-warning mb-4">
+          This page is not cross-origin isolated, so OpenMS cannot start its threads and may not load. Open the app with
+          <code>python serve.py</code> (or <code>npm run dev</code>), which sends the headers it needs.
+        </div>
+      {/if}
+      {#if !app.persistent}
+        <div class="alert alert-warning mb-4">This browser gives the app no persistent storage: workspaces are lost when the page closes.</div>
+      {/if}
+      {#if page}
+        {#key `${page.route}|${app.workspace}|${app.epoch}`}
+          <page.component {...page.props ?? {}} />
+        {/key}
+      {/if}
     {/if}
   </main>
 </div>

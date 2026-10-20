@@ -1,6 +1,6 @@
 <script lang="ts">
-  // Server-side paginated, sortable, searchable table. Only the visible page
-  // is fetched, as with OpenMS-Insight's Table, so large result files stay fast.
+  // Paginated, sortable, searchable table. Only the visible page is rendered,
+  // as with OpenMS-Insight's Table, so large result files stay fast.
   import type { TablePage as Page } from "../types";
 
   let {
@@ -8,14 +8,14 @@
     pageSize = 25,
     selectable = false,
     selected = $bindable<number[]>([]),
-    downloadHref = "",
+    ondownload,
     caption = "",
   }: {
     fetchPage: (offset: number, limit: number, sort: string | null, desc: boolean, q: string) => Promise<Page>;
     pageSize?: number;
     selectable?: boolean;
     selected?: number[];
-    downloadHref?: string;
+    ondownload?: () => void;
     caption?: string;
   } = $props();
 
@@ -84,7 +84,7 @@
     {/if}
     {#if loading}<span class="text-xs muted">loading…</span>{/if}
     <span class="flex-1"></span>
-    {#if downloadHref}<a class="btn" href={downloadHref} download>⬇️ Download</a>{/if}
+    {#if ondownload}<button class="btn" onclick={ondownload}>⬇️ Download</button>{/if}
   </div>
   {#if caption}<div class="text-sm muted">{caption}</div>{/if}
   {#if error}

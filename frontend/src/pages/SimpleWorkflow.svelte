@@ -1,23 +1,28 @@
 <script lang="ts">
-  // content/simple_workflow.py: tracked parameters and a quick computation.
-  import { api, enc } from "../lib/api";
-  import { app } from "../lib/state.svelte";
+  // content/simple_workflow.py: tracked parameters and a quick computation
+  // (a table of standard normal random numbers, as np.random.randn).
+  import * as W from "../lib/backend/workspaces";
+  import { app, store } from "../lib/state.svelte";
   import StaticTable from "../lib/components/StaticTable.svelte";
 
-  const ws = `/ws/${enc(app.workspace)}`;
   let x = $state<number | null>(null);
   let y = $state<number | null>(null);
-  let table = $state<any>(null);
+  let table = $state<{ columns: string[]; rows: number[][] } | null>(null);
 
-  api.get(`${ws}/params`).then((p) => {
+  W.getParams(store, app.workspace).then((p) => {
     x = p["example-x-dimension"];
     y = p["example-y-dimension"];
   });
 
+  const randn = () => Math.sqrt(-2 * Math.log(1 - Math.random())) * Math.cos(2 * Math.PI * Math.random());
+
   $effect(() => {
     if (x === null || y === null || x < 1 || y < 1 || x > 20 || y > 20) return;
-    api.put(`${ws}/params`, { values: { "example-x-dimension": x, "example-y-dimension": y } });
-    api.get(`/simple-workflow?x=${x}&y=${y}`).then((t) => (table = t));
+    W.putParams(store, app.workspace, { "example-x-dimension": x, "example-y-dimension": y });
+    table = {
+      columns: Array.from({ length: y }, (_, j) => String(j)),
+      rows: Array.from({ length: x }, () => Array.from({ length: y as number }, randn)),
+    };
   });
 </script>
 

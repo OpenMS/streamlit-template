@@ -1,31 +1,35 @@
 <script lang="ts">
   // StreamlitUI.results_download_section: every result file, singly or as a
   // ZIP of the chosen folders.
-  import { api, downloadPost, enc } from "../api";
-  import { app, toastError } from "../state.svelte";
+  import * as WF from "../backend/workflow";
+  import { humanSize, saveBlob, saveFile } from "../backend/files";
+  import { join } from "../storage/store";
+  import { store, toastError } from "../state.svelte";
   import MultiSelect from "../components/MultiSelect.svelte";
+  import type { WorkflowSpec } from "./spec";
 
-  let { slug }: { slug: string } = $props();
-  const base = $derived(`/ws/${enc(app.workspace)}/wf/${slug}`);
+  let { ws, spec }: { ws: string; spec: WorkflowSpec } = $props();
 
-  let files = $state<any[] | null>(null);
+  let files = $state<WF.ResultFile[] | null>(null);
   let chosen = $state<string[]>([]);
   let zipping = $state(false);
 
-  api
-    .get(`${base}/results/files`)
-    .then((r) => {
-      files = r.files;
-      chosen = [...new Set<string>(r.files.map((f: any) => f.folder))];
-    })
-    .catch(toastError);
+  $effect(() => {
+    WF.resultFiles(store, ws, spec)
+      .then((r) => {
+        files = r;
+        chosen = [...new Set(r.map((f) => f.folder))];
+      })
+      .catch(toastError);
+  });
 
-  const folders = $derived([...new Set<string>((files ?? []).map((f) => f.folder))].sort());
+  const folders = $derived([...new Set((files ?? []).map((f) => f.folder))].sort());
+  const fmtTime = (t: number) => new Date(t).toLocaleString([], { dateStyle: "short", timeStyle: "short" });
 
   async function zip() {
     zipping = true;
     try {
-      await downloadPost(`${base}/results/zip`, { folders: chosen }, `${slug}-results.zip`);
+      saveBlob(await WF.resultsZip(store, ws, spec, chosen), `${ws}-results.zip`);
     } catch (e) {
       toastError(e);
     } finally {
@@ -50,9 +54,9 @@
             <tr class="border-t" style="border-color: var(--border)">
               <td class="px-2 py-1">{f.folder}</td>
               <td class="px-2 py-1">{f.folder === "." ? f.path : f.path.slice(f.folder.length + 1)}</td>
-              <td class="px-2 py-1 text-right">{f.size}</td>
-              <td class="px-2 py-1">{f.modified}</td>
-              <td class="px-2 py-1 text-right"><a class="btn" href={`/api${base}/results/file?path=${enc(f.path)}`} download>⬇️</a></td>
+              <td class="px-2 py-1 text-right">{humanSize(f.size)}</td>
+              <td class="px-2 py-1">{fmtTime(f.modified)}</td>
+              <td class="px-2 py-1 text-right"><button class="btn" onclick={() => saveFile(store, join(WF.workflowDir(ws, spec), "results", f.path)).catch(toastError)} aria-label="Download {f.path}">⬇️</button></td>
             </tr>
           {/each}
         </tbody>

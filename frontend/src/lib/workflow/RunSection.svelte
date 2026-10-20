@@ -1,16 +1,18 @@
 <script lang="ts">
   // StreamlitUI.execution_section: summary, start/stop, live log with level
-  // and line count, and the outcome of the last run.
+  // and line count, and the outcome of the last run. The run goes on while
+  // the app is open in this tab (on any page); closing the tab ends it.
   import { onDestroy } from "svelte";
-  import { api, enc } from "../api";
-  import { app, toastError } from "../state.svelte";
+  import * as WF from "../backend/workflow";
+  import { store, toastError } from "../state.svelte";
+  import type { LogLevelName } from "./logger";
+  import type { WorkflowSpec } from "./spec";
 
-  let { slug }: { slug: string } = $props();
-  const base = $derived(`/ws/${enc(app.workspace)}/wf/${slug}`);
+  let { ws, spec }: { ws: string; spec: WorkflowSpec } = $props();
 
-  let level = $state(localStorage.getItem("log-level") ?? "minimal");
+  let level = $state<LogLevelName>((localStorage.getItem("log-level") as LogLevelName) ?? "minimal");
   let lines = $state(Number(localStorage.getItem("log-lines") ?? 100));
-  let st = $state<any>(null);
+  let st = $state<WF.Status | null>(null);
   let summary = $state<any>(null);
   let busy = $state(false);
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -19,7 +21,7 @@
   async function poll() {
     clearTimeout(timer);
     try {
-      st = await api.get(`${base}/status?level=${enc(level)}&lines=${lines}`);
+      st = await WF.status(store, ws, spec, level, lines);
     } catch (e) {
       toastError(e);
     }
@@ -42,13 +44,15 @@
 
   onDestroy(() => clearTimeout(timer));
 
-  api.get(`${base}/summary`).then((s) => (summary = s)).catch(() => {});
+  $effect(() => {
+    WF.paramSummary(store, ws, spec).then((s) => (summary = s)).catch(() => {});
+  });
 
   async function start() {
     busy = true;
     try {
-      st = await api.post(`${base}/run`);
-      setTimeout(poll, 500);
+      await WF.startWorkflow(store, ws, spec);
+      setTimeout(poll, 300);
     } catch (e) {
       toastError(e);
     } finally {
@@ -59,7 +63,8 @@
   async function stop() {
     busy = true;
     try {
-      st = await api.post(`${base}/stop`);
+      await WF.stopWorkflow(store, ws, spec);
+      await poll();
     } catch (e) {
       toastError(e);
     } finally {
@@ -75,7 +80,7 @@
     <details class="card">
       <summary class="cursor-pointer font-semibold">Summary</summary>
       <div class="mt-2 grid gap-3 text-sm md:grid-cols-3">
-        {#each [["General", summary.general], ["OpenMS TOPP Tools", summary.topp], ["Python Scripts", summary.python]] as [title, group]}
+        {#each [["General", summary.general], ["OpenMS Tools", summary.tools], ["Steps", summary.steps]] as [title, group]}
           {#if Object.keys(group).length}
             <div>
               <div class="font-semibold">{title}</div>
@@ -129,7 +134,7 @@
       <div class="alert alert-error"><b>Errors occurred, check log file.</b></div>
     {/if}
     {#if st.log}
-      {#if st.log_time && !st.running}<div class="text-sm font-semibold">Workflow log file: {st.log_time.replace("T", " ")}</div>{/if}
+      {#if st.log_time && !st.running}<div class="text-sm font-semibold">Workflow log file: {st.log_time}</div>{/if}
       <pre bind:this={pre} class="code max-h-[60vh]">{st.log}</pre>
     {/if}
   {/if}

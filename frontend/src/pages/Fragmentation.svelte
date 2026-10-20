@@ -1,22 +1,22 @@
 <script lang="ts">
   // content/fragmentation.py: theoretical fragment ions with TheoreticalSpectrumGenerator.
-  import { api } from "../lib/api";
+  import { engine } from "../lib/engine/client";
+  import { ION_TYPES } from "../lib/engine/ops/toolbox";
   import Plot from "../lib/components/Plot.svelte";
   import StaticTable from "../lib/components/StaticTable.svelte";
 
   const COLORS: Record<string, string> = { a: "#FF6B6B", b: "#4ECDC4", c: "#45B7D1", x: "#96CEB4", y: "#E5B700", z: "#DDA0DD" };
-  let ionTypes = $state<Record<string, any>>({});
+  const ionTypes = ION_TYPES;
   let sequence = $state("PEPTIDE");
   let selected = $state<string[]>(["b", "y"]);
   let charges = $state<number[]>([1]);
   let result = $state<any>(null);
   let error = $state("");
 
-  api.get("/tools/ion-types").then((t) => (ionTypes = t));
 
   async function run() {
     try {
-      result = await api.post("/tools/fragment", { sequence, ion_types: selected, charges });
+      result = await engine.call("toolbox.fragments", sequence, selected, charges);
       error = "";
     } catch (e: any) {
       error = e.message;

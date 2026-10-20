@@ -2,16 +2,20 @@ import { defineConfig } from "vite";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 import tailwindcss from "@tailwindcss/vite";
 
-// `npm run dev` serves the app on :5173 and forwards /api to the local
-// server started with `python -m server --no-browser` (port 8765).
+// The threaded OpenMS module needs a cross-origin isolated page. serve.py
+// sends the same headers for the built app.
+const isolation = {
+  "Cross-Origin-Opener-Policy": "same-origin",
+  "Cross-Origin-Embedder-Policy": "require-corp",
+};
+
 export default defineConfig({
+  // relative, so the build works from any folder of any static server
+  base: "./",
   plugins: [tailwindcss(), svelte()],
-  server: {
-    proxy: {
-      "/api": "http://127.0.0.1:8765",
-      "/assets/openms-logo.svg": "http://127.0.0.1:8765",
-      "/insight-component": "http://127.0.0.1:8765",
-    },
-  },
-  build: { chunkSizeWarningLimit: 5000 },
+  // settings.json, docs/ and example-data/ are read from the repository root
+  server: { headers: isolation, fs: { allow: [".."] } },
+  preview: { headers: isolation },
+  worker: { format: "es" },
+  build: { chunkSizeWarningLimit: 5000, target: "es2022", assetsInlineLimit: 0 },
 });

@@ -1,7 +1,7 @@
 <script lang="ts">
   // Small tables that are already in the browser (toolbox results), with
   // client-side sorting, paging and CSV export (show_table()).
-  import { saveText } from "../api";
+  import { saveText } from "../backend/files";
 
   let { columns, rows, filename = "table", pageSize = 25 }: { columns: string[]; rows: any[][]; filename?: string; pageSize?: number } = $props();
 

@@ -1,14 +1,14 @@
 <script lang="ts">
-  // content/raw_data_viewer.py: spectra table, spectrum plot, TIC/BPC and
-  // a peak map binned on the server.
-  import { api, enc } from "../lib/api";
-  import { app } from "../lib/state.svelte";
+  // content/raw_data_viewer.py: spectra table, spectrum plot, TIC/BPC and a
+  // binned peak map, read by OpenMS in the engine worker.
+  import * as W from "../lib/backend/workspaces";
+  import { engine } from "../lib/engine/client";
+  import { app, store } from "../lib/state.svelte";
   import Plot from "../lib/components/Plot.svelte";
   import Tabs from "../lib/components/Tabs.svelte";
   import StaticTable from "../lib/components/StaticTable.svelte";
 
-  const base = `/ws/${enc(app.workspace)}/mzml`;
-  let files = $state<{ name: string }[]>([]);
+  let files = $state<{ name: string; path: string }[]>([]);
   let file = $state("");
   let overview = $state<any>(null);
   let spectrumIdx = $state<number | null>(null);
@@ -19,19 +19,22 @@
   let error = $state("");
   let loading = $state(false);
 
-  api.get(base).then((r) => {
-    files = r.files;
+  const path = $derived(files.find((f) => f.name === file)?.path ?? "");
+
+  W.mzmlFiles(store, app.workspace).then((fs) => {
+    files = fs;
     file = files[0]?.name ?? "";
   });
-  api.get(`/ws/${enc(app.workspace)}/params`).then((p) => (cutoff = p["2D-map-intensity-cutoff"] ?? 5000));
+  W.getParams(store, app.workspace).then((p) => (cutoff = p["2D-map-intensity-cutoff"] ?? 5000));
 
   $effect(() => {
-    if (!file) return;
+    if (!path) return;
     loading = true;
     overview = null;
     spectrum = null;
-    api
-      .get(`${base}/${enc(file)}/overview`)
+    peakmap = null;
+    engine
+      .call("mzml.overview", path)
       .then((o) => {
         overview = o;
         spectrumIdx = o.spectra[0]?.index ?? null;
@@ -42,14 +45,14 @@
   });
 
   $effect(() => {
-    if (!file || spectrumIdx === null) return;
-    api.get(`${base}/${enc(file)}/spectrum/${spectrumIdx}`).then((s) => (spectrum = s));
+    if (!path || spectrumIdx === null) return;
+    engine.call("mzml.spectrum", path, spectrumIdx).then((s) => (spectrum = s)).catch((e) => (error = e.message));
   });
 
   function loadPeakmap() {
     peakmap = null;
-    api.put(`/ws/${enc(app.workspace)}/params`, { values: { "2D-map-intensity-cutoff": cutoff } });
-    api.get(`${base}/${enc(file)}/peakmap?ms_level=${msLevel}&intensity_cutoff=${cutoff}`).then((p) => (peakmap = p));
+    W.putParams(store, app.workspace, { "2D-map-intensity-cutoff": cutoff });
+    engine.call("mzml.peakMap", { path, ms_level: msLevel, intensity_cutoff: cutoff }).then((p) => (peakmap = p)).catch((e) => (error = e.message));
   }
 
   const spectraCols = ["index", "RT", "MS level", "precursor m/z", "max intensity m/z", "peaks", "TIC"];

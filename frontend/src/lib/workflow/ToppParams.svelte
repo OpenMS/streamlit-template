@@ -1,6 +1,6 @@
 <script lang="ts">
-  // StreamlitUI.input_TOPP: every parameter of a TOPP tool's .ini, grouped by
-  // section, advanced ones behind the page's toggle. Non-default values are
+  // StreamlitUI.input_TOPP: every parameter of a tool, grouped by section,
+  // advanced ones behind the page's toggle. Non-default values are
   // marked and can be reset one by one.
   import type { ToppParam } from "../types";
   import MultiSelect from "../components/MultiSelect.svelte";
@@ -55,7 +55,7 @@
 
 {#if !schema.available}
   <div class="alert alert-error">
-    TOPP tool <b>{schema.tool}</b> not found. Install OpenMS and make sure its tools are on PATH.
+    The parameters of tool <b>{schema.tool}</b> could not be read from OpenMS.
   </div>
 {:else}
   <div class="flex flex-col gap-3">

@@ -1,21 +1,22 @@
 <script lang="ts">
-  // Any TSV/CSV in the workflow directory as a server-paginated table.
-  import { api, enc } from "../api";
-  import { app } from "../state.svelte";
+  // Any TSV/CSV/JSON file of the workflow directory as a paginated table:
+  // the file is parsed once, and only the visible page is rendered.
+  import { tablePage } from "../backend/tables";
+  import { saveFile } from "../backend/files";
+  import { join } from "../storage/store";
+  import { store, toastError } from "../state.svelte";
   import DataTable from "../components/DataTable.svelte";
 
-  let { slug, file, selected = $bindable<number[]>([]), selectable = false, caption = "" }: {
-    slug: string;
+  let { workflowDir, file, selected = $bindable<number[]>([]), selectable = false, caption = "" }: {
+    workflowDir: string;
     file: string;
     selected?: number[];
     selectable?: boolean;
     caption?: string;
   } = $props();
 
-  const base = $derived(`/ws/${enc(app.workspace)}/wf/${slug}`);
-  const fetchPage = (offset: number, limit: number, sort: string | null, desc: boolean, q: string) =>
-    api.get(`${base}/table?path=${enc(file)}&offset=${offset}&limit=${limit}${sort ? `&sort=${enc(sort)}&desc=${desc}` : ""}${q ? `&q=${enc(q)}` : ""}`);
-  const href = $derived(file.startsWith("results/") ? `/api${base}/results/file?path=${enc(file.slice(8))}` : "");
+  const path = $derived(join(workflowDir, file));
+  const fetchPage = (offset: number, limit: number, sort: string | null, desc: boolean, q: string) => tablePage(store, path, { offset, limit, sort, desc, q });
 </script>
 
-<DataTable {fetchPage} {selectable} bind:selected downloadHref={href} {caption} />
+<DataTable {fetchPage} {selectable} bind:selected ondownload={() => saveFile(store, path).catch(toastError)} {caption} />

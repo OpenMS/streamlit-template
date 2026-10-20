@@ -1,27 +1,32 @@
 <script lang="ts">
   // Navigation plus the sidebar of src/common/common.py:render_sidebar():
-  // workspace switch/create/delete, demo data, and display settings.
-  import { api } from "../api";
-  import { app, navigate, setImageFormat, setWorkspace, toast, toastError } from "../state.svelte";
+  // workspace switch/create/delete, demo data and display settings, and
+  // the workspace's way out of this browser: export, import and share.
+  import { logoUrl } from "../assets";
+  import { saveBlob } from "../backend/files";
+  import { exportWorkspace, importWorkspace, sharingEnabled, shareWorkspace } from "../backend/share";
+  import * as W from "../backend/workspaces";
+  import { app, navigate, setImageFormat, setWorkspace, store, toast, toastError } from "../state.svelte";
   import type { Section } from "../../nav";
   import ResourceMonitor from "./ResourceMonitor.svelte";
 
   let { nav, onnavigate }: { nav: Section[]; onnavigate?: () => void } = $props();
 
   let workspaces = $state<string[]>([]);
-  let demos = $state<string[]>([]);
+  const demos = W.demos();
   let newName = $state("");
-  let selectedDemo = $state("");
+  let selectedDemo = $state(demos[0] ?? "");
+  let importInput = $state<HTMLInputElement>();
+  let shareInputs = $state(false);
+  let sharing = $state(false);
+  let shareLink = $state("");
 
   async function refresh() {
     try {
-      const r = await api.get<{ workspaces: string[]; demos: string[] }>("/workspaces");
-      workspaces = r.workspaces;
-      demos = r.demos;
-      if (!selectedDemo && demos.length) selectedDemo = demos[0];
+      workspaces = await W.listWorkspaces(store);
       if (!workspaces.includes(app.workspace)) {
         // opened by link to a workspace that does not exist yet: create it
-        await api.post("/workspaces", { name: app.workspace });
+        await W.createWorkspace(store, app.workspace);
         workspaces = [...workspaces, app.workspace].sort();
       }
     } catch (e) {
@@ -34,7 +39,7 @@
     const name = newName.trim();
     if (!name) return;
     try {
-      await api.post("/workspaces", { name });
+      await W.createWorkspace(store, name);
       newName = "";
       await refresh();
       setWorkspace(name);
@@ -47,9 +52,11 @@
   async function remove() {
     if (!confirm(`Delete workspace "${app.workspace}" and all its files?`)) return;
     try {
-      await api.del(`/workspaces/${encodeURIComponent(app.workspace)}`);
+      await W.deleteWorkspace(store, app.workspace);
+      const next = workspaces.find((w) => w !== app.workspace) ?? "default";
+      await W.createWorkspace(store, next);
       await refresh();
-      setWorkspace(workspaces.find((w) => w !== app.workspace) ?? "default");
+      setWorkspace(next);
       toast("Workspace deleted");
     } catch (e) {
       toastError(e);
@@ -59,18 +66,56 @@
   async function loadDemo() {
     if (!confirm(`Replace the content of "${app.workspace}" with the demo "${selectedDemo}"?`)) return;
     try {
-      await api.post(`/workspaces/${encodeURIComponent(app.workspace)}/load-demo`, { demo: selectedDemo });
+      await W.loadDemo(store, app.workspace, selectedDemo);
       app.epoch++;
       toast(`Loaded demo ${selectedDemo}`);
     } catch (e) {
       toastError(e);
     }
   }
+
+  async function exportZip() {
+    try {
+      saveBlob(await exportWorkspace(store, app.workspace, { inputs: true }), `${app.workspace}.zip`);
+    } catch (e) {
+      toastError(e);
+    }
+  }
+
+  async function importZip() {
+    const f = importInput?.files?.[0];
+    if (!f) return;
+    try {
+      const name = await importWorkspace(store, f);
+      await refresh();
+      setWorkspace(name);
+      toast(`Opened workspace ${name}`);
+    } catch (e) {
+      toastError(e);
+    } finally {
+      if (importInput) importInput.value = "";
+    }
+  }
+
+  async function share() {
+    const what = shareInputs ? "its parameters, results and input files" : "its parameters and results";
+    if (!confirm(`Upload workspace "${app.workspace}" (${what}) to ${app.settings?.share_url} for a share link?`)) return;
+    sharing = true;
+    try {
+      shareLink = await shareWorkspace(store, app.workspace, { inputs: shareInputs });
+      await navigator.clipboard?.writeText(shareLink).catch(() => {});
+      toast("Workspace uploaded; the link is copied.");
+    } catch (e) {
+      toastError(e);
+    } finally {
+      sharing = false;
+    }
+  }
 </script>
 
 <div class="flex flex-col gap-5 p-4">
   <a href="#/quickstart" class="flex items-center gap-2" onclick={onnavigate}>
-    <img src="/assets/openms-logo.svg" alt="OpenMS" class="h-9 w-9" />
+    <img src={logoUrl} alt="OpenMS" class="h-9 w-9" />
     <span class="font-semibold leading-tight">{app.settings?.app_name ?? "OpenMS WebApp"}</span>
   </a>
 
@@ -115,6 +160,23 @@
             <button class="btn" onclick={loadDemo}>Load demo</button>
           </div>
         {/if}
+        <div class="flex gap-1">
+          <button class="btn flex-1" onclick={exportZip} title="Save the whole workspace as a ZIP file">⬇️ Export</button>
+          <button class="btn flex-1" onclick={() => importInput?.click()} title="Open a workspace ZIP file as a new workspace">⬆️ Import</button>
+          <input bind:this={importInput} type="file" accept=".zip" class="hidden" onchange={importZip} />
+        </div>
+        {#if sharingEnabled()}
+          <div class="flex flex-col gap-1 rounded-md border p-2" style="border-color: var(--border)">
+            <button class="btn" onclick={share} disabled={sharing}>{sharing ? "Uploading…" : "🔗 Share workspace"}</button>
+            <label class="flex items-center gap-2 text-xs">
+              <input type="checkbox" bind:checked={shareInputs} /> include input files
+            </label>
+            {#if shareLink}
+              <input class="input text-xs" readonly value={shareLink} onfocus={(e) => e.currentTarget.select()} aria-label="Share link" />
+            {/if}
+            <div class="text-xs muted">Nothing leaves this browser until you click Share.</div>
+          </div>
+        {/if}
       </div>
     </details>
   {/if}
@@ -135,7 +197,7 @@
   <ResourceMonitor />
 
   <div class="border-t pt-3 text-xs muted" style="border-color: var(--border)">
-    <div>Runs locally on this computer. Version {app.settings?.version}</div>
+    <div>Runs in this browser on this computer. Version {app.settings?.version}</div>
     {#if app.settings}
       <div class="mt-1 flex gap-2">
         {#each Object.entries(app.settings.legal_links) as [k, url]}

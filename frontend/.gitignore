@@ -1,2 +1,4 @@
 node_modules/
 dist/
+# fetched by scripts/fetch-openms.mjs
+public/openms/
