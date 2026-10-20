@@ -40,6 +40,19 @@ def create_app() -> FastAPI:
     def logo() -> FileResponse:
         return FileResponse(ROOT / "assets" / "openms_transparent_bg_logo.svg")
 
+    # OpenMS-Insight's Vue bundle, loaded into one iframe per component
+    @app.get("/insight-component/{path:path}")
+    def insight_component(path: str) -> FileResponse:
+        from . import insight
+
+        if not insight.available():
+            raise HTTPException(404, "openms-insight is not installed")
+        dist = insight.dist_dir().resolve()
+        target = (dist / (path or "index.html")).resolve()
+        if dist not in target.parents or not target.is_file():
+            raise HTTPException(404)
+        return FileResponse(target)
+
     # Single-page app: any non-API path serves a built file or index.html
     @app.get("/{path:path}")
     def spa(path: str):

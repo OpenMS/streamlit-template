@@ -31,6 +31,7 @@ For frontend development, run `python -m server --no-browser` and, in
 | Local server | `server/` | FastAPI app under `/api`, serves the built frontend |
 | Workflow specs | `server/workflows.py` | Upload, configure and results pages of each workflow, as data |
 | Result components | `frontend/src/lib/results/` | Svelte components a workflow's results page names |
+| Insight host | `server/insight.py`, `lib/results/InsightView.svelte` | Runs OpenMS-Insight dashboards outside Streamlit |
 
 ### Why a local server and not WebAssembly
 
@@ -94,6 +95,29 @@ the Streamlit-free entry point the online queue worker uses, so a workflow's
 3. Register its pages in `frontend/src/nav.ts` with `workflowPages("my-workflow")`.
 4. For custom result views, add a Svelte component to
    `frontend/src/lib/results/registry.ts` and name it in a `ResultView`.
+
+## OpenMS-Insight components
+
+Insight components work unchanged. A dashboard is a function that builds
+them and calls them, exactly as a Streamlit results page would:
+
+```python
+def consensus_features(workflow_dir: Path) -> None:
+    state = StateManager()
+    Table(cache_id=..., data=..., cache_path=..., interactivity={"feature": "feature_id"})(
+        key="table", state_manager=state)
+    LinePlot(cache_id=..., data=..., cache_path=..., filters={"feature": "feature_id"})(
+        key="plot", state_manager=state)
+```
+
+Name it on a results page with
+`ResultView("insight", "Title", {"dashboard": "server.dashboards:consensus_features"})`.
+`server/insight.py` runs the dashboard through Insight's own Python bridge,
+with Streamlit's session state, rerun and component call replaced, and the
+page loads Insight's own Vue bundle in an iframe per component, speaking the
+Streamlit component protocol to it. Selections link components as they do in
+Streamlit. Like the template, the app does not depend on openms-insight: the
+view asks for `pip install openms-insight` when it is missing.
 
 ## Feature parity
 

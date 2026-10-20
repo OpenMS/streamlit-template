@@ -504,3 +504,29 @@ def table_rows(ws: str, slug: str, body: RowsRequest) -> dict:
 
     _, wd, _ = _ctx(ws, slug)
     return read_rows(safe_join(wd, body.path), body.rows, body.columns)
+
+
+class InsightRequest(BaseModel):
+    dashboard: str
+    session: str
+    key: str | None = None
+    value: Any = None
+
+
+@router.post("/ws/{ws}/wf/{slug}/insight")
+def insight_render(ws: str, slug: str, body: InsightRequest) -> dict:
+    """Run an OpenMS-Insight dashboard and return its components' render arguments."""
+    from .. import insight
+
+    spec, wd, _ = _ctx(ws, slug)
+    # Only dashboards this workflow's results page names can be run
+    named = {v.props.get("dashboard") for v in spec.results if v.component == "insight"}
+    if body.dashboard not in named:
+        raise HTTPException(404, f"Workflow {slug!r} has no dashboard {body.dashboard!r}")
+    if not insight.available():
+        return {"available": False, "components": []}
+    update = {"key": body.key, "value": body.value} if body.key else None
+    return {
+        "available": True,
+        "components": insight.render(body.session, body.dashboard, {"workflow_dir": wd}, update),
+    }

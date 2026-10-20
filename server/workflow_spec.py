@@ -102,7 +102,9 @@ class ResultView:
     """
     One block on the results page. ``component`` names a Svelte component in
     ``frontend/src/lib/results/registry.ts``; ``props`` are passed to it.
-    Built in: ``table`` (server-paginated TSV/CSV), ``download``.
+    Built in: ``table`` (server-paginated TSV/CSV), ``download``, and
+    ``insight``, which runs the OpenMS-Insight dashboard function named in
+    ``props["dashboard"]`` (``"module:function"``, see ``server/dashboards.py``).
     """
 
     component: str

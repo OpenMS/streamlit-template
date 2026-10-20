@@ -10,6 +10,7 @@ export default defineConfig({
     proxy: {
       "/api": "http://127.0.0.1:8765",
       "/assets/openms-logo.svg": "http://127.0.0.1:8765",
+      "/insight-component": "http://127.0.0.1:8765",
     },
   },
   build: { chunkSizeWarningLimit: 5000 },

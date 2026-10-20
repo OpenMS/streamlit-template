@@ -54,6 +54,13 @@ TOPP_WORKFLOW = WorkflowSpec(
             title="Consensus features",
             props={"file": "results/feature-linking/feature_matrix.tsv"},
         ),
+        # Needs openms-insight installed (the template does not depend on it);
+        # without it, the page says how to install it.
+        ResultView(
+            component="insight",
+            title="Interactive feature explorer (OpenMS-Insight)",
+            props={"dashboard": "server.dashboards:consensus_features"},
+        ),
     ],
 )
 

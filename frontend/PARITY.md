@@ -69,7 +69,8 @@ Legend: ✅ done · 🟡 partial · ⬜ not started · ➖ not applicable (local
 | Results download page (single files, ZIP of folders, `exclude`) | ✅ | |
 | `show_table`: large tables | ✅ | Server-side pagination, sort and search |
 | `show_fig`: download in chosen image format | ✅ | Plotly toolbar uses the sidebar setting |
-| OpenMS-Insight components (Table, LinePlot, Heatmap, VolcanoPlot, SequenceView) | ⬜ | Plan: host Insight's Vue bundle and feed it the args its Python side computes |
+| OpenMS-Insight components (Table, LinePlot, Heatmap, VolcanoPlot, SequenceView, ...) | ✅ | Insight's own Vue bundle and Python bridge, unchanged; `server/insight.py` stands in for Streamlit. Optional, as in the template |
+| Cross-component linking through a shared `StateManager` | ✅ | Example: `server/dashboards.py` |
 
 ## pyOpenMS pages
 
@@ -96,6 +97,6 @@ Legend: ✅ done · 🟡 partial · ⬜ not started · ➖ not applicable (local
 | Server API tests | ✅ | `tests/svelte/`, TOPP stand-ins built on pyOpenMS |
 | Frontend type check (`svelte-check`) | ✅ | |
 | CI job for the Svelte app | ✅ | `.github/workflows/svelte-app.yml` |
-| Browser end-to-end test in CI | ⬜ | Playwright script exists locally; to be added |
+| Browser end-to-end test in CI | ⬜ | Playwright scripts exist locally; to be added |
 | Skills / docs for building an app on the Svelte frontend | 🟡 | `docs/svelte_app.md` |
 | Docker image serving the Svelte app | ⬜ | |

@@ -192,3 +192,33 @@ def test_workspace_params_follow_default_parameters(client):
     assert p["example-x-dimension"] == 10
     p = client.put("/api/ws/test/params", json={"values": {"example-x-dimension": 3, "not-a-param": 1}}).json()
     assert p["example-x-dimension"] == 3 and "not-a-param" not in p
+
+
+def test_insight_dashboard_renders_and_links(client, tmp_path):
+    pytest.importorskip("openms_insight")
+    wd = tmp_path / "workspaces" / "test" / "topp-workflow"
+    (wd / "results" / "feature-linking").mkdir(parents=True)
+    rows = ["metabolite\tcharge\trt\tmz\tquality\tA.featureXML\tB.featureXML"]
+    rows += [f"m{i}\t1\t{100 + i}\t{200 + i}\t{0.1 * i}\t{1000 * i}\t{2000 * i}" for i in range(1, 6)]
+    (wd / "results" / "feature-linking" / "feature_matrix.tsv").write_text("\n".join(rows) + "\n")
+
+    url = f"{WF}/insight"
+    dash = "server.dashboards:consensus_features"
+    assert client.post(url, json={"dashboard": "os:system", "session": "s"}).status_code == 404
+
+    r = client.post(url, json={"dashboard": dash, "session": "s"}).json()
+    assert r["available"]
+    table, plot = r["components"]
+    assert table["key"] == "consensus-features" and table["args"]["dataChanged"]
+    assert [d["key"] for d in table["dfs"]] == ["tableData"]
+    # the table auto-selects a feature, and the plot shows it
+    store = plot["args"]["selection_store"]
+    assert store["feature"] is not None and plot["dfs"][0]["key"] == "plotData"
+
+    # a click in the table, as the Vue component reports it, re-filters the plot
+    other = next(i for i in range(5) if i != store["feature"])
+    value = {**{k: store[k] for k in ("id", "selection_counter", "pagination_counter")}, "feature": other}
+    value["selection_counter"] += 1
+    r = client.post(url, json={"dashboard": dash, "session": "s", "key": "consensus-features", "value": value}).json()
+    assert r["components"][1]["args"]["selection_store"]["feature"] == other
+    assert r["components"][1]["args"]["hash"] != plot["args"]["hash"]
