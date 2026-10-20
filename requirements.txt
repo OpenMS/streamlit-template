@@ -77,6 +77,8 @@ pillow==11.1.0
     #   streamlit
 plotly==5.22.0
     # via src (pyproject.toml)
+polars==1.41.2
+    # via src (pyproject.toml)
 protobuf==6.32.0
     # via streamlit
 psutil==7.0.0
