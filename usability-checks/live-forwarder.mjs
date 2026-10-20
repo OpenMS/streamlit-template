@@ -44,6 +44,11 @@ export async function startForwarder(liveUrl, proxyUrl) {
         (upRes) => {
           const headers = { ...upRes.headers };
           if (headers.location?.startsWith(`https://${host}`)) headers.location = localOrigin + headers.location.slice(`https://${host}`.length);
+          // The deployments pin a session to one Streamlit replica with a
+          // Secure cookie (stroute). The browser only sees http://localhost,
+          // so it would drop that cookie and each request or socket would
+          // land on a random replica; the hop to the deployment is still TLS.
+          if (headers["set-cookie"]) headers["set-cookie"] = headers["set-cookie"].map((c) => c.replace(/;\s*Secure/gi, ""));
           res.writeHead(upRes.statusCode, headers);
           upRes.pipe(res);
         },
