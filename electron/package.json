@@ -1,0 +1,48 @@
+{
+  "name": "openms-streamlit-app",
+  "productName": "OpenMS-StreamlitTemplateApp",
+  "version": "1.0.0",
+  "description": "Desktop shell for OpenMS Streamlit web apps",
+  "author": "OpenMS Developer Team",
+  "license": "BSD-3-Clause",
+  "main": "src/main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/unit.test.js",
+    "dist": "electron-builder --win nsis --publish never"
+  },
+  "devDependencies": {
+    "electron": "^44.4.5",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "de.openms.streamlit-template",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**",
+      "build/icon.ico",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "payload",
+        "to": "app-payload"
+      }
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "license": "../assets/openms_license.rtf"
+    },
+    "publish": null
+  }
+}
