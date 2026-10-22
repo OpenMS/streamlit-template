@@ -1512,7 +1512,7 @@ class StreamlitUI:
             },
         )
         path = design_path(self.workflow_dir)
-        if not path.is_file() or path.read_text() != to_openms_design(edited, files):
+        if not path.is_file() or path.read_text(encoding="utf-8") != to_openms_design(edited, files):
             save_design(self.workflow_dir, edited, files)
 
         for notice in check_design(edited):

@@ -12,6 +12,7 @@ dependency, so ``execution()`` can call ``load_design()`` inside a queue
 worker.
 """
 import io
+import re
 from pathlib import Path
 from typing import List, Union
 
@@ -24,12 +25,17 @@ _FILE_SECTION = ["Fraction_Group", "Fraction", "Spectra_Filepath", "Label", "Sam
 _SAMPLE_SECTION = ["Sample", "MSstats_Condition", "MSstats_BioReplicate"]
 
 
+def _file_name(path: str) -> str:
+    """The last component of a path, splitting on / and \\ so Windows paths work on any host."""
+    return re.split(r"[\\/]", path)[-1]
+
+
 def default_design(files: List[str]) -> pd.DataFrame:
     """A design for ``files`` with no conditions set, one biological replicate per file and no fractions.
 
     Conditions are left empty rather than guessed from file names.
     """
-    names = [Path(f).name for f in files]
+    names = [_file_name(str(f)) for f in files]
     return pd.DataFrame({
         "file": names,
         "condition": [""] * len(names),
@@ -41,7 +47,7 @@ def default_design(files: List[str]) -> pd.DataFrame:
 def _normalize(design: pd.DataFrame) -> pd.DataFrame:
     """Coerce a design to COLUMNS with string conditions and positive integer replicates and fractions."""
     out = design.reindex(columns=COLUMNS).copy()
-    out["file"] = out["file"].fillna("").astype(str).map(lambda f: Path(f).name if f else f)
+    out["file"] = out["file"].fillna("").astype(str).map(lambda f: _file_name(f) if f else f)
     out["condition"] = out["condition"].fillna("").astype(str).str.strip()
     for col in ("replicate", "fraction"):
         out[col] = pd.to_numeric(out[col], errors="coerce").fillna(1).astype(int).clip(lower=1)
@@ -54,12 +60,11 @@ def align_design(design: pd.DataFrame, files: List[str]) -> pd.DataFrame:
     Files are matched by name, so a design written on another machine (other
     directories) still applies.
     """
-    design = _normalize(design).drop_duplicates("file", keep="first").set_index("file")
-    defaults = default_design(files).set_index("file")
-    rows = [design.loc[n] if n in design.index else defaults.loc[n] for n in defaults.index]
-    if not rows:
-        return pd.DataFrame(columns=COLUMNS)
-    return _normalize(pd.DataFrame(rows).rename_axis("file").reset_index())
+    design = _normalize(design).drop_duplicates("file", keep="first")
+    out = default_design(files).merge(design, on="file", how="left", suffixes=("_default", ""))
+    for col in COLUMNS[1:]:
+        out[col] = out[col].where(out[col].notna(), out[f"{col}_default"])
+    return _normalize(out)
 
 
 def _is_sdrf(header: List[str]) -> bool:
@@ -100,6 +105,8 @@ def _from_sdrf(df: pd.DataFrame) -> pd.DataFrame:
 def _from_openms(text: str) -> pd.DataFrame:
     """Design rows from an OpenMS design (one-table, or file and sample tables separated by a blank line)."""
     blocks = [b for b in text.replace("\r\n", "\n").split("\n\n") if b.strip()]
+    if not blocks:
+        raise ValueError("The file is empty.")
     files = pd.read_csv(io.StringIO(blocks[0]), sep="\t", dtype=str)
     if "Spectra_Filepath" not in files.columns:
         raise ValueError("Not an OpenMS design: no 'Spectra_Filepath' column.")
@@ -149,11 +156,19 @@ def to_openms_design(design: pd.DataFrame, paths: Union[List[str], None] = None)
 
     Args:
         design: the design table.
-        paths: full paths to write as Spectra_Filepath, matched by file name;
-            the bare file name is written for files not among them.
+        paths: full paths to write as Spectra_Filepath. When they are the
+            design's files in row order (as for the selected input files),
+            each row keeps its own path, even if two share a file name;
+            otherwise they are matched by file name, and the bare file name
+            is written for files not among them.
     """
     design = _normalize(design)
-    by_name = {Path(p).name: str(p) for p in (paths or [])}
+    paths = [str(p) for p in (paths or [])]
+    if [_file_name(p) for p in paths] == list(design["file"]):
+        spectra = paths
+    else:
+        by_name = {_file_name(p): p for p in paths}
+        spectra = [by_name.get(f, f) for f in design["file"]]
     design["condition"] = design["condition"].replace("", "NA")
     design["technical"] = design.groupby(["condition", "replicate", "fraction"]).cumcount()
     design["Sample"] = design.groupby(["condition", "replicate"], sort=False).ngroup() + 1
@@ -161,7 +176,7 @@ def to_openms_design(design: pd.DataFrame, paths: Union[List[str], None] = None)
     file_section = pd.DataFrame({
         "Fraction_Group": design["Fraction_Group"],
         "Fraction": design["fraction"],
-        "Spectra_Filepath": [by_name.get(f, f) for f in design["file"]],
+        "Spectra_Filepath": spectra,
         "Label": 1,
         "Sample": design["Sample"],
     }).sort_values(["Fraction_Group", "Fraction"], kind="stable")
@@ -223,7 +238,7 @@ def design_path(workflow_dir: Union[str, Path]) -> Path:
 def save_design(workflow_dir: Union[str, Path], design: pd.DataFrame, paths: Union[List[str], None] = None) -> Path:
     """Write the design to the workflow directory as an OpenMS design.tsv and return its path."""
     path = design_path(workflow_dir)
-    path.write_text(to_openms_design(design, paths))
+    path.write_text(to_openms_design(design, paths), encoding="utf-8")
     return path
 
 

@@ -108,3 +108,34 @@ def test_save_and_load_design(tmp_path):
     assert list(loaded["file"]) == ["treat_2.mzML", "treat_1.mzML", "ctrl_2.mzML", "ctrl_1.mzML"]
     assert list(loaded["condition"]) == ["treat", "treat", "ctrl", "ctrl"]
     assert load_design(tmp_path / "missing", FILES)["condition"].eq("").all()
+
+
+def test_windows_paths_match_by_file_name():
+    text = (
+        "Fraction_Group\tFraction\tSpectra_Filepath\tLabel\tSample\tMSstats_Condition\tMSstats_BioReplicate\n"
+        "1\t1\tC:\\data\\ctrl_1.mzML\t1\t1\tctrl\t1\n"
+    )
+    assert list(align_design(read_design(text), FILES[:1])["condition"]) == ["ctrl"]
+
+
+def test_empty_file_raises_value_error():
+    for content in (b"", b"  \n\n "):
+        try:
+            read_design(content)
+        except ValueError:
+            continue
+        raise AssertionError("expected ValueError")
+
+
+def test_duplicate_file_names_keep_their_own_paths():
+    files = ["/run1/a.mzML", "/run2/a.mzML", "/run1/b.mzML"]
+    design = align_design(pd.DataFrame(columns=COLUMNS), files)
+    assert list(design["file"]) == ["a.mzML", "a.mzML", "b.mzML"]
+    text = to_openms_design(design, files)
+    assert "/run1/a.mzML" in text and "/run2/a.mzML" in text
+    assert any("more than once" in n for n in check_design(design))
+
+
+def test_non_ascii_conditions_round_trip(tmp_path):
+    save_design(tmp_path, _design().assign(condition=["5 µM", "5 µM", "10 µM", "10 µM"]), FILES)
+    assert list(load_design(tmp_path, FILES)["condition"]) == ["5 µM", "5 µM", "10 µM", "10 µM"]
