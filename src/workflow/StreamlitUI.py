@@ -11,6 +11,7 @@ import sys
 import importlib.util
 import time
 from io import BytesIO
+import pandas as pd
 import zipfile
 from datetime import datetime
 
@@ -22,6 +23,15 @@ from src.common.common import (
     tk_file_dialog,
 )
 from src.workflow._log_status import classify_log_outcome
+from src.workflow.ExperimentalDesign import (
+    align_design,
+    check_design,
+    design_path,
+    load_design,
+    read_design,
+    save_design,
+    to_openms_design,
+)
 from src.workflow.ParameterManager import (
     InvalidParameterFileError,
     TransientParameterFileError,
@@ -689,16 +699,23 @@ class StreamlitUI:
         # argument is still hashed into the widget's element id. Since this method feeds
         # the persisted parameter straight back in as that argument, the id changed on
         # every interaction, the following interaction arrived under the now-stale id and
-        # was silently dropped: selecting six mzML files kept only three. Seed the widget
-        # on first render only; from then on session state owns the value.
-        def seed(**kwargs: Any) -> dict:
-            return {} if key in st.session_state else kwargs
+        # was silently dropped: selecting six mzML files kept only three. Passing the
+        # argument on the first render only is not enough either: the id still changes
+        # once, between that render and the next, and the next rerun of the enclosing
+        # fragment resets the widget to empty -- a selection restored from params.json
+        # was wiped (and saved as empty) by the first reactive rerun of configure().
+        # So the argument is never passed: the first render writes the value into
+        # session state, which then owns it, and the id never changes.
+        def seed(initial: Any) -> dict:
+            if key not in st.session_state:
+                st.session_state[key] = initial
+            return {}
 
         if widget_type == "text":
-            st.text_input(name, key=key, help=help, on_change=on_change, **seed(value=value))
+            st.text_input(name, key=key, help=help, on_change=on_change, **seed(value))
 
         elif widget_type == "textarea":
-            st.text_area(name, key=key, help=help, on_change=on_change, **seed(value=value))
+            st.text_area(name, key=key, help=help, on_change=on_change, **seed(value))
 
         elif widget_type == "number":
             number_type = float if isinstance(value, float) else int
@@ -719,11 +736,11 @@ class StreamlitUI:
                 key=key,
                 help=help,
                 on_change=on_change,
-                **seed(value=value),
+                **seed(value),
             )
 
         elif widget_type == "checkbox":
-            st.checkbox(name, key=key, help=help, on_change=on_change, **seed(value=value))
+            st.checkbox(name, key=key, help=help, on_change=on_change, **seed(value))
 
         elif widget_type == "selectbox":
             if options is not None:
@@ -734,7 +751,7 @@ class StreamlitUI:
                     format_func=format_files,
                     help=help,
                     on_change=on_change,
-                    **seed(index=options.index(value) if value in options else 0),
+                    **seed(value if value in options else (options[0] if options else None)),
                 )
             else:
                 st.warning(f"Select widget '{name}' requires options parameter")
@@ -748,7 +765,7 @@ class StreamlitUI:
                     format_func=format_files,
                     help=help,
                     on_change=on_change,
-                    **seed(default=value),
+                    **seed(value),
                 )
             else:
                 st.warning(f"Select widget '{name}' requires options parameter")
@@ -770,7 +787,7 @@ class StreamlitUI:
                     format=None,
                     help=help,
                     on_change=on_change,
-                    **seed(value=value),
+                    **seed(value),
                 )
             else:
                 st.warning(
@@ -778,12 +795,12 @@ class StreamlitUI:
                 )
 
         elif widget_type == "password":
-            st.text_input(name, type="password", key=key, help=help, on_change=on_change, **seed(value=value))
+            st.text_input(name, type="password", key=key, help=help, on_change=on_change, **seed(value))
 
         elif widget_type == "auto":
             # Auto-determine widget type based on value
             if isinstance(value, bool):
-                st.checkbox(name, key=key, help=help, on_change=on_change, **seed(value=value))
+                st.checkbox(name, key=key, help=help, on_change=on_change, **seed(value))
             elif isinstance(value, (int, float)):
                 self._input_widget_impl(
                     key,
@@ -1418,6 +1435,94 @@ class StreamlitUI:
                     i = 0
                     cols = st.columns(num_cols)
         self.parameter_manager.save_parameters()
+
+    def experimental_design(self, key: str, name: str = "Experimental design") -> None:
+        """
+        Table assigning each selected input file a condition, biological replicate and fraction.
+
+        Edits are saved to ``<workflow_dir>/experimental-design.tsv`` in the
+        OpenMS design format, so ``execution()`` can pass that file to a TOPP
+        tool's ``-design`` or read it with ``ExperimentalDesign.load_design()``.
+        A design.tsv (one- or two-table) or SDRF file can be imported, and
+        spreadsheet cells can be pasted into the table. Inconsistencies such as
+        missing fractions are shown as notices, not errors.
+
+        Args:
+            key (str): The input file key whose selection the design covers
+                (the key passed to ``select_input_file``). Pass ``reactive=True``
+                to that ``select_input_file`` so the table follows the selection.
+            name (str, optional): The heading shown above the table.
+        """
+        files = st.session_state.get(
+            f"{self.parameter_manager.param_prefix}{key}", self.params.get(key, [])
+        )
+        if isinstance(files, str):
+            files = [files]
+        st.markdown(f"**{name}**")
+        if not files:
+            st.info("Select input files to define the experimental design.")
+            return
+
+        # Widget state keys stay outside param_prefix: save_parameters() writes
+        # every session key with that prefix to params.json.
+        version_key = f"_design-{Path(self.workflow_dir).name}-{key}"
+        st.session_state.setdefault(version_key, 0)
+        stored = load_design(self.workflow_dir, files)
+
+        uploaded = st.file_uploader(
+            "Import design.tsv or SDRF",
+            type=["tsv", "txt", "sdrf"],
+            key=f"{version_key}-import",
+            help="An OpenMS experimental design (one- or two-table) or an SDRF file. "
+            "Files are matched by name; files it does not list keep their current row.",
+        )
+        applied_key = f"{version_key}-applied"
+        if uploaded is not None and st.session_state.get(applied_key) != uploaded.file_id:
+            st.session_state[applied_key] = uploaded.file_id
+            try:
+                imported = read_design(uploaded.getvalue())
+            except (ValueError, KeyError, pd.errors.ParserError) as e:
+                st.error(f"Could not read {uploaded.name}: {e}")
+            else:
+                listed = set(imported["file"])
+                kept = stored[~stored["file"].isin(listed)]
+                stored = align_design(pd.concat([imported, kept]), files)
+                matched = len(listed & set(stored["file"]))
+                save_design(self.workflow_dir, stored, files)
+                st.session_state[version_key] += 1
+                st.toast(f"Imported the design of {matched} of {len(files)} file(s)")
+
+        edited = st.data_editor(
+            stored,
+            key=f"{version_key}-{st.session_state[version_key]}",
+            hide_index=True,
+            num_rows="fixed",
+            disabled=["file"],
+            column_config={
+                "file": st.column_config.TextColumn("File"),
+                "condition": st.column_config.TextColumn(
+                    "Condition", help="The group this file is compared as, e.g. control or treated."
+                ),
+                "replicate": st.column_config.NumberColumn(
+                    "Replicate", help="Biological replicate within the condition.", min_value=1, step=1
+                ),
+                "fraction": st.column_config.NumberColumn(
+                    "Fraction", help="Fraction number; 1 for unfractionated samples.", min_value=1, step=1
+                ),
+            },
+        )
+        path = design_path(self.workflow_dir)
+        if not path.is_file() or path.read_text() != to_openms_design(edited, files):
+            save_design(self.workflow_dir, edited, files)
+
+        for notice in check_design(edited):
+            st.info(notice, icon="ℹ️")
+        st.download_button(
+            "Download design.tsv",
+            to_openms_design(edited, files),
+            file_name="design.tsv",
+            mime="text/tab-separated-values",
+        )
 
     def zip_and_download_files(self, directory: str):
         """
