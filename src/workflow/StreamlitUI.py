@@ -28,6 +28,31 @@ from src.workflow.ParameterManager import (
 )
 
 
+def _matches_topp_parameter(pattern: str, key: bytes) -> bool:
+    """
+    Match an include/exclude pattern against a TOPP parameter key.
+
+    Key format: b"ToolName:1:section:subsection:param_name"
+
+    A pattern matches the end of the parameter path, bounded by ':' or the
+    start of the path ("tol" matches "FD:tol"). A pattern ending in ':' names
+    a whole section from the top of the path instead ("fd:" matches every
+    parameter under "fd:", but not "FD:" or "algorithm:fd:").
+    """
+    pattern = pattern.lstrip(":")  # Strip legacy leading colon
+    key_str = key.decode()
+
+    # Extract param path after "ToolName:1:"
+    parts = key_str.split(":")
+    param_path = ":".join(parts[2:]) if len(parts) > 2 else key_str
+
+    if pattern.endswith(":"):
+        return param_path.startswith(pattern)
+
+    # Check if pattern matches as a suffix, bounded by ':' or start
+    return param_path == pattern or param_path.endswith(":" + pattern)
+
+
 def _mounted_data_root() -> Union[Path, None]:
     """Return the validated mount root from the ``local_data_dir`` setting.
 
@@ -866,7 +891,7 @@ class StreamlitUI:
         Args:
             topp_tool_name (str): The name of the TOPP tool for which to generate inputs.
             num_cols (int, optional): Number of columns to use for the layout. Defaults to 3.
-            exclude_parameters (List[str], optional): List of parameter names to exclude from the widget. Defaults to an empty list.
+            exclude_parameters (List[str], optional): List of parameter names to exclude from the widget. A name ending in ":" excludes that whole top-level section (e.g. "fd:"). Defaults to an empty list.
             include_parameters (List[str], optional): List of parameter names to include in the widget. Defaults to an empty list.
             flag_parameters (List[str], optional): List of parameter names that should
                 be treated as no-value CLI flags during command construction.
@@ -1054,24 +1079,6 @@ class StreamlitUI:
         param = poms.Param()
         poms.ParamXMLFile().load(str(ini_file_path), param)
 
-        def _matches_parameter(pattern: str, key: bytes) -> bool:
-            """
-            Match pattern against TOPP parameter key using suffix matching.
-
-            Key format: b"ToolName:1:section:subsection:param_name"
-
-            Returns True if pattern matches the end of the param path,
-            bounded by ':' or start of path.
-            """
-            pattern = pattern.lstrip(":")  # Strip legacy leading colon
-            key_str = key.decode()
-
-            # Extract param path after "ToolName:1:"
-            parts = key_str.split(":")
-            param_path = ":".join(parts[2:]) if len(parts) > 2 else key_str
-
-            # Check if pattern matches as a suffix, bounded by ':' or start
-            return param_path == pattern or param_path.endswith(":" + pattern)
 
         # Always apply base exclusions (input/output files, standard excludes)
         excluded_keys = [
@@ -1090,7 +1097,7 @@ class StreamlitUI:
             if not (
                 b"input file" in param.getTags(key)
                 or b"output file" in param.getTags(key)
-                or any([_matches_parameter(k, key) for k in excluded_keys])
+                or any([_matches_topp_parameter(k, key) for k in excluded_keys])
             )
         ]
 
@@ -1098,7 +1105,7 @@ class StreamlitUI:
         if include_parameters:
             included_keys = {
                 key for key in valid_keys
-                if any([_matches_parameter(k, key) for k in include_parameters])
+                if any([_matches_topp_parameter(k, key) for k in include_parameters])
             }
         else:
             included_keys = set(valid_keys)  # All are included when no filter specified
