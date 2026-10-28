@@ -217,6 +217,18 @@ def copy_demo_workspace(demo_name: str, target_path: Path) -> bool:
         return False
 
 
+def _keep_fragment_non_empty():
+    """Give an auto-rerunning fragment one element even when it shows nothing.
+
+    Precaution against a white page reported in Firefox after a page switch,
+    with the frontend throwing "Bad 'setIn' index". The suspected cause is a
+    `run_every` fragment that renders no element on a run, so a later delta
+    targets a block the browser no longer has. An empty placeholder keeps the
+    fragment's block in the element tree on every run.
+    """
+    st.empty()
+
+
 @st.fragment(run_every=5)
 def monitor_hardware():
     """
@@ -245,6 +257,7 @@ def monitor_hardware():
 @st.fragment(run_every=5)
 def monitor_queue():
     """Display queue metrics in sidebar (online mode only)"""
+    _keep_fragment_non_empty()
     try:
         from src.workflow.health import get_queue_metrics
 
@@ -303,6 +316,7 @@ def monitor_storage():
     docker-compose, apptainer - because a red tick for a mechanism that is not
     deployed is a false alarm pointing at the wrong layer.
     """
+    _keep_fragment_non_empty()
     try:
         from src.workflow.health import get_storage_status
 
