@@ -1500,20 +1500,29 @@ class StreamlitUI:
             col_idx = i % num_cols
             description = self.parameter_manager.get_preset_description(preset_name)
             with cols[col_idx]:
-                if st.button(
+                # Applied in a callback, before the rerun starts, rather than with
+                # st.rerun() from the button branch: that interrupts the script before
+                # configure() renders its widgets, and Streamlit drops the state of
+                # every widget a run does not reach. Their keys survive, so the
+                # widgets re-render from an empty value, e.g. the mzML file selection
+                # is lost and the next start fails with no input files.
+                st.button(
                     preset_name,
                     key=f"preset_{preset_name}",
                     help=description if description else None,
                     use_container_width=True,
-                ):
-                    if self.parameter_manager.apply_preset(preset_name):
-                        st.toast(f"Applied preset: {preset_name}")
-                        st.rerun()
-                    else:
-                        st.error(f"Failed to apply preset: {preset_name}")
+                    on_click=self._apply_preset_callback,
+                    args=(preset_name,),
+                )
             # Start new row if needed
             if col_idx == num_cols - 1 and i < len(preset_names) - 1:
                 cols = st.columns(num_cols)
+
+    def _apply_preset_callback(self, preset_name: str) -> None:
+        if self.parameter_manager.apply_preset(preset_name):
+            st.toast(f"Applied preset: {preset_name}")
+        else:
+            st.toast(f"Failed to apply preset: {preset_name}", icon="⚠️")
 
     def file_upload_section(self, custom_upload_function) -> None:
         custom_upload_function()
