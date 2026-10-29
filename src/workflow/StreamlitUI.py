@@ -22,6 +22,7 @@ from src.common.common import (
     tk_file_dialog,
 )
 from src.workflow._log_status import classify_log_outcome
+from src.workflow.vendor_files import extract_bruker_zip, has_type
 from src.workflow.ParameterManager import (
     InvalidParameterFileError,
     TransientParameterFileError,
@@ -111,6 +112,9 @@ class StreamlitUI:
         Args:
             key (str): A unique identifier for the upload component.
             file_types (Union[str, List[str]]): Expected file type(s) for the uploaded files.
+                ``"d"`` accepts Bruker .d folders: from a local folder, or online as
+                a zip archive. Convert vendor files before use with
+                ``CommandExecutor.convert_to_mzml()``.
             name (str, optional): Display name for the upload component. Defaults to the key if not provided.
             fallback (Union[List, str], optional): Default files to use if no files are uploaded.
         """
@@ -157,8 +161,11 @@ class StreamlitUI:
 
         if st.session_state.location != "local":
             with c1.form(f"{key}-upload", clear_on_submit=True):
-                # Streamlit file uploader accepts file types as a list or None
-                file_type_for_uploader = file_types if file_types else None
+                # Streamlit file uploader accepts file types as a list or None.
+                # A .d folder cannot be uploaded from a browser, only a zip of it.
+                file_type_for_uploader = (
+                    file_types + ["zip"] if "d" in file_types else file_types
+                ) if file_types else None
 
                 files = st.file_uploader(
                     f"{name}",
@@ -173,14 +180,24 @@ class StreamlitUI:
                         # in case of online mode a single file is returned -> put in list
                         if not isinstance(files, list):
                             files = [files]
+                        failed = False
                         for f in files:
+                            if "d" in file_types and f.name.lower().endswith(".zip"):
+                                try:
+                                    added = extract_bruker_zip(f, files_dir)
+                                except zipfile.BadZipFile:
+                                    added = []
+                                if not added:
+                                    st.error(f"**{f.name}** holds no Bruker .d folder.")
+                                    failed = True
                             # Check if file type is in the list of accepted file types
-                            if f.name not in [
+                            elif f.name not in [
                                 f.name for f in files_dir.iterdir()
-                            ] and any(f.name.endswith(ft) for ft in file_types):
+                            ] and has_type(f.name, file_types):
                                 with open(Path(files_dir, f.name), "wb") as fh:
                                     fh.write(f.getbuffer())
-                        st.success("Successfully added uploaded files!")
+                        if not failed:
+                            st.success("Successfully added uploaded files!")
                     else:
                         st.error("Nothing to add, please upload file.")
         else:
@@ -196,8 +213,16 @@ class StreamlitUI:
                     disabled=not TK_AVAILABLE,
                 )
 
-                # Tk file dialog requires file types to be a list of tuples
-                tk_file_types = [(f"{ft}", f"*.{ft}") for ft in file_types]
+                # Tk file dialog requires file types to be a list of tuples.
+                # Both cases: Thermo writes .raw as well as .RAW.
+                tk_file_types = [
+                    (f"{ft}", f"*.{ft} *.{ft.upper()}") for ft in file_types
+                ]
+                if "d" in file_types:
+                    st.caption(
+                        "Bruker **.d** folders can't be picked here: add the "
+                        "folder that contains them on the right."
+                    )
 
                 if dialog_button:
                     local_files = tk_file_dialog(
@@ -270,9 +295,7 @@ class StreamlitUI:
                     for ft in file_types:
                         # Search for both files and directories with the specified extension
                         for path in local_dir.iterdir():
-                            if path.is_file() and path.name.endswith(f".{ft}"):
-                                files.append(path)
-                            elif path.is_dir() and path.name.endswith(f".{ft}"):
+                            if has_type(path, [ft]):
                                 files.append(path)
 
                     if not files:
@@ -486,7 +509,7 @@ class StreamlitUI:
                 return
 
             def _is_match(p: Path) -> bool:
-                return any(p.name.endswith(f".{ft}") for ft in file_types)
+                return has_type(p, file_types)
 
             subdirs = [p for p in entries if p.is_dir() and not _is_match(p)]
             bundled = [p for p in entries if p.is_dir() and _is_match(p)]
