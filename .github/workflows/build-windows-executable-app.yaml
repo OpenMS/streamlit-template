@@ -249,6 +249,25 @@ jobs:
         if (Test-Path $log) { Get-Content $log }
         if ($app.ExitCode -ne 0) { throw "Electron app smoke test failed with exit code $($app.ExitCode)" }
 
+    - name: End-to-end test in the Electron window
+      # Drives the installed app with Playwright and opens every page; an app
+      # adds its own steps (run a workflow, check its results) with --scenario.
+      run: |
+        $inst = Join-Path $env:LOCALAPPDATA "Programs/${{ env.APP_NAME }}"
+        node electron/scripts/e2e.js --exe "$inst/${{ env.APP_NAME }}.exe" --out e2e-output
+        $code = $LASTEXITCODE
+        $log = Join-Path $env:APPDATA "${{ env.APP_NAME }}/logs/streamlit.log"
+        if (Test-Path $log) { Get-Content $log -Tail 200 }
+        exit $code
+
+    - name: Archive end-to-end screenshots
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: electron-e2e-screenshots
+        path: e2e-output
+        if-no-files-found: ignore
+
     - name: Archive Electron installer
       uses: actions/upload-artifact@v4
       with:
