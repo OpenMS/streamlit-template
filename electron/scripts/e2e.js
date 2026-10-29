@@ -91,12 +91,12 @@ function makeHelpers(app, page, baseUrl, out) {
     },
 
     async clickTab(name) {
-      await page.getByRole("tab", { name: new RegExp(name) }).first().click();
+      await page.getByRole("tab", { name }).first().click();
       await settle(page);
     },
 
     async clickButton(name) {
-      await page.getByRole("button", { name: new RegExp(name) }).first().click();
+      await page.getByRole("button", { name }).first().click();
       await settle(page);
     },
 
@@ -133,11 +133,11 @@ function makeHelpers(app, page, baseUrl, out) {
       const started = Date.now();
       while (Date.now() - started < timeout) {
         const body = await page.locator("body").innerText().catch(() => "");
-        if (body.includes(text)) return;
         const bad = failOn.find((f) => body.includes(f));
         if (bad) throw new Error(`"${bad}" shown while waiting for "${text}"`);
         const exc = await exceptions(page);
         if (exc.length) throw new Error(`exception while waiting for "${text}":\n${exc.join("\n")}`);
+        if (body.includes(text)) return;
         await page.waitForTimeout(1000);
       }
       throw new Error(`"${text}" did not appear within ${timeout / 1000}s`);
@@ -155,7 +155,7 @@ function makeHelpers(app, page, baseUrl, out) {
 
     async shot(name) {
       const file = path.join(out, `${String(++shots).padStart(2, "0")}-${name.replace(/[^\w.-]+/g, "_")}.png`);
-      await page.screenshot({ path: file, fullPage: true }).catch(() => {});
+      await page.screenshot({ path: file, fullPage: true });
       return file;
     },
   };
@@ -205,10 +205,11 @@ async function main() {
       console.log(`Scenario ${path.basename(scenario)}`);
       try {
         await require(scenario)(t);
+        await t.assertNoException(path.basename(scenario));
         console.log(`ok: scenario ${path.basename(scenario)}`);
       } catch (err) {
         failed = true;
-        await t.shot(`failed-${path.basename(scenario)}`);
+        await t.shot(`failed-${path.basename(scenario)}`).catch(() => {});
         console.error(`FAILED: scenario ${path.basename(scenario)}: ${err.stack || err}`);
       }
     }
