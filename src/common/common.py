@@ -739,7 +739,7 @@ def render_sidebar(page: str = "") -> None:
                         # the callback fires with no readable value. The user did
                         # not pick another workspace then: leave everything as is.
                         chosen = st.session_state.get("chosen-workspace")
-                        if chosen is None or chosen == st.session_state.workspace.stem:
+                        if chosen is None or chosen == st.session_state.workspace.name:
                             return
                         for key in params.keys():
                             if key in st.session_state.keys():
@@ -754,7 +754,7 @@ def render_sidebar(page: str = "") -> None:
                     st.selectbox(
                         "choose existing workspace",
                         options,
-                        index=options.index(str(st.session_state.workspace.stem)),
+                        index=options.index(st.session_state.workspace.name),
                         on_change=change_workspace,
                         key="chosen-workspace",
                     )

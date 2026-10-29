@@ -10,7 +10,6 @@ is the current workspace. AppTest cannot recreate the unmapped key, so this
 test pins the path the guard must keep working: picking another workspace.
 """
 import json
-import shutil
 from pathlib import Path
 
 import pytest
@@ -24,11 +23,13 @@ def _workspace_selectbox(at):
 
 
 @pytest.fixture
-def app():
+def app(tmp_path):
     at = AppTest.from_file("content/file_upload.py")
     with open("settings.json", "r") as f:
         at.session_state.settings = json.load(f)
     at.session_state.settings["test"] = True
+    # Keep the workspaces this test creates out of the real workspaces folder.
+    at.session_state.settings["workspaces_dir"] = str(tmp_path)
     at.secrets["workspace"] = "test"
     at.run(timeout=30)
     assert not at.exception
@@ -39,9 +40,8 @@ def app():
 def other_workspace(app):
     workspaces_dir = Path(app.session_state.workspace).parent
     path = workspaces_dir / "test-workspace-selector-other"
-    path.mkdir(exist_ok=True)
-    yield path.name
-    shutil.rmtree(path, ignore_errors=True)
+    path.mkdir()
+    return path.name
 
 
 def test_picking_another_workspace_switches_to_it(app, other_workspace):
