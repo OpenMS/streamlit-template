@@ -106,9 +106,12 @@ function makeHelpers(app, page, baseUrl, out) {
         .locator('[data-testid="stMultiSelect"], [data-testid="stSelectbox"]')
         .filter({ has: page.locator('[data-testid="stWidgetLabel"]', { hasText: label }) })
         .first();
+      const multi = (await widget.getAttribute("data-testid")) === "stMultiSelect";
       await widget.locator('[data-baseweb="select"]').click();
       await page.getByRole("option", { name: option }).first().click();
-      await page.keyboard.press("Escape");
+      // A multiselect stays open after a pick. Escape on a selectbox would
+      // clear the value just chosen.
+      if (multi) await page.keyboard.press("Escape");
       await settle(page);
     },
 
