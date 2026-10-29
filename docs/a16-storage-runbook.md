@@ -35,6 +35,36 @@ csi-driver-nfs, **not** installing `nfs-common` via a DaemonSet: Kubermatic
 replaces nodes on upgrade, so package installation becomes a permanent obligation
 with a race window on every new node.
 
+**Blocking on kernels 6.19 and newer: directory delegations.** The NFSv4.1
+client in Linux 6.19+ asks for a delegation on a directory (`GET_DIR_DELEGATION`,
+op 46) in the GETATTR that follows a create, remove or rename. Ganesha before
+9.11, including the one in the pinned `nfs-provisioner` v4.0.8, answers op 46 as
+an illegal operation, and the client fails the call with `EREMOTEIO`. The
+symptom is `Remote I/O error` on every stat of a newly created directory
+(`mkdir -p`, the `seed-demos` init container) while plain files still work. It
+appears the day a node's kernel is upgraded, with no change to the manifests;
+CI hit it when the GitHub runner image moved to kernel 7.0. Check each node:
+
+```bash
+kubectl debug node/<node-name> -n openms -it --image=busybox -- \
+  sh -c 'uname -r; cat /host/sys/module/nfsv4/parameters/directory_delegations 2>&1'
+```
+
+No such file means the kernel predates the feature and nothing is needed. `Y`
+means the node has to be switched to `N` before it mounts the workspace volume,
+for as long as Ganesha is older than 9.11. The setting is kernel-wide and only
+affects which requests the client sends:
+
+```bash
+echo N > /sys/module/nfsv4/parameters/directory_delegations        # now
+echo 'options nfsv4 directory_delegations=N' > /etc/modprobe.d/nfs-no-dir-deleg.conf  # after reboot
+```
+
+On Kubermatic-managed nodes this belongs in the node image or the machine
+deployment's provisioning, for the same reason as the `mount.nfs` helper above:
+nodes are replaced on upgrade. The CI kind jobs set it on the runner in the step
+"Stop the NFS client requesting directory delegations".
+
 **Non-blocking but do it first.** PR 1 must be merged and deployed — the
 `params.json` Fix 1, the `tasks.py` re-raise, and the `src/Workflow.py` return
 value. Without the re-raise, queue mode reports every failure as success and none

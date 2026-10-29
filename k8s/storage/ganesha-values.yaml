@@ -105,6 +105,12 @@ image:
   # both are set; the tag is kept only to record which release the digest is.
   # Verified against registry.k8s.io as the multi-arch index for v4.0.8
   # (linux/amd64 and linux/arm64 both present).
+  #
+  # The Ganesha in this image predates 9.11, so it answers the directory
+  # delegation requests of Linux 6.19+ NFS clients with an error the client
+  # reports as "Remote I/O error". Nodes on such kernels need
+  # nfsv4 directory_delegations=N until this image carries Ganesha >= 9.11;
+  # docs/a16-storage-runbook.md section 0 has the check and the switch.
   tag: v4.0.8
   digest: sha256:c825f3d5e28bde099bd7a3daace28772d412c9157ad47fa752a9ad0baafc118d
   pullPolicy: IfNotPresent
