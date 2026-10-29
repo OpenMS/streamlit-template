@@ -18,6 +18,10 @@ ARG GITHUB_REPO=streamlit-template
 
 USER root
 
+# Keep apt from stopping at interactive prompts: tzdata, pulled in by
+# later packages, otherwise waits for a timezone and the build hangs.
+ENV DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC
+
 # Install required Ubuntu packages.
 RUN apt-get -y update
 RUN apt-get install -y --no-install-recommends --no-install-suggests g++ autoconf automake patch libtool make git gpg wget ca-certificates curl jq libgtk2.0-dev openjdk-8-jdk cron cmake
