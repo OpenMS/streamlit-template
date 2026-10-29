@@ -129,6 +129,12 @@ FROM compile-openms AS run-app
 RUN apt-get update && apt-get install -y --no-install-recommends redis-server nginx \
     && rm -rf /var/lib/apt/lists/*
 
+# Mono runs the ThermoRawFileParser (THIRDPARTY/All, a .NET Framework build)
+# that FileConverter calls to convert Thermo RAW files to mzML on Linux.
+RUN apt-get update && apt-get install -y --no-install-recommends mono-complete \
+    && rm -rf /var/lib/apt/lists/* \
+    && mono --version
+
 # Create Redis data directory. Default 0755 root-owned is enough: the docker
 # entrypoint runs as root (can write regardless of mode), and the apptainer
 # entrypoint relocates Redis state to /tmp/openms-runtime-* so this dir is
