@@ -734,10 +734,17 @@ def render_sidebar(page: str = "") -> None:
                 with st.expander("🖥️ **Workspaces**"):
                     # Define callback function to change workspace
                     def change_workspace():
+                        # A page switch while a page is still loading can replay
+                        # this widget's value before its key is mapped again, so
+                        # the callback fires with no readable value. The user did
+                        # not pick another workspace then: leave everything as is.
+                        chosen = st.session_state.get("chosen-workspace")
+                        if chosen is None or chosen == st.session_state.workspace.name:
+                            return
                         for key in params.keys():
                             if key in st.session_state.keys():
                                 del st.session_state[key]
-                        st.query_params.workspace = st.session_state["chosen-workspace"]
+                        st.query_params.workspace = chosen
 
                     # Get all available workspaces as options
                     options = [
@@ -747,7 +754,7 @@ def render_sidebar(page: str = "") -> None:
                     st.selectbox(
                         "choose existing workspace",
                         options,
-                        index=options.index(str(st.session_state.workspace.stem)),
+                        index=options.index(st.session_state.workspace.name),
                         on_change=change_workspace,
                         key="chosen-workspace",
                     )
