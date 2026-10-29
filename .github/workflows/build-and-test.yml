@@ -845,6 +845,37 @@ jobs:
             docker exec "$n" sh -c 'ls -l /sbin/mount.nfs* /usr/sbin/mount.nfs* 2>&1; echo ---; if modprobe nfs 2>/dev/null; then MP="modprobe loaded it"; else MP="modprobe could not (absent, or no such module)"; fi; grep nfs /proc/filesystems || echo "(nfs absent from /proc/filesystems; $MP. Loaded-and-still-absent is CONCLUSIVE: this node cannot mount NFS. Otherwise the module may still autoload on first mount, and this says nothing.)"' || true
           done
 
+      - name: Stop the NFS client requesting directory delegations
+        # Linux 6.19 added directory delegations to the NFSv4.1 client: after
+        # ACCESS, CREATE, REMOVE or RENAME it appends GET_DIR_DELEGATION (op 46)
+        # to the directory's next GETATTR. Ganesha before 9.11 - which includes
+        # the one in nfs-provisioner v4.0.8 - routes op 46 to its illegal-op
+        # handler, the reply's opcode no longer matches, and the client fails
+        # the whole call with EREMOTEIO. Every stat of a freshly created
+        # directory then reads "Remote I/O error" while plain files keep
+        # working. Runner image ubuntu24/20261025 ships kernel 7.0, and every
+        # kind job has failed this way since it rolled out.
+        #
+        # kind nodes are containers on the runner, so the kubelet's NFS mounts
+        # run in the runner's kernel and the switch is set here, on the host.
+        # Per request, so it holds for mounts made later. Older kernels have no
+        # such parameter and nothing to switch off. Production nodes need the
+        # same until Ganesha is >= 9.11: docs/a16-storage-runbook.md section 0.
+        run: |
+          sudo modprobe nfsv4 || true
+          p=/sys/module/nfsv4/parameters/directory_delegations
+          if [ -e "$p" ]; then
+            echo N | sudo tee "$p" >/dev/null
+            v="$(cat "$p")"
+            echo "kernel $(uname -r): directory_delegations=$v"
+            if [ "$v" != "N" ]; then
+              echo "::error::could not switch off NFS directory delegations ($p reads '$v'); Ganesha < 9.11 answers them with EREMOTEIO"
+              exit 1
+            fi
+          else
+            echo "kernel $(uname -r) has no $p: the client never requests directory delegations"
+          fi
+
       - name: Deploy the storage root (NFS-Ganesha)
         # Before the overlay, because workspaces-pvc is ReadWriteMany on the
         # StorageClass this root publishes: with no provisioner running the
@@ -1529,6 +1560,37 @@ jobs:
             echo "--- $n"
             docker exec "$n" sh -c 'ls -l /sbin/mount.nfs* /usr/sbin/mount.nfs* 2>&1; echo ---; if modprobe nfs 2>/dev/null; then MP="modprobe loaded it"; else MP="modprobe could not (absent, or no such module)"; fi; grep nfs /proc/filesystems || echo "(nfs absent from /proc/filesystems; $MP. Loaded-and-still-absent is CONCLUSIVE: this node cannot mount NFS. Otherwise the module may still autoload on first mount, and this says nothing.)"' || true
           done
+
+      - name: Stop the NFS client requesting directory delegations
+        # Linux 6.19 added directory delegations to the NFSv4.1 client: after
+        # ACCESS, CREATE, REMOVE or RENAME it appends GET_DIR_DELEGATION (op 46)
+        # to the directory's next GETATTR. Ganesha before 9.11 - which includes
+        # the one in nfs-provisioner v4.0.8 - routes op 46 to its illegal-op
+        # handler, the reply's opcode no longer matches, and the client fails
+        # the whole call with EREMOTEIO. Every stat of a freshly created
+        # directory then reads "Remote I/O error" while plain files keep
+        # working. Runner image ubuntu24/20261025 ships kernel 7.0, and every
+        # kind job has failed this way since it rolled out.
+        #
+        # kind nodes are containers on the runner, so the kubelet's NFS mounts
+        # run in the runner's kernel and the switch is set here, on the host.
+        # Per request, so it holds for mounts made later. Older kernels have no
+        # such parameter and nothing to switch off. Production nodes need the
+        # same until Ganesha is >= 9.11: docs/a16-storage-runbook.md section 0.
+        run: |
+          sudo modprobe nfsv4 || true
+          p=/sys/module/nfsv4/parameters/directory_delegations
+          if [ -e "$p" ]; then
+            echo N | sudo tee "$p" >/dev/null
+            v="$(cat "$p")"
+            echo "kernel $(uname -r): directory_delegations=$v"
+            if [ "$v" != "N" ]; then
+              echo "::error::could not switch off NFS directory delegations ($p reads '$v'); Ganesha < 9.11 answers them with EREMOTEIO"
+              exit 1
+            fi
+          else
+            echo "kernel $(uname -r) has no $p: the client never requests directory delegations"
+          fi
 
       - name: Deploy the storage root (NFS-Ganesha)
         # Before the overlay, because workspaces-pvc is ReadWriteMany on the
