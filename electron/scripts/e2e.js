@@ -108,7 +108,11 @@ function makeHelpers(app, page, baseUrl, out) {
         .filter({ has: page.locator('[data-testid="stWidgetLabel"]', { hasText: label }) })
         .first();
       const multi = (await widget.getAttribute("data-testid")) === "stMultiSelect";
-      await widget.locator('[data-baseweb="select"]').click();
+      // Typing into the search box opens the list and narrows it. A click on
+      // the box can land on a chip already picked, which opens nothing.
+      const search = widget.locator("input").first();
+      await search.click();
+      await search.fill(option);
       await page.getByRole("option", { name: option }).first().click();
       // A multiselect stays open after a pick. Escape on a selectbox would
       // clear the value just chosen.
