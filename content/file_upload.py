@@ -23,27 +23,25 @@ if not any(Path(mzML_dir).iterdir()):
     # No files present, load example data
     fileupload.load_example_mzML_files()
 
-tabs = ["File Upload"]
+# A local install reads files straight from disk, so it offers only the local
+# folder and not the browser upload, which streams every byte through the browser.
 if st.session_state.location == "local":
-    tabs.append("Files from local folder")
-
-tabs = st.tabs(tabs)
-
-with tabs[0]:
-    with st.form("mzML-upload", clear_on_submit=True):
-        files = st.file_uploader(
-            "mzML files", accept_multiple_files=(st.session_state.location == "local")
-        )
-        cols = st.columns(3)
-        if cols[1].form_submit_button("Add files to workspace", type="primary"):
-            if files:
-                fileupload.save_uploaded_mzML(files)
-            else:
-                st.warning("Select files first.")
+    tabs = st.tabs(["Files from local folder"])
+else:
+    tabs = st.tabs(["File Upload"])
+    with tabs[0]:
+        with st.form("mzML-upload", clear_on_submit=True):
+            files = st.file_uploader("mzML files", accept_multiple_files=False)
+            cols = st.columns(3)
+            if cols[1].form_submit_button("Add files to workspace", type="primary"):
+                if files:
+                    fileupload.save_uploaded_mzML(files)
+                else:
+                    st.warning("Select files first.")
 
 # Local file upload option: via directory path
 if st.session_state.location == "local":
-    with tabs[1]:
+    with tabs[0]:
         st_cols = st.columns([0.05, 0.95], gap="small")
         with st_cols[0]:
             st.write("\n")

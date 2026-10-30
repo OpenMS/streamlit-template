@@ -11,6 +11,11 @@ from src.common.common import show_fig
 class Workflow(WorkflowManager):
     # Setup pages for upload, parameter, execution and results.
     # For layout use any streamlit components such as tabs (as shown in example), columns, or even expanders.
+    # Keep every run as its own result set: the Run page names each run, the
+    # Results page picks which one to show and the Download page renames,
+    # downloads and deletes them. Results are read from self.results_dir.
+    multi_run = True
+
     def __init__(self) -> None:
         # Initialize the parent class with the workflow name.
         super().__init__("TOPP Workflow", st.session_state["workspace"])
@@ -29,12 +34,18 @@ class Workflow(WorkflowManager):
 
     @st.fragment
     def configure(self) -> None:
-        # Allow users to select mzML files for the analysis.
-        self.ui.select_input_file("mzML-files", multiple=True)
+        # Allow users to select mzML files for the analysis. reactive=True so
+        # the experimental design table follows the selection.
+        self.ui.select_input_file("mzML-files", multiple=True, reactive=True)
 
         # Create tabs for different analysis steps.
         t = st.tabs(
-            ["**Feature Detection**", "**Feature Linking**", "**Python Custom Tool**"]
+            [
+                "**Feature Detection**",
+                "**Feature Linking**",
+                "**Python Custom Tool**",
+                "**Experimental Design**",
+            ]
         )
         with t[0]:
             # Parameters for FeatureFinderMetabo TOPP tool.
@@ -51,6 +62,12 @@ class Workflow(WorkflowManager):
             # Generate input widgets for a custom Python tool, located at src/python-tools.
             # Parameters are specified within the file in the DEFAULTS dictionary.
             self.ui.input_python("example")
+        with t[3]:
+            # Condition, replicate and fraction per selected file, saved as an
+            # OpenMS design.tsv in the workflow directory. Pass that file to a
+            # TOPP tool's -design (e.g. ProteomicsLFQ), or read it in
+            # execution() with src.workflow.ExperimentalDesign.load_design().
+            self.ui.experimental_design("mzML-files")
 
     def execution(self) -> bool:
         # Return True only if every step succeeded. The caller
@@ -142,9 +159,7 @@ class Workflow(WorkflowManager):
                     "💡 Select one ore more rows in the table to show a barplot with intensities."
                 )
 
-        file = Path(
-            self.workflow_dir, "results", "feature-linking", "feature_matrix.tsv"
-        )
+        file = Path(self.results_dir, "feature-linking", "feature_matrix.tsv")
         if file.exists():
             show_consensus_features()
         else:

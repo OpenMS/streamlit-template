@@ -9,6 +9,8 @@ if "settings" not in st.session_state:
             st.session_state.settings = json.load(f)
 
 if __name__ == '__main__':
+    # A local install exports results to a folder instead of downloading them.
+    export = "Export" if not st.session_state.settings["online_deployment"] else "Download"
     pages = {
         str(st.session_state.settings["app-name"]) : [
             st.Page(Path("content", "quickstart.py"), title="Quickstart", icon="👋"),
@@ -25,13 +27,13 @@ if __name__ == '__main__':
             st.Page(Path("content", "topp_workflow_parameter.py"), title="Configure", icon="⚙️"),
             st.Page(Path("content", "topp_workflow_execution.py"), title="Run", icon="🚀"),
             st.Page(Path("content", "topp_workflow_results.py"), title="Results", icon="📊"),
-            st.Page(Path("content", "topp_workflow_download.py"), title="Download", icon="⬇️"),
+            st.Page(Path("content", "topp_workflow_download.py"), title=export, icon="⬇️" if export == "Download" else "📤"),
         ],
         "pyOpenMS Workflow" : [
             st.Page(Path("content", "file_upload.py"), title="File Upload", icon="📂"),
             st.Page(Path("content", "raw_data_viewer.py"), title="View MS data", icon="👀"),
             st.Page(Path("content", "run_example_workflow.py"), title="Run Workflow", icon="⚙️"),
-            st.Page(Path("content", "download_section.py"), title="Download Results", icon="⬇️"),
+            st.Page(Path("content", "download_section.py"), title=f"{export} Results", icon="⬇️" if export == "Download" else "📤"),
         ],
         "Others Topics": [
             st.Page(Path("content", "simple_workflow.py"), title="Simple Workflow", icon="⚙️"),
