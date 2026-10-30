@@ -19,11 +19,19 @@ class FileManager:
     def __init__(
         self,
         workflow_dir: Path,
+        results_dir: Path = None,
     ):
         """
         Initializes the FileManager object with a the current workflow results directory.
+
+        Args:
+            workflow_dir (Path): The workflow directory.
+            results_dir (Path, optional): Where ``set_results_dir`` creates its
+                subdirectories. Defaults to ``<workflow_dir>/results``; a
+                multi-run workflow points it at the current run.
         """
         self.workflow_dir = workflow_dir
+        self.results_dir = Path(results_dir or Path(workflow_dir, "results"))
 
     def get_files(
         self,
@@ -172,8 +180,8 @@ class FileManager:
         if not name:
             name = self._generate_random_code(4)
             # make sure the subdirectory does not exist in results yet
-            while Path(self.workflow_dir, "results", name).exists():
+            while Path(self.results_dir, name).exists():
                 name = self._generate_random_code(4)
-        path = Path(self.workflow_dir, "results", name)
-        path.mkdir(exist_ok=True)
+        path = Path(self.results_dir, name)
+        path.mkdir(parents=True, exist_ok=True)
         return str(path)

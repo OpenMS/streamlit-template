@@ -2106,8 +2106,9 @@ Started: {status.get('started_at', 'N/A')}""")
                     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zip_file:
                         for rel in selected_files:
                             zip_file.write(Path(results_dir, rel), Path("results", rel))
-                st.session_state[prepared_key] = sorted(chosen)
-            if st.session_state.get(prepared_key) == sorted(chosen) and zip_path.exists():
+                # Keyed on the folder too: a multi-run workflow offers one run at a time.
+                st.session_state[prepared_key] = (str(results_dir), sorted(chosen))
+            if st.session_state.get(prepared_key) == (str(results_dir), sorted(chosen)) and zip_path.exists():
                 with open(zip_path, "rb") as f:
                     st.download_button(
                         "⬇️ Download ZIP",

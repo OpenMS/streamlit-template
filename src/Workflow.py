@@ -11,6 +11,11 @@ from src.common.common import show_fig
 class Workflow(WorkflowManager):
     # Setup pages for upload, parameter, execution and results.
     # For layout use any streamlit components such as tabs (as shown in example), columns, or even expanders.
+    # Keep every run as its own result set: the Run page names each run, the
+    # Results page picks which one to show and the Download page renames,
+    # downloads and deletes them. Results are read from self.results_dir.
+    multi_run = True
+
     def __init__(self) -> None:
         # Initialize the parent class with the workflow name.
         super().__init__("TOPP Workflow", st.session_state["workspace"])
@@ -154,9 +159,7 @@ class Workflow(WorkflowManager):
                     "💡 Select one ore more rows in the table to show a barplot with intensities."
                 )
 
-        file = Path(
-            self.workflow_dir, "results", "feature-linking", "feature_matrix.tsv"
-        )
+        file = Path(self.results_dir, "feature-linking", "feature_matrix.tsv")
         if file.exists():
             show_consensus_features()
         else:

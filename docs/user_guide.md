@@ -46,6 +46,13 @@ You can download the results of your analyses, including data, figures and table
 - **Tables**: Use the download button to save tables in *csv* format, appearing while hovering on the top right corner of the table.
 - **Data**: Use the download section in the sidebar to download the raw results of your analysis.
 
+### Keeping several runs
+
+Workflows that keep their runs store every analysis you start as its own result set, so changing a parameter and running again does not overwrite the earlier results:
+- **Run page**: give the run a name before you start it (optional; runs are numbered otherwise).
+- **Results pages**: the *Run* picker at the top chooses which run is shown. The choice applies to all results pages.
+- **Download page**: lists every run with its start time and status. 👁️ shows it on the results pages, ✏️ renames it, 📦 packs its results, parameters and logs into a ZIP to download, 🗑️ deletes it.
+
 ## Getting Started
 
 To get started:
