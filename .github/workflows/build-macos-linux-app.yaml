@@ -140,8 +140,13 @@ jobs:
             "-c.appImage.artifactName=$APP_NAME-Linux-x86_64.\${ext}"
             "-c.deb.artifactName=$APP_NAME-Linux-amd64.\${ext}")
         fi
-        # Signing opens many of the payload's files at once; macOS runners allow 256.
-        ulimit -n 65536 2>/dev/null || ulimit -n "$(ulimit -Hn)"
+        # The signer opens every file of the payload (tens of thousands) at once;
+        # lift macOS's per-process limit above that.
+        if [[ $RUNNER_OS == macOS ]]; then
+          sudo sysctl -w kern.maxfiles=524288 kern.maxfilesperproc=524288 >/dev/null
+          ulimit -n 524288
+          echo "open-file limit: $(ulimit -n), payload files: $(find electron/payload -type f | wc -l)"
+        fi
         cd electron
         npm ci
         npx electron-builder "${args[@]}"
