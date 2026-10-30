@@ -460,21 +460,32 @@ def test_runs_directed_from_the_desktop(online, tmp_path, monkeypatch):
     }))
     c = client.SyncClient(online["url"], online["token"], chunk_size=MB)
     assert c.runs()["topp-workflow"]["status"] == "idle"
+    # What a run uploads: the items its parameters name, nothing else.
+    assert client.run_inputs(client.portable_params(ws, "topp-workflow")) == {
+        f"topp-workflow/input-files/mzML-files/{n}" for n in ("a.mzML", "b.raw", "run.d")}
 
     # Inputs first: a run needs the files its parameters name.
     with pytest.raises(client.SyncError, match="not uploaded yet"):
         c.start_run(ws, "topp-workflow")
     c.push(ws)
-    state = c.start_run(ws, "topp-workflow")
-    assert state["status"] == "queued"
+    state = c.start_run(ws, "topp-workflow", "From the desktop")
+    assert state["status"] == "queued" and state["run_name"] == "From the desktop"
     remote = online["ws"] / "topp-workflow"
+    # A multi-run workflow gets its own run, which the job writes into.
+    from src.workflow.RunManager import RunManager
+    (run,) = RunManager(remote).list_runs()
+    assert run["name"] == "From the desktop" and run["id"] == state["run_id"]
     sent = json.loads((remote / "params.json").read_text())
     assert sent["mzML-files"] == [str(remote / "input-files/mzML-files" / n)
                                   for n in ("a.mzML", "b.raw", "run.d")]
     assert sent["topp-workflow-param-x"] == 5
     # The online app's own Run page finds the job through the same file.
     job_id = (remote / ".job_id").read_text()
-    assert rq.job.Job.fetch(job_id, connection=qm._redis).kwargs["workflow_class"] == "Workflow"
+    kwargs = rq.job.Job.fetch(job_id, connection=qm._redis).kwargs
+    assert kwargs["workflow_class"] == "Workflow" and kwargs["run_id"] == run["id"]
+    # A running run's files are not offered for download yet.
+    (remote / "runs" / run["id"] / "results" / "out.tsv").write_text("x")
+    assert not [i for i in c.result_items(ws) if "/runs/" in i.key]
 
     with pytest.raises(client.SyncError, match="already queued"):
         c.start_run(ws, "topp-workflow")
@@ -484,6 +495,11 @@ def test_runs_directed_from_the_desktop(online, tmp_path, monkeypatch):
     stopped = c.stop_run("topp-workflow")
     assert stopped["status"] == "canceled"
     assert "WORKFLOW CANCELLED" in stopped["log"][-1]
+    assert RunManager(remote).get(run["id"])["status"] == "cancelled"
+    # Ended, the run comes down whole, so the desktop's Results page lists it.
+    c.pull(ws)
+    assert (ws / "topp-workflow" / "runs" / run["id"] / "results" / "out.tsv").read_text() == "x"
+    assert RunManager(ws / "topp-workflow").get(run["id"])["name"] == "From the desktop"
 
 
 _LOCK_PROBE = """

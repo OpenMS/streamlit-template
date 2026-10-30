@@ -7,11 +7,16 @@ id in ``<workflow>/.job_id``, so the online app's own pages show the run as
 if it had been started there. Stopping cancels the job and writes the
 ``WORKFLOW CANCELLED`` marker, as ``WorkflowManager.stop_workflow`` does.
 
+A workflow class with ``multi_run = True`` gets a new run in
+``<workflow>/runs/<id>/`` for every start, named as on the desktop's Run page,
+and the job writes into it; stopping marks it cancelled.
+
 Which workflows can be run is ``workspace_sync.workflows`` in settings.json,
-a map from workflow directory name to ``"module:Class"``. No Streamlit here:
-the service runs without it.
+a map from workflow directory name to ``"module:Class"``. Nothing here needs
+Streamlit; only importing a workflow class to read ``multi_run`` may load it.
 """
 
+import importlib
 import json
 import os
 import shutil
@@ -70,11 +75,36 @@ def _log_tail(workflow_dir: Path) -> list[str]:
     return [line for line in lines if line.strip()][-LOG_TAIL_LINES:]
 
 
+def is_multi_run(target: str) -> bool:
+    module, _, cls = target.partition(":")
+    return bool(getattr(getattr(importlib.import_module(module), cls), "multi_run", False))
+
+
+def _runs(workflow_dir: Path):
+    from src.workflow.RunManager import RunManager
+    return RunManager(workflow_dir)
+
+
+_STARTED = ".sync-run"     # the run a desktop start created, for its name
+
+
+def _read_started(workflow_dir: Path) -> str:
+    try:
+        return Path(workflow_dir, _STARTED).read_text().strip()
+    except OSError:
+        return ""
+
+
 def status(qm, workspace: Path, workflow: str) -> dict:
     """The state of the workflow's last run, as the online Run page sees it."""
     workflow_dir = Path(workspace, workflow)
     info = {"workflow": workflow, "status": "idle", "progress": None, "current_step": "",
-            "queue_position": None, "error": "", "log": _log_tail(workflow_dir)}
+            "queue_position": None, "error": "", "log": _log_tail(workflow_dir),
+            "run_id": None, "run_name": ""}
+    started = _read_started(workflow_dir)
+    run = _runs(workflow_dir).get(started) if started else None
+    if run is not None:
+        info.update(run_id=started, run_name=run.get("name", ""))
     job_id = qm.load_job_id(workflow_dir) if qm else None
     job = qm.get_job_info(job_id) if job_id else None
     if job is not None:
@@ -86,7 +116,8 @@ def status(qm, workspace: Path, workflow: str) -> dict:
     return info
 
 
-def start(qm, workspace: Path, workflow: str, target: str, params: dict) -> dict:
+def start(qm, workspace: Path, workflow: str, target: str, params: dict,
+          name: str = "") -> dict:
     """Write the parameters and queue the run. Raises LookupError when the
     workflow is already running, FileNotFoundError for missing inputs."""
     workflow_dir = Path(workspace, workflow)
@@ -101,16 +132,25 @@ def start(qm, workspace: Path, workflow: str, target: str, params: dict) -> dict
     tmp.write_text(json.dumps(params, indent=4), encoding="utf-8")
     os.replace(tmp, Path(workflow_dir, "params.json"))
 
+    # The log shown for this run is its own, as when the Run page starts it locally.
+    shutil.rmtree(Path(workflow_dir, "logs"), ignore_errors=True)
+    run_id = None
+    if is_multi_run(target):
+        run_id = _runs(workflow_dir).new_run(name, Path(workflow_dir, "params.json"))
+    Path(workflow_dir, _STARTED).write_text(run_id or "")
+
     from src.workflow.tasks import execute_workflow
     module, _, cls = target.partition(":")
     job_id = qm.submit_job(
         func=execute_workflow,
         kwargs={"workflow_dir": str(workflow_dir), "workflow_class": cls,
-                "workflow_module": module},
+                "workflow_module": module, "run_id": run_id},
         job_id=f"workflow-{workspace.name}-{workflow}-{int(time.time())}",
         description=f"Workflow: {workflow} (from the desktop app)",
     )
     if not job_id:
+        if run_id:
+            _runs(workflow_dir).delete(run_id)
         raise RuntimeError("the queue did not accept the run")
     qm.store_job_id(workflow_dir, job_id)
     return status(qm, workspace, workflow)
@@ -123,4 +163,9 @@ def stop(qm, workspace: Path, workflow: str) -> dict:
         from src.workflow.Logger import Logger
         Logger(workflow_dir).log("WORKFLOW CANCELLED")
         shutil.rmtree(Path(workflow_dir, "pids"), ignore_errors=True)
+        # As WorkflowManager.stop_workflow: the killed job cannot say how its run ended.
+        from src.workflow.RunManager import CANCELLED, RUNNING
+        manager = _runs(workflow_dir)
+        for run in manager.list_runs(RUNNING):
+            manager.finish(run["id"], CANCELLED)
     return status(qm, workspace, workflow)

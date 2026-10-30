@@ -196,6 +196,24 @@ def portable_params(workspace: Path, workflow: str) -> dict:
     return convert(params)
 
 
+def run_inputs(params: dict) -> set[str]:
+    """The input items portable parameters refer to: what a run needs online."""
+    found: set[str] = set()
+
+    def visit(value):
+        if isinstance(value, str) and value.startswith(WORKSPACE_REF):
+            found.add(item_key(value[len(WORKSPACE_REF):]))
+        elif isinstance(value, list):
+            for v in value:
+                visit(v)
+        elif isinstance(value, dict):
+            for v in value.values():
+                visit(v)
+
+    visit(params)
+    return found
+
+
 def _b64(value: str) -> str:
     return base64.b64encode(value.encode()).decode()
 
@@ -347,10 +365,11 @@ class SyncClient:
         """The online workflows that can be run from here, with their state."""
         return {r["workflow"]: r for r in self._request("GET", "runs").json()["runs"]}
 
-    def start_run(self, workspace: Path, workflow: str) -> dict:
-        """Queue ``workflow`` online with this workspace's parameters for it."""
+    def start_run(self, workspace: Path, workflow: str, name: str = "") -> dict:
+        """Queue ``workflow`` online with this workspace's parameters for it.
+        ``name`` names the run of a multi-run workflow."""
         params = portable_params(workspace, workflow)
-        return self._request("POST", f"runs/{workflow}", json={"params": params},
+        return self._request("POST", f"runs/{workflow}", json={"params": params, "name": name},
                              expect=(200, 201)).json()
 
     def stop_run(self, workflow: str) -> dict:

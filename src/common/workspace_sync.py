@@ -17,6 +17,9 @@ new in those directions. Each workflow the server allows can also be run
 online from here ("Run on cloud": upload its inputs, then queue it with this
 workspace's parameters), followed live and stopped.
 
+A linked workspace's Run page also offers to run the workflow online
+(``render_run_choice``), with the size of the upload that run needs.
+
 The sidebar of every page shows the link's state in short (pending items,
 a running transfer) and offers a one-click Sync in the chosen directions.
 It never waits on the network; states older than a minute are refreshed in
@@ -50,6 +53,7 @@ class _Job:
     ended: float = 0.0
     auto: bool = False             # started by Keep in sync
     workflow: str = ""             # "run": the workflow queued online
+    run_name: str = ""             # "run": the name of a multi-run workflow's run
 
 
 _JOBS: dict[str, _Job] = {}
@@ -159,14 +163,14 @@ def _start(workspace: Path, action: str, keys: list[str] | None, link: dict) -> 
 
 
 def _launch(workspace: Path, action: str, keys: list[str] | None, c: client.SyncClient,
-            auto: bool = False, workflow: str = "") -> bool:
+            auto: bool = False, workflow: str = "", run_name: str = "") -> bool:
     """Run a transfer in a background thread; False if one is running already.
 
     ``sync`` pushes, then pulls; its keys hold input and result keys together
     (push and pull each ignore the other's). ``run`` pushes the keys, then
     queues ``workflow`` online.
     """
-    job = _Job(action, keys or [], auto=auto, workflow=workflow)
+    job = _Job(action, keys or [], auto=auto, workflow=workflow, run_name=run_name)
     with _JOBS_LOCK:
         running = _JOBS.get(str(workspace))
         if running and not running.finished:
@@ -191,7 +195,7 @@ def _launch(workspace: Path, action: str, keys: list[str] | None, c: client.Sync
                                                up.bytes + down.bytes)
             elif action == "run":
                 job.report = c.push(workspace, keys, progress=progress, cancel=job.cancel)
-                c.start_run(workspace, workflow)
+                c.start_run(workspace, workflow, run_name)
             else:
                 fn = c.push if action == "push" else c.pull
                 job.report = fn(workspace, keys, progress=progress, cancel=job.cancel)
@@ -390,11 +394,32 @@ def _run_label(run: dict) -> str:
             }.get(state, state)
 
 
+def _run_upload(workspace: Path, workflow: str, inputs) -> tuple[list, list]:
+    """The input items a run of ``workflow`` uses, and those not online yet."""
+    needed = client.run_inputs(client.portable_params(workspace, workflow))
+    used = [i for i in inputs if i.key in needed]
+    return used, _pending(used, _PUSH_PENDING)
+
+
+def _upload_note(used, missing) -> str:
+    if not used:
+        return "No input files selected for this run."
+    if not missing:
+        return f"Nothing to upload: the {len(used)} input item(s) of this run are already online."
+    online = len(used) - len(missing)
+    return (f"Expected upload: **{_size(sum(i.size for i in missing))}** "
+            f"({len(missing)} of {len(used)} input item(s))"
+            + (f"; {online} already online." if online else "."))
+
+
 def _run_view(workspace: Path, link: dict, workflow: str, run: dict, inputs, busy) -> None:
     """One workflow's run in the online workspace, with Run and Stop."""
     active = run["status"] in _RUN_ACTIVE
     col1, col2, col3 = st.columns([3, 1, 1])
-    col1.markdown(f"☁️ **Cloud run:** {_run_label(run)}")
+    name = f" “{run['run_name']}”" if run.get("run_name") else ""
+    col1.markdown(f"☁️ **Cloud run{name}:** {_run_label(run)}")
+    if not active:
+        col1.caption(_upload_note(*_run_upload(workspace, workflow, inputs)))
     if run["status"] == "started" and run.get("progress"):
         col1.progress(min(float(run["progress"]), 1.0))
     suffix = f"{workspace.name}-{workflow}"
@@ -416,8 +441,11 @@ def _run_view(workspace: Path, link: dict, workflow: str, run: dict, inputs, bus
             st.code("\n".join(run["log"]), language=None)
 
 
-def _start_run(workspace: Path, link: dict, workflow: str, inputs) -> None:
-    _launch(workspace, "run", [i.key for i in inputs], _client(link), workflow=workflow)
+def _start_run(workspace: Path, link: dict, workflow: str, inputs, name: str = "") -> bool:
+    """Upload what the run uses, then queue it; False while a transfer runs."""
+    used, _ = _run_upload(workspace, workflow, inputs)
+    return _launch(workspace, "run", [i.key for i in used], _client(link), workflow=workflow,
+                   run_name=name)
 
 
 @st.fragment(run_every=3.0)
@@ -630,9 +658,11 @@ def _sidebar_summary(workspace: Path, link: dict, status: dict | None, prefs: di
     if job is not None and job.error:
         st.caption(f"⚠️ Last transfer stopped: {job.error.split('. ')[0]}.")
     elif job is not None and job.report is not None and job.report.transferred:
-        st.caption(f"Last: {_VERBS[job.action][1].lower()} {len(job.report.transferred)} "
+        verb = "uploaded" if job.action == "run" else _VERBS[job.action][1].lower()
+        st.caption(f"Last: {verb} {len(job.report.transferred)} "
                    f"file(s), {_size(job.report.bytes)}"
-                   + (" (kept in sync)" if job.auto else ""))
+                   + (" (kept in sync)" if job.auto else "")
+                   + (f" for an online run of `{job.workflow}`" if job.action == "run" else ""))
     if prefs["keep_in_sync"]:
         st.caption(f"🔁 Keeping in sync every {_WATCH_INTERVAL} s")
     ready = status is not None and not status["error"]
@@ -708,3 +738,123 @@ def render_sync_sidebar() -> None:
         st.caption(f"🔗 Linked to `{link.get('workspace', '?')[:8]}`")
         _sidebar_panel(workspace, link)
         st.page_link(_PAGE, label="Open sync", icon="📋")
+
+
+# -- Run page -----------------------------------------------------------------
+
+_HERE, _ONLINE = "This computer", "Online workspace"
+
+
+def render_run_choice(workflow_dir: Path, name_key: str = "") -> bool:
+    """On a workflow's Run page, offer to run it in the linked online workspace.
+
+    Shown offline only, for a linked workspace and a workflow listed in
+    ``workspace_sync.workflows``. Returns True when the user chose the online
+    workspace, so the caller leaves out its own Start button. ``name_key`` is
+    the session key of the run name typed on the page (multi-run workflows).
+    """
+    if st.session_state.get("location") != "local" or not sync_enabled():
+        return False
+    workflow_dir = Path(workflow_dir)
+    workspace, workflow = workflow_dir.parent, workflow_dir.name
+    if workflow not in _settings()["workflows"]:
+        return False
+    link = client.read_link(workspace)
+    if not link:
+        return False
+    where = st.radio(
+        "Run on", [_HERE, _ONLINE], horizontal=True, key=f"sync-run-where-{workflow}",
+        help=f"{_ONLINE}: upload the input files this run uses to the linked workspace "
+             f"`{link.get('workspace', '?')[:8]}` and run it there. Its results come back "
+             "with the next sync.")
+    if where != _ONLINE:
+        return False
+    _ensure_watcher(workspace)
+    _run_panel(workspace, link, workflow, name_key)
+    return True
+
+
+def _run_transfer(job: _Job, workflow: str) -> None:
+    what = "Uploading the inputs of this run" if (job.action, job.workflow) == ("run", workflow) \
+        else "Waiting for a sync to finish"
+    if job.total:
+        st.progress(min(job.done / job.total, 1.0),
+                    text=f"{what}: {_size(job.done)} of {_size(job.total)}")
+    else:
+        st.progress(0.0, text=f"{what}: comparing files…")
+    if job.notice:
+        st.warning(job.notice, icon="📡")
+    elif job.current:
+        st.caption(job.current)
+    if st.button("Cancel upload", key="sync-run-cancel"):
+        job.cancel.set()
+
+
+@st.fragment(run_every=3.0)
+def _run_panel(workspace: Path, link: dict, workflow: str, name_key: str) -> None:
+    """The online counterpart of the Run page's controls."""
+    job = _JOBS.get(str(workspace))
+    if job is not None and not job.finished:
+        _run_transfer(job, workflow)
+        return
+    if job is not None and job.error and (job.action, job.workflow) == ("run", workflow):
+        st.error(job.error)
+    with _STATUS_LOCK:
+        status = _STATUS.get(str(workspace))
+    if status is None or time.time() - status["at"] > 10:
+        _refresh_in_background(workspace, link)
+    if status is None:
+        st.caption("Checking the online workspace…")
+        return
+    if status["error"]:
+        st.error(f"The online workspace cannot be reached: {status['error']}")
+        return
+    run = status.get("runs", {}).get(workflow)
+    if run is None:
+        st.warning("The online workspace does not offer this workflow.")
+        return
+
+    active = run["status"] in _RUN_ACTIVE
+    if not active:
+        used, missing = _run_upload(workspace, workflow, status["inputs"])
+        st.info(_upload_note(used, missing), icon="⬆️")
+        if missing:
+            st.caption("The upload goes in verified chunks and continues where it stopped "
+                       "if the connection drops, also after closing the app.")
+        if st.button("Start Workflow online", type="primary", width="stretch",
+                     key=f"sync-run-start-{workflow}"):
+            name = st.session_state.pop(name_key, "") if name_key else ""
+            _start_run(workspace, link, workflow, status["inputs"], name)
+            st.rerun(scope="fragment")
+    elif st.button("Stop Workflow", type="primary", width="stretch",
+                   key=f"sync-run-stop-{workflow}"):
+        try:
+            _client(link, give_up_after=10, timeout=30).stop_run(workflow)
+        except client.SyncError as exc:
+            st.error(str(exc))
+        with _STATUS_LOCK:
+            _STATUS.pop(str(workspace), None)
+        st.rerun(scope="fragment")
+
+    if run["status"] != "idle":
+        name = f" “{run['run_name']}”" if run.get("run_name") else ""
+        st.markdown(f"☁️ **Online run{name}:** {_run_label(run)}")
+        if run["status"] == "started" and run.get("progress"):
+            st.progress(min(float(run["progress"]), 1.0))
+    if run["status"] == "finished":
+        results = _pending([i for i in status["results"] if i.workflow == workflow],
+                           _PULL_PENDING)
+        if results:
+            prefs = client.read_prefs(workspace)
+            how = ("Keep in sync downloads them shortly" if prefs["keep_in_sync"]
+                   and client.direction_on(prefs, workflow, "pull") else "not downloaded yet")
+            col1, col2 = st.columns([3, 1])
+            col1.caption(f"{len(results)} result file(s) online, "
+                         f"{_size(sum(i.size for i in results))}: {how}.")
+            if col2.button("⬇️ Download", key=f"sync-run-pull-{workflow}", width="stretch"):
+                _launch(workspace, "pull", [i.key for i in results], _client(link))
+                st.rerun(scope="fragment")
+        else:
+            st.caption("The results are on this computer.")
+    if run["status"] != "idle" and run.get("log"):
+        st.code("\n".join(run["log"]), language=None)

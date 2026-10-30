@@ -493,11 +493,12 @@ class RunHandler(SyncHandler):
         workspace = self.workspace()
         target, qm = self._target(workflow)
         try:
-            params = json.loads(self.request.body or b"{}").get("params", {})
-        except ValueError:
-            raise tornado.web.HTTPError(400, "body must be JSON")
+            body = json.loads(self.request.body or b"{}")
+            params, name = body.get("params", {}), str(body.get("name") or "")
+        except (ValueError, AttributeError):
+            raise tornado.web.HTTPError(400, "body must be a JSON object")
         try:
-            state = runs.start(qm, workspace, workflow, target, params)
+            state = runs.start(qm, workspace, workflow, target, params, name)
         except LookupError as exc:
             raise tornado.web.HTTPError(409, str(exc))
         except FileNotFoundError as exc:

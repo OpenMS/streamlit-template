@@ -12,6 +12,8 @@ carries them (see ``runs.py``).
 
 Pulled (online -> offline):
     <workflow>/results/<anything>
+    <workflow>/runs/<run id>/<anything>    runs of a multi-run workflow,
+                                           once they are no longer running
 
 ``external_files.txt`` is never sent as such. Each absolute path it lists is
 sent as a real file (or folder, for Bruker ``.d`` acquisitions) inside the
@@ -60,7 +62,19 @@ def is_pushable(rel: str) -> bool:
 
 def is_pullable(rel: str) -> bool:
     p = safe_relpath(rel)
-    return p is not None and len(p.parts) >= 3 and p.parts[1] == "results"
+    if p is None:
+        return False
+    if len(p.parts) >= 3 and p.parts[1] == "results":
+        return True
+    return len(p.parts) >= 4 and p.parts[1] == "runs"
+
+
+def _run_ended(run_dir: Path) -> bool:
+    """A run's files are final once its run.json no longer says running."""
+    try:
+        return json.loads(Path(run_dir, "run.json").read_text(encoding="utf-8"))["status"] != "running"
+    except (OSError, ValueError, KeyError, TypeError):
+        return False
 
 
 def _walk(base: Path, rel: PurePosixPath) -> Iterator[tuple[str, Path]]:
@@ -123,8 +137,12 @@ def pull_entries(workspace: Path) -> dict[str, Path]:
     for wf in sorted(p for p in Path(workspace).iterdir() if p.is_dir()):
         if wf.name.startswith("."):
             continue
-        results = Path(wf, "results")
-        for rel, path in _walk(results, PurePosixPath(wf.name, "results")) if results.is_dir() else ():
+        found = list(_walk(Path(wf, "results"), PurePosixPath(wf.name, "results")))
+        runs = Path(wf, "runs")
+        for run in sorted(r for r in runs.iterdir() if r.is_dir()) if runs.is_dir() else ():
+            if _run_ended(run):
+                found += _walk(run, PurePosixPath(wf.name, "runs", run.name))
+        for rel, path in found:
             if is_pullable(rel):
                 entries[rel] = path
     return entries
