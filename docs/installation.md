@@ -2,10 +2,9 @@
 
 ## Windows
 
-The app is available as pre-packaged Windows executable, including all dependencies.
+The app is available as a Windows installer (`<APP_NAME>-Setup.exe`) that includes all dependencies. It installs per user and needs no admin rights.
 
-The windows executable is built by a GitHub action and can be downloaded [here](https://github.com/OpenMS/streamlit-template/actions/workflows/build-windows-executable-app.yaml).
-Select the latest successfull run and download the zip file from the artifacts section, while signed in to GitHub.
+Download it from the latest [release](https://github.com/OpenMS/streamlit-template/releases), or build it with the [GitHub action](https://github.com/OpenMS/streamlit-template/actions/workflows/build-windows-executable-app.yaml): select the latest successful run and download the `OpenMS-App-Electron` artifact while signed in to GitHub.
 
 ## Python
 

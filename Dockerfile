@@ -199,12 +199,13 @@ RUN jq '.online_deployment = true' settings.json > tmp.json && mv tmp.json setti
 # the user starts the container with `-v /host/path:/mounted-data`.
 RUN jq '.local_data_dir = "/mounted-data"' settings.json > tmp.json && mv tmp.json settings.json
 
-# Download latest OpenMS App executable as a ZIP file.
+# Download the Windows installer of the latest release, if it has one.
 # ARG declared here (not at the top) — otherwise the per-run token busts the cache.
 ARG GITHUB_TOKEN
 RUN if [ -n "$GITHUB_TOKEN" ]; then \
         echo "GITHUB_TOKEN is set, proceeding to download the release asset..."; \
-        gh release download -R ${GITHUB_USER}/${GITHUB_REPO} -p "OpenMS-App.zip" -D /app; \
+        gh release download -R ${GITHUB_USER}/${GITHUB_REPO} -p "*-Setup.exe" -O /app/OpenMS-App-Setup.exe \
+            || echo "The latest release has no Windows installer, skipping."; \
     else \
         echo "GITHUB_TOKEN is not set, skipping the release asset download."; \
     fi
