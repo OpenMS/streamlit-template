@@ -35,6 +35,17 @@ In the OpenMS web application, workspaces are designed to keep your analysis org
        ```
      - This sets the upload limit to 500MB for the current session.
      
+- **Import from a link**: below the uploads of a workflow, paste a link instead of uploading. This is the way in for data that is too large for the browser upload or already sits in the cloud. Accepted links:
+  - a file over HTTP(S), including presigned S3 links and Swift TempURLs to private objects;
+  - a tar, tar.gz or zip archive (e.g. `https://a3s.fi/swift/v1/<bucket>/<name>.tar` on CSC Allas);
+  - a public S3 or Swift folder (a link ending in `/`);
+  - a Zenodo record or Figshare article (page link or DOI);
+  - a OneDrive or SharePoint link shared with "Anyone with the link": files and folders from personal OneDrive, single files from SharePoint / OneDrive for Business (their folders can only be read with a sign-in).
+
+  **Look up** lists the files; when the server allows it, the files inside an archive are listed too, and only the ones you select are downloaded. Each file is matched to the upload that takes its type (a Bruker `.d` folder as a whole), and you can change that in the table. The import runs in the background: you can leave the page, and a cancelled or interrupted import continues where it stopped when you start it again. Archives the server cannot send in parts are downloaded whole, unpacked, and their files sorted by type.
+
+  Operators configure it in `settings.json` under `data_import`: `enabled`, `max_download_gb_online` (largest import on a public server, default 50 GB), `allowed_hosts` (if set, only links to these hosts and their subdomains) and `parallel_downloads` (default 4). On a public server, links to private or internal network addresses are refused.
+
 - **Workspace Access**:
   - In online mode, workspaces are stored temporarily and will be cleared after seven days of inactivity.
   - In local mode, workspaces are saved on your local machine, allowing for persistent storage. Workspace directory can be specified in the `settings.json`. Defaults to `..` (parent directory).

@@ -35,6 +35,7 @@ from src.workflow.ExperimentalDesign import (
     to_openms_design,
 )
 from src.workflow.vendor_files import extract_bruker_zip, has_type
+from src.data_import import ui as data_import_ui
 from src.workflow.ParameterManager import (
     InvalidParameterFileError,
     TransientParameterFileError,
@@ -103,6 +104,9 @@ class StreamlitUI:
     # Methods for Streamlit UI components
     def __init__(self, workflow_dir, logger, executor, parameter_manager):
         self.workflow_dir = workflow_dir
+        # upload key -> name, file types, folder and example files of each
+        # upload_widget() on the page, for "Import from a link"
+        self.upload_targets = {}
         self.logger = logger
         self.executor = executor
         self.parameter_manager = parameter_manager
@@ -146,6 +150,18 @@ class StreamlitUI:
         if not name:
             name = key.replace("-", " ")
 
+        # Convert file_types to a list if it's a string
+        if isinstance(file_types, str):
+            file_types = [file_types]
+
+        # Where "Import from a link" can put files, see file_upload_section()
+        self.upload_targets[key] = {
+            "name": name,
+            "file_types": list(file_types),
+            "dir": str(files_dir),
+            "fallback": [Path(f).name for f in ([fallback] if isinstance(fallback, str) else fallback or [])],
+        }
+
         c1, c2 = st.columns(2)
 
         mount_root = _mounted_data_root() if st.session_state.location == "online" else None
@@ -166,10 +182,6 @@ class StreamlitUI:
         else:
             c1.markdown("**Upload file(s)**")
             use_copy = True
-
-        # Convert file_types to a list if it's a string
-        if isinstance(file_types, str):
-            file_types = [file_types]
 
         if st.session_state.location != "local":
             with c1.form(f"{key}-upload", clear_on_submit=True):
@@ -1733,6 +1745,7 @@ class StreamlitUI:
             st.toast(f"Could not delete preset: {name}", icon="⚠️")
 
     def file_upload_section(self, custom_upload_function) -> None:
+        self.upload_targets = {}
         custom_upload_function()
         # A local install already has the input files on disk.
         if st.session_state.location == "local":
@@ -1740,6 +1753,8 @@ class StreamlitUI:
         c1, _ = st.columns(2)
         if c1.button("⬇️ Download files", use_container_width=True):
             self.zip_and_download_files(Path(self.workflow_dir, "input-files"))
+        if data_import_ui.enabled():
+            data_import_ui.link_import_section(self.workflow_dir, self.upload_targets)
 
     def parameter_section(self, custom_parameter_function) -> None:
         st.toggle("Show advanced parameters", value=False, key="advanced")
