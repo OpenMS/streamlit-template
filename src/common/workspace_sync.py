@@ -10,10 +10,14 @@ thread registered per workspace, and a fragment polls it while it runs. The
 thread survives page switches; leaving the page and coming back shows the
 running transfer again.
 
+Inputs and results are grouped per workflow, and the user chooses per
+workflow whether its inputs go up and its results come down. "Keep in sync"
+runs a background loop that transfers whatever is new in those directions.
+
 The sidebar of every page shows the link's state in short (pending items,
-a running transfer) and offers a one-click Sync: push everything new or
-changed, then pull every new or updated result. It never waits on the
-network; states older than a minute are refreshed in a background thread.
+a running transfer) and offers a one-click Sync in the chosen directions.
+It never waits on the network; states older than a minute are refreshed in
+a background thread.
 """
 
 import threading
@@ -41,6 +45,7 @@ class _Job:
     error: str = ""
     finished: bool = False
     ended: float = 0.0
+    auto: bool = False             # started by Keep in sync
 
 
 _JOBS: dict[str, _Job] = {}
@@ -57,6 +62,10 @@ _STATUS_MAX_AGE = 60
 
 _PUSH_PENDING = {client.NOT_ON_SERVER, client.CHANGED_LOCALLY}
 _PULL_PENDING = {client.NOT_DOWNLOADED, client.CHANGED_ON_SERVER}
+
+# Keep in sync: one loop per workspace, ended by clearing the box or unlinking.
+_WATCHERS: dict[str, threading.Thread] = {}
+_WATCH_INTERVAL = 30
 
 
 def sync_enabled() -> bool:
@@ -124,14 +133,33 @@ def _pending(items: list[client.Item], states: set[str]) -> list[client.Item]:
     return [i for i in items if i.state in states or i.state.startswith("Paused")]
 
 
-def _start(workspace: Path, action: str, keys: list[str], link: dict) -> None:
-    job = _Job(action, keys)
+def _chosen(status: dict, prefs: dict, pending_only: bool = False
+            ) -> tuple[list[client.Item], list[client.Item]]:
+    """The inputs and results in the directions chosen for their workflow."""
+    up = [i for i in status["inputs"] if client.direction_on(prefs, i.workflow, "push")]
+    down = [i for i in status["results"] if client.direction_on(prefs, i.workflow, "pull")]
+    if pending_only:
+        up, down = _pending(up, _PUSH_PENDING), _pending(down, _PULL_PENDING)
+    return up, down
+
+
+def _start(workspace: Path, action: str, keys: list[str] | None, link: dict) -> None:
     # Built here: the thread below has no session state to read settings from.
-    c = _client(link)
+    _launch(workspace, action, keys, _client(link))
+
+
+def _launch(workspace: Path, action: str, keys: list[str] | None, c: client.SyncClient,
+            auto: bool = False) -> bool:
+    """Run a transfer in a background thread; False if one is running already.
+
+    ``sync`` pushes, then pulls; its keys hold input and result keys together
+    (push and pull each ignore the other's).
+    """
+    job = _Job(action, keys or [], auto=auto)
     with _JOBS_LOCK:
         running = _JOBS.get(str(workspace))
         if running and not running.finished:
-            return
+            return False
         _JOBS[str(workspace)] = job
 
     def progress(done, total, rel):
@@ -145,8 +173,8 @@ def _start(workspace: Path, action: str, keys: list[str], link: dict) -> None:
             c.notice = notice
             if action == "sync":
                 # Inputs first: a result pulled now may come from them later.
-                up = c.push(workspace, None, progress=progress, cancel=job.cancel)
-                down = c.pull(workspace, None, progress=progress, cancel=job.cancel)
+                up = c.push(workspace, keys, progress=progress, cancel=job.cancel)
+                down = c.pull(workspace, keys, progress=progress, cancel=job.cancel)
                 job.report = client.SyncReport(up.transferred + down.transferred,
                                                up.unchanged + down.unchanged,
                                                up.bytes + down.bytes)
@@ -164,6 +192,41 @@ def _start(workspace: Path, action: str, keys: list[str], link: dict) -> None:
                 _STATUS.pop(str(workspace), None)
 
     threading.Thread(target=run, daemon=True, name=f"workspace-sync-{action}").start()
+    return True
+
+
+def _watch(workspace: Path, chunk_size: int) -> None:
+    """Keep in sync: every half minute, transfer what is new in the chosen
+    directions. Ends when the box is cleared or the workspace unlinked."""
+    while True:
+        prefs, link = client.read_prefs(workspace), client.read_link(workspace)
+        if not (prefs["keep_in_sync"] and link):
+            return
+        job = _JOBS.get(str(workspace))
+        if job is None or job.finished:
+            check = client.SyncClient(link["url"], link["token"], chunk_size=chunk_size,
+                                      give_up_after=10, timeout=30)
+            status = _compute_status(workspace, check)
+            if not status["error"]:
+                up, down = _chosen(status, prefs, pending_only=True)
+                if up or down:
+                    c = client.SyncClient(link["url"], link["token"], chunk_size=chunk_size)
+                    _launch(workspace, "sync", [i.key for i in up + down], c, auto=True)
+        time.sleep(_WATCH_INTERVAL)
+
+
+def _ensure_watcher(workspace: Path) -> None:
+    if not client.read_prefs(workspace)["keep_in_sync"]:
+        return
+    chunk_size = int(_settings()["chunk_mb"] * 1024 * 1024)
+    with _JOBS_LOCK:
+        running = _WATCHERS.get(str(workspace))
+        if running is not None and running.is_alive():
+            return
+        thread = threading.Thread(target=_watch, args=(workspace, chunk_size), daemon=True,
+                                  name="workspace-sync-keep")
+        _WATCHERS[str(workspace)] = thread
+    thread.start()
 
 
 @st.fragment(run_every=1.0)
@@ -175,7 +238,7 @@ def _job_progress(workspace: Path) -> None:
         st.rerun()
         return
     verb = _VERBS[job.action][0]
-    what = f"{len(job.keys)} item(s)" if job.keys else "workspace"
+    what = "workspace" if job.action == "sync" else f"{len(job.keys)} item(s)"
     if job.total:
         st.progress(min(job.done / job.total, 1.0),
                     text=f"{verb} {what}: {_size(job.done)} of {_size(job.total)}")
@@ -198,7 +261,7 @@ def _job_result(job: _Job) -> None:
             st.success(f"{_VERBS[job.action][1]} {len(r.transferred)} file(s), {_size(r.bytes)}"
                        + (f"; {r.unchanged} already up to date." if r.unchanged else "."))
         elif job.action == "sync":
-            st.info("Everything was already up to date.")
+            st.info("Everything chosen was already up to date.")
         else:
             st.info("Everything selected was already up to date.")
 
@@ -220,7 +283,7 @@ def _item_table(items: list[client.Item], key: str) -> list[client.Item]:
     """Show items with a selection column; return the selected ones."""
     df = pd.DataFrame({
         "Name": [i.name for i in items],
-        "Location": [str(Path(i.key).parent) if i.kind != "parameters" else "params.json files"
+        "Location": [str(Path(i.key).parent) if i.kind != "parameters" else "params.json"
                      for i in items],
         "Files": [len(i.files) for i in items],
         "Size": [_size(i.size) for i in items],
@@ -231,17 +294,17 @@ def _item_table(items: list[client.Item], key: str) -> list[client.Item]:
     return [items[r] for r in event.selection.rows]
 
 
-def _transfer_buttons(workspace, link, items, selected, action, busy, pending_states):
+def _transfer_buttons(workspace, link, items, selected, action, busy, pending_states, suffix):
     verb = "Push" if action == "push" else "Pull"
     pending = _pending(items, pending_states)
     col1, col2, _ = st.columns([1, 1, 2])
     if col1.button(f"{verb} selected ({len(selected)})", disabled=busy or not selected,
-                   key=f"sync-{action}-selected", width="stretch", type="primary"):
+                   key=f"sync-{action}-selected-{suffix}", width="stretch"):
         _start(workspace, action, [i.key for i in selected], link)
         st.rerun()
     label = "new and changed" if action == "push" else "new and updated"
     if col2.button(f"{verb} all {label} ({len(pending)})", disabled=busy or not pending,
-                   key=f"sync-{action}-pending", width="stretch"):
+                   key=f"sync-{action}-pending-{suffix}", width="stretch"):
         _start(workspace, action, [i.key for i in pending], link)
         st.rerun()
 
@@ -272,6 +335,56 @@ def _link_form(workspace: Path) -> None:
             st.rerun()
 
 
+def _set_pref(workspace: Path, workflow: str | None, field_: str, key: str) -> None:
+    """Widget callback: store a checkbox in the workspace's sync choices."""
+    prefs = client.read_prefs(workspace)
+    if workflow is None:
+        prefs[field_] = bool(st.session_state[key])
+    else:
+        prefs["workflows"].setdefault(workflow, {})[field_] = bool(st.session_state[key])
+    client.write_prefs(workspace, prefs)
+    if prefs["keep_in_sync"]:
+        _ensure_watcher(workspace)
+
+
+def _summary(items: list[client.Item], pending_states: set[str], verb: str) -> str:
+    if not items:
+        return "none yet"
+    waiting = len(_pending(items, pending_states))
+    return (f"{len(items)} item(s), {_size(sum(i.size for i in items))}"
+            + (f", {waiting} to {verb}" if waiting else ", all in sync"))
+
+
+def _workflow_box(workspace, link, prefs, workflow, inputs, results, busy) -> None:
+    label = f"`{workflow}`" if workflow else "Workspace files (outside any workflow)"
+    suffix = f"{workspace.name}-{workflow or '_'}"
+    with st.container(border=True):
+        st.markdown(f"**{label}**")
+        col1, col2 = st.columns(2)
+        key = f"sync-push-{suffix}"
+        col1.checkbox(f"⬆️ Upload inputs ({_summary(inputs, _PUSH_PENDING, 'push')})",
+                      value=client.direction_on(prefs, workflow, "push"), key=key,
+                      on_change=_set_pref, args=(workspace, workflow, "push", key))
+        if workflow:
+            key = f"sync-pull-{suffix}"
+            col2.checkbox(f"⬇️ Download results ({_summary(results, _PULL_PENDING, 'pull')})",
+                          value=client.direction_on(prefs, workflow, "pull"), key=key,
+                          on_change=_set_pref, args=(workspace, workflow, "pull", key))
+        with st.expander("Individual files"):
+            if inputs:
+                st.markdown("Inputs")
+                selected = _item_table(inputs, f"sync-inputs-{suffix}")
+                _transfer_buttons(workspace, link, inputs, selected, "push", busy,
+                                  _PUSH_PENDING, suffix)
+            if results:
+                st.markdown("Results")
+                selected = _item_table(results, f"sync-results-{suffix}")
+                _transfer_buttons(workspace, link, results, selected, "pull", busy,
+                                  _PULL_PENDING, suffix)
+            if not (inputs or results):
+                st.caption("No files yet.")
+
+
 def _offline_page(workspace: Path) -> None:
     link = client.read_link(workspace)
     if not link:
@@ -291,6 +404,8 @@ def _offline_page(workspace: Path) -> None:
         _invalidate(workspace)
         st.rerun()
 
+    prefs = client.read_prefs(workspace)
+    _ensure_watcher(workspace)
     if busy:
         _job_progress(workspace)
     elif job is not None:
@@ -300,28 +415,30 @@ def _offline_page(workspace: Path) -> None:
     if status["error"]:
         st.error(f"The online workspace cannot be reached: {status['error']}")
         return
+
+    up, down = _chosen(status, prefs, pending_only=True)
+    col1, col2, _ = st.columns([1, 2, 1])
+    if col1.button(f"🔄 Sync now ({len(up) + len(down)})", type="primary", width="stretch",
+                   disabled=busy or not (up or down), key="sync-now"):
+        _start(workspace, "sync", [i.key for i in up + down], link)
+        st.rerun()
+    key = f"sync-keep-{workspace.name}"
+    col2.checkbox("Keep in sync", value=prefs["keep_in_sync"], key=key,
+                  on_change=_set_pref, args=(workspace, None, "keep_in_sync", key),
+                  help=f"Every {_WATCH_INTERVAL} s while the app is open, push new or changed "
+                       "inputs and pull new or updated results, in the directions ticked below.")
     st.caption(f"States as of {datetime.fromtimestamp(status['at']).strftime('%H:%M:%S')}. "
                "Large files go up in verified chunks; an interrupted transfer continues "
                "where it stopped, also after closing the app.")
 
-    # A segmented control, not st.tabs: selecting a row reruns the page, and
-    # the chosen view must survive that rerun.
-    view = st.segmented_control("View", ["⬆️ Inputs", "⬇️ Results"], default="⬆️ Inputs",
-                                key="sync-view", label_visibility="collapsed")
-    if view != "⬇️ Results":
-        if not status["inputs"]:
-            st.info("This workspace has no input files yet. Add them on the workflow's upload page.")
-        else:
-            selected = _item_table(status["inputs"], "sync-inputs-table")
-            _transfer_buttons(workspace, link, status["inputs"], selected, "push", busy,
-                              _PUSH_PENDING)
-    else:
-        if not status["results"]:
-            st.info("The online workspace has no results yet. Run the workflow there, then refresh.")
-        else:
-            selected = _item_table(status["results"], "sync-results-table")
-            _transfer_buttons(workspace, link, status["results"], selected, "pull", busy,
-                              _PULL_PENDING)
+    workflows = sorted({i.workflow for i in status["inputs"] + status["results"]})
+    if not workflows:
+        st.info("Nothing to sync yet. Add input files on a workflow's upload page, "
+                "or run a workflow online, then refresh.")
+    for workflow in workflows:
+        _workflow_box(workspace, link, prefs, workflow,
+                      [i for i in status["inputs"] if i.workflow == workflow],
+                      [i for i in status["results"] if i.workflow == workflow], busy)
 
 
 def _public_url(cfg: dict) -> str:
@@ -413,15 +530,25 @@ def _sidebar_live(workspace: Path) -> None:
     st.rerun()
 
 
-def _sidebar_summary(workspace: Path, link: dict, status: dict | None) -> None:
+@st.fragment(run_every=5.0)
+def _sidebar_watch(workspace: Path, shown_at: float) -> None:
+    """Keep in sync: rerun the app when the loop starts a transfer or has
+    fresh states, so the sidebar follows it without a click."""
+    job = _JOBS.get(str(workspace))
+    with _STATUS_LOCK:
+        status = _STATUS.get(str(workspace))
+    if (job is not None and not job.finished) or (status and status["at"] != shown_at):
+        st.rerun()
+
+
+def _sidebar_summary(workspace: Path, link: dict, status: dict | None, prefs: dict) -> None:
     job = _JOBS.get(str(workspace))
     if status is None:
         st.caption("Checking the online workspace…")
     elif status["error"]:
         st.caption("⚠️ The online workspace cannot be reached.")
     else:
-        up = len(_pending(status["inputs"], _PUSH_PENDING))
-        down = len(_pending(status["results"], _PULL_PENDING))
+        up, down = (len(x) for x in _chosen(status, prefs, pending_only=True))
         if up or down:
             st.markdown(f"⬆️ {up} to push · ⬇️ {down} to pull")
         else:
@@ -431,11 +558,17 @@ def _sidebar_summary(workspace: Path, link: dict, status: dict | None) -> None:
         st.caption(f"⚠️ Last transfer stopped: {job.error.split('. ')[0]}.")
     elif job is not None and job.report is not None and job.report.transferred:
         st.caption(f"Last: {_VERBS[job.action][1].lower()} {len(job.report.transferred)} "
-                   f"file(s), {_size(job.report.bytes)}")
+                   f"file(s), {_size(job.report.bytes)}"
+                   + (" (kept in sync)" if job.auto else ""))
+    if prefs["keep_in_sync"]:
+        st.caption(f"🔁 Keeping in sync every {_WATCH_INTERVAL} s")
+    ready = status is not None and not status["error"]
     if st.button("🔄 Sync", key="sync-sidebar-sync", type="primary", width="stretch",
-                 help="Push every new or changed input, then pull every new or updated result.",
-                 disabled=status is not None and bool(status["error"])):
-        _start(workspace, "sync", [], link)
+                 help="Push new or changed inputs and pull new or updated results, "
+                      "for the workflows and directions chosen on the sync page.",
+                 disabled=not ready):
+        up, down = _chosen(status, prefs)
+        _start(workspace, "sync", [i.key for i in up + down], link)
         st.rerun()
 
 
@@ -486,6 +619,8 @@ def render_sync_sidebar() -> None:
             return
         # Online workspace names are UUIDs; the start tells them apart.
         st.caption(f"🔗 Linked to `{link.get('workspace', '?')[:8]}`")
+        prefs = client.read_prefs(workspace)
+        _ensure_watcher(workspace)
         job = _JOBS.get(str(workspace))
         if job is not None and not job.finished:
             _sidebar_live(workspace)
@@ -495,8 +630,10 @@ def render_sync_sidebar() -> None:
             stale = status is None or time.time() - status["at"] > _STATUS_MAX_AGE
             if stale:
                 _refresh_in_background(workspace, link)
-            _sidebar_summary(workspace, link, status)
+            _sidebar_summary(workspace, link, status, prefs)
             if stale:
                 # Shows the fresh states as soon as they are in.
                 _sidebar_live(workspace)
+            elif prefs["keep_in_sync"]:
+                _sidebar_watch(workspace, status["at"])
         st.page_link(_PAGE, label="Open sync", icon="📋")

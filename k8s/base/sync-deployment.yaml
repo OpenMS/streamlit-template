@@ -1,0 +1,93 @@
+# Workspace sync service (src/sync/server.py): the offline desktop app pushes
+# inputs into a workspace and pulls results through it, routed at /sync on the
+# app's hosts. Its own Deployment, not a container of the streamlit pod: a
+# multi-GB transfer neither competes with the app for the pod's resources nor
+# is cut off when a streamlit pod restarts, and it scales on its own.
+#
+# It shares the workspaces volume (ReadWriteMany), and partial uploads live on
+# that volume, so any replica can continue an upload another one began; the
+# ingress routes it without session affinity. Unless workspace_sync.enabled is
+# set it serves /sync/health only.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sync
+  labels:
+    component: sync
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      component: sync
+  template:
+    metadata:
+      labels:
+        component: sync
+    spec:
+      containers:
+        - name: sync
+          image: openms-streamlit
+          imagePullPolicy: Always
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              set -euo pipefail
+              source /root/miniforge3/bin/activate streamlit-env
+              jq -s '.[0] * .[1]' /app/settings.json /app/settings-overrides.json > /tmp/settings-merged.json && mv /tmp/settings-merged.json /app/settings.json
+              exec python -m src.sync.server --port 8502
+          ports:
+            - containerPort: 8502
+              name: sync
+          env:
+            - name: WORKSPACES_DIR
+              value: "/workspaces-streamlit-template"
+          # Hashing and writing chunks to NFS is I/O-bound; memory stays small
+          # because chunks are streamed to disk, never held whole.
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "2"
+              memory: "1Gi"
+          volumeMounts:
+            - name: workspaces
+              mountPath: /workspaces-streamlit-template
+            - name: config
+              mountPath: /app/settings-overrides.json
+              subPath: settings-overrides.json
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /sync/health
+              port: 8502
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /sync/health
+              port: 8502
+            initialDelaySeconds: 30
+            periodSeconds: 30
+      volumes:
+        - name: workspaces
+          persistentVolumeClaim:
+            claimName: workspaces-nfs-pvc
+        - name: config
+          configMap:
+            name: streamlit-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sync
+  labels:
+    component: sync
+spec:
+  type: ClusterIP
+  ports:
+    - name: sync
+      port: 8502
+      targetPort: 8502
+  selector:
+    component: sync

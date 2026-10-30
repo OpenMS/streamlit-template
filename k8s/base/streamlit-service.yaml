@@ -10,8 +10,5 @@ spec:
     - name: http
       port: 8501
       targetPort: 8501
-    - name: sync
-      port: 8502
-      targetPort: 8502
   selector:
     component: streamlit

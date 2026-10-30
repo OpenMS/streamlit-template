@@ -10,10 +10,6 @@ services:
     restart: always
     ports:
       - 8501:8501
-      # Workspace sync service for the desktop app (workspace_sync in
-      # settings.json). Put it behind the same reverse proxy as the app at
-      # /sync/, or set workspace_sync.public_url to wherever it is reachable.
-      - 8502:8502
     volumes:
       - workspaces-streamlit-template:/workspaces-streamlit-template
       # Optional: bind-mount a host directory of MS data files at the path
@@ -25,5 +21,24 @@ services:
       # Number of Streamlit server instances (default: 1 = no load balancer).
       # Set to >1 to enable nginx load balancing across multiple Streamlit instances.
       - STREAMLIT_SERVER_COUNT=1
+      # The sync service below; with STREAMLIT_SERVER_COUNT > 1 the bundled
+      # nginx proxies /sync/ to it.
+      - SYNC_UPSTREAM=sync:8502
+  # Workspace sync service for the desktop app (workspace_sync in
+  # settings.json), in its own container so large transfers neither compete
+  # with the app nor break when it restarts. Same image, same workspaces
+  # volume. Put it behind the same reverse proxy as the app at /sync/, or set
+  # workspace_sync.public_url to wherever it is reachable.
+  sync:
+    image: openms_streamlit_template
+    container_name: openms-streamlit-template-sync
+    restart: always
+    depends_on:
+      - openms-streamlit-template
+    entrypoint: ["/bin/bash", "-c", "source /root/miniforge3/bin/activate streamlit-env && exec python -m src.sync.server --port 8502"]
+    ports:
+      - 8502:8502
+    volumes:
+      - workspaces-streamlit-template:/workspaces-streamlit-template
 volumes:
   workspaces-streamlit-template:

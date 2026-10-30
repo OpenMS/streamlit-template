@@ -27,7 +27,7 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: streamlit
+                name: sync
                 port:
                   number: 8502
           - path: /
@@ -44,7 +44,7 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: streamlit
+                name: sync
                 port:
                   number: 8502
           - path: /

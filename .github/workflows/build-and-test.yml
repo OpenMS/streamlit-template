@@ -1165,7 +1165,7 @@ jobs:
             curl -fsS --resolve "$host:8080:127.0.0.1" "http://$host:8080/_stcore/health"
             echo ""
             echo "$host -> 200 OK"
-            # Workspace sync sidecar, routed at /sync (answers health even
+            # Workspace sync Deployment, routed at /sync (answers health even
             # while workspace_sync is disabled).
             curl -fsS --resolve "$host:8080:127.0.0.1" "http://$host:8080/sync/health" | grep -q '"tus"'
             echo "$host/sync -> 200 OK"
@@ -1890,7 +1890,7 @@ jobs:
             curl -fsS --resolve "$host:8080:127.0.0.1" "http://$host:8080/_stcore/health"
             echo ""
             echo "$host -> 200 OK"
-            # Workspace sync sidecar, routed at /sync by routes/1.
+            # Workspace sync Deployment, routed at /sync by routes/1.
             curl -fsS --resolve "$host:8080:127.0.0.1" "http://$host:8080/sync/health" | grep -q '"tus"'
             echo "$host/sync -> 200 OK"
             curled=$((curled + 1))

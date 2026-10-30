@@ -79,47 +79,6 @@ spec:
               port: 8501
             initialDelaySeconds: 30
             periodSeconds: 30
-        # Workspace sync service (src/sync/server.py): the offline desktop app
-        # pushes inputs into a workspace and pulls results through it, routed
-        # at /sync on the app's hosts. It shares the workspaces volume, and
-        # partial uploads live on that volume, so any replica can continue an
-        # upload another one began. Unless workspace_sync.enabled is set it
-        # serves /sync/health only.
-        - name: sync
-          image: openms-streamlit
-          imagePullPolicy: Always
-          command: ["/bin/bash", "-c"]
-          args:
-            - |
-              set -euo pipefail
-              source /root/miniforge3/bin/activate streamlit-env
-              jq -s '.[0] * .[1]' /app/settings.json /app/settings-overrides.json > /tmp/settings-merged.json && mv /tmp/settings-merged.json /app/settings.json
-              exec python -m src.sync.server --port 8502
-          ports:
-            - containerPort: 8502
-              name: sync
-          env:
-            - name: WORKSPACES_DIR
-              value: "/workspaces-streamlit-template"
-          volumeMounts:
-            - name: workspaces
-              mountPath: /workspaces-streamlit-template
-            - name: config
-              mountPath: /app/settings-overrides.json
-              subPath: settings-overrides.json
-              readOnly: true
-          readinessProbe:
-            httpGet:
-              path: /sync/health
-              port: 8502
-            initialDelaySeconds: 5
-            periodSeconds: 10
-          livenessProbe:
-            httpGet:
-              path: /sync/health
-              port: 8502
-            initialDelaySeconds: 30
-            periodSeconds: 30
       volumes:
         - name: workspaces
           persistentVolumeClaim:

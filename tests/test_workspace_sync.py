@@ -273,6 +273,7 @@ def test_items_and_selective_transfer(online, tmp_path):
     items = {i.key: i for i in c.input_items(ws)}
     assert set(items) == {
         "Parameters",
+        "topp-workflow/Parameters",
         "topp-workflow/input-files/mzML-files/a.mzML",
         "topp-workflow/input-files/mzML-files/b.raw",
         "topp-workflow/input-files/mzML-files/run.d",
@@ -287,10 +288,12 @@ def test_items_and_selective_transfer(online, tmp_path):
     assert states["topp-workflow/input-files/mzML-files/a.mzML"] == client.NOT_ON_SERVER
 
     (ws / "topp-workflow" / "params.json").write_text('{"x": 2}')
-    c.push(ws, ["Parameters"])
+    c.push(ws, ["topp-workflow/Parameters"])
     (ws / "topp-workflow" / "params.json").write_text('{"x": 3}')
     states = {i.key: i.state for i in c.input_items(ws)}
-    assert states["Parameters"] == client.CHANGED_LOCALLY
+    assert states["topp-workflow/Parameters"] == client.CHANGED_LOCALLY
+    assert states["Parameters"] == client.NOT_ON_SERVER
+    assert {i.workflow for i in c.input_items(ws)} == {"", "topp-workflow"}
 
     # A paused upload shows how far it got.
     cancel = threading.Event()
@@ -364,7 +367,17 @@ def test_incoming_lists_unfinished_uploads(online, tmp_path):
     assert server.incoming(online["root"], "ws-online") == []
 
 
-def test_sidebar_sync_pushes_then_pulls(online, tmp_path, monkeypatch):
+def _wait_for_job(ui, ws, timeout=30):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        job = ui._JOBS.get(str(ws))
+        if job is not None and job.finished:
+            return job
+        time.sleep(0.05)
+    raise AssertionError("transfer did not finish")
+
+
+def test_sync_follows_chosen_directions(online, tmp_path, monkeypatch):
     from src.common import workspace_sync as ui
 
     monkeypatch.setattr(ui, "_settings", lambda: server.sync_settings({}))
@@ -373,21 +386,59 @@ def test_sidebar_sync_pushes_then_pulls(online, tmp_path, monkeypatch):
     res.mkdir(parents=True)
     (res / "out.tsv").write_text("result")
     link = {"url": online["url"], "token": online["token"]}
+    c = client.SyncClient(online["url"], online["token"])
+
+    # Inputs of topp-workflow stay local; its results come down.
+    prefs = client.read_prefs(ws)
+    prefs["workflows"]["topp-workflow"] = {"push": False}
+    client.write_prefs(ws, prefs)
+    prefs = client.read_prefs(ws)
+    status = ui._compute_status(ws, c)
+    up, down = ui._chosen(status, prefs)
+    assert {i.key for i in up} == {"Parameters"}
+    assert [i.key for i in down] == ["topp-workflow/results/out.tsv"]
 
     ui._STATUS[str(ws)] = {"at": time.time()}
-    ui._start(ws, "sync", [], link)
-    job = ui._JOBS[str(ws)]
-    deadline = time.time() + 30
-    while not job.finished and time.time() < deadline:
-        time.sleep(0.05)
-    assert job.finished and not job.error, job.error
-    assert "topp-workflow/input-files/mzML-files/a.mzML" in job.report.transferred
-    assert "topp-workflow/results/out.tsv" in job.report.transferred
+    ui._start(ws, "sync", [i.key for i in up + down], link)
+    job = _wait_for_job(ui, ws)
+    assert not job.error, job.error
+    assert set(job.report.transferred) == {"params.json", "topp-workflow/results/out.tsv"}
     assert (ws / "topp-workflow/results/out.tsv").read_text() == "result"
+    assert not (online["ws"] / "topp-workflow" / "input-files").exists()
     # The states shown in the sidebar are stale now and get recomputed.
     assert str(ws) not in ui._STATUS
 
-    status = ui._compute_status(ws, client.SyncClient(online["url"], online["token"]))
-    assert not ui._pending(status["inputs"], ui._PUSH_PENDING)
-    assert not ui._pending(status["results"], ui._PULL_PENDING)
+    status = ui._compute_status(ws, c)
+    assert ui._chosen(status, prefs, pending_only=True) == ([], [])
     assert ui._STATUS[str(ws)] is status
+
+
+def test_keep_in_sync_loop(online, tmp_path, monkeypatch):
+    from src.common import workspace_sync as ui
+
+    monkeypatch.setattr(ui, "_settings", lambda: server.sync_settings({}))
+    monkeypatch.setattr(ui, "_WATCH_INTERVAL", 0.2)
+    ws = _local_workspace(tmp_path)
+    client.write_link(ws, {"url": online["url"], "token": online["token"], "uploads": {}})
+    client.write_prefs(ws, {"keep_in_sync": True, "workflows": {}})
+    ui._ensure_watcher(ws)
+
+    def wait_until(check, timeout=30):
+        deadline = time.time() + timeout
+        while not check():
+            assert time.time() < deadline, "keep in sync did not catch up"
+            time.sleep(0.1)
+
+    remote = online["ws"]
+    wait_until(lambda: (remote / "topp-workflow/input-files/mzML-files/a.mzML").is_file())
+    # A result appearing online comes down without a click.
+    (remote / "topp-workflow" / "results").mkdir(parents=True)
+    (remote / "topp-workflow" / "results" / "new.tsv").write_text("fresh")
+    wait_until(lambda: (ws / "topp-workflow/results/new.tsv").is_file()
+               and (ws / "topp-workflow/results/new.tsv").read_text() == "fresh")
+    assert ui._JOBS[str(ws)].auto
+
+    # Clearing the box ends the loop.
+    client.write_prefs(ws, {"keep_in_sync": False, "workflows": {}})
+    wait_until(lambda: not ui._WATCHERS[str(ws)].is_alive())
+    wait_until(lambda: ui._JOBS[str(ws)].finished)

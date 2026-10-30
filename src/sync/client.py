@@ -36,6 +36,9 @@ from src.sync import paths
 
 LINK_FILE = ".sync.json"
 CACHE_FILE = ".sync-cache.json"
+# What the user chose to sync per workflow. Kept apart from LINK_FILE, which
+# a running transfer rewrites.
+PREFS_FILE = ".sync-prefs.json"
 CHUNK_SIZE = 32 * 1024 * 1024
 TUS_HEADERS = {"Tus-Resumable": "1.0.0"}
 PARAMETERS = "Parameters"
@@ -70,6 +73,10 @@ class Item:
     @property
     def name(self) -> str:
         return PARAMETERS if self.kind == "parameters" else PurePosixPath(self.key).name
+
+    @property
+    def workflow(self) -> str:
+        return workflow_of(self.key)
 
 
 @dataclass
@@ -106,16 +113,52 @@ def unlink_workspace(workspace: Path) -> None:
     Path(workspace, LINK_FILE).unlink(missing_ok=True)
 
 
+def workflow_of(rel: str) -> str:
+    """The workflow directory a path or item key belongs to; "" for the
+    workspace's own files (its params.json and mzML-files/)."""
+    parts = PurePosixPath(rel).parts
+    if len(parts) < 2 or parts[0] == "mzML-files":
+        return ""
+    return parts[0]
+
+
+def read_prefs(workspace: Path) -> dict:
+    """``{"keep_in_sync": bool, "workflows": {wf: {"push": bool, "pull": bool}}}``"""
+    try:
+        prefs = json.loads(Path(workspace, PREFS_FILE).read_text())
+    except (OSError, ValueError):
+        prefs = {}
+    prefs.setdefault("keep_in_sync", False)
+    prefs.setdefault("workflows", {})
+    return prefs
+
+
+def write_prefs(workspace: Path, prefs: dict) -> None:
+    target = Path(workspace, PREFS_FILE)
+    tmp = target.with_name(PREFS_FILE + ".tmp")
+    tmp.write_text(json.dumps(prefs, indent=2))
+    os.replace(tmp, target)
+
+
+def direction_on(prefs: dict, workflow: str, direction: str) -> bool:
+    """Whether ``direction`` ("push" or "pull") is chosen for ``workflow``.
+    Both are on until the user turns one off."""
+    return bool(prefs["workflows"].get(workflow, {}).get(direction, True))
+
+
 def item_key(rel: str) -> str:
     """The input item a pushable file belongs to.
 
     ``wf/input-files/<key>/<name>/...`` and ``mzML-files/<name>/...`` group
-    under their top-level name, so a ``.d`` folder is one item; every
-    ``params.json`` belongs to the single parameters item.
+    under their top-level name, so a ``.d`` folder is one item. Each
+    ``params.json`` is its workflow's parameters item (``wf/Parameters``);
+    the workspace's own is ``Parameters``.
     """
     parts = PurePosixPath(rel).parts
-    if parts[-1] == "params.json" and len(parts) <= 2:
+    if parts[-1] == "params.json" and len(parts) == 1:
         return PARAMETERS
+    if parts[-1] == "params.json" and len(parts) == 2:
+        return f"{parts[0]}/{PARAMETERS}"
     if parts[0] == "mzML-files":
         return "/".join(parts[:2])
     return "/".join(parts[:4])
@@ -215,7 +258,7 @@ class SyncClient:
         items: dict[str, Item] = {}
         for rel, path in local.items():
             key = item_key(rel)
-            kind = "parameters" if key == PARAMETERS else "input"
+            kind = "parameters" if PurePosixPath(key).name == PARAMETERS else "input"
             item = items.setdefault(key, Item(key, kind, 0, ON_SERVER))
             item.files.append(rel)
             size = path.stat().st_size

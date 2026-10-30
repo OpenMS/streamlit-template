@@ -146,9 +146,16 @@ fi
 # results back. Unless settings.json has workspace_sync.enabled and
 # online_deployment, it answers /sync/health only. Behind nginx it is routed
 # at /sync/; on a single instance it listens on $SYNC_PORT directly.
+# docker-compose and Kubernetes run it in a container of its own and set
+# SYNC_UPSTREAM to it (host:port); this container then only proxies /sync/.
 SYNC_PORT="${SYNC_PORT:-8502}"
-echo "Starting workspace sync service on port $SYNC_PORT..."
-python -m src.sync.server --port "$SYNC_PORT" &
+if [ -n "${SYNC_UPSTREAM:-}" ]; then
+    echo "Workspace sync service runs separately at $SYNC_UPSTREAM"
+else
+    SYNC_UPSTREAM="127.0.0.1:$SYNC_PORT"
+    echo "Starting workspace sync service on port $SYNC_PORT..."
+    python -m src.sync.server --port "$SYNC_PORT" &
+fi
 
 # -----------------------------------------------------------------------------
 # Streamlit (single instance or behind nginx load balancer)
@@ -203,7 +210,7 @@ ${UPSTREAM_SERVERS}    }
         listen 0.0.0.0:8501;
 
         location /sync/ {
-            proxy_pass http://127.0.0.1:${SYNC_PORT};
+            proxy_pass http://${SYNC_UPSTREAM};
             proxy_http_version 1.1;
             proxy_set_header Host \$host;
             proxy_set_header X-Forwarded-Proto \$scheme;
