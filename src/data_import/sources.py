@@ -1,20 +1,22 @@
 """Turn a link into a list of files.
 
 Each source is a function that recognises its links and lists their files.
-Supported: Zenodo records, Figshare articles, S3 bucket listings (AWS, CSC
-Allas, MinIO, Ceph), OpenStack Swift container listings (CSC Allas), and any
+Supported: Zenodo records, Figshare articles, OneDrive and SharePoint sharing
+links, S3 bucket listings (AWS, CSC Allas, MinIO, Ceph), OpenStack Swift
+container listings (CSC Allas), and any
 single file over HTTP(S), presigned S3 and Swift TempURL links included. An
 uncompressed tar or zip whose server answers Range requests is listed member
 by member.
 """
 from __future__ import annotations
 
+import base64
 import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import PurePosixPath
 from typing import Callable, List, Optional
-from urllib.parse import quote, unquote, urlencode, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, quote, unquote, urlencode, urlsplit, urlunsplit
 
 import requests
 
@@ -26,6 +28,7 @@ from .remote import (
     list_zip,
     name_from_url,
     probe,
+    safe_member_path,
 )
 
 MAX_LISTING_BYTES = 50 * 1024 * 1024
@@ -238,6 +241,107 @@ def s3(session, link: str) -> Optional[Listing]:
 
 
 # ---------------------------------------------------------------------------
+# OneDrive and SharePoint
+# ---------------------------------------------------------------------------
+
+ONEDRIVE_API = "https://api.onedrive.com/v1.0"
+ONEDRIVE_MAX_DEPTH = 20
+
+
+def _is_onedrive(host: str) -> bool:
+    host = host.lower()
+    return host in ("1drv.ms", "onedrive.live.com", "photos.onedrive.com") \
+        or host.endswith(".sharepoint.com")
+
+
+def share_id(link: str) -> str:
+    """The id the OneDrive shares API takes for a sharing link: 'u!' + base64url."""
+    return "u!" + base64.urlsafe_b64encode(link.encode()).decode().rstrip("=")
+
+
+def with_download(link: str) -> str:
+    """A sharing link that answers with the file instead of the preview page."""
+    parts = urlsplit(link)
+    query = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True) if k != "download"]
+    query.append(("download", "1"))
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), ""))
+
+
+def _onedrive_files(session, item: dict, prefix: str, depth: int, files: List[RemoteFile]) -> None:
+    name = item.get("name") or ""
+    if name in ("", ".", "..") or "/" in name or "\\" in name:
+        return
+    path = f"{prefix}/{name}" if prefix else name
+    if "file" in item:
+        url = item.get("@content.downloadUrl") or item.get("@microsoft.graph.downloadUrl") or ""
+        hashes = (item.get("file") or {}).get("hashes") or {}
+        files.append(RemoteFile(path=path, size=item.get("size"), url=url,
+                                md5=(hashes.get("md5Hash") or "").lower()))
+        return
+    if "folder" not in item or depth > ONEDRIVE_MAX_DEPTH or len(files) > MAX_LISTED_FILES:
+        return
+    children, next_url = item.get("children"), item.get("children@odata.nextLink")
+    if children is None:
+        drive = (item.get("parentReference") or {}).get("driveId") or ""
+        page = _json(session, f"{ONEDRIVE_API}/drives/{quote(drive, safe='')}/items/"
+                              f"{quote(item.get('id', ''), safe='')}/children")
+        children, next_url = page.get("value", []), page.get("@odata.nextLink")
+    while True:
+        for child in children or []:
+            _onedrive_files(session, child, path, depth + 1, files)
+        if not next_url or not next_url.startswith(ONEDRIVE_API + "/"):
+            break
+        page = _json(session, next_url)
+        children, next_url = page.get("value", []), page.get("@odata.nextLink")
+
+
+def onedrive(session, link: str) -> Optional[Listing]:
+    """A OneDrive or SharePoint sharing link ("Anyone with the link").
+
+    Personal OneDrive shares are read through the public shares API, which
+    lists folders too. SharePoint and OneDrive for Business only allow that
+    API with a signed-in app, so their links work for single files, fetched
+    with ``download=1``.
+    """
+    host = urlsplit(link).hostname or ""
+    if not _is_onedrive(host):
+        return None
+    if not host.endswith(".sharepoint.com"):
+        try:
+            root = _json(session, f"{ONEDRIVE_API}/shares/{share_id(link)}/root?$expand=children")
+        except (requests.RequestException, LookupError, ValueError):
+            root = None
+        if root and ("file" in root or "folder" in root):
+            files: List[RemoteFile] = []
+            if "folder" in root:
+                for child in root.get("children") or []:
+                    _onedrive_files(session, child, "", 1, files)
+                # Remaining pages of the top folder
+                next_url = root.get("children@odata.nextLink")
+                while next_url and next_url.startswith(ONEDRIVE_API + "/"):
+                    page = _json(session, next_url)
+                    for child in page.get("value", []):
+                        _onedrive_files(session, child, "", 1, files)
+                    next_url = page.get("@odata.nextLink")
+            else:
+                _onedrive_files(session, root, "", 0, files)
+            return Listing(title=f"OneDrive: {root.get('name', '')}", url=link, files=files,
+                           notes=["OneDrive download links expire after about an hour: "
+                                  "if an import stops for longer, look the link up again."])
+    info = probe(session, with_download(link))
+    if info.content_type == "text/html":
+        raise LookupError(
+            "This OneDrive/SharePoint link needs a sign-in, or is a folder that can only be "
+            "read with a sign-in. Share the file with \"Anyone with the link\" and paste "
+            "that link, or share a zip of the folder."
+        )
+    url = with_download(link)
+    file = RemoteFile(path=info.name or "download", size=info.size, url=url, etag=info.etag)
+    file.ranges = info.ranges
+    return Listing(title=file.path, url=link, files=[file])
+
+
+# ---------------------------------------------------------------------------
 # Single files
 # ---------------------------------------------------------------------------
 
@@ -251,7 +355,7 @@ def single_file(session, link: str) -> Optional[Listing]:
     return Listing(title=file.path, url=link, files=[file])
 
 
-SOURCES: List[Callable] = [zenodo, figshare, swift, s3, single_file]
+SOURCES: List[Callable] = [zenodo, figshare, onedrive, swift, s3, single_file]
 
 
 def normalize(link: str) -> str:
@@ -313,7 +417,8 @@ def resolve(session: requests.Session, link: str) -> Listing:
             listing = source(session, link)
             if listing is not None:
                 break
-    listing.files = [f for f in listing.files if f.url and f.path][:MAX_LISTED_FILES]
+    listing.files = [f for f in listing.files
+                     if f.url and f.path and safe_member_path(f.path)][:MAX_LISTED_FILES]
     if not listing.files:
         raise LookupError("No downloadable files were found at this link.")
     _open_archives(session, listing)

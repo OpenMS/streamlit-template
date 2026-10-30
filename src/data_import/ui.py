@@ -190,7 +190,7 @@ def link_import_section(workflow_dir, targets: Dict[str, dict]) -> None:
     st.markdown("**🔗 Import from a link**")
     st.caption(
         "Paste a link to a file, an archive (.tar, .zip, .tar.gz), a public S3 or Swift folder "
-        "(e.g. CSC Allas), a Zenodo record or a Figshare article. Presigned links to private "
+        "(e.g. CSC Allas), a OneDrive or SharePoint sharing link, a Zenodo record or a Figshare article. Presigned links to private "
         "objects work too. Files are added to the matching upload above."
     )
     status = job.read_status(job_dir)

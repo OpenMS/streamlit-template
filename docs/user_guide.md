@@ -39,7 +39,8 @@ In the OpenMS web application, workspaces are designed to keep your analysis org
   - a file over HTTP(S), including presigned S3 links and Swift TempURLs to private objects;
   - a tar, tar.gz or zip archive (e.g. `https://a3s.fi/swift/v1/<bucket>/<name>.tar` on CSC Allas);
   - a public S3 or Swift folder (a link ending in `/`);
-  - a Zenodo record or Figshare article (page link or DOI).
+  - a Zenodo record or Figshare article (page link or DOI);
+  - a OneDrive or SharePoint link shared with "Anyone with the link": files and folders from personal OneDrive, single files from SharePoint / OneDrive for Business (their folders can only be read with a sign-in).
 
   **Look up** lists the files; when the server allows it, the files inside an archive are listed too, and only the ones you select are downloaded. Each file is matched to the upload that takes its type (a Bruker `.d` folder as a whole), and you can change that in the table. The import runs in the background: you can leave the page, and a cancelled or interrupted import continues where it stopped when you start it again. Archives the server cannot send in parts are downloaded whole, unpacked, and their files sorted by type.
 

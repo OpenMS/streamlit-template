@@ -19,7 +19,7 @@ import requests
 
 from src.data_import import job, net, sources
 from src.data_import.download import download, part_path
-from src.data_import.remote import list_tar, list_zip, probe
+from src.data_import.remote import Probe, list_tar, list_zip, probe
 
 
 class Server:
@@ -454,3 +454,66 @@ def test_probe_reads_size_and_range_support(server):
     server.add("/x.tar", b"0" * 2048)
     info = probe(plain(), server.url("/x.tar?X-Amz-Signature=abc"))
     assert (info.name, info.size, info.ranges) == ("x.tar", 2048, True)
+
+
+def test_onedrive_personal_folder_is_walked(monkeypatch):
+    api = sources.ONEDRIVE_API
+    link = "https://1drv.ms/f/s!AbCdEf"
+    pages = {
+        f"{api}/shares/{sources.share_id(link)}/root?$expand=children": {
+            "name": "Course", "folder": {"childCount": 3},
+            "children": [
+                {"name": "run1.mzML", "size": 5, "file": {"hashes": {"md5Hash": "AB" * 16}},
+                 "@content.downloadUrl": "https://dl.example/run1"},
+                {"name": "sample.d", "id": "D1", "folder": {"childCount": 1},
+                 "parentReference": {"driveId": "drv"}},
+                {"name": "..", "size": 1, "file": {}, "@content.downloadUrl": "https://dl.example/x"},
+            ],
+            "children@odata.nextLink": f"{api}/next",
+        },
+        f"{api}/next": {"value": [{"name": "db.fasta", "size": 3, "file": {},
+                                   "@content.downloadUrl": "https://dl.example/db"}]},
+        f"{api}/drives/drv/items/D1/children": {"value": [
+            {"name": "analysis.tdf", "size": 2, "file": {}, "@content.downloadUrl": "https://dl.example/tdf"}]},
+    }
+    monkeypatch.setattr(sources, "_json", lambda session, url, **kw: pages[url])
+    monkeypatch.setattr(sources, "_open_archives", lambda session, listing: None)
+    listing = sources.resolve(plain(), link)
+    assert listing.title == "OneDrive: Course"
+    assert [(f.path, f.url, f.md5) for f in listing.files] == [
+        ("run1.mzML", "https://dl.example/run1", "ab" * 16),
+        ("sample.d/analysis.tdf", "https://dl.example/tdf", ""),
+        ("db.fasta", "https://dl.example/db", ""),
+    ]
+    items = job.build_items(listing.files, targets(Path("/tmp")))
+    assert [(i["name"], i["kind"]) for i in items] == [
+        ("run1.mzML", "file"), ("sample.d", "folder"), ("db.fasta", "file")]
+
+
+def test_sharepoint_file_link_is_fetched_with_download(monkeypatch):
+    def no_api(session, url, **kw):
+        raise AssertionError("SharePoint links must not go to the shares API")
+
+    seen = []
+
+    def fake_probe(session, url):
+        seen.append(url)
+        return Probe(name="run.mzML", size=10, ranges=True, etag='"e"')
+
+    monkeypatch.setattr(sources, "_json", no_api)
+    monkeypatch.setattr(sources, "probe", fake_probe)
+    link = "https://uni-my.sharepoint.com/:u:/g/personal/x/EAbc?e=XyZ"
+    listing = sources.resolve(plain(), link)
+    assert seen == ["https://uni-my.sharepoint.com/:u:/g/personal/x/EAbc?e=XyZ&download=1"]
+    assert listing.files[0].url == seen[0]
+
+
+def test_onedrive_page_that_needs_sign_in_is_explained(monkeypatch):
+    def denied(session, url, **kw):
+        raise requests.HTTPError("401")
+
+    monkeypatch.setattr(sources, "_json", denied)
+    monkeypatch.setattr(sources, "probe", lambda session, url: Probe(
+        name="x", size=None, ranges=False, etag="", content_type="text/html"))
+    with pytest.raises(LookupError, match="Anyone with the link"):
+        sources.resolve(plain(), "https://onedrive.live.com/?id=ABC&cid=DEF")
