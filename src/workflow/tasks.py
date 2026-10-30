@@ -27,6 +27,7 @@ def execute_workflow(
     workflow_dir: str,
     workflow_class: str,
     workflow_module: str,
+    run_id: str | None = None,
 ) -> dict:
     """
     Execute a workflow in the worker process.
@@ -38,6 +39,9 @@ def execute_workflow(
         workflow_dir: Path to the workflow directory
         workflow_class: Name of the Workflow class
         workflow_module: Module path containing the Workflow class
+        run_id: For a multi-run workflow, the run (created by the UI in
+            <workflow_dir>/runs/) this job writes into. None writes into
+            <workflow_dir>/results, which is cleared first.
 
     Returns:
         Dictionary with execution results
@@ -57,6 +61,7 @@ def execute_workflow(
         job = None
 
     workflow_path = Path(workflow_dir)
+    runs = None
 
     try:
         # Update progress
@@ -67,6 +72,7 @@ def execute_workflow(
         from src.workflow.FileManager import FileManager
         from src.workflow.ParameterManager import ParameterManager
         from src.workflow.Logger import Logger
+        from src.workflow.RunManager import RunManager
 
         # Load the workflow class dynamically
         import importlib
@@ -91,7 +97,12 @@ def execute_workflow(
 
         # Initialize workflow components
         logger = Logger(workflow_path)
-        file_manager = FileManager(workflow_path)
+        if run_id:
+            runs = RunManager(workflow_path)
+            results_dir = runs.results_dir(run_id)
+        else:
+            results_dir = workflow_path / "results"
+        file_manager = FileManager(workflow_path, results_dir)
         parameter_manager = ParameterManager(workflow_path)
         executor = CommandExecutor(workflow_path, logger, parameter_manager)
         executor.pid_dir.mkdir(parents=True, exist_ok=True)
@@ -108,15 +119,17 @@ def execute_workflow(
         workflow.parameter_manager = parameter_manager
         workflow.executor = executor
         workflow.params = params
+        workflow.results_dir = results_dir
+        workflow.run_id = run_id
+        workflow.runs = runs
 
         # Store job reference for progress updates
         workflow._rq_job = job
 
-        # Clear results directory
-        results_dir = workflow_path / "results"
-        if results_dir.exists():
+        # Clear results directory. A run's folder is new and stays as it is.
+        if run_id is None and results_dir.exists():
             shutil.rmtree(results_dir)
-        results_dir.mkdir(parents=True)
+        results_dir.mkdir(parents=True, exist_ok=True)
 
         # Log workflow start
         logger.log("STARTING WORKFLOW")
@@ -153,6 +166,8 @@ def execute_workflow(
         # actually succeeded, it is what classify_log_outcome reads to tell a
         # finished run from a failed one.
         logger.log("WORKFLOW FINISHED")
+        if runs is not None:
+            runs.finish(run_id, "finished")
 
         _update_progress(job, 1.0, "Workflow completed")
 
@@ -179,6 +194,12 @@ def execute_workflow(
                     # crash, the reason is in the tool output above.
                     if not isinstance(e, WorkflowExecutionError):
                         f.write(traceback.format_exc())
+        except Exception:
+            pass
+
+        try:
+            if runs is not None:
+                runs.finish(run_id, "failed")
         except Exception:
             pass
 
