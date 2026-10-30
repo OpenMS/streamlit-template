@@ -336,6 +336,11 @@ jobs:
           # stapling service instead of failing the build.
           args+=(--mac dmg --arm64 "-c.dmg.artifactName=$APP_NAME-macOS-arm64.\${ext}"
             -c.mac.notarize=false -c.afterSign=scripts/notarize.js)
+          # dmgbuild's own size estimate is too small for payloads with tens of
+          # thousands of files (ditto runs out of space inside the volume);
+          # electron-builder shrinks the image afterwards.
+          payload_mb=$(du -sm electron/payload | cut -f1)
+          args+=("-c.dmg.size=$(( payload_mb * 14 / 10 + 600 ))m")
           if [[ -n $MACOS_CERTIFICATE ]]; then
             export CSC_LINK="$MACOS_CERTIFICATE" CSC_KEY_PASSWORD="$MACOS_CERTIFICATE_PASSWORD"
             # electron-builder skips signing in pull requests by default. Only PRs from
