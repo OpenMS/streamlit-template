@@ -482,3 +482,66 @@ def test_tool_failure_propagates(tmp_path, topp_results, python_result):
         "execution() must return False as soon as an executor call fails; "
         f"got {result!r}."
     )
+
+
+# ============================ multi-run workflows ============================
+
+
+class ResultsDirWritingWorkflow:
+    """Writes into self.results_dir, as a multi-run workflow does."""
+
+    def execution(self) -> bool:
+        out = self.file_manager.get_files("table.tsv", set_results_dir="out")[0]
+        Path(out).write_text("x")
+        Path(self.results_dir, "top.txt").write_text(self.run_id or "")
+        return True
+
+
+def _run_multi_in_worker(workflow_dir: Path, workflow_class: str, run_id: str):
+    connection = fakeredis.FakeStrictRedis()
+    queue = Queue(f"{QUEUE_NAME}-{uuid.uuid4().hex[:8]}", connection=connection)
+    queue.enqueue(
+        tasks.execute_workflow,
+        kwargs={
+            "workflow_dir": str(workflow_dir),
+            "workflow_class": workflow_class,
+            "workflow_module": __name__,
+            "run_id": run_id,
+        },
+    )
+    _FakeRedisSimpleWorker([queue], connection=connection).work(
+        burst=True, logging_level="CRITICAL"
+    )
+
+
+def test_queued_multi_run_writes_into_its_run_and_finishes_it(tmp_path):
+    from src.workflow.RunManager import RunManager
+
+    workflow_dir = _prepare_workflow_dir(tmp_path, "multi")
+    runs = RunManager(workflow_dir)
+    earlier = runs.new_run("earlier")
+    Path(runs.results_dir(earlier), "keep.txt").write_text("keep")
+    runs.finish(earlier, "finished")
+    run_id = runs.new_run("queued")
+
+    _run_multi_in_worker(workflow_dir, "ResultsDirWritingWorkflow", run_id)
+
+    assert Path(runs.results_dir(run_id), "out", "table.tsv").exists()
+    assert Path(runs.results_dir(run_id), "top.txt").read_text() == run_id
+    assert runs.get(run_id)["status"] == "finished"
+    assert Path(runs.run_dir(run_id), "logs", "minimal.log").exists()
+    # The earlier run and the single-run results folder are left alone.
+    assert Path(runs.results_dir(earlier), "keep.txt").exists()
+    assert not Path(workflow_dir, "results").exists()
+
+
+def test_queued_multi_run_failure_marks_run_failed(tmp_path):
+    from src.workflow.RunManager import RunManager
+
+    workflow_dir = _prepare_workflow_dir(tmp_path, "multi-fail")
+    runs = RunManager(workflow_dir)
+    run_id = runs.new_run("broken")
+
+    _run_multi_in_worker(workflow_dir, "FalseReturningWorkflow", run_id)
+
+    assert runs.get(run_id)["status"] == "failed"
