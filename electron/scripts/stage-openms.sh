@@ -8,7 +8,8 @@
 # can live anywhere (app bundle, AppImage mount, /opt).
 #
 #   stage-openms.sh <openms-version> <out dir> <TOPP tool>...
-# Needs gh (GH_TOKEN), and sudo to install the release package on the runner.
+# Needs gh (GH_TOKEN), and sudo to install the release package (macOS) or the
+# deb's dependencies (Linux) on the runner.
 # OPENMS_REPOSITORY overrides the repository the release comes from.
 set -euo pipefail
 
@@ -73,20 +74,29 @@ if [[ $platform == macos ]]; then
 else
   asset=$(pick '\.deb$' 'x86_64|amd64' "Linux x86_64")
   gh release download "$tag" -R "$repo" --pattern "$asset" --dir "$dl"
+  # Unpack instead of installing: the deb also ships headers that collide
+  # with packages already on the runner (e.g. sqlite3.h from libsqlite3-dev).
+  root="$dl/root"
+  dpkg-deb -x "$dl/$asset" "$root"
+  # Its runtime dependencies (Qt, ...) come from apt; the first alternative of each.
+  deps=$(dpkg-deb -f "$dl/$asset" Depends | tr ',' '\n' | sed -E 's/\|.*//; s/\(.*\)//; s/[[:space:]]//g' | grep -v '^$' || true)
   sudo apt-get update -q
-  sudo apt-get install -y -q patchelf "$dl/$asset"
-  pkg=$(dpkg-deb -f "$dl/$asset" Package)
-  files=$(dpkg -L "$pkg")
-  echo "Installed $asset as package $pkg"
+  # shellcheck disable=SC2086
+  sudo apt-get install -y -q patchelf $deps
+  files=$(find "$root" \( -type f -o -type l \))
+  echo "Unpacked $asset; dependencies: $(tr '\n' ' ' <<<"$deps")"
 
   for t in "${tools[@]}"; do
     src=$(grep -E "/bin/${t}$" <<<"$files" | head -n 1 || true)
     [[ -n "$src" ]] || { echo "::error::TOPP tool $t is not in $asset"; exit 1; }
     cp "$src" "$out/openms/bin/"
   done
-  share=$(grep -E '/share/OpenMS/CHEMISTRY$' <<<"$files" | head -n 1 || true)
+  share=$(find "$root" -type d -path '*/share/OpenMS/CHEMISTRY' | head -n 1)
   [[ -n "$share" ]] || { echo "::error::$asset has no share/OpenMS"; exit 1; }
   cp -R "$(dirname "$share")" "$out/share/"
+  # Let ldd find the deb's own libraries (libOpenMS, ...) where they were unpacked.
+  export LD_LIBRARY_PATH
+  LD_LIBRARY_PATH=$(find "$root" -name '*.so*' \( -type f -o -type l \) -exec dirname {} \; | sort -u | paste -sd:)
 
   # The deb relies on system packages (Qt, Xerces, ...). Copy every library the
   # tools load except glibc's, which must come from the host, and point all
