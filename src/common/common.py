@@ -14,8 +14,10 @@ from typing import Any
 from pathlib import Path
 from streamlit.components.v1 import html
 
+import subprocess
+
 try:
-    from tkinter import Tk, filedialog
+    import tkinter  # noqa: F401  (the dialogs run in a child process)
 
     TK_AVAILABLE = True
 except ImportError:
@@ -1147,6 +1149,55 @@ def get_dataframe_mem_useage(df):
     return memory_usage_mb
 
 
+# Runs a Tk dialog in its own Python process. Tk must own the main thread of
+# its process: Streamlit runs page scripts in worker threads, where Tk crashes
+# on macOS and can take the whole server down on Linux. A child process keeps
+# a dialog failure away from the server.
+_TK_DIALOG_SCRIPT = r"""
+import json, sys
+from tkinter import Tk, filedialog
+
+args = json.loads(sys.argv[1])
+root = Tk()
+root.attributes("-topmost", True)
+root.withdraw()
+if args["kind"] == "directory":
+    result = filedialog.askdirectory(title=args["title"], initialdir=args["initialdir"])
+else:
+    result = filedialog.askopenfilename(
+        title=args["title"],
+        filetypes=[tuple(t) for t in args["filetypes"]],
+        initialdir=args["initialdir"],
+        multiple=args["multiple"],
+    )
+root.destroy()
+if isinstance(result, str):
+    result = [result] if result and args["multiple"] else result
+print(json.dumps(list(result) if isinstance(result, tuple) else result))
+"""
+
+
+def _run_tk_dialog(**args):
+    """Show a Tk dialog in a child process and return its result (None on failure)."""
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-c", _TK_DIALOG_SCRIPT, json.dumps(args)],
+            capture_output=True,
+            text=True,
+            creationflags=flags,
+        )
+    except OSError as e:
+        st.error(f"Could not open the file dialog: {e}")
+        return None
+    if proc.returncode != 0:
+        st.error("The file dialog failed. Enter the folder path instead.")
+        logging.getLogger(__name__).warning("Tk dialog failed: %s", proc.stderr.strip())
+        return None
+    lines = proc.stdout.strip().splitlines()
+    return json.loads(lines[-1]) if lines else None
+
+
 def tk_directory_dialog(title: str = "Select Directory", parent_dir: str = os.getcwd()):
     """
     Creates a Tkinter directory dialog for selecting a directory.
@@ -1156,17 +1207,14 @@ def tk_directory_dialog(title: str = "Select Directory", parent_dir: str = os.ge
         parent_dir (str): The path to the parent directory of the directory dialog.
 
     Returns:
-        str: The path to the selected directory.
+        str: The path to the selected directory, "" if cancelled.
 
     Warning:
         This function is not avaliable in a streamlit cloud context.
     """
-    root = Tk()
-    root.attributes("-topmost", True)
-    root.withdraw()
-    file_path = filedialog.askdirectory(title=title, initialdir=parent_dir)
-    root.destroy()
-    return file_path
+    return _run_tk_dialog(
+        kind="directory", title=title, initialdir=str(parent_dir)
+    ) or ""
 
 
 def tk_file_dialog(
@@ -1185,20 +1233,19 @@ def tk_file_dialog(
         multiple (bool): If True, multiple files can be selected.
 
     Returns:
-        str: The path to the selected file.
+        list[str]: The selected files (empty if cancelled).
 
     Warning:
         This function is not avaliable in a streamlit cloud context.
     """
-    root = Tk()
-    root.attributes("-topmost", True)
-    root.withdraw()
-    file_types.extend([("All files", "*.*")])
-    file_path = filedialog.askopenfilename(
-        title=title, filetypes=file_types, initialdir=parent_dir, multiple=True
+    result = _run_tk_dialog(
+        kind="files",
+        title=title,
+        filetypes=[list(t) for t in file_types] + [["All files", "*.*"]],
+        initialdir=str(parent_dir),
+        multiple=True,
     )
-    root.destroy()
-    return file_path
+    return result or []
 
 
 def export_folder_input(key: str) -> Path:
