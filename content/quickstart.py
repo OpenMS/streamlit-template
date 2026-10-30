@@ -79,12 +79,7 @@ c1.markdown(
 )
 v_space(1, c2)
 c2.image("assets/openms_transparent_bg_logo.svg", width=300)
-if render_installer_buttons("### Download the desktop app"):
-    st.markdown(
-        """
-The Windows installer needs no admin rights. On macOS, open the disk image and drag the app to Applications. On Linux, make the AppImage executable and start it, or install the .deb package.
-"""
-    )
+render_installer_buttons("### Download the desktop app")
 
 st.markdown("## 📖 Documentation")
 st.markdown(

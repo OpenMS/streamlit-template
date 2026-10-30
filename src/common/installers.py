@@ -15,8 +15,8 @@ import streamlit as st
 # (key, button label, name suffix of the release asset, help text)
 PLATFORMS = [
     ("windows", "Windows", "-Setup.exe", "Installer for Windows 10 and 11 (64-bit); no admin rights needed."),
-    ("macos", "macOS (Apple Silicon)", "-macOS-arm64.dmg", "Disk image for Macs with Apple Silicon (M1 and later)."),
-    ("linux", "Linux (AppImage)", "-Linux-x86_64.AppImage", "Runs without installation on x86_64 Linux with glibc 2.35 or newer."),
+    ("macos", "macOS", "-macOS-arm64.dmg", "Disk image for Macs with Apple Silicon (M1 and later)."),
+    ("linux", "Linux", "-Linux-x86_64.AppImage", "AppImage for x86_64 Linux with glibc 2.35 or newer; runs without installation."),
 ]
 # Offered as a link below the buttons.
 LINUX_DEB_SUFFIX = "-Linux-amd64.deb"
