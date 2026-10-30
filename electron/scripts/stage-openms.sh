@@ -84,7 +84,8 @@ else
   echo "Depends: $depends"
   sudo apt-get update -q
   sudo apt-get install -y -q patchelf
-  sudo apt-get satisfy -y -q "$depends"
+  # libOpenMS also links QtNetwork, which the deb does not declare.
+  sudo apt-get satisfy -y -q "$depends, libqt6network6t64 | libqt6network6"
   files=$(find "$root" \( -type f -o -type l \))
   echo "Unpacked $asset"
 
@@ -104,6 +105,11 @@ else
   # tools load except glibc's, which must come from the host, and point all
   # rpaths into the bundle.
   glibc='^(linux-vdso|ld-linux|libc|libm|libdl|libpthread|librt|libresolv|libutil|libnsl|libanl|libmvec|libthread_db|libBrokenLocale)\.so'
+  missing=$(for t in "$out"/openms/bin/*; do ldd "$t"; done | awk '/not found/ {print $1}' | sort -u)
+  if [[ -n "$missing" ]]; then
+    echo "::error::libraries not found on the runner (add their packages above): $(tr '\n' ' ' <<<"$missing")"
+    exit 1
+  fi
   for t in "$out"/openms/bin/*; do
     ldd "$t" | awk '/=> \// {print $1, $3}'
   done | sort -u | while read -r name path; do
