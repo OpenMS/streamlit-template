@@ -691,6 +691,12 @@ def page_setup(page: str = "") -> dict[str, Any]:
     # Render the sidebar
     params = render_sidebar(page)
 
+    # A local install has no captcha or consent banner. Set this on every run,
+    # not only when the workspace is first resolved: the workspace switcher
+    # drops every params.json key from the session, "controllo" included.
+    if st.session_state.location == "local":
+        st.session_state["controllo"] = True
+
     captcha_control(privacy_policy_url=get_legal_links()["privacy"])
 
     # If run in hosted mode, show captcha as long as it has not been solved
