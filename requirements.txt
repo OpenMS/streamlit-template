@@ -141,3 +141,7 @@ xlsxwriter
 # Redis Queue dependencies (for online mode)
 redis>=5.0.0
 rq>=1.16.0
+
+# Reads Bruker timsTOF .d folders (TDF) for the conversion to mzML
+# (src/python-tools/bruker_to_mzml.py). Open-source, no vendor library.
+timsrust_pyo3==0.4.1

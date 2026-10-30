@@ -88,6 +88,7 @@ Presets allow users to quickly apply optimized parameter configurations. They ar
 2. Only presets matching the current workflow name are displayed
 3. Clicking a preset updates `params.json` and refreshes the UI
 4. If no `presets.json` exists or no presets match the workflow, no buttons are shown
+5. `StreamlitUI.user_presets()` (also in `parameter_section()`) lets users save the current settings as their own preset, in `<workflow_dir>/user-presets.json`. A user preset is a full snapshot: input file selections (keys with an `input-files/<key>` directory) and `max_threads` are left out, and applying it resets the other TOPP parameters to their defaults first. The same file records the preset applied last, which drives the "settings changed since you applied …" line
 
 ## Code structure
 - The main file `app.py` defines page layout.

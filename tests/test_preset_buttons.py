@@ -113,3 +113,41 @@ def test_callback_applies_only_the_preset_keys(ui):
     assert stored["mzML-files"] == ["a.mzML"]
     assert stored["FeatureFinderMetabo"]["algorithm:common:noise_threshold_int"] == 500.0
     mock_streamlit.rerun.assert_not_called()
+
+
+def test_user_preset_buttons_apply_in_a_callback(ui):
+    pm = ui.parameter_manager
+    pm.save_user_preset("Mine")
+
+    ui.user_presets()
+
+    calls = [c for c in mock_streamlit.button.call_args_list if c.kwargs.get("key") == "user_preset_Mine"]
+    assert len(calls) == 1
+    assert calls[0].kwargs["on_click"] == ui._apply_preset_callback
+    assert calls[0].kwargs["args"] == ("Mine",)
+    mock_streamlit.rerun.assert_not_called()
+
+
+def test_save_callback_refuses_builtin_names(ui):
+    mock_streamlit.session_state["user_preset_name"] = "Fast"
+    ui._save_user_preset_callback()
+    assert ui.parameter_manager.get_user_preset_names() == []
+
+    mock_streamlit.session_state["user_preset_name"] = "Mine"
+    mock_streamlit.session_state["user_preset_description"] = ""
+    ui._save_user_preset_callback()
+    assert ui.parameter_manager.get_user_preset_names() == ["Mine"]
+    assert mock_streamlit.session_state["user_preset_name"] == ""
+
+
+def test_status_line_says_when_settings_left_the_preset(ui):
+    pm = ui.parameter_manager
+    ui._apply_preset_callback("Fast")
+    ui.user_presets()
+    assert "Current settings: **Fast**" in mock_streamlit.caption.call_args.args[0]
+
+    params = json.loads(pm.params_file.read_text(encoding="utf-8"))
+    params["FeatureFinderMetabo"]["algorithm:common:noise_threshold_int"] = 1.0
+    pm.params_file.write_text(json.dumps(params), encoding="utf-8")
+    ui.user_presets()
+    assert "changed since you applied **Fast**" in mock_streamlit.caption.call_args.args[0]
