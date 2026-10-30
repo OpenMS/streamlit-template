@@ -7,6 +7,6 @@ params = page_setup()
 
 wf = Workflow()
 
-st.title("Download Results")
+st.title("Export Results" if st.session_state.location == "local" else "Download Results")
 
 wf.show_results_download_section()

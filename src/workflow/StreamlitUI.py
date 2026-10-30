@@ -18,6 +18,8 @@ from datetime import datetime
 from src.common.common import (
     OS_PLATFORM,
     TK_AVAILABLE,
+    export_files,
+    export_folder_input,
     tk_directory_dialog,
     tk_file_dialog,
 )
@@ -1526,6 +1528,9 @@ class StreamlitUI:
 
     def file_upload_section(self, custom_upload_function) -> None:
         custom_upload_function()
+        # A local install already has the input files on disk.
+        if st.session_state.location == "local":
+            return
         c1, _ = st.columns(2)
         if c1.button("⬇️ Download files", use_container_width=True):
             self.zip_and_download_files(Path(self.workflow_dir, "input-files"))
@@ -1778,6 +1783,9 @@ Started: {status.get('started_at', 'N/A')}""")
         ZIP of the chosen result folders on request. Only the selected file (or
         the ZIP) is read into memory, so large result sets stay cheap to render.
 
+        A local install exports instead: the user sets a folder at the top and
+        one button copies every listed file to ``<folder>/<workflow>-results``.
+
         Args:
             exclude: Names of files or folders to leave out (matched against
                 every part of a file's path relative to the results directory,
@@ -1800,7 +1808,7 @@ Started: {status.get('started_at', 'N/A')}""")
                     files.append(rel)
 
         if not files:
-            st.info("No results to download yet. Run the workflow first.")
+            st.info("No results yet. Run the workflow first.")
             return
 
         def folder_of(rel: Path) -> str:
@@ -1811,6 +1819,11 @@ Started: {status.get('started_at', 'N/A')}""")
                 if n_bytes < 1024 or unit == "GB":
                     return f"{n_bytes:.0f} {unit}" if unit == "B" else f"{n_bytes:.1f} {unit}"
                 n_bytes /= 1024
+
+        key_prefix = f"results-download-{Path(self.workflow_dir).name}"
+        local = st.session_state.get("location") == "local"
+        if local:
+            export_dir = export_folder_input(key_prefix)
 
         st.dataframe(
             [
@@ -1828,7 +1841,19 @@ Started: {status.get('started_at', 'N/A')}""")
             width="stretch",
         )
 
-        key_prefix = f"results-download-{Path(self.workflow_dir).name}"
+        if local:
+            if st.button(
+                "📤 Export",
+                type="primary",
+                key=f"{key_prefix}-export",
+                width="stretch",
+            ):
+                export_files(
+                    [(Path(results_dir, rel), rel) for rel in files],
+                    Path(export_dir, f"{Path(self.workflow_dir).name}-results"),
+                )
+            return
+
         c1, c2 = st.columns(2)
 
         with c1:
