@@ -402,7 +402,13 @@ jobs:
         if [[ $SIGNED == true ]]; then
           codesign --verify --deep --strict --verbose=2 "$app"
           if [[ $NOTARIZED == true ]]; then
-            xcrun stapler validate "$app"
+            # stapler validate talks to Apple's CloudKit, whose connection
+            # sometimes drops (exit 68).
+            for i in 1 2 3; do
+              xcrun stapler validate "$app" && break
+              [[ $i == 3 ]] && exit 1
+              sleep 30
+            done
             spctl --assess --type execute --verbose=2 "$app"
           fi
         fi
