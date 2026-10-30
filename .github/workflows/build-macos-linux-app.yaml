@@ -108,7 +108,10 @@ jobs:
           "-c.extraMetadata.version=$version"
         )
         if [[ $RUNNER_OS == macOS ]]; then
-          args+=(--mac dmg --arm64 "-c.dmg.artifactName=$APP_NAME-macOS-arm64.\${ext}")
+          # Notarization runs in our afterSign hook, which retries Apple's flaky
+          # stapling service instead of failing the build.
+          args+=(--mac dmg --arm64 "-c.dmg.artifactName=$APP_NAME-macOS-arm64.\${ext}"
+            -c.mac.notarize=false -c.afterSign=scripts/notarize.js)
           if [[ -n $MACOS_CERTIFICATE ]]; then
             export CSC_LINK="$MACOS_CERTIFICATE" CSC_KEY_PASSWORD="$MACOS_CERTIFICATE_PASSWORD"
             # electron-builder skips signing in pull requests by default. Only PRs from
@@ -120,12 +123,11 @@ jobs:
               printf '%s\n' "$APPLE_API_KEY_CONTENT" > "$RUNNER_TEMP/AuthKey.p8"
               export APPLE_API_KEY="$RUNNER_TEMP/AuthKey.p8" APPLE_API_KEY_ID APPLE_API_ISSUER
               unset APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID
-              args+=(-c.mac.notarize=true)
             elif [[ -n $APPLE_API_KEY_ID ]]; then
               echo "::warning::APPLE_API_KEY_ID is set but APPLE_API_KEY (the .p8 contents) is empty or not shared with this repository: the app is signed but not notarized"
+              unset APPLE_ID
             elif [[ -n $APPLE_ID ]]; then
               unset APPLE_API_KEY_ID APPLE_API_ISSUER
-              args+=(-c.mac.notarize=true)
             else
               echo "::warning::neither APPLE_API_KEY nor APPLE_ID is set: the app is signed but not notarized"
             fi
@@ -133,6 +135,7 @@ jobs:
             # Forks and pull requests from forks get no secrets: build unsigned.
             echo "::warning::MACOS_CERTIFICATE is not set: the app is not signed"
             export CSC_IDENTITY_AUTO_DISCOVERY=false
+            unset APPLE_ID
           fi
         else
           args+=(--linux AppImage deb --x64
