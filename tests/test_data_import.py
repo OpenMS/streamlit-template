@@ -277,6 +277,26 @@ def test_example_files_are_replaced_by_the_import(tmp_path, server):
     assert sorted(p.name for p in mzml.iterdir()) == ["f.mzML"]
 
 
+def test_some_of_the_example_files_are_replaced_too(tmp_path, server):
+    # A demo workspace may hold only some of the widget's example files.
+    server.add("/f.mzML", MZML_A)
+    mzml = Path(tmp_path, "input-files", "mzML-files")
+    mzml.mkdir(parents=True)
+    Path(mzml, "example1.mzML").write_text("example")
+    run(tmp_path, server.url("/f.mzML"), fallback={"mzML-files": ["example1.mzML", "example2.mzML"]})
+    assert sorted(p.name for p in mzml.iterdir()) == ["f.mzML"]
+
+
+def test_own_files_are_kept(tmp_path, server):
+    server.add("/f.mzML", MZML_A)
+    mzml = Path(tmp_path, "input-files", "mzML-files")
+    mzml.mkdir(parents=True)
+    Path(mzml, "example.mzML").write_text("example")
+    Path(mzml, "mine.mzML").write_text("mine")
+    run(tmp_path, server.url("/f.mzML"), fallback={"mzML-files": ["example.mzML"]})
+    assert sorted(p.name for p in mzml.iterdir()) == ["example.mzML", "f.mzML", "mine.mzML"]
+
+
 def test_cancel_stops_the_job(tmp_path, server):
     server.add("/f.mzML", MZML_A)
     job_dir = Path(tmp_path, "job")

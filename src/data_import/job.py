@@ -249,10 +249,12 @@ class _Job:
             directory.mkdir(parents=True, exist_ok=True)
             if key not in self.cleared:
                 self.cleared.add(key)
-                examples = sorted(target.get("fallback") or [])
-                present = sorted(p.name for p in directory.iterdir() if p.name != "external_files.txt")
-                if examples and present == examples:
-                    for name in examples:
+                # Only example files so far (a demo workspace may hold just
+                # some of them): the import replaces them.
+                examples = set(target.get("fallback") or [])
+                present = {p.name for p in directory.iterdir() if p.name != "external_files.txt"}
+                if present and present <= examples:
+                    for name in present:
                         Path(directory, name).unlink(missing_ok=True)
             name = path.name
             stem, dot, ext = name.partition(".")
