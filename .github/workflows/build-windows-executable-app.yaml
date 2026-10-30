@@ -54,10 +54,14 @@ jobs:
 
     - name: Set Version in settings.json
       run: |
+        # Only release builds carry a tag; other builds keep settings.json's
+        # version instead of blanking it in the app's sidebar.
         $VERSION="${{ github.event.release.tag_name }}"
-        $content = Get-Content -Raw settings.json | ConvertFrom-Json
-        $content.version = $VERSION
-        $content | ConvertTo-Json -Depth 100 | Set-Content settings.json
+        if ($VERSION) {
+          $content = Get-Content -Raw settings.json | ConvertFrom-Json
+          $content.version = $VERSION
+          $content | ConvertTo-Json -Depth 100 | Set-Content settings.json
+        }
 
     - name: Download package as artifact
       uses: actions/download-artifact@v4
