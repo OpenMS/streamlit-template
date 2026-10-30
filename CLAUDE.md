@@ -202,7 +202,7 @@ DEFAULTS = [
 
 ### Presets
 
-`presets.json` maps a workflow name (lowercase, hyphenated) to named parameter sets, surfaced by `ui.preset_buttons()`:
+`presets.json` maps a workflow name (lowercase, hyphenated) to named parameter sets, surfaced by `ui.preset_buttons()`. Users can also save their own presets (`ui.user_presets()`, stored in `<workflow_dir>/user-presets.json` with the last applied preset); a user preset is a full snapshot that leaves out input file selections and `max_threads`, and its name may not shadow a built-in one:
 
 ```json
 {"topp-workflow": {"High Sensitivity": {

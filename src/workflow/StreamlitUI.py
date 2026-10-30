@@ -18,6 +18,8 @@ from datetime import datetime
 from src.common.common import (
     OS_PLATFORM,
     TK_AVAILABLE,
+    export_files,
+    export_folder_input,
     tk_directory_dialog,
     tk_file_dialog,
 )
@@ -1547,8 +1549,89 @@ class StreamlitUI:
         else:
             st.toast(f"Failed to apply preset: {preset_name}", icon="⚠️")
 
+    def user_presets(self, num_cols: int = 4) -> None:
+        """
+        Renders the presets the user saved, a form to save the current settings as
+        a new one or delete one, and which preset the settings come from.
+
+        Saved presets live in the workflow directory (user-presets.json), so they
+        stay with the workspace. Applying one restores every saved setting.
+        """
+        pm = self.parameter_manager
+        names = pm.get_user_preset_names()
+        if not pm.get_preset_names():
+            st.markdown("---")
+        st.markdown("**Your Presets**")
+        if names:
+            cols = st.columns(num_cols)
+            for i, name in enumerate(names):
+                col_idx = i % num_cols
+                description = pm.get_preset_description(name)
+                with cols[col_idx]:
+                    st.button(
+                        name,
+                        key=f"user_preset_{name}",
+                        help=description if description else None,
+                        use_container_width=True,
+                        on_click=self._apply_preset_callback,
+                        args=(name,),
+                    )
+                if col_idx == num_cols - 1 and i < len(names) - 1:
+                    cols = st.columns(num_cols)
+        else:
+            st.caption("Save the current settings to reuse them in a later run.")
+
+        with st.popover("💾 Save or delete a preset"):
+            st.text_input("Preset name", key="user_preset_name")
+            st.text_input("Description (optional)", key="user_preset_description")
+            st.button(
+                "Save current settings",
+                key="user_preset_save",
+                on_click=self._save_user_preset_callback,
+            )
+            if names:
+                st.selectbox("Saved preset", names, key="user_preset_delete_choice")
+                st.button(
+                    "Delete preset",
+                    key="user_preset_delete",
+                    on_click=self._delete_user_preset_callback,
+                )
+
+        applied, changed = pm.applied_preset_status()
+        if applied and changed:
+            st.caption(
+                f"✏️ Settings changed since you applied **{applied}**. "
+                "Save them as a preset to keep them."
+            )
+        elif applied:
+            st.caption(f"✅ Current settings: **{applied}**")
+
+    def _save_user_preset_callback(self) -> None:
+        name = st.session_state.get("user_preset_name", "").strip()
+        description = st.session_state.get("user_preset_description", "").strip()
+        if not name:
+            st.toast("Enter a name for the preset", icon="⚠️")
+        elif name in self.parameter_manager.get_preset_names():
+            st.toast(f"'{name}' is a built-in preset, choose another name", icon="⚠️")
+        elif self.parameter_manager.save_user_preset(name, description):
+            st.session_state["user_preset_name"] = ""
+            st.session_state["user_preset_description"] = ""
+            st.toast(f"Saved preset: {name}")
+        else:
+            st.toast(f"Could not save preset: {name}", icon="⚠️")
+
+    def _delete_user_preset_callback(self) -> None:
+        name = st.session_state.get("user_preset_delete_choice")
+        if name and self.parameter_manager.delete_user_preset(name):
+            st.toast(f"Deleted preset: {name}")
+        else:
+            st.toast(f"Could not delete preset: {name}", icon="⚠️")
+
     def file_upload_section(self, custom_upload_function) -> None:
         custom_upload_function()
+        # A local install already has the input files on disk.
+        if st.session_state.location == "local":
+            return
         c1, _ = st.columns(2)
         if c1.button("⬇️ Download files", use_container_width=True):
             self.zip_and_download_files(Path(self.workflow_dir, "input-files"))
@@ -1571,6 +1654,7 @@ class StreamlitUI:
 
         # Display preset buttons if presets are available for this workflow
         self.preset_buttons()
+        self.user_presets()
 
         custom_parameter_function()
 
@@ -1585,6 +1669,7 @@ class StreamlitUI:
             ):
                 self.parameter_manager.reset_to_default_parameters()
                 self.parameter_manager.clear_parameter_session_state()
+                self.parameter_manager.forget_applied_preset()
                 st.toast("Parameters reset to defaults")
                 st.rerun()
         with cols[1]:
@@ -1801,6 +1886,9 @@ Started: {status.get('started_at', 'N/A')}""")
         ZIP of the chosen result folders on request. Only the selected file (or
         the ZIP) is read into memory, so large result sets stay cheap to render.
 
+        A local install exports instead: the user sets a folder at the top and
+        one button copies every listed file to ``<folder>/<workflow>-results``.
+
         Args:
             exclude: Names of files or folders to leave out (matched against
                 every part of a file's path relative to the results directory,
@@ -1823,7 +1911,7 @@ Started: {status.get('started_at', 'N/A')}""")
                     files.append(rel)
 
         if not files:
-            st.info("No results to download yet. Run the workflow first.")
+            st.info("No results yet. Run the workflow first.")
             return
 
         def folder_of(rel: Path) -> str:
@@ -1834,6 +1922,11 @@ Started: {status.get('started_at', 'N/A')}""")
                 if n_bytes < 1024 or unit == "GB":
                     return f"{n_bytes:.0f} {unit}" if unit == "B" else f"{n_bytes:.1f} {unit}"
                 n_bytes /= 1024
+
+        key_prefix = f"results-download-{Path(self.workflow_dir).name}"
+        local = st.session_state.get("location") == "local"
+        if local:
+            export_dir = export_folder_input(key_prefix)
 
         st.dataframe(
             [
@@ -1851,7 +1944,19 @@ Started: {status.get('started_at', 'N/A')}""")
             width="stretch",
         )
 
-        key_prefix = f"results-download-{Path(self.workflow_dir).name}"
+        if local:
+            if st.button(
+                "📤 Export",
+                type="primary",
+                key=f"{key_prefix}-export",
+                width="stretch",
+            ):
+                export_files(
+                    [(Path(results_dir, rel), rel) for rel in files],
+                    Path(export_dir, f"{Path(self.workflow_dir).name}-results"),
+                )
+            return
+
         c1, c2 = st.columns(2)
 
         with c1:
