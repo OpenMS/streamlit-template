@@ -18,8 +18,6 @@ PLATFORMS = [
     ("macos", "macOS", "-macOS-arm64.dmg", "Disk image for Macs with Apple Silicon (M1 and later)."),
     ("linux", "Linux", "-Linux-x86_64.AppImage", "AppImage for x86_64 Linux with glibc 2.35 or newer; runs without installation."),
 ]
-# Offered as a link below the buttons.
-LINUX_DEB_SUFFIX = "-Linux-amd64.deb"
 
 # Copied into the image by the Dockerfile of older deployments; still offered
 # for Windows when the release cannot be read.
@@ -57,9 +55,6 @@ def find_installers() -> dict:
         url = next((u for n, u in assets.items() if n.endswith(suffix)), None)
         if url:
             found[key] = url
-    deb = next((u for n, u in assets.items() if n.endswith(LINUX_DEB_SUFFIX)), None)
-    if deb:
-        found["linux-deb"] = deb
     if assets.get("_release_page"):
         found["release"] = assets["_release_page"]
     return found
@@ -122,11 +117,6 @@ def render_installer_buttons(heading: str = "", app_name: str = "") -> bool:
                         use_container_width=True,
                     )
 
-    notes = []
-    if "linux-deb" in installers:
-        notes.append(f"Debian/Ubuntu package: [.deb]({installers['linux-deb']})")
     if "release" in installers:
-        notes.append(f"[All downloads and release notes]({installers['release']})")
-    if notes:
-        st.caption(" · ".join(notes))
+        st.caption(f"[All downloads and release notes]({installers['release']})")
     return True
