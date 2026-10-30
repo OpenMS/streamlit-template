@@ -1599,6 +1599,8 @@ class StreamlitUI:
         name = st.session_state.get("user_preset_delete_choice")
         if name and self.parameter_manager.delete_user_preset(name):
             st.toast(f"Deleted preset: {name}")
+        else:
+            st.toast(f"Could not delete preset: {name}", icon="⚠️")
 
     def file_upload_section(self, custom_upload_function) -> None:
         custom_upload_function()

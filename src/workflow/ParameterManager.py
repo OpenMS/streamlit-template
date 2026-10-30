@@ -605,16 +605,52 @@ class ParameterManager:
         preset = presets.get(preset_name) or self.load_user_presets().get(preset_name, {})
         return preset.get("_description", "")
 
-    def _read_user_preset_state(self) -> dict:
-        """The user-presets file: ``{"presets": {name: preset}, "applied": name}``."""
+    def _read_user_preset_state(self, strict: bool = False) -> dict:
+        """
+        The user-presets file: ``{"presets": {name: preset}, "applied": name}``.
+
+        Entries that are not a named dict are dropped, and ``applied`` is a name
+        or None, so callers can use the result without further checks.
+
+        Args:
+            strict: Raise instead of returning an empty state when the file
+                exists but cannot be read. Every read-modify-write uses it, so a
+                failed read never writes an empty state over the saved presets.
+
+        Raises:
+            InvalidParameterFileError: Only with ``strict``, as above.
+        """
+        empty = {"presets": {}, "applied": None}
         try:
-            with open(self.user_presets_file, "r", encoding="utf-8") as f:
-                state = json.load(f)
-        except (OSError, json.JSONDecodeError):
-            return {"presets": {}, "applied": None}
-        if not isinstance(state, dict) or not isinstance(state.get("presets"), dict):
-            return {"presets": {}, "applied": None}
-        return state
+            state = _read_parameter_file(self.user_presets_file)
+        except InvalidParameterFileError:
+            if strict:
+                raise
+            logger.exception("Could not read %s", self.user_presets_file)
+            return empty
+        presets = state.get("presets", {})
+        if not isinstance(presets, dict):
+            if strict:
+                raise InvalidParameterFileError(
+                    f"{self.user_presets_file} has no valid 'presets' object."
+                )
+            return empty
+        valid = {}
+        for name, preset in presets.items():
+            if isinstance(name, str) and isinstance(preset, dict):
+                if not isinstance(preset.get("_general", {}), dict):
+                    preset = {k: v for k, v in preset.items() if k != "_general"}
+                valid[name] = preset
+        applied = state.get("applied")
+        return {"presets": valid, "applied": applied if isinstance(applied, str) else None}
+
+    def _read_user_preset_state_for_write(self, consequence: str) -> dict | None:
+        """Strict read before a write-back; reports a failure and returns None."""
+        try:
+            return self._read_user_preset_state(strict=True)
+        except InvalidParameterFileError as e:
+            self._report_unreadable_parameter_file(e, consequence)
+            return None
 
     def _write_user_preset_state(self, state: dict) -> None:
         _write_parameter_file(self.user_presets_file, state)
@@ -665,10 +701,14 @@ class ParameterManager:
         name = name.strip()
         if not name or name.startswith("_") or name in self.load_presets():
             return False
+        state = self._read_user_preset_state_for_write(
+            "The preset was not saved, the existing presets are left unchanged."
+        )
+        if state is None:
+            return False
         preset = self.snapshot_preset()
         if description:
             preset["_description"] = description
-        state = self._read_user_preset_state()
         state["presets"][name] = preset
         # The settings now are exactly this preset
         state["applied"] = name
@@ -677,8 +717,10 @@ class ParameterManager:
 
     def delete_user_preset(self, name: str) -> bool:
         """Delete a user preset; returns False if there is none of that name."""
-        state = self._read_user_preset_state()
-        if name not in state["presets"]:
+        state = self._read_user_preset_state_for_write(
+            "No preset was deleted, the existing presets are left unchanged."
+        )
+        if state is None or name not in state["presets"]:
             return False
         del state["presets"][name]
         if state.get("applied") == name:
@@ -704,10 +746,17 @@ class ParameterManager:
         Returns:
             bool: True if preset was applied successfully, False otherwise.
         """
+        # Read strictly before params.json is written, which records the
+        # applied preset afterwards and must not replace saved presets
+        state = self._read_user_preset_state_for_write(
+            "The preset was not applied, the existing files are left unchanged."
+        )
+        if state is None:
+            return False
         preset = self.load_presets().get(preset_name)
         is_user_preset = False
         if not preset:
-            preset = self.load_user_presets().get(preset_name)
+            preset = state["presets"].get(preset_name)
             is_user_preset = True
         if not preset:
             return False
@@ -742,7 +791,7 @@ class ParameterManager:
 
             if key == "_general":
                 # Handle general workflow parameters
-                for param_name, param_value in value.items():
+                for param_name, param_value in (value if isinstance(value, dict) else {}).items():
                     session_key = f"{self.param_prefix}{param_name}"
                     keys_to_delete.append(session_key)
                     current_params[param_name] = param_value
@@ -764,7 +813,6 @@ class ParameterManager:
         # Save updated parameters to file
         _write_parameter_file(self.params_file, current_params)
 
-        state = self._read_user_preset_state()
         state["applied"] = preset_name
         self._write_user_preset_state(state)
 
@@ -814,8 +862,10 @@ class ParameterManager:
 
     def forget_applied_preset(self) -> None:
         """Clear the applied preset, e.g. after resetting to the default parameters."""
-        state = self._read_user_preset_state()
-        if state.get("applied"):
+        state = self._read_user_preset_state_for_write(
+            "The saved presets are left unchanged."
+        )
+        if state is not None and state.get("applied"):
             state["applied"] = None
             self._write_user_preset_state(state)
 

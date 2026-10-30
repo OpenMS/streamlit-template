@@ -178,3 +178,36 @@ def test_unreadable_user_preset_file_is_treated_as_empty(pm):
     pm.user_presets_file.write_text("{not json", encoding="utf-8")
     assert pm.get_user_preset_names() == []
     assert pm.applied_preset_status() == (None, False)
+
+
+@pytest.mark.parametrize("content", ["{not json", b"\xff\xfe{}", '{"presets": []}'])
+def test_unreadable_file_is_never_overwritten(pm, content):
+    """A failed read must not turn into an empty state written over the saved presets."""
+    if isinstance(content, bytes):
+        pm.user_presets_file.write_bytes(content)
+    else:
+        pm.user_presets_file.write_text(content, encoding="utf-8")
+    before = pm.user_presets_file.read_bytes()
+    params_before = pm.params_file.read_bytes()
+
+    assert not pm.save_user_preset("Mine")
+    assert not pm.delete_user_preset("Mine")
+    assert not pm.apply_preset("Fast")
+    pm.forget_applied_preset()
+
+    assert pm.user_presets_file.read_bytes() == before
+    assert pm.params_file.read_bytes() == params_before
+
+
+def test_malformed_entries_are_dropped(pm):
+    pm.user_presets_file.write_text(json.dumps({
+        "presets": {
+            "ok": {"ToolA": {"param1": 2.0}, "_general": "oops"},
+            "not-a-dict": "oops",
+        },
+        "applied": ["not", "a", "name"],
+    }), encoding="utf-8")
+    assert pm.get_user_preset_names() == ["ok"]
+    assert pm.applied_preset_status() == (None, False)
+    assert pm.apply_preset("ok")
+    assert stored(pm)["ToolA"] == {"param1": 2.0}
