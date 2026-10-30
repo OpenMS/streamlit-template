@@ -73,7 +73,7 @@ class RunManager:
         runs = [r for r in runs if r is not None]
         if status is not None:
             runs = [r for r in runs if r.get("status") == status]
-        return sorted(runs, key=lambda r: r.get("created", ""), reverse=True)
+        return sorted(runs, key=lambda r: (r.get("created", ""), r["id"]), reverse=True)
 
     def latest(self, status: Optional[str] = FINISHED) -> Optional[str]:
         """Id of the newest run (in ``status``, if given), or None."""

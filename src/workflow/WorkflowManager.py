@@ -128,8 +128,13 @@ class WorkflowManager:
         workflow_process = multiprocessing.Process(target=self.workflow_process)
         workflow_process.start()
         # Add workflow process id to pid dir
-        self.executor.pid_dir.mkdir()
-        Path(self.executor.pid_dir, str(workflow_process.pid)).touch()
+        self.executor.pid_dir.mkdir(exist_ok=True)
+        try:
+            Path(self.executor.pid_dir, str(workflow_process.pid)).touch()
+        except FileNotFoundError:
+            # The workflow already ended (e.g. no input files) and removed the
+            # pid dir; there is nothing left to track.
+            pass
 
     def workflow_process(self) -> None:
         """
@@ -368,6 +373,7 @@ class WorkflowManager:
         delete), then offers the files of the run picked below.
         """
         if self.multi_run:
+            st.markdown("#### Runs")
             self.show_run_manager_section(exclude=exclude)
             st.markdown("#### Files of one run")
             if not self.select_run():

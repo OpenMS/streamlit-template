@@ -154,20 +154,16 @@ def run_manager_section(
     slug = _slug(runs)
     selected = get_selected_run(runs)
 
-    header = st.columns([3, 2, 1.4, 2.6], vertical_alignment="bottom")
-    for col, title in zip(header, ["**Run**", "**Started**", "**Status**", ""]):
-        col.markdown(title)
-
     for run in all_runs:
         run_id = run["id"]
         status = run_status(run, workflow_running)
-        st.divider()
-        c_name, c_time, c_status, c_actions = st.columns(
-            [3, 2, 1.4, 2.6], vertical_alignment="center"
+        row = st.container(border=True)
+        c_name, c_status, c_actions = row.columns([4, 1.6, 2.6], vertical_alignment="center")
+        shown = " &nbsp;`shown`" if run_id == selected else ""
+        c_name.markdown(
+            f"**{run.get('name', run_id)}**{shown}  \n"
+            f":gray[Started {format_time(run.get('created'))}]"
         )
-        shown = " · *shown*" if run_id == selected else ""
-        c_name.markdown(f"**{run.get('name', run_id)}**{shown}")
-        c_time.write(format_time(run.get("created")))
         c_status.write(STATUS_LABELS.get(status, status))
 
         b_show, b_rename, b_download, b_delete = c_actions.columns(4, gap="small")
