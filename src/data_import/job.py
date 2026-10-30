@@ -9,6 +9,7 @@ files).
 """
 from __future__ import annotations
 
+import filecmp
 import gzip
 import hashlib
 import json
@@ -205,6 +206,14 @@ def _unpacked_entries(root: Path):
 # The job
 # ---------------------------------------------------------------------------
 
+def _is_copy(path: Path, source: Optional[Path]) -> bool:
+    try:
+        return (source is not None and path.is_file() and source.is_file()
+                and filecmp.cmp(path, source, shallow=False))
+    except OSError:
+        return False
+
+
 class _Job:
     def __init__(self, job_dir: Path, items, targets, guard, allowed_hosts, max_bytes):
         self.job_dir, self.items, self.targets = job_dir, items, targets
@@ -250,12 +259,14 @@ class _Job:
             if key not in self.cleared:
                 self.cleared.add(key)
                 # Only example files so far (a demo workspace may hold just
-                # some of them): the import replaces them.
-                examples = set(target.get("fallback") or [])
-                present = {p.name for p in directory.iterdir() if p.name != "external_files.txt"}
-                if present and present <= examples:
-                    for name in present:
-                        Path(directory, name).unlink(missing_ok=True)
+                # some of them): the import replaces them. A file counts as an
+                # example only if it is a copy of one, so an earlier import
+                # that happens to share an example's name is kept.
+                examples = {Path(f).name: Path(f) for f in target.get("fallback") or []}
+                present = [p for p in directory.iterdir() if p.name != "external_files.txt"]
+                if present and all(_is_copy(p, examples.get(p.name)) for p in present):
+                    for p in present:
+                        p.unlink(missing_ok=True)
             name = path.name
             stem, dot, ext = name.partition(".")
             n = 2

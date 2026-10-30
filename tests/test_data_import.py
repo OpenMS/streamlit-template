@@ -8,6 +8,7 @@ import hashlib
 import io
 import json
 import os
+import shutil
 import tarfile
 import threading
 import zipfile
@@ -268,33 +269,52 @@ def test_checksum_mismatch_is_an_error(tmp_path, server):
     assert status["state"] == "failed" and "checksum" in status["errors"][0]
 
 
+def example_files(tmp_path, *names):
+    """Example files as the upload widget keeps them: sources plus copies in the folder."""
+    source_dir = Path(tmp_path, "example-data")
+    source_dir.mkdir(exist_ok=True)
+    mzml = Path(tmp_path, "input-files", "mzML-files")
+    mzml.mkdir(parents=True, exist_ok=True)
+    sources_ = []
+    for name in names:
+        Path(source_dir, name).write_text(f"example {name}")
+        sources_.append(str(Path(source_dir, name)))
+    return mzml, sources_
+
+
 def test_example_files_are_replaced_by_the_import(tmp_path, server):
     server.add("/f.mzML", MZML_A)
-    mzml = Path(tmp_path, "input-files", "mzML-files")
-    mzml.mkdir(parents=True)
-    Path(mzml, "example.mzML").write_text("example")
-    run(tmp_path, server.url("/f.mzML"), fallback={"mzML-files": ["example.mzML"]})
+    mzml, examples = example_files(tmp_path, "example.mzML")
+    shutil.copy(examples[0], mzml)
+    run(tmp_path, server.url("/f.mzML"), fallback={"mzML-files": examples})
     assert sorted(p.name for p in mzml.iterdir()) == ["f.mzML"]
 
 
 def test_some_of_the_example_files_are_replaced_too(tmp_path, server):
     # A demo workspace may hold only some of the widget's example files.
     server.add("/f.mzML", MZML_A)
-    mzml = Path(tmp_path, "input-files", "mzML-files")
-    mzml.mkdir(parents=True)
-    Path(mzml, "example1.mzML").write_text("example")
-    run(tmp_path, server.url("/f.mzML"), fallback={"mzML-files": ["example1.mzML", "example2.mzML"]})
+    mzml, examples = example_files(tmp_path, "example1.mzML", "example2.mzML")
+    shutil.copy(examples[0], mzml)
+    run(tmp_path, server.url("/f.mzML"), fallback={"mzML-files": examples})
     assert sorted(p.name for p in mzml.iterdir()) == ["f.mzML"]
 
 
 def test_own_files_are_kept(tmp_path, server):
     server.add("/f.mzML", MZML_A)
-    mzml = Path(tmp_path, "input-files", "mzML-files")
-    mzml.mkdir(parents=True)
-    Path(mzml, "example.mzML").write_text("example")
+    mzml, examples = example_files(tmp_path, "example.mzML")
+    shutil.copy(examples[0], mzml)
     Path(mzml, "mine.mzML").write_text("mine")
-    run(tmp_path, server.url("/f.mzML"), fallback={"mzML-files": ["example.mzML"]})
+    run(tmp_path, server.url("/f.mzML"), fallback={"mzML-files": examples})
     assert sorted(p.name for p in mzml.iterdir()) == ["example.mzML", "f.mzML", "mine.mzML"]
+
+
+def test_own_file_named_like_an_example_is_kept(tmp_path, server):
+    # An earlier import may have brought a file that shares an example's name.
+    server.add("/f.mzML", MZML_A)
+    mzml, examples = example_files(tmp_path, "example1.mzML", "example2.mzML")
+    Path(mzml, "example1.mzML").write_text("the user's own data")
+    run(tmp_path, server.url("/f.mzML"), fallback={"mzML-files": examples})
+    assert sorted(p.name for p in mzml.iterdir()) == ["example1.mzML", "f.mzML"]
 
 
 def test_cancel_stops_the_job(tmp_path, server):
