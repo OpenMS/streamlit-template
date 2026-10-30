@@ -5,7 +5,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 import pyopenms as poms
-from src.common.common import show_fig, display_large_dataframe
+from src.common.common import show_fig, display_large_dataframe, follow_app_theme
 from typing import Union
 
 
@@ -145,10 +145,8 @@ def plot_bpc_tic() -> go.Figure:
         title=f"{st.session_state.view_selected_file}",
         xaxis_title="retention time (s)",
         yaxis_title="intensity",
-        plot_bgcolor="rgb(255,255,255)",
         height=500,
     )
-    fig.layout.template = "plotly_white"
     return fig
 
 
@@ -167,9 +165,7 @@ def plot_ms_spectrum(df, title, bin_peaks, num_x_bins):
         num_x_bins=num_x_bins,
         aggregate_duplicates=True,
     )
-    fig.update_layout(
-        template="plotly_white", dragmode="select", plot_bgcolor="rgb(255,255,255)"
-    )
+    fig.update_layout(dragmode="select")
     return fig
 
 
@@ -198,7 +194,7 @@ def view_peak_map():
         backend="ms_plotly",
         aggregate_duplicates=True,
     )
-    peak_map.update_layout(template="simple_white", dragmode="select")
+    peak_map.update_layout(dragmode="select")
     c1, c2 = st.columns(2)
     with c1:
         st.info(
@@ -228,7 +224,7 @@ def view_peak_map():
                 width=900,
                 aggregate_duplicates=True,
             )
-            st.plotly_chart(peak_map_3D, use_container_width=True)
+            st.plotly_chart(follow_app_theme(peak_map_3D), use_container_width=True)
 
 
 @st.fragment

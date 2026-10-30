@@ -1047,6 +1047,35 @@ def show_table(df: pd.DataFrame, download_name: str = "") -> None:
     return df
 
 
+def follow_app_theme(fig):
+    """
+    Removes fixed light-mode styling from a Plotly figure.
+
+    Figures from pyopenms-viz, or built with templates such as "plotly_white",
+    carry a white background, black axes and black annotation text, which
+    disappear on the dark theme. Without them, st.plotly_chart applies the
+    Streamlit theme, so the figure matches the active light or dark app theme.
+    Trace colors are kept.
+
+    Args:
+        fig (plotly.graph_objs._figure.Figure): The Plotly figure to adjust.
+
+    Returns:
+        plotly.graph_objs._figure.Figure: The same figure, for chaining.
+    """
+    black = {"black", "#000", "#000000", "rgb(0,0,0)", "rgb(0, 0, 0)"}
+    fig.update_layout(template="streamlit", paper_bgcolor=None, plot_bgcolor=None)
+    for axis in list(fig.select_xaxes()) + list(fig.select_yaxes()):
+        if str(axis.linecolor).lower() in black:
+            axis.linecolor = None
+        if str(axis.tickcolor).lower() in black:
+            axis.tickcolor = None
+    for annotation in fig.layout.annotations:
+        if str(annotation.font.color).lower() in black:
+            annotation.font.color = None
+    return fig
+
+
 def show_fig(
     fig,
     download_name: str,
@@ -1065,6 +1094,7 @@ def show_fig(
     Returns:
         None
     """
+    follow_app_theme(fig)
     if not selection_session_state_key:
         st.plotly_chart(
             fig,
