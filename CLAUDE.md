@@ -211,6 +211,15 @@ Two paths produce those references — the local-mode "Make a copy of files" che
 
 Simple-page workflow outputs go to `<workspace>/mzML-workflow-results/<timestamp>/`.
 
+## Workspace sync (offline app ↔ online workspace)
+
+`src/sync/` lets the offline (Electron) app push a local workspace's inputs and parameters into an online workspace and pull the results back, for files too large for the browser uploader (raw files, Bruker `.d` folders). Off unless `workspace_sync.enabled` is set in settings.json; the same flag shows the sidebar panel in both builds (`src/common/workspace_sync.py`).
+
+- **Server** `python -m src.sync.server` (tornado, no Streamlit), routed at `/sync`: tus 1.0.0 uploads, Range downloads, sha256 manifests. `docker/entrypoint.sh` starts it on `$SYNC_PORT` (8502, proxied at `/sync/` by the nginx load balancer); in k8s it is the `sync` sidecar of the streamlit pod, with `/sync` routes in `ingress.yaml` and as `routes/1` of the Traefik IngressRoute (overlays patch its host match and service name like `routes/0`). Disabled, it serves `/sync/health` only.
+- **Auth** is a sync token from the online panel "Link desktop app", stored hashed in `<root>/.sync-tokens/`. The workspace UUID is never a credential.
+- **Scope** (`src/sync/paths.py`, enforced on both sides): push `params.json`, `mzML-files/**`, `<wf>/params.json`, `<wf>/input-files/<key>/**` (paths in `external_files.txt` are sent as real files); pull `<wf>/results/**`. Partial uploads live in `<root>/.sync-uploads/` on the shared volume, so any replica continues them.
+- Client state: `<workspace>/.sync.json` (link + open uploads) and `.sync-cache.json` (hash cache). `tests/test_workspace_sync.py` runs a real server against the client.
+
 ## Visualization
 
 `src/view.py` plots via the pyopenms-viz **`ms_plotly`** backend on `MSExperiment.get_df()` DataFrames (`df.plot(backend="ms_plotly", kind="chromatogram"|"spectrum"|"peakmap")`), with a 3D peak map only under 2500 points. Use `show_fig()` / `show_table()` from `src/common/common.py` so downloads and the configured image format work consistently.

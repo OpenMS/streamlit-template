@@ -23,6 +23,13 @@ spec:
     - host: streamlit.openms.example.de
       http:
         paths:
+          - path: /sync
+            pathType: Prefix
+            backend:
+              service:
+                name: streamlit
+                port:
+                  number: 8502
           - path: /
             pathType: Prefix
             backend:
@@ -33,6 +40,13 @@ spec:
     - host: streamlit.openms.example.org
       http:
         paths:
+          - path: /sync
+            pathType: Prefix
+            backend:
+              service:
+                name: streamlit
+                port:
+                  number: 8502
           - path: /
             pathType: Prefix
             backend:

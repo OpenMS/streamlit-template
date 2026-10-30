@@ -10,6 +10,10 @@ services:
     restart: always
     ports:
       - 8501:8501
+      # Workspace sync service for the desktop app (workspace_sync in
+      # settings.json). Put it behind the same reverse proxy as the app at
+      # /sync/, or set workspace_sync.public_url to wherever it is reachable.
+      - 8502:8502
     volumes:
       - workspaces-streamlit-template:/workspaces-streamlit-template
       # Optional: bind-mount a host directory of MS data files at the path

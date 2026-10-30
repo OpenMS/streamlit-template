@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 from pathlib import Path
 import os
+import json
 import time
 import shutil
 from datetime import datetime
@@ -56,6 +57,24 @@ if remaining_directories:
 else:
     print(f"\n{workspaces_directory.name} is empty.")
 
+
+# Workspace sync state lives in dot-directories, which the loop above skips:
+# drop expired sync tokens, and partial uploads untouched for two days.
+sync_tokens = workspaces_directory / ".sync-tokens"
+if sync_tokens.is_dir():
+    for entry in sync_tokens.glob("*.json"):
+        try:
+            expired = json.loads(entry.read_text()).get("expires", 0) < current_time
+        except (OSError, ValueError):
+            expired = True
+        if expired:
+            entry.unlink(missing_ok=True)
+sync_uploads = workspaces_directory / ".sync-uploads"
+if sync_uploads.is_dir():
+    for entry in sync_uploads.iterdir():
+        if os.path.getmtime(entry) < current_time - 86400 * 2:
+            print(f"Deleting stale partial upload: {entry.name}")
+            entry.unlink(missing_ok=True)
 
 # Print separator
 print(100 * "-")

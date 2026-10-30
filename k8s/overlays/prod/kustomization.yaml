@@ -28,6 +28,12 @@ patches:
       - op: replace
         path: /spec/routes/0/services/0/name
         value: template-app-streamlit
+      - op: replace
+        path: /spec/routes/1/match
+        value: (Host(`template.webapps.openms.de`) || Host(`template.webapps.openms.org`)) && PathPrefix(`/sync`)
+      - op: replace
+        path: /spec/routes/1/services/0/name
+        value: template-app-streamlit
   - target:
       kind: Deployment
       name: streamlit

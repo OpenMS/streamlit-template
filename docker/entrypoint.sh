@@ -140,6 +140,17 @@ if command -v redis-server >/dev/null 2>&1; then
 fi
 
 # -----------------------------------------------------------------------------
+# Workspace sync service (src/sync/server.py)
+# -----------------------------------------------------------------------------
+# Lets the offline desktop app push inputs into an online workspace and pull
+# results back. Unless settings.json has workspace_sync.enabled and
+# online_deployment, it answers /sync/health only. Behind nginx it is routed
+# at /sync/; on a single instance it listens on $SYNC_PORT directly.
+SYNC_PORT="${SYNC_PORT:-8502}"
+echo "Starting workspace sync service on port $SYNC_PORT..."
+python -m src.sync.server --port "$SYNC_PORT" &
+
+# -----------------------------------------------------------------------------
 # Streamlit (single instance or behind nginx load balancer)
 # -----------------------------------------------------------------------------
 SERVER_COUNT="${STREAMLIT_SERVER_COUNT:-1}"
@@ -190,6 +201,17 @@ ${UPSTREAM_SERVERS}    }
 
     server {
         listen 0.0.0.0:8501;
+
+        location /sync/ {
+            proxy_pass http://127.0.0.1:${SYNC_PORT};
+            proxy_http_version 1.1;
+            proxy_set_header Host \$host;
+            proxy_set_header X-Forwarded-Proto \$scheme;
+            proxy_read_timeout 3600;
+            proxy_send_timeout 3600;
+            proxy_request_buffering off;
+            proxy_buffering off;
+        }
 
         location / {
             proxy_pass http://streamlit_backend;

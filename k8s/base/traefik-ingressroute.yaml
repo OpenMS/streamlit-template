@@ -17,4 +17,12 @@ spec:
               name: stroute
               httpOnly: true
               sameSite: lax
-              secure: true   # only send the affinity cookie over HTTPS
+              secure: true   # only send the affinity cookie over HTTPS    # Workspace sync for the desktop app (src/sync/server.py). Kept after the
+    # catch-all so overlays patching routes/0 still hit the app route; Traefik
+    # ranks routes by rule length, so this longer rule wins for /sync. No
+    # sticky cookie: uploads continue on any replica.
+    - match: PathPrefix(`/sync`)
+      kind: Rule
+      services:
+        - name: streamlit
+          port: 8502
