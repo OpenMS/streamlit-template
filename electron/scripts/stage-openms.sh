@@ -78,13 +78,15 @@ else
   # with packages already on the runner (e.g. sqlite3.h from libsqlite3-dev).
   root="$dl/root"
   dpkg-deb -x "$dl/$asset" "$root"
-  # Its runtime dependencies (Qt, ...) come from apt; the first alternative of each.
-  deps=$(dpkg-deb -f "$dl/$asset" Depends | tr ',' '\n' | sed -E 's/\|.*//; s/\(.*\)//; s/[[:space:]]//g' | grep -v '^$' || true)
+  # Its runtime dependencies (Qt, ...) come from apt, which also picks among
+  # the alternatives (e.g. libqt6core6t64 | libqt6core6) what this Ubuntu has.
+  depends=$(dpkg-deb -f "$dl/$asset" Depends)
+  echo "Depends: $depends"
   sudo apt-get update -q
-  # shellcheck disable=SC2086
-  sudo apt-get install -y -q patchelf $deps
+  sudo apt-get install -y -q patchelf
+  sudo apt-get satisfy -y -q "$depends"
   files=$(find "$root" \( -type f -o -type l \))
-  echo "Unpacked $asset; dependencies: $(tr '\n' ' ' <<<"$deps")"
+  echo "Unpacked $asset"
 
   for t in "${tools[@]}"; do
     src=$(grep -E "/bin/${t}$" <<<"$files" | head -n 1 || true)
