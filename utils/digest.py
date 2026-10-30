@@ -317,7 +317,8 @@ def generate_coverage_html(accession: str, coverage_info: Dict) -> str:
     coverage = coverage_info['coverage']
     description = coverage_info['description']
     
-    # Define colors for different coverage levels
+    # Define colors for different coverage levels (light backgrounds, so the
+    # text stays dark in both the light and the dark app theme)
     colors = {
         0: '#f0f0f0',  # Light gray for no coverage
         1: '#ffffcc',  # Light yellow for 1x coverage
@@ -335,7 +336,7 @@ def generate_coverage_html(accession: str, coverage_info: Dict) -> str:
     for level, color in colors.items():
         if level <= 4:
             label = f"{level}x" if level < 4 else "4+x"
-            html_parts.append(f"<span style='background-color: {color}; padding: 2px 6px; margin-right: 5px; border: 1px solid #ccc;'>{label}</span>")
+            html_parts.append(f"<span style='background-color: {color}; color: #31333f; padding: 2px 6px; margin-right: 5px; border: 1px solid #ccc;'>{label}</span>")
     html_parts.append("</div>")
     
     # Generate colored sequence
@@ -347,7 +348,7 @@ def generate_coverage_html(accession: str, coverage_info: Dict) -> str:
             cov_level = 0  # Default coverage level for positions beyond coverage array
             color = colors[0]
         
-        html_parts.append(f"<span style='background-color: {color}; padding: 1px;' title='Position {i+1}: {cov_level}x coverage'>{aa}</span>")
+        html_parts.append(f"<span style='background-color: {color}; color: #31333f; padding: 1px;' title='Position {i+1}: {cov_level}x coverage'>{aa}</span>")
         
         # Add line breaks every 50 amino acids for readability
         if (i + 1) % 50 == 0:

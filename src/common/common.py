@@ -1053,6 +1053,35 @@ def show_table(df: pd.DataFrame, download_name: str = "") -> None:
     return df
 
 
+def follow_app_theme(fig):
+    """
+    Removes fixed light-mode styling from a Plotly figure.
+
+    Figures from pyopenms-viz, or built with templates such as "plotly_white",
+    carry a white background, black axes and black annotation text, which
+    disappear on the dark theme. Without them, st.plotly_chart applies the
+    Streamlit theme, so the figure matches the active light or dark app theme.
+    Trace colors are kept.
+
+    Args:
+        fig (plotly.graph_objs._figure.Figure): The Plotly figure to adjust.
+
+    Returns:
+        plotly.graph_objs._figure.Figure: The same figure, for chaining.
+    """
+    black = {"black", "#000", "#000000", "rgb(0,0,0)", "rgb(0, 0, 0)"}
+    fig.update_layout(template="streamlit", paper_bgcolor=None, plot_bgcolor=None)
+    for axis in list(fig.select_xaxes()) + list(fig.select_yaxes()):
+        if str(axis.linecolor).lower() in black:
+            axis.linecolor = None
+        if str(axis.tickcolor).lower() in black:
+            axis.tickcolor = None
+    for annotation in fig.layout.annotations:
+        if str(annotation.font.color).lower() in black:
+            annotation.font.color = None
+    return fig
+
+
 def show_fig(
     fig,
     download_name: str,
@@ -1071,6 +1100,7 @@ def show_fig(
     Returns:
         None
     """
+    follow_app_theme(fig)
     if not selection_session_state_key:
         st.plotly_chart(
             fig,
@@ -1205,6 +1235,72 @@ def tk_file_dialog(
     )
     root.destroy()
     return file_path
+
+
+def export_folder_input(key: str) -> Path:
+    """
+    Show the folder that local exports are written to, with a browse button.
+
+    The folder is kept in ``st.session_state["export_dir"]``, so every export
+    page starts from the last folder chosen. It defaults to
+    ``~/Documents/<app-name>`` and is created on the first export.
+
+    Args:
+        key (str): Prefix for the widget keys, unique on the page.
+
+    Returns:
+        Path: The chosen folder (not checked for existence).
+    """
+    if "export_dir" not in st.session_state:
+        st.session_state["export_dir"] = str(
+            Path.home() / "Documents" / st.session_state.settings["app-name"]
+        )
+    widget_key = f"{key}-export-dir"
+    if widget_key not in st.session_state:
+        st.session_state[widget_key] = st.session_state["export_dir"]
+    c1, c2 = st.columns([0.05, 0.95], gap="small")
+    with c1:
+        st.write("\n")
+        st.write("\n")
+        if st.button(
+            "📁",
+            key=f"{key}-export-browse",
+            help="Choose the export folder.",
+            disabled=not TK_AVAILABLE,
+        ):
+            chosen = tk_directory_dialog(
+                "Select the export folder", st.session_state["export_dir"]
+            )
+            if chosen:
+                st.session_state[widget_key] = chosen
+    with c2:
+        folder = st.text_input("Export folder", key=widget_key)
+    st.session_state["export_dir"] = folder
+    return Path(folder).expanduser()
+
+
+def export_files(files: list[tuple[Path, Path]], target: Path) -> bool:
+    """
+    Copy files into an export folder, keeping their relative paths.
+
+    Args:
+        files (list[tuple[Path, Path]]): Pairs of (source file, path relative to ``target``).
+        target (Path): Folder to write into; created if missing.
+
+    Returns:
+        bool: True if every file was copied, otherwise False (with an error shown).
+    """
+    try:
+        with st.spinner(f"Exporting {len(files)} files..."):
+            for source, rel in files:
+                dest = Path(target, rel)
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, dest)
+    except OSError as e:
+        st.error(f"Export failed: {e}")
+        return False
+    st.success(f"Exported {len(files)} files to **{target}**.")
+    return True
 
 
 # General warning/error messages
