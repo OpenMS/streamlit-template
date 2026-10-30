@@ -3,8 +3,12 @@
 A local workspace is linked to an online one by ``<workspace>/.sync.json``
 (server URL and sync token). The sync page lists every input and every
 result with its state on both sides, and the user pushes or pulls the items
-they pick. An item is one input (a file, or a whole Bruker ``.d`` folder),
-the workflow parameters, or one result file.
+they pick. An item is one uploaded input (a file, or a whole Bruker ``.d``
+folder) or one result file.
+
+The link also directs the online workspace: ``start_run`` queues one of its
+workflows there with this workspace's parameters, ``runs`` reports their
+state and ``stop_run`` cancels one.
 
 Transfers are built for multi-GB files over unreliable links:
 
@@ -41,7 +45,9 @@ CACHE_FILE = ".sync-cache.json"
 PREFS_FILE = ".sync-prefs.json"
 CHUNK_SIZE = 32 * 1024 * 1024
 TUS_HEADERS = {"Tus-Resumable": "1.0.0"}
-PARAMETERS = "Parameters"
+# A workspace path in parameters sent with a run; the server puts its own
+# workspace in front (see runs.resolve_params).
+WORKSPACE_REF = "sync-workspace://"
 
 Progress = Callable[[int, int, str], None]
 Notice = Callable[[str], None]
@@ -65,14 +71,14 @@ class Cancelled(SyncError):
 class Item:
     """One row of the sync page."""
     key: str
-    kind: str                      # "input", "parameters" or "result"
+    kind: str                      # "input" or "result"
     size: int
     state: str
     files: list[str] = field(default_factory=list)
 
     @property
     def name(self) -> str:
-        return PARAMETERS if self.kind == "parameters" else PurePosixPath(self.key).name
+        return PurePosixPath(self.key).name
 
     @property
     def workflow(self) -> str:
@@ -115,7 +121,7 @@ def unlink_workspace(workspace: Path) -> None:
 
 def workflow_of(rel: str) -> str:
     """The workflow directory a path or item key belongs to; "" for the
-    workspace's own files (its params.json and mzML-files/)."""
+    workspace's own mzML-files/."""
     parts = PurePosixPath(rel).parts
     if len(parts) < 2 or parts[0] == "mzML-files":
         return ""
@@ -150,18 +156,44 @@ def item_key(rel: str) -> str:
     """The input item a pushable file belongs to.
 
     ``wf/input-files/<key>/<name>/...`` and ``mzML-files/<name>/...`` group
-    under their top-level name, so a ``.d`` folder is one item. Each
-    ``params.json`` is its workflow's parameters item (``wf/Parameters``);
-    the workspace's own is ``Parameters``.
+    under their top-level name, so a ``.d`` folder is one item.
     """
     parts = PurePosixPath(rel).parts
-    if parts[-1] == "params.json" and len(parts) == 1:
-        return PARAMETERS
-    if parts[-1] == "params.json" and len(parts) == 2:
-        return f"{parts[0]}/{PARAMETERS}"
     if parts[0] == "mzML-files":
         return "/".join(parts[:2])
     return "/".join(parts[:4])
+
+
+def portable_params(workspace: Path, workflow: str) -> dict:
+    """The workflow's parameters with every local input path replaced by
+    its place in the workspace, so the server can point them at its copy.
+
+    Input selections hold absolute paths: files under ``input-files/`` and
+    files or ``.d`` folders anywhere else (``external_files.txt``). Both are
+    pushed to ``<wf>/input-files/<key>/<name>``.
+    """
+    try:
+        params = json.loads(Path(workspace, workflow, "params.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    where: dict[str, str] = {}
+    for rel, path in paths.push_entries(workspace).items():
+        where[str(path)] = rel
+        # The item's own root, e.g. the .d folder a file belongs to.
+        key = item_key(rel)
+        depth = len(PurePosixPath(rel).parts) - len(PurePosixPath(key).parts)
+        where[str(path.parents[depth - 1]) if depth else str(path)] = key
+
+    def convert(value):
+        if isinstance(value, str) and value in where:
+            return WORKSPACE_REF + where[value]
+        if isinstance(value, list):
+            return [convert(v) for v in value]
+        if isinstance(value, dict):
+            return {k: convert(v) for k, v in value.items()}
+        return value
+
+    return convert(params)
 
 
 def _b64(value: str) -> str:
@@ -258,8 +290,7 @@ class SyncClient:
         items: dict[str, Item] = {}
         for rel, path in local.items():
             key = item_key(rel)
-            kind = "parameters" if PurePosixPath(key).name == PARAMETERS else "input"
-            item = items.setdefault(key, Item(key, kind, 0, ON_SERVER))
+            item = items.setdefault(key, Item(key, "input", 0, ON_SERVER))
             item.files.append(rel)
             size = path.stat().st_size
             item.size += size
@@ -287,7 +318,7 @@ class SyncClient:
                     sent += offset or 0
             if 0 < sent < total and item.state == NOT_ON_SERVER:
                 item.state = f"Paused at {100 * sent // total}%"
-        return sorted(items.values(), key=lambda i: (i.kind != "parameters", i.key))
+        return sorted(items.values(), key=lambda i: i.key)
 
     def result_items(self, workspace: Path) -> list[Item]:
         """Every result on the server with its state in the local workspace."""
@@ -310,6 +341,20 @@ class SyncClient:
             items.append(Item(rel, "result", meta["size"], state, [rel]))
         cache.save()
         return items
+
+    # -- runs --------------------------------------------------------------
+    def runs(self) -> dict[str, dict]:
+        """The online workflows that can be run from here, with their state."""
+        return {r["workflow"]: r for r in self._request("GET", "runs").json()["runs"]}
+
+    def start_run(self, workspace: Path, workflow: str) -> dict:
+        """Queue ``workflow`` online with this workspace's parameters for it."""
+        params = portable_params(workspace, workflow)
+        return self._request("POST", f"runs/{workflow}", json={"params": params},
+                             expect=(200, 201)).json()
+
+    def stop_run(self, workflow: str) -> dict:
+        return self._request("DELETE", f"runs/{workflow}").json()
 
     # -- push --------------------------------------------------------------
     def push(self, workspace: Path, keys: list[str] | None = None,

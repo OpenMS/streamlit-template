@@ -10,9 +10,12 @@ thread registered per workspace, and a fragment polls it while it runs. The
 thread survives page switches; leaving the page and coming back shows the
 running transfer again.
 
-Inputs and results are grouped per workflow, and the user chooses per
-workflow whether its inputs go up and its results come down. "Keep in sync"
-runs a background loop that transfers whatever is new in those directions.
+Inputs (the files a user uploads) and results are grouped per workflow,
+and the user chooses per workflow whether its inputs go up and its results
+come down. "Keep in sync" runs a background loop that transfers whatever is
+new in those directions. Each workflow the server allows can also be run
+online from here ("Run on cloud": upload its inputs, then queue it with this
+workspace's parameters), followed live and stopped.
 
 The sidebar of every page shows the link's state in short (pending items,
 a running transfer) and offers a one-click Sync in the chosen directions.
@@ -46,12 +49,15 @@ class _Job:
     finished: bool = False
     ended: float = 0.0
     auto: bool = False             # started by Keep in sync
+    workflow: str = ""             # "run": the workflow queued online
 
 
 _JOBS: dict[str, _Job] = {}
 _JOBS_LOCK = threading.Lock()
 _VERBS = {"push": ("Pushing", "Pushed"), "pull": ("Pulling", "Pulled"),
-          "sync": ("Syncing", "Synced")}
+          "sync": ("Syncing", "Synced"), "run": ("Uploading inputs for", "Started")}
+
+_RUN_ACTIVE = ("queued", "started", "deferred")
 
 # Item states per workspace, shared by the page and the sidebar of every
 # session; the threads that refresh them have no session state.
@@ -96,6 +102,10 @@ def _compute_status(workspace: Path, c: client.SyncClient) -> dict:
                   "error": ""}
     except client.SyncError as exc:
         status = {"inputs": [], "results": [], "error": str(exc)}
+    try:
+        status["runs"] = c.runs() if not status["error"] else {}
+    except client.SyncError:
+        status["runs"] = {}         # a server without run control
     status.update(workspace=str(workspace), at=time.time())
     job = _JOBS.get(str(workspace))
     with _STATUS_LOCK:
@@ -149,13 +159,14 @@ def _start(workspace: Path, action: str, keys: list[str] | None, link: dict) -> 
 
 
 def _launch(workspace: Path, action: str, keys: list[str] | None, c: client.SyncClient,
-            auto: bool = False) -> bool:
+            auto: bool = False, workflow: str = "") -> bool:
     """Run a transfer in a background thread; False if one is running already.
 
     ``sync`` pushes, then pulls; its keys hold input and result keys together
-    (push and pull each ignore the other's).
+    (push and pull each ignore the other's). ``run`` pushes the keys, then
+    queues ``workflow`` online.
     """
-    job = _Job(action, keys or [], auto=auto)
+    job = _Job(action, keys or [], auto=auto, workflow=workflow)
     with _JOBS_LOCK:
         running = _JOBS.get(str(workspace))
         if running and not running.finished:
@@ -178,13 +189,19 @@ def _launch(workspace: Path, action: str, keys: list[str] | None, c: client.Sync
                 job.report = client.SyncReport(up.transferred + down.transferred,
                                                up.unchanged + down.unchanged,
                                                up.bytes + down.bytes)
+            elif action == "run":
+                job.report = c.push(workspace, keys, progress=progress, cancel=job.cancel)
+                c.start_run(workspace, workflow)
             else:
                 fn = c.push if action == "push" else c.pull
                 job.report = fn(workspace, keys, progress=progress, cancel=job.cancel)
         except client.Cancelled:
             job.error = "Cancelled. Pushing or pulling the same items again continues where it stopped."
         except Exception as exc:  # shown on the page, never lost in a thread
-            job.error = f"{exc}. Pushing or pulling again continues where it stopped."
+            if action == "run" and job.report is not None:
+                job.error = f"The cloud run of {workflow} was not started: {exc}"
+            else:
+                job.error = f"{exc}. Pushing or pulling again continues where it stopped."
         finally:
             job.ended = time.time()
             job.finished = True
@@ -238,7 +255,7 @@ def _job_progress(workspace: Path) -> None:
         st.rerun()
         return
     verb = _VERBS[job.action][0]
-    what = "workspace" if job.action == "sync" else f"{len(job.keys)} item(s)"
+    what = {"sync": "workspace", "run": job.workflow}.get(job.action, f"{len(job.keys)} item(s)")
     if job.total:
         st.progress(min(job.done / job.total, 1.0),
                     text=f"{verb} {what}: {_size(job.done)} of {_size(job.total)}")
@@ -255,6 +272,10 @@ def _job_progress(workspace: Path) -> None:
 def _job_result(job: _Job) -> None:
     if job.error:
         st.error(job.error)
+    elif job.action == "run" and job.report is not None:
+        st.success(f"Started a cloud run of {job.workflow}"
+                   + (f" after uploading {len(job.report.transferred)} file(s), "
+                      f"{_size(job.report.bytes)}." if job.report.transferred else "."))
     elif job.report is not None:
         r = job.report
         if r.transferred:
@@ -355,7 +376,65 @@ def _summary(items: list[client.Item], pending_states: set[str], verb: str) -> s
             + (f", {waiting} to {verb}" if waiting else ", all in sync"))
 
 
-def _workflow_box(workspace, link, prefs, workflow, inputs, results, busy) -> None:
+def _run_label(run: dict) -> str:
+    state = run["status"]
+    if state == "queued":
+        pos = run.get("queue_position")
+        return f"⏳ Queued{f' (position {pos})' if pos else ''}"
+    if state == "started":
+        step = f": {run['current_step']}" if run.get("current_step") else ""
+        return f"⚙️ Running{step}"
+    return {"idle": "Not run yet", "finished": "✅ Finished", "canceled": "⏹️ Cancelled",
+            "failed": "❌ Failed" + (f": {run['error']}" if run.get("error") else "")
+            }.get(state, state)
+
+
+def _run_view(workspace: Path, link: dict, workflow: str, run: dict, inputs, busy) -> None:
+    """One workflow's run in the online workspace, with Run and Stop."""
+    active = run["status"] in _RUN_ACTIVE
+    col1, col2, col3 = st.columns([3, 1, 1])
+    col1.markdown(f"☁️ **Cloud run:** {_run_label(run)}")
+    if run["status"] == "started" and run.get("progress"):
+        col1.progress(min(float(run["progress"]), 1.0))
+    suffix = f"{workspace.name}-{workflow}"
+    if col2.button("▶️ Run on cloud", key=f"sync-run-{suffix}", width="stretch",
+                   disabled=active or busy,
+                   help="Upload this workflow's inputs, then run it in the online workspace "
+                        "with the parameters set here."):
+        _start_run(workspace, link, workflow, inputs)
+        st.rerun()
+    if col3.button("⏹️ Stop", key=f"sync-stop-{suffix}", width="stretch", disabled=not active):
+        try:
+            _client(link, give_up_after=10, timeout=30).stop_run(workflow)
+        except client.SyncError as exc:
+            st.error(str(exc))
+        _invalidate(workspace)
+        st.rerun(scope="app")
+    if run.get("log"):
+        with st.expander("Cloud log"):
+            st.code("\n".join(run["log"]), language=None)
+
+
+def _start_run(workspace: Path, link: dict, workflow: str, inputs) -> None:
+    _launch(workspace, "run", [i.key for i in inputs], _client(link), workflow=workflow)
+
+
+@st.fragment(run_every=3.0)
+def _run_live(workspace: Path, link: dict, workflow: str, inputs, busy) -> None:
+    """Follow an active run; rerun the page once it has ended."""
+    try:
+        run = _client(link, give_up_after=5, timeout=15).runs()[workflow]
+    except (client.SyncError, KeyError):
+        st.caption("☁️ Cloud run: state unknown, retrying…")
+        return
+    if run["status"] not in _RUN_ACTIVE:
+        _invalidate(workspace)
+        st.rerun(scope="app")
+        return
+    _run_view(workspace, link, workflow, run, inputs, busy)
+
+
+def _workflow_box(workspace, link, prefs, workflow, inputs, results, busy, run=None) -> None:
     label = f"`{workflow}`" if workflow else "Workspace files (outside any workflow)"
     suffix = f"{workspace.name}-{workflow or '_'}"
     with st.container(border=True):
@@ -370,6 +449,11 @@ def _workflow_box(workspace, link, prefs, workflow, inputs, results, busy) -> No
             col2.checkbox(f"⬇️ Download results ({_summary(results, _PULL_PENDING, 'pull')})",
                           value=client.direction_on(prefs, workflow, "pull"), key=key,
                           on_change=_set_pref, args=(workspace, workflow, "pull", key))
+        if run is not None:
+            if run["status"] in _RUN_ACTIVE:
+                _run_live(workspace, link, workflow, inputs, busy)
+            else:
+                _run_view(workspace, link, workflow, run, inputs, busy)
         with st.expander("Individual files"):
             if inputs:
                 st.markdown("Inputs")
@@ -431,14 +515,16 @@ def _offline_page(workspace: Path) -> None:
                "Large files go up in verified chunks; an interrupted transfer continues "
                "where it stopped, also after closing the app.")
 
-    workflows = sorted({i.workflow for i in status["inputs"] + status["results"]})
+    runs = status.get("runs", {})
+    workflows = sorted({i.workflow for i in status["inputs"] + status["results"]} | set(runs))
     if not workflows:
         st.info("Nothing to sync yet. Add input files on a workflow's upload page, "
                 "or run a workflow online, then refresh.")
     for workflow in workflows:
         _workflow_box(workspace, link, prefs, workflow,
                       [i for i in status["inputs"] if i.workflow == workflow],
-                      [i for i in status["results"] if i.workflow == workflow], busy)
+                      [i for i in status["results"] if i.workflow == workflow], busy,
+                      runs.get(workflow))
 
 
 def _public_url(cfg: dict) -> str:
@@ -531,13 +617,15 @@ def _sidebar_live(workspace: Path) -> None:
 
 
 @st.fragment(run_every=5.0)
-def _sidebar_watch(workspace: Path, shown_at: float) -> None:
-    """Keep in sync: rerun the app when the loop starts a transfer or has
-    fresh states, so the sidebar follows it without a click."""
+def _sidebar_watch(workspace: Path, shown_at: float, follow_run: bool) -> None:
+    """Rerun the app when Keep in sync starts a transfer or has fresh
+    states, or, while a cloud run is active, when its state is 10 s old, so
+    the sidebar follows without a click."""
     job = _JOBS.get(str(workspace))
     with _STATUS_LOCK:
         status = _STATUS.get(str(workspace))
-    if (job is not None and not job.finished) or (status and status["at"] != shown_at):
+    if ((job is not None and not job.finished) or (status and status["at"] != shown_at)
+            or (follow_run and time.time() - shown_at > 10)):
         st.rerun()
 
 
@@ -553,6 +641,9 @@ def _sidebar_summary(workspace: Path, link: dict, status: dict | None, prefs: di
             st.markdown(f"⬆️ {up} to push · ⬇️ {down} to pull")
         else:
             st.markdown("✅ Up to date")
+        for workflow, run in status.get("runs", {}).items():
+            if run["status"] in _RUN_ACTIVE:
+                st.caption(f"☁️ `{workflow}`: {_run_label(run)}")
         st.caption(f"Checked {datetime.fromtimestamp(status['at']).strftime('%H:%M')}")
     if job is not None and job.error:
         st.caption(f"⚠️ Last transfer stopped: {job.error.split('. ')[0]}.")
@@ -627,13 +718,17 @@ def render_sync_sidebar() -> None:
         else:
             with _STATUS_LOCK:
                 status = _STATUS.get(str(workspace))
-            stale = status is None or time.time() - status["at"] > _STATUS_MAX_AGE
+            # Follow a cloud run more closely than the files.
+            running = status is not None and any(
+                r["status"] in _RUN_ACTIVE for r in status.get("runs", {}).values())
+            max_age = 10 if running else _STATUS_MAX_AGE
+            stale = status is None or time.time() - status["at"] > max_age
             if stale:
                 _refresh_in_background(workspace, link)
             _sidebar_summary(workspace, link, status, prefs)
             if stale:
                 # Shows the fresh states as soon as they are in.
                 _sidebar_live(workspace)
-            elif prefs["keep_in_sync"]:
-                _sidebar_watch(workspace, status["at"])
+            elif prefs["keep_in_sync"] or running:
+                _sidebar_watch(workspace, status["at"], running)
         st.page_link(_PAGE, label="Open sync", icon="📋")

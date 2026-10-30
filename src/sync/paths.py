@@ -3,11 +3,12 @@
 Both sides apply the same rules: the client to decide what to send, the
 server to refuse anything else. Paths are workspace-relative POSIX strings.
 
-Pushed (offline -> online):
-    params.json
+Pushed (offline -> online), the files a user uploads and nothing else:
     mzML-files/<file or folder>
-    <workflow>/params.json
     <workflow>/input-files/<key>/<file or folder>
+
+Parameters are not synced as files: a run started from the desktop app
+carries them (see ``runs.py``).
 
 Pulled (online -> offline):
     <workflow>/results/<anything>
@@ -52,11 +53,7 @@ def is_pushable(rel: str) -> bool:
     if p is None or p.name == EXTERNAL_FILES:
         return False
     parts = p.parts
-    if parts == ("params.json",):
-        return True
     if parts[0] == "mzML-files" and len(parts) >= 2:
-        return True
-    if len(parts) == 2 and parts[1] == "params.json":
         return True
     return len(parts) >= 4 and parts[1] == "input-files"
 
@@ -107,14 +104,10 @@ def push_entries(workspace: Path) -> dict[str, Path]:
             if is_pushable(rel):
                 entries[rel] = path
 
-    if Path(workspace, "params.json").is_file():
-        entries["params.json"] = Path(workspace, "params.json")
     add(_input_dir_entries(Path(workspace, "mzML-files"), PurePosixPath("mzML-files")))
     for wf in sorted(p for p in Path(workspace).iterdir() if p.is_dir()):
         if wf.name.startswith(".") or wf.name == "mzML-files":
             continue
-        if Path(wf, "params.json").is_file():
-            entries[f"{wf.name}/params.json"] = Path(wf, "params.json")
         inputs = Path(wf, "input-files")
         if inputs.is_dir():
             for key in sorted(k for k in inputs.iterdir() if k.is_dir()):

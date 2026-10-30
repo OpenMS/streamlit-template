@@ -39,6 +39,10 @@ spec:
             - containerPort: 8502
               name: sync
           env:
+            # The desktop app starts and stops workflow runs through this
+            # service, on the same queue the app's Run button uses.
+            - name: REDIS_URL
+              value: "redis://redis:6379/0"
             - name: WORKSPACES_DIR
               value: "/workspaces-streamlit-template"
           # Hashing and writing chunks to NFS is I/O-bound; memory stays small

@@ -8,6 +8,9 @@ on the same image and the same workspaces volume, routed at ``/sync``.
     OPTIONS/POST /sync/files                 tus 1.0.0 creation
     HEAD/PATCH/DELETE /sync/files/<id>       tus 1.0.0 core + termination
     GET/HEAD /sync/download?path=<rel>       a result file, with Range support
+    GET    /sync/runs                        state of the runnable workflows
+    POST   /sync/runs/<workflow>             queue a run with the given params
+    DELETE /sync/runs/<workflow>             stop it (see runs.py)
 
 Each PATCH may carry ``Upload-Checksum: sha256 <base64>`` (tus checksum
 extension). A chunk that fails it, or whose connection drops before it is
@@ -35,7 +38,7 @@ from pathlib import Path
 import tornado.ioloop
 import tornado.web
 
-from src.sync import paths, tokens
+from src.sync import paths, runs, tokens
 
 logger = logging.getLogger("workspace-sync")
 
@@ -55,6 +58,8 @@ DEFAULTS = {
     "max_file_gb": 50,
     "max_workspace_gb": 200,
     "chunk_mb": 32,
+    # Workflows the desktop app may run here: directory name -> "module:Class".
+    "workflows": {},
 }
 
 
@@ -404,6 +409,55 @@ class DownloadHandler(SyncHandler):
         self.finish()
 
 
+class RunsHandler(SyncHandler):
+    """``GET /runs``: every workflow the desktop app may run, with its state."""
+
+    def get(self):
+        workspace = self.workspace()
+        qm = runs.queue_manager()
+        self.finish({"queue": qm is not None,
+                     "runs": [runs.status(qm, workspace, wf) for wf in self.config["workflows"]]})
+
+
+class RunHandler(SyncHandler):
+    """``POST /runs/<workflow>`` queues a run, ``DELETE`` stops it."""
+
+    def _target(self, workflow: str):
+        target = self.config["workflows"].get(workflow)
+        if target is None:
+            raise tornado.web.HTTPError(404, f"{workflow} cannot be run from the desktop app")
+        qm = runs.queue_manager()
+        if qm is None:
+            raise tornado.web.HTTPError(503, "the workflow queue is not available")
+        return target, qm
+
+    def post(self, workflow):
+        workspace = self.workspace()
+        target, qm = self._target(workflow)
+        try:
+            params = json.loads(self.request.body or b"{}").get("params", {})
+        except ValueError:
+            raise tornado.web.HTTPError(400, "body must be JSON")
+        try:
+            state = runs.start(qm, workspace, workflow, target, params)
+        except LookupError as exc:
+            raise tornado.web.HTTPError(409, str(exc))
+        except FileNotFoundError as exc:
+            raise tornado.web.HTTPError(409, f"inputs not uploaded yet: {exc}")
+        except ValueError as exc:
+            raise tornado.web.HTTPError(400, str(exc))
+        except RuntimeError as exc:
+            raise tornado.web.HTTPError(503, str(exc))
+        logger.info("run of %s queued in %s", workflow, workspace.name)
+        self.set_status(201)
+        self.finish(state)
+
+    def delete(self, workflow):
+        workspace = self.workspace()
+        _, qm = self._target(workflow)
+        self.finish(runs.stop(qm, workspace, workflow))
+
+
 def make_app(root: Path, config: dict, prefix: str = "/sync") -> tornado.web.Application:
     kw = {"root": Path(root), "config": config}
     if not config["enabled"]:
@@ -414,6 +468,8 @@ def make_app(root: Path, config: dict, prefix: str = "/sync") -> tornado.web.App
         (rf"{prefix}/files/?", UploadsHandler, kw),
         (rf"{prefix}/files/([0-9a-f]+)", UploadHandler, kw),
         (rf"{prefix}/download", DownloadHandler, kw),
+        (rf"{prefix}/runs/?", RunsHandler, kw),
+        (rf"{prefix}/runs/([A-Za-z0-9._-]+)", RunHandler, kw),
     ])
 
 

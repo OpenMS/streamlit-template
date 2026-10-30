@@ -73,8 +73,9 @@ def _local_workspace(tmp_path) -> Path:
 
 
 def test_path_rules():
-    assert paths.is_pushable("params.json")
-    assert paths.is_pushable("wf/params.json")
+    # Inputs are the files a user uploads; parameters travel with a run.
+    assert not paths.is_pushable("params.json")
+    assert not paths.is_pushable("wf/params.json")
     assert paths.is_pushable("wf/input-files/key/a.mzML")
     assert paths.is_pushable("mzML-files/a.mzML")
     assert paths.is_pushable("wf/input-files/key/run.d/sub/x.bin")
@@ -96,8 +97,6 @@ def test_push_pull_roundtrip(online, tmp_path):
     report = c.push(ws, progress=lambda d, t, r: seen.append((d, t)))
     sent = set(report.transferred)
     assert sent == {
-        "params.json",
-        "topp-workflow/params.json",
         "topp-workflow/input-files/mzML-files/a.mzML",
         "topp-workflow/input-files/mzML-files/b.raw",
         "topp-workflow/input-files/mzML-files/run.d/analysis.tdf",
@@ -184,7 +183,7 @@ def test_server_refuses_bad_requests(online):
     assert r.status_code == 403
     too_big = int(online["config"]["max_file_gb"] * 1024 ** 3) + 1
     r = requests.post(f"{url}/files", headers={**auth, "Upload-Length": str(too_big),
-                                                "Upload-Metadata": f"path {b64('params.json')}"})
+                                                "Upload-Metadata": f"path {b64('mzML-files/x.mzML')}"})
     assert r.status_code == 413
 
 
@@ -193,12 +192,12 @@ def test_checksum_mismatch_discards_upload(online):
     auth = {"Authorization": f"Bearer {token}", "Tus-Resumable": "1.0.0"}
     b64 = lambda s: __import__("base64").b64encode(s.encode()).decode()
     r = requests.post(f"{url}/files", headers={**auth, "Upload-Length": "3",
-                      "Upload-Metadata": f"path {b64('params.json')},sha256 {b64('0' * 64)}"})
+                      "Upload-Metadata": f"path {b64('mzML-files/x.mzML')},sha256 {b64('0' * 64)}"})
     loc = url.rsplit("/sync", 1)[0] + r.headers["Location"]
     r = requests.patch(loc, data=b"abc", headers={**auth, "Upload-Offset": "0",
                        "Content-Type": "application/offset+octet-stream"})
     assert r.status_code == 460
-    assert not (online["ws"] / "params.json").exists()
+    assert not (online["ws"] / "mzML-files" / "x.mzML").exists()
 
 
 def test_token_lifecycle(tmp_path):
@@ -272,8 +271,6 @@ def test_items_and_selective_transfer(online, tmp_path):
     c = client.SyncClient(online["url"], online["token"], chunk_size=MB)
     items = {i.key: i for i in c.input_items(ws)}
     assert set(items) == {
-        "Parameters",
-        "topp-workflow/Parameters",
         "topp-workflow/input-files/mzML-files/a.mzML",
         "topp-workflow/input-files/mzML-files/b.raw",
         "topp-workflow/input-files/mzML-files/run.d",
@@ -287,13 +284,7 @@ def test_items_and_selective_transfer(online, tmp_path):
     assert states["topp-workflow/input-files/mzML-files/run.d"] == client.ON_SERVER
     assert states["topp-workflow/input-files/mzML-files/a.mzML"] == client.NOT_ON_SERVER
 
-    (ws / "topp-workflow" / "params.json").write_text('{"x": 2}')
-    c.push(ws, ["topp-workflow/Parameters"])
-    (ws / "topp-workflow" / "params.json").write_text('{"x": 3}')
-    states = {i.key: i.state for i in c.input_items(ws)}
-    assert states["topp-workflow/Parameters"] == client.CHANGED_LOCALLY
-    assert states["Parameters"] == client.NOT_ON_SERVER
-    assert {i.workflow for i in c.input_items(ws)} == {"", "topp-workflow"}
+    assert {i.workflow for i in c.input_items(ws)} == {"topp-workflow"}
 
     # A paused upload shows how far it got.
     cancel = threading.Event()
@@ -323,7 +314,7 @@ def test_half_chunk_with_checksum_is_discarded(online):
     auth = {"Authorization": f"Bearer {token}", "Tus-Resumable": "1.0.0"}
     b64 = lambda s: base64.b64encode(s.encode()).decode()
     r = requests.post(f"{url}/files", headers={**auth, "Upload-Length": str(2 * MB),
-                      "Upload-Metadata": f"path {b64('params.json')}"})
+                      "Upload-Metadata": f"path {b64('mzML-files/x.mzML')}"})
     location = r.headers["Location"]
     port = int(url.split(":")[2].split("/")[0])
     body = os.urandom(MB)
@@ -395,14 +386,14 @@ def test_sync_follows_chosen_directions(online, tmp_path, monkeypatch):
     prefs = client.read_prefs(ws)
     status = ui._compute_status(ws, c)
     up, down = ui._chosen(status, prefs)
-    assert {i.key for i in up} == {"Parameters"}
+    assert up == []
     assert [i.key for i in down] == ["topp-workflow/results/out.tsv"]
 
     ui._STATUS[str(ws)] = {"at": time.time()}
     ui._start(ws, "sync", [i.key for i in up + down], link)
     job = _wait_for_job(ui, ws)
     assert not job.error, job.error
-    assert set(job.report.transferred) == {"params.json", "topp-workflow/results/out.tsv"}
+    assert set(job.report.transferred) == {"topp-workflow/results/out.tsv"}
     assert (ws / "topp-workflow/results/out.tsv").read_text() == "result"
     assert not (online["ws"] / "topp-workflow" / "input-files").exists()
     # The states shown in the sidebar are stale now and get recomputed.
@@ -442,3 +433,52 @@ def test_keep_in_sync_loop(online, tmp_path, monkeypatch):
     client.write_prefs(ws, {"keep_in_sync": False, "workflows": {}})
     wait_until(lambda: not ui._WATCHERS[str(ws)].is_alive())
     wait_until(lambda: ui._JOBS[str(ws)].finished)
+
+
+def test_runs_directed_from_the_desktop(online, tmp_path, monkeypatch):
+    fakeredis = pytest.importorskip("fakeredis")
+    rq = pytest.importorskip("rq")
+    from src.sync import runs
+    from src.workflow.QueueManager import QueueManager
+
+    qm = QueueManager.__new__(QueueManager)
+    qm._redis = fakeredis.FakeStrictRedis()
+    qm._queue = rq.Queue(QueueManager.QUEUE_NAME, connection=qm._redis)
+    qm._is_online, qm._init_attempted = True, True
+    qm._default_timeout, qm._default_result_ttl, qm._default_failure_ttl = 60, 60, 60
+    monkeypatch.setattr(runs, "_queue", qm)
+    online["config"]["workflows"] = {"topp-workflow": "src.Workflow:Workflow"}
+
+    ws = _local_workspace(tmp_path)
+    inputs = ws / "topp-workflow" / "input-files" / "mzML-files"
+    ext = tmp_path / "instrument"
+    (ws / "topp-workflow" / "params.json").write_text(json.dumps({
+        "mzML-files": [str(inputs / "a.mzML"), str(ext / "b.raw"), str(ext / "run.d")],
+        "topp-workflow-param-x": 5,
+    }))
+    c = client.SyncClient(online["url"], online["token"], chunk_size=MB)
+    assert c.runs()["topp-workflow"]["status"] == "idle"
+
+    # Inputs first: a run needs the files its parameters name.
+    with pytest.raises(client.SyncError, match="not uploaded yet"):
+        c.start_run(ws, "topp-workflow")
+    c.push(ws)
+    state = c.start_run(ws, "topp-workflow")
+    assert state["status"] == "queued"
+    remote = online["ws"] / "topp-workflow"
+    sent = json.loads((remote / "params.json").read_text())
+    assert sent["mzML-files"] == [str(remote / "input-files/mzML-files" / n)
+                                  for n in ("a.mzML", "b.raw", "run.d")]
+    assert sent["topp-workflow-param-x"] == 5
+    # The online app's own Run page finds the job through the same file.
+    job_id = (remote / ".job_id").read_text()
+    assert rq.job.Job.fetch(job_id, connection=qm._redis).kwargs["workflow_class"] == "Workflow"
+
+    with pytest.raises(client.SyncError, match="already queued"):
+        c.start_run(ws, "topp-workflow")
+    with pytest.raises(client.SyncError, match="cannot be run"):
+        c.stop_run("other")
+
+    stopped = c.stop_run("topp-workflow")
+    assert stopped["status"] == "canceled"
+    assert "WORKFLOW CANCELLED" in stopped["log"][-1]

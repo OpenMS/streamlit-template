@@ -43,6 +43,13 @@ patches:
         value: "redis://template-app-redis:6379/0"
   - target:
       kind: Deployment
+      name: sync
+    patch: |
+      - op: replace
+        path: /spec/template/spec/containers/0/env/0/value
+        value: "redis://template-app-redis:6379/0"
+  - target:
+      kind: Deployment
       name: rq-worker
     patch: |
       - op: replace
