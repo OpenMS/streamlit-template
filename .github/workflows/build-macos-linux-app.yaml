@@ -111,6 +111,9 @@ jobs:
           args+=(--mac dmg --arm64 "-c.dmg.artifactName=$APP_NAME-macOS-arm64.\${ext}")
           if [[ -n $MACOS_CERTIFICATE ]]; then
             export CSC_LINK="$MACOS_CERTIFICATE" CSC_KEY_PASSWORD="$MACOS_CERTIFICATE_PASSWORD"
+            # electron-builder skips signing in pull requests by default. Only PRs from
+            # branches of this repository see the secret, so sign those too.
+            export CSC_FOR_PULL_REQUEST=true
             # Notarize with an App Store Connect API key, or else with an Apple ID
             # and an app-specific password.
             if [[ -n $APPLE_API_KEY_CONTENT ]]; then
