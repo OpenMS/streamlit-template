@@ -75,3 +75,15 @@ Parameter presets allow you to quickly apply optimized parameter configurations 
 - Only the parameters defined in the preset are changed; other parameters remain at their current values
 - You can still modify individual parameters after applying a preset
 - Use **Load default parameters** to reset all parameters to their original defaults
+
+### Your Own Presets
+
+Under **Your Presets** you can save the current settings and reuse them later:
+
+1. Set the parameters the way you want them
+2. Open **💾 Save or delete a preset**, enter a name (and optionally a description) and click **Save current settings**
+3. Your preset appears as a button next to the built-in ones; click it to restore those settings
+
+A saved preset holds every setting on this page except the selected input files and the number of threads, and applying it restores all of them. Presets are saved in the workspace, so they stay available in later sessions of the same workspace.
+
+Below the buttons, a line tells you which preset the current settings come from, or that you changed settings since applying it.
