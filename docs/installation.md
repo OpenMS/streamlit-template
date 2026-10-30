@@ -12,12 +12,9 @@ Download it from the latest [release](https://github.com/OpenMS/streamlit-templa
 
 ## Linux (x86_64)
 
-Two packages contain the same app; both need glibc 2.35 or newer (Ubuntu 22.04, Debian 12, Fedora 36 or newer):
+`<APP_NAME>-Linux-x86_64.AppImage` runs without installation: `chmod +x` it and start it. It needs glibc 2.35 or newer (Ubuntu 22.04, Debian 12, Fedora 36 or newer) and `libfuse2` (`sudo apt install libfuse2`, on Ubuntu 24.04 `libfuse2t64`).
 
-- `<APP_NAME>-Linux-x86_64.AppImage` runs without installation: `chmod +x` it and start it. It needs `libfuse2` (`sudo apt install libfuse2`, on Ubuntu 24.04 `libfuse2t64`).
-- `<APP_NAME>-Linux-amd64.deb` installs to `/opt/<APP_NAME>` with a menu entry: `sudo apt install ./<APP_NAME>-Linux-amd64.deb`.
-
-Both are built by the [GitHub action](https://github.com/OpenMS/streamlit-template/actions/workflows/build-desktop-app.yaml) and attached to each release.
+It is built by the [GitHub action](https://github.com/OpenMS/streamlit-template/actions/workflows/build-desktop-app.yaml) and attached to each release.
 
 ## Python
 

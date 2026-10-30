@@ -115,13 +115,13 @@ To try the shell from a checkout, run `npm install` and then `npm start` in `ele
 
 ## macOS and Linux
 
-The same workflow also wraps the app in the same Electron shell as `<APP_NAME>-macOS-arm64.dmg` (Apple Silicon only) and as `<APP_NAME>-Linux-x86_64.AppImage` plus `<APP_NAME>-Linux-amd64.deb`. It reads `APP_NAME`, `TOPP_TOOLS` and `OPENMS_VERSION` like the Windows build.
+The same workflow also wraps the app in the same Electron shell as `<APP_NAME>-macOS-arm64.dmg` (Apple Silicon only) and as `<APP_NAME>-Linux-x86_64.AppImage`. It reads `APP_NAME`, `TOPP_TOOLS` and `OPENMS_VERSION` like the Windows build.
 
 - `electron/scripts/stage-python.sh` takes CPython from [python-build-standalone](https://github.com/astral-sh/python-build-standalone) (there is no embeddable Python for macOS and Linux), installs `requirements.txt` into it and compiles the bytecode, because the signed app and the AppImage are read-only.
 - `electron/scripts/stage-openms.sh` takes the TOPP tools from the official OpenMS release: the arm64 `.pkg` on macOS, the `.deb` on Linux, whose system libraries (Qt, Xerces, ...) it copies into the bundle. The tools stay in `openms/bin` next to `openms/lib` and find their libraries through a relative rpath; the shell puts `openms/bin` on `PATH`.
 - Workspaces and the log live in `~/Library/Application Support/<APP_NAME>` on macOS and in `~/.config/<APP_NAME>` on Linux.
 
-CI runs the same smoke and end-to-end tests as on Windows, on macOS from the mounted dmg and on Linux against both the AppImage and the deb.
+CI runs the same smoke and end-to-end tests as on Windows, on macOS from the mounted dmg and on Linux against the AppImage.
 
 ### Signing for macOS
 

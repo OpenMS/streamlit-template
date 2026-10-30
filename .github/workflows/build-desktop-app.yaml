@@ -321,7 +321,7 @@ jobs:
         if [[ "$RELEASE_TAG" =~ ([0-9]+)(\.([0-9]+))?(\.([0-9]+))? ]]; then
           version="${BASH_REMATCH[1]}.${BASH_REMATCH[3]:-0}.${BASH_REMATCH[5]:-0}"
         fi
-        # Package and executable name: lowercase, so two apps never share a deb package.
+        # Package and executable name: lowercase, as Linux desktop entries expect.
         id=$(tr '[:upper:]' '[:lower:]' <<<"$APP_NAME")
         args=(
           --publish never
@@ -367,10 +367,9 @@ jobs:
             unset APPLE_ID
           fi
         else
-          args+=(--linux AppImage deb --x64
+          args+=(--linux AppImage --x64
             "-c.linux.executableName=$id"
-            "-c.appImage.artifactName=$APP_NAME-Linux-x86_64.\${ext}"
-            "-c.deb.artifactName=$APP_NAME-Linux-amd64.\${ext}")
+            "-c.appImage.artifactName=$APP_NAME-Linux-x86_64.\${ext}")
         fi
         # The signer opens every file of the payload (tens of thousands) at once;
         # lift macOS's per-process limit above that.
@@ -420,10 +419,6 @@ jobs:
         image="$PWD/electron/dist/$APP_NAME-Linux-x86_64.AppImage"
         chmod +x "$image"
 
-        # The deb installs to /opt/<product name>; check its payload too.
-        sudo apt-get install -y -q "./electron/dist/$APP_NAME-Linux-amd64.deb"
-        node electron/scripts/smoke-payload.js "/opt/$APP_NAME/resources/app-payload" $TOPP_TOOLS
-
         (cd "$RUNNER_TEMP" && "$image" --appimage-extract >/dev/null)
         node electron/scripts/smoke-payload.js "$RUNNER_TEMP/squashfs-root/resources/app-payload" $TOPP_TOOLS
 
@@ -465,7 +460,6 @@ jobs:
         path: |
           electron/dist/*.dmg
           electron/dist/*.AppImage
-          electron/dist/*.deb
 
   # Only this job can write to the repository; the build jobs run third-party
   # code (pip, npm, electron-builder) with a read-only token.
