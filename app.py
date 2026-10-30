@@ -39,5 +39,11 @@ if __name__ == '__main__':
         ]
     }
 
+    # Workspace sync with an online workspace (off unless enabled in settings.json)
+    if st.session_state.settings.get("workspace_sync", {}).get("enabled"):
+        pages["Others Topics"].append(
+            st.Page(Path("content", "workspace_sync.py"), title="Workspace Sync", icon="🔄")
+        )
+
     pg = st.navigation(pages)
     pg.run()

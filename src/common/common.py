@@ -22,7 +22,6 @@ except ImportError:
     TK_AVAILABLE = False
 
 from src.common.captcha_ import captcha_control
-from src.common.workspace_sync import render_workspace_sync
 from src.common.admin import (
     is_admin_configured,
     verify_admin_password,
@@ -889,8 +888,6 @@ def render_sidebar(page: str = "") -> None:
                                 if st.button("Cancel", key="cancel-save-demo"):
                                     st.session_state["show_admin_password_dialog"] = False
                                     st.rerun()
-
-        render_workspace_sync()
 
         # All pages have settings, workflow indicator and logo
         with st.expander("⚙️ **Settings**"):

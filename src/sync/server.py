@@ -9,6 +9,11 @@ on the same image and the same workspaces volume, routed at ``/sync``.
     HEAD/PATCH/DELETE /sync/files/<id>       tus 1.0.0 core + termination
     GET/HEAD /sync/download?path=<rel>       a result file, with Range support
 
+Each PATCH may carry ``Upload-Checksum: sha256 <base64>`` (tus checksum
+extension). A chunk that fails it, or whose connection drops before it is
+complete, is cut back off the partial file, so only verified chunks are ever
+kept; the whole file is checked against its sha256 once more at the end.
+
 Every call but health carries ``Authorization: Bearer <sync token>``; the
 token decides the workspace. Partial uploads live under
 ``<root>/.sync-uploads/`` on the shared volume, so any replica can continue
@@ -18,6 +23,7 @@ workspace without a copy.
 
 import argparse
 import base64
+import hashlib
 import json
 import logging
 import os
@@ -48,6 +54,7 @@ DEFAULTS = {
     "token_ttl_hours": 24,
     "max_file_gb": 50,
     "max_workspace_gb": 200,
+    "chunk_mb": 32,
 }
 
 
@@ -143,6 +150,8 @@ class _Upload:
 
     @property
     def offset(self) -> int:
+        if self.state.get("completed"):
+            return self.state["length"]
         try:
             return self.part.stat().st_size
         except FileNotFoundError:
@@ -156,7 +165,8 @@ class _Upload:
 class UploadsHandler(SyncHandler):
     def options(self):
         self.set_header("Tus-Version", TUS_VERSION)
-        self.set_header("Tus-Extension", "creation,termination")
+        self.set_header("Tus-Extension", "creation,termination,checksum")
+        self.set_header("Tus-Checksum-Algorithm", "sha256")
         self.set_header("Tus-Max-Size", str(int(self.config["max_file_gb"] * 1024 ** 3)))
         self.set_status(204)
 
@@ -215,7 +225,11 @@ def finalize(workspace: Path, upload: _Upload, cache: paths.HashCache) -> None:
             raise tornado.web.HTTPError(409, "a folder exists at this path")
         dest.unlink()
     os.replace(upload.part, dest)
-    upload.state_file.unlink(missing_ok=True)
+    # Keep the state, marked complete: a client whose last response was lost
+    # asks again and learns the upload is done instead of "unknown upload".
+    # clean-up-workspaces.py removes it later.
+    upload.state["completed"] = True
+    upload.state_file.write_text(json.dumps(upload.state))
     cache.remember(dest, digest)
     cache.save()
     # Restart the workspace's 7-day cleanup clock.
@@ -225,7 +239,8 @@ def finalize(workspace: Path, upload: _Upload, cache: paths.HashCache) -> None:
 @tornado.web.stream_request_body
 class UploadHandler(SyncHandler):
     _fh = None
-    _received = 0
+    _hash = None
+    _start = 0
 
     def prepare(self):
         self._upload_workspace = self.workspace()
@@ -241,8 +256,19 @@ class UploadHandler(SyncHandler):
             offset = int(self.request.headers["Upload-Offset"])
         except (KeyError, ValueError):
             raise tornado.web.HTTPError(400, "Upload-Offset required")
-        if offset != self._upload.offset:
+        if offset != self._upload.offset or self._upload.state.get("completed"):
             raise tornado.web.HTTPError(409, "Upload-Offset does not match")
+        checksum = self.request.headers.get("Upload-Checksum")
+        if checksum:
+            algorithm, _, value = checksum.partition(" ")
+            if algorithm != "sha256":
+                raise tornado.web.HTTPError(400, "only sha256 checksums are supported")
+            try:
+                self._expected = base64.b64decode(value)
+            except ValueError:
+                raise tornado.web.HTTPError(400, "bad Upload-Checksum")
+            self._hash = hashlib.sha256()
+        self._start = offset
         self._remaining = self._upload.state["length"] - offset
         self._fh = open(self._upload.part, "ab")
 
@@ -250,9 +276,11 @@ class UploadHandler(SyncHandler):
         if self._fh is None:
             return
         if len(chunk) > self._remaining:
-            self._close()
+            self._discard_chunk()
             raise tornado.web.HTTPError(400, "body exceeds Upload-Length")
         self._fh.write(chunk)
+        if self._hash is not None:
+            self._hash.update(chunk)
         self._remaining -= len(chunk)
 
     def _close(self):
@@ -260,8 +288,17 @@ class UploadHandler(SyncHandler):
             self._fh.close()
             self._fh = None
 
+    def _discard_chunk(self):
+        """Cut an unverified chunk back off the partial file."""
+        self._close()
+        with open(self._upload.part, "r+b") as f:
+            f.truncate(self._start)
+
     def on_connection_close(self):
-        # Whatever arrived stays on disk; the client resumes from HEAD.
+        # Without a checksum whatever arrived is kept and the client resumes
+        # from HEAD; with one, a half chunk cannot be verified and is dropped.
+        if self._hash is not None and self._fh is not None:
+            self._discard_chunk()
         self._close()
 
     def on_finish(self):
@@ -274,6 +311,9 @@ class UploadHandler(SyncHandler):
 
     async def patch(self, upload_id):
         self._close()
+        if self._hash is not None and self._hash.digest() != self._expected:
+            self._discard_chunk()
+            raise tornado.web.HTTPError(460, "chunk checksum mismatch", reason="Checksum Mismatch")
         offset = self._upload.offset
         if offset == self._upload.state["length"]:
             # Hashing a multi-GB file must not stall every other request.

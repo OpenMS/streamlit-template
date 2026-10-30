@@ -216,3 +216,128 @@ def test_token_lifecycle(tmp_path):
     assert tokens.prune(tmp_path) == 1
     with pytest.raises(ValueError):
         tokens.issue(tmp_path, "../x", 1)
+
+
+class FlakySession(requests.Session):
+    """Loses every other PATCH response after the server got the chunk, and
+    breaks every download stream after its first block."""
+
+    def __init__(self):
+        super().__init__()
+        self.patches = 0
+        self.broken_streams = 0
+
+    def request(self, method, url, *args, **kwargs):
+        resp = super().request(method, url, *args, **kwargs)
+        if method == "PATCH":
+            self.patches += 1
+            if self.patches % 2 == 1:
+                raise requests.ConnectionError("response lost")
+        if method == "GET" and "download" in url and kwargs.get("stream"):
+            original = resp.iter_content
+            session = self
+
+            def broken(chunk_size=1, decode_unicode=False):
+                it = original(chunk_size)
+                yield next(it)
+                session.broken_streams += 1
+                raise requests.exceptions.ChunkedEncodingError("connection reset")
+
+            resp.iter_content = broken
+        return resp
+
+
+def test_transfers_survive_connection_loss(online, tmp_path, monkeypatch):
+    monkeypatch.setattr(client.SyncClient, "_sleep", lambda self, s: None)
+    ws = _local_workspace(tmp_path)
+    notices = []
+    c = client.SyncClient(online["url"], online["token"], session=FlakySession(),
+                          chunk_size=MB, notice=notices.append)
+    c.push(ws)
+    rel = "topp-workflow/input-files/mzML-files/a.mzML"
+    assert (online["ws"] / rel).read_bytes() == (ws / rel).read_bytes()
+    assert any("Connection lost" in n for n in notices)
+
+    res = online["ws"] / "topp-workflow" / "results"
+    res.mkdir(parents=True)
+    data = os.urandom(3 * MB)
+    (res / "big.bin").write_bytes(data)
+    c.pull(ws, ["topp-workflow/results/big.bin"])
+    assert (ws / "topp-workflow/results/big.bin").read_bytes() == data
+    assert c.session.broken_streams >= 3
+
+
+def test_items_and_selective_transfer(online, tmp_path):
+    ws = _local_workspace(tmp_path)
+    c = client.SyncClient(online["url"], online["token"], chunk_size=MB)
+    items = {i.key: i for i in c.input_items(ws)}
+    assert set(items) == {
+        "Parameters",
+        "topp-workflow/input-files/mzML-files/a.mzML",
+        "topp-workflow/input-files/mzML-files/b.raw",
+        "topp-workflow/input-files/mzML-files/run.d",
+    }
+    assert items["topp-workflow/input-files/mzML-files/run.d"].files.__len__() == 2
+    assert all(i.state == client.NOT_ON_SERVER for i in items.values())
+
+    report = c.push(ws, ["topp-workflow/input-files/mzML-files/run.d"])
+    assert len(report.transferred) == 2
+    states = {i.key: i.state for i in c.input_items(ws)}
+    assert states["topp-workflow/input-files/mzML-files/run.d"] == client.ON_SERVER
+    assert states["topp-workflow/input-files/mzML-files/a.mzML"] == client.NOT_ON_SERVER
+
+    (ws / "topp-workflow" / "params.json").write_text('{"x": 2}')
+    c.push(ws, ["Parameters"])
+    (ws / "topp-workflow" / "params.json").write_text('{"x": 3}')
+    states = {i.key: i.state for i in c.input_items(ws)}
+    assert states["Parameters"] == client.CHANGED_LOCALLY
+
+    # A paused upload shows how far it got.
+    cancel = threading.Event()
+    with pytest.raises(client.Cancelled):
+        c.push(ws, ["topp-workflow/input-files/mzML-files/a.mzML"], cancel=cancel,
+               progress=lambda d, t, r: cancel.set() if d >= MB else None)
+    states = {i.key: i.state for i in c.input_items(ws)}
+    assert states["topp-workflow/input-files/mzML-files/a.mzML"].startswith("Paused at")
+
+    res = online["ws"] / "wf" / "results"
+    res.mkdir(parents=True)
+    (res / "one.tsv").write_text("1")
+    (res / "two.tsv").write_text("2")
+    assert {i.state for i in c.result_items(ws)} == {client.NOT_DOWNLOADED}
+    c.pull(ws, ["wf/results/two.tsv"])
+    states = {i.key: i.state for i in c.result_items(ws)}
+    assert states == {"wf/results/one.tsv": client.NOT_DOWNLOADED,
+                      "wf/results/two.tsv": client.DOWNLOADED}
+    (res / "two.tsv").write_text("22")
+    assert {i.key: i.state for i in c.result_items(ws)}["wf/results/two.tsv"] == client.CHANGED_ON_SERVER
+
+
+def test_half_chunk_with_checksum_is_discarded(online):
+    """A connection dropped mid-chunk must not leave unverified bytes."""
+    import base64, hashlib
+    url, token = online["url"], online["token"]
+    auth = {"Authorization": f"Bearer {token}", "Tus-Resumable": "1.0.0"}
+    b64 = lambda s: base64.b64encode(s.encode()).decode()
+    r = requests.post(f"{url}/files", headers={**auth, "Upload-Length": str(2 * MB),
+                      "Upload-Metadata": f"path {b64('params.json')}"})
+    location = r.headers["Location"]
+    port = int(url.split(":")[2].split("/")[0])
+    body = os.urandom(MB)
+    checksum = base64.b64encode(hashlib.sha256(body).digest()).decode()
+    with socket.create_connection(("127.0.0.1", port)) as s:
+        s.sendall((f"PATCH {location} HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer {token}\r\n"
+                   f"Tus-Resumable: 1.0.0\r\nContent-Type: application/offset+octet-stream\r\n"
+                   f"Upload-Offset: 0\r\nUpload-Checksum: sha256 {checksum}\r\n"
+                   f"Content-Length: {MB}\r\n\r\n").encode() + body[: MB // 2])
+        time.sleep(0.3)
+    time.sleep(0.3)
+    head = requests.head(url.rsplit("/sync", 1)[0] + location, headers=auth)
+    assert head.headers["Upload-Offset"] == "0"
+    # A complete chunk with a wrong checksum is refused and dropped too.
+    r = requests.patch(url.rsplit("/sync", 1)[0] + location, data=body, headers={
+        **auth, "Upload-Offset": "0", "Content-Type": "application/offset+octet-stream",
+        "Upload-Checksum": "sha256 " + base64.b64encode(b"\0" * 32).decode()})
+    assert r.status_code == 460
+    head = requests.head(url.rsplit("/sync", 1)[0] + location, headers=auth)
+    assert head.headers["Upload-Offset"] == "0"

@@ -43,7 +43,8 @@
         "public_url": "",
         "token_ttl_hours": 24,
         "max_file_gb": 50,
-        "max_workspace_gb": 200
+        "max_workspace_gb": 200,
+        "chunk_mb": 32
     },
     "max_threads": {
         "local": 4,

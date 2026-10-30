@@ -213,11 +213,12 @@ Simple-page workflow outputs go to `<workspace>/mzML-workflow-results/<timestamp
 
 ## Workspace sync (offline app ↔ online workspace)
 
-`src/sync/` lets the offline (Electron) app push a local workspace's inputs and parameters into an online workspace and pull the results back, for files too large for the browser uploader (raw files, Bruker `.d` folders). Off unless `workspace_sync.enabled` is set in settings.json; the same flag shows the sidebar panel in both builds (`src/common/workspace_sync.py`).
+`src/sync/` lets the offline (Electron) app push a local workspace's inputs and parameters into an online workspace and pull the results back, for files too large for the browser uploader (raw files, Bruker `.d` folders). Off unless `workspace_sync.enabled` is set in settings.json; the same flag registers the **Workspace Sync** page (`content/workspace_sync.py` → `src/common/workspace_sync.py`) in `app.py` for both builds. Online it issues tokens; offline it lists every input item (a file, a whole `.d` folder, or "Parameters") and every result file with its state on both sides, and pushes or pulls the selected ones in a background thread.
 
 - **Server** `python -m src.sync.server` (tornado, no Streamlit), routed at `/sync`: tus 1.0.0 uploads, Range downloads, sha256 manifests. `docker/entrypoint.sh` starts it on `$SYNC_PORT` (8502, proxied at `/sync/` by the nginx load balancer); in k8s it is the `sync` sidecar of the streamlit pod, with `/sync` routes in `ingress.yaml` and as `routes/1` of the Traefik IngressRoute (overlays patch its host match and service name like `routes/0`). Disabled, it serves `/sync/health` only.
 - **Auth** is a sync token from the online panel "Link desktop app", stored hashed in `<root>/.sync-tokens/`. The workspace UUID is never a credential.
 - **Scope** (`src/sync/paths.py`, enforced on both sides): push `params.json`, `mzML-files/**`, `<wf>/params.json`, `<wf>/input-files/<key>/**` (paths in `external_files.txt` are sent as real files); pull `<wf>/results/**`. Partial uploads live in `<root>/.sync-uploads/` on the shared volume, so any replica continues them.
+- Robustness: tus chunks (`chunk_mb`) each carry a sha256 the server verifies, and a chunk cut off mid-transfer is truncated away; downloads resume by Range from `.<name>.sync-part`; lost connections are retried with back-off until `give_up_after` passes without progress; every finished file is checked against its sha256. The background thread must not touch `st.session_state`.
 - Client state: `<workspace>/.sync.json` (link + open uploads) and `.sync-cache.json` (hash cache). `tests/test_workspace_sync.py` runs a real server against the client.
 
 ## Visualization
