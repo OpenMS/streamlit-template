@@ -714,10 +714,20 @@ class StreamlitUI:
         # argument is still hashed into the widget's element id. Since this method feeds
         # the persisted parameter straight back in as that argument, the id changed on
         # every interaction, the following interaction arrived under the now-stale id and
-        # was silently dropped: selecting six mzML files kept only three. Seed the widget
-        # on first render only; from then on session state owns the value.
+        # was silently dropped: selecting six mzML files kept only three. Passing it on
+        # the first render only is not enough either: the second render then has another
+        # id, and the widget restarts from its built-in default (a checkbox seeded True
+        # came back False on the next rerun). So the initial value never goes into the
+        # call; it is written to session state once, and session state owns it from then on.
         def seed(**kwargs: Any) -> dict:
-            return {} if key in st.session_state else kwargs
+            if key not in st.session_state:
+                ((arg, initial),) = kwargs.items()
+                if arg == "index":
+                    initial = options[initial] if options else None
+                elif arg == "default":
+                    initial = [v for v in (initial or []) if v in options]
+                st.session_state[key] = initial
+            return {}
 
         if widget_type == "text":
             st.text_input(name, key=key, help=help, on_change=on_change, **seed(value=value))
