@@ -35,6 +35,11 @@ import secrets
 import time
 from pathlib import Path
 
+try:
+    import fcntl
+except ImportError:     # Windows: the desktop app imports this module, never serves it
+    fcntl = None
+
 import tornado.ioloop
 import tornado.web
 
@@ -44,7 +49,6 @@ logger = logging.getLogger("workspace-sync")
 
 TUS_VERSION = "1.0.0"
 UPLOAD_DIR = ".sync-uploads"
-LOCK_STALE = 60          # seconds without a write before a PATCH lock is broken
 INDEX_FILE = ".sync-index.json"
 DOWNLOAD_BLOCK = 1024 * 1024
 # A PATCH body is streamed to disk, so this only bounds a single request;
@@ -153,7 +157,9 @@ class _Upload:
         base = Path(root, UPLOAD_DIR)
         self.state_file = Path(base, upload_id + ".json")
         self.part = Path(base, upload_id + ".part")
+        self.id = upload_id
         self.lock = Path(base, upload_id + ".lock")
+        self._lock_fd = None
         try:
             self.state = json.loads(self.state_file.read_text())
         except (OSError, ValueError):
@@ -178,26 +184,35 @@ class _Upload:
 
         A client whose PATCH timed out sends it again, maybe to another
         replica, while the first may still be writing. Both would pass the
-        offset check and append to the same partial file. The lock is a file
-        created with O_EXCL on the shared volume, so it holds across
-        replicas; one a crashed writer left behind goes stale after
-        LOCK_STALE seconds without a write.
+        offset check and append to the same partial file. The lock is a POSIX
+        record lock on ``<id>.lock``: NFS 4.1 grants it across replicas, it
+        is held for as long as the request keeps the file open, and the
+        kernel (or the NFS lease, for a pod that died) releases it, so no
+        writer can lose it while still writing and none needs breaking.
+        Record locks are per process, hence ``_HELD`` for the requests of
+        this one. The file is never unlinked while the upload exists:
+        unlinking would let two writers lock two different files.
         """
-        try:
-            os.close(os.open(self.lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
-            return
-        except FileExistsError:
-            pass
-        try:
-            idle = time.time() - self.lock.stat().st_mtime
-        except FileNotFoundError:
-            idle = LOCK_STALE
-        if idle < LOCK_STALE:
+        if self.id in _HELD:
             raise tornado.web.HTTPError(423, "another request is writing this upload")
-        self.lock.touch()
+        fd = os.open(self.lock, os.O_CREAT | os.O_RDWR, 0o644)
+        try:
+            if fcntl is not None:
+                fcntl.lockf(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            os.close(fd)
+            raise tornado.web.HTTPError(423, "another request is writing this upload")
+        self._lock_fd = fd
+        _HELD.add(self.id)
 
     def release(self) -> None:
-        self.lock.unlink(missing_ok=True)
+        if self._lock_fd is not None:
+            _HELD.discard(self.id)
+            os.close(self._lock_fd)         # closing releases the record lock
+            self._lock_fd = None
+
+
+_HELD: set = set()      # uploads a request of this process is writing
 
 
 class UploadsHandler(SyncHandler):
@@ -302,8 +317,6 @@ class UploadHandler(SyncHandler):
     _fh = None
     _hash = None
     _start = 0
-    _locked = False
-    _touched = 0.0
 
     def prepare(self):
         self._upload_workspace = self.workspace()
@@ -320,7 +333,6 @@ class UploadHandler(SyncHandler):
         except (KeyError, ValueError):
             raise tornado.web.HTTPError(400, "Upload-Offset required")
         self._upload.acquire()
-        self._locked, self._touched = True, time.time()
         if offset != self._upload.offset or self._upload.state.get("completed"):
             raise tornado.web.HTTPError(409, "Upload-Offset does not match")
         checksum = self.request.headers.get("Upload-Checksum")
@@ -344,10 +356,6 @@ class UploadHandler(SyncHandler):
             self._discard_chunk()
             raise tornado.web.HTTPError(400, "body exceeds Upload-Length")
         self._fh.write(chunk)
-        if time.time() - self._touched > 10:
-            # Still writing: keep the lock from going stale.
-            self._upload.lock.touch()
-            self._touched = time.time()
         if self._hash is not None:
             self._hash.update(chunk)
         self._remaining -= len(chunk)
@@ -358,9 +366,9 @@ class UploadHandler(SyncHandler):
             self._fh = None
 
     def _unlock(self):
-        if self._locked:
-            self._upload.release()
-            self._locked = False
+        upload = getattr(self, "_upload", None)
+        if upload is not None:
+            upload.release()
 
     def _discard_chunk(self):
         """Cut an unverified chunk back off the partial file."""

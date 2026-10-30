@@ -6,12 +6,14 @@ import asyncio
 import json
 import os
 import socket
+import subprocess
 import sys
 import threading
 import time
 from pathlib import Path
 
 import pytest
+import tornado.web
 
 tornado = pytest.importorskip("tornado")
 requests = pytest.importorskip("requests")
@@ -484,6 +486,28 @@ def test_runs_directed_from_the_desktop(online, tmp_path, monkeypatch):
     assert "WORKFLOW CANCELLED" in stopped["log"][-1]
 
 
+_LOCK_PROBE = """
+import fcntl, os, sys
+fd = os.open(sys.argv[1], os.O_CREAT | os.O_RDWR)
+try:
+    fcntl.lockf(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+except OSError:
+    sys.exit(1)
+if len(sys.argv) > 2:
+    print("held", flush=True)
+    sys.stdin.read()
+"""
+
+
+def _hold_lock(path):
+    """Hold an upload's lock from another process, as another replica would."""
+    proc = subprocess.Popen([sys.executable, "-c", _LOCK_PROBE, str(path), "hold"],
+                            stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+    assert proc.stdout.readline().strip() == "held"
+    return proc
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="record locks are POSIX")
 def test_concurrent_patch_of_one_upload_is_refused(online, tmp_path, monkeypatch):
     """A retried PATCH must not append next to one still being written."""
     url, token = online["url"], online["token"]
@@ -495,15 +519,30 @@ def test_concurrent_patch_of_one_upload_is_refused(online, tmp_path, monkeypatch
     lock = online["root"] / ".sync-uploads" / (r.headers["Location"].rsplit("/", 1)[1] + ".lock")
     patch = {**auth, "Content-Type": "application/offset+octet-stream", "Upload-Offset": "0"}
 
-    lock.touch()                                    # another request is writing
+    holder = _hold_lock(lock)                       # another replica is writing
     assert requests.patch(loc, data=b"abc", headers=patch).status_code == 423
     assert requests.head(loc, headers=auth).headers["Upload-Offset"] == "0"
 
-    old = time.time() - server.LOCK_STALE - 1       # its writer died long ago
-    os.utime(lock, (old, old))
+    holder.kill()                                   # that replica died
+    holder.wait()
     r = requests.patch(loc, data=b"abc", headers=patch)
     assert r.status_code == 204 and r.headers["Upload-Offset"] == "3"
-    assert not lock.exists()                        # released when done
+
+    # Two claimants at once: exactly one gets the lock, in this process and
+    # against another.
+    upload_id = loc.rsplit("/", 1)[1]
+    first, second = (server._Upload(online["root"], upload_id) for _ in range(2))
+    first.acquire()
+    try:
+        with pytest.raises(tornado.web.HTTPError) as refused:
+            second.acquire()
+        assert refused.value.status_code == 423
+        probe = subprocess.run([sys.executable, "-c", _LOCK_PROBE, str(lock)])
+        assert probe.returncode == 1                # the other replica is refused
+    finally:
+        first.release()
+    second.acquire()                                # free again once released
+    second.release()
 
     # The client waits for a lock to clear instead of failing the push.
     ws = _local_workspace(tmp_path)
@@ -513,11 +552,9 @@ def test_concurrent_patch_of_one_upload_is_refused(online, tmp_path, monkeypatch
     real_request = client.SyncClient._request
 
     def request(self, method, target, *a, **kw):
-        resp_lock = None
         if method == "PATCH" and not waited:
-            resp_lock = online["root"] / ".sync-uploads" / (target.rsplit("/", 1)[1] + ".lock")
-            resp_lock.touch()
-            threading.Timer(0.3, resp_lock.unlink).start()
+            other = _hold_lock(online["root"] / ".sync-uploads" / (target.rsplit("/", 1)[1] + ".lock"))
+            threading.Timer(0.3, other.kill).start()
             waited.append(True)
         return real_request(self, method, target, *a, **kw)
 
