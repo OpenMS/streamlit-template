@@ -26,11 +26,12 @@ LINUX_DEB_SUFFIX = "-Linux-amd64.deb"
 LOCAL_WINDOWS_INSTALLER = Path("OpenMS-App-Setup.exe")
 
 
-class _IncompleteRelease(Exception):
-    """The lookup failed, or the release has no installer (yet)."""
-
-
-def _fetch_release_assets(github_user: str, repository: str) -> dict:
+# Five minutes: short enough that installers uploaded after the release was
+# published (or a failed lookup) show up soon, long enough to stay far below
+# GitHub's limit of 60 unauthenticated requests per hour.
+@st.cache_data(ttl=300, show_spinner=False)
+def latest_release_assets(github_user: str, repository: str) -> dict:
+    """Name -> download URL of every asset of the latest release, or {} on failure."""
     try:
         r = requests.get(
             f"https://api.github.com/repos/{github_user}/{repository}/releases/latest",
@@ -44,33 +45,6 @@ def _fetch_release_assets(github_user: str, repository: str) -> dict:
     assets = {a["name"]: a["browser_download_url"] for a in release.get("assets", [])}
     assets["_release_page"] = release.get("html_url", "")
     return assets
-
-
-@st.cache_data(ttl=3600, show_spinner=False)
-def _complete_release_assets(github_user: str, repository: str) -> dict:
-    # Raising keeps the result out of the cache, so a failed lookup or a release
-    # whose installers are still being uploaded is not remembered for an hour.
-    assets = _fetch_release_assets(github_user, repository)
-    if not any(n.endswith(p[2]) for n in assets for p in PLATFORMS):
-        raise _IncompleteRelease
-    return assets
-
-
-@st.cache_data(ttl=300, show_spinner=False)
-def _partial_release_assets(github_user: str, repository: str) -> dict:
-    return _fetch_release_assets(github_user, repository)
-
-
-def latest_release_assets(github_user: str, repository: str) -> dict:
-    """Name -> download URL of every asset of the latest release, or {} on failure.
-
-    A release with installers is cached for an hour; a failed lookup or a
-    release without installers only for five minutes, so new uploads show up.
-    """
-    try:
-        return _complete_release_assets(github_user, repository)
-    except _IncompleteRelease:
-        return _partial_release_assets(github_user, repository)
 
 
 def find_installers() -> dict:
