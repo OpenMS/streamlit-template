@@ -180,7 +180,7 @@ def link_import_section(workflow_dir, targets: Dict[str, dict]) -> None:
     """Paste a link, choose files, import them into the upload folders in ``targets``.
 
     ``targets`` maps an upload key to its display ``name``, ``file_types``,
-    folder (``dir``) and the names of its example (``fallback``) files.
+    folder (``dir``) and the paths of its example (``fallback``) files.
     """
     if not targets:
         return

@@ -159,7 +159,7 @@ class StreamlitUI:
             "name": name,
             "file_types": list(file_types),
             "dir": str(files_dir),
-            "fallback": [Path(f).name for f in ([fallback] if isinstance(fallback, str) else fallback or [])],
+            "fallback": [str(Path(f).resolve()) for f in ([fallback] if isinstance(fallback, str) else fallback or [])],
         }
 
         c1, c2 = st.columns(2)
