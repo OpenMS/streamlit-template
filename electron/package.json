@@ -54,7 +54,10 @@
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
       "entitlements": "build/entitlements.mac.plist",
-      "entitlementsInherit": "build/entitlements.mac.plist"
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "signIgnore": [
+        "/app-payload/.*\\.(pyc|pyo|npy|npz|pkl|pickle|parquet|feather|arrow|png|jpe?g|gif|ico|icns|pdf|ttf|otf|woff2?|gz|bz2|xz|zip|tar|whl|jar|mo|db|sqlite3?|h5|hdf5|pt|onnx|pqp|osw|xlsx)$"
+      ]
     },
     "dmg": {
       "writeUpdateInfo": false
