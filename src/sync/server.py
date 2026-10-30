@@ -44,6 +44,7 @@ logger = logging.getLogger("workspace-sync")
 
 TUS_VERSION = "1.0.0"
 UPLOAD_DIR = ".sync-uploads"
+LOCK_STALE = 60          # seconds without a write before a PATCH lock is broken
 INDEX_FILE = ".sync-index.json"
 DOWNLOAD_BLOCK = 1024 * 1024
 # A PATCH body is streamed to disk, so this only bounds a single request;
@@ -124,18 +125,22 @@ class HealthHandler(SyncHandler):
 
 
 class ManifestHandler(SyncHandler):
-    def get(self):
+    async def get(self):
         workspace = self.workspace()
         scope = self.get_query_argument("scope", "push")
-        if scope == "push":
-            entries = paths.push_entries(workspace)
-        elif scope == "pull":
-            entries = paths.pull_entries(workspace)
-        else:
+        if scope not in ("push", "pull"):
             raise tornado.web.HTTPError(400, "scope must be push or pull")
-        cache = self.hash_cache(workspace)
-        manifest = cache.manifest(entries)
-        cache.save()
+
+        def build():
+            entries = (paths.push_entries if scope == "push" else paths.pull_entries)(workspace)
+            cache = self.hash_cache(workspace)
+            manifest = cache.manifest(entries)
+            cache.save()
+            return manifest
+
+        # A result an online run just wrote is hashed here for the first
+        # time; a multi-GB one must not stall every other request.
+        manifest = await tornado.ioloop.IOLoop.current().run_in_executor(None, build)
         self.finish({"workspace": workspace.name, "files": manifest})
 
 
@@ -148,6 +153,7 @@ class _Upload:
         base = Path(root, UPLOAD_DIR)
         self.state_file = Path(base, upload_id + ".json")
         self.part = Path(base, upload_id + ".part")
+        self.lock = Path(base, upload_id + ".lock")
         try:
             self.state = json.loads(self.state_file.read_text())
         except (OSError, ValueError):
@@ -165,6 +171,33 @@ class _Upload:
     def remove(self):
         self.part.unlink(missing_ok=True)
         self.state_file.unlink(missing_ok=True)
+        self.lock.unlink(missing_ok=True)
+
+    def acquire(self) -> None:
+        """Take the upload's write lock, or answer 423.
+
+        A client whose PATCH timed out sends it again, maybe to another
+        replica, while the first may still be writing. Both would pass the
+        offset check and append to the same partial file. The lock is a file
+        created with O_EXCL on the shared volume, so it holds across
+        replicas; one a crashed writer left behind goes stale after
+        LOCK_STALE seconds without a write.
+        """
+        try:
+            os.close(os.open(self.lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+            return
+        except FileExistsError:
+            pass
+        try:
+            idle = time.time() - self.lock.stat().st_mtime
+        except FileNotFoundError:
+            idle = LOCK_STALE
+        if idle < LOCK_STALE:
+            raise tornado.web.HTTPError(423, "another request is writing this upload")
+        self.lock.touch()
+
+    def release(self) -> None:
+        self.lock.unlink(missing_ok=True)
 
 
 class UploadsHandler(SyncHandler):
@@ -175,7 +208,7 @@ class UploadsHandler(SyncHandler):
         self.set_header("Tus-Max-Size", str(int(self.config["max_file_gb"] * 1024 ** 3)))
         self.set_status(204)
 
-    def post(self):
+    async def post(self):
         workspace = self.workspace()
         try:
             length = int(self.request.headers["Upload-Length"])
@@ -189,8 +222,10 @@ class UploadsHandler(SyncHandler):
             raise tornado.web.HTTPError(413, "file exceeds the per-file limit")
         dest = Path(workspace, rel)
         replaced = dest.stat().st_size if dest.is_file() else 0
-        if (_workspace_bytes(workspace) - replaced + length
-                > self.config["max_workspace_gb"] * 1024 ** 3):
+        # A walk over the whole workspace on NFS: not on the event loop.
+        used = await tornado.ioloop.IOLoop.current().run_in_executor(
+            None, _workspace_bytes, workspace)
+        if used - replaced + length > self.config["max_workspace_gb"] * 1024 ** 3:
             raise tornado.web.HTTPError(413, "workspace storage limit reached")
 
         upload_id = secrets.token_hex(16)
@@ -267,6 +302,8 @@ class UploadHandler(SyncHandler):
     _fh = None
     _hash = None
     _start = 0
+    _locked = False
+    _touched = 0.0
 
     def prepare(self):
         self._upload_workspace = self.workspace()
@@ -282,6 +319,8 @@ class UploadHandler(SyncHandler):
             offset = int(self.request.headers["Upload-Offset"])
         except (KeyError, ValueError):
             raise tornado.web.HTTPError(400, "Upload-Offset required")
+        self._upload.acquire()
+        self._locked, self._touched = True, time.time()
         if offset != self._upload.offset or self._upload.state.get("completed"):
             raise tornado.web.HTTPError(409, "Upload-Offset does not match")
         checksum = self.request.headers.get("Upload-Checksum")
@@ -305,6 +344,10 @@ class UploadHandler(SyncHandler):
             self._discard_chunk()
             raise tornado.web.HTTPError(400, "body exceeds Upload-Length")
         self._fh.write(chunk)
+        if time.time() - self._touched > 10:
+            # Still writing: keep the lock from going stale.
+            self._upload.lock.touch()
+            self._touched = time.time()
         if self._hash is not None:
             self._hash.update(chunk)
         self._remaining -= len(chunk)
@@ -313,6 +356,11 @@ class UploadHandler(SyncHandler):
         if self._fh is not None:
             self._fh.close()
             self._fh = None
+
+    def _unlock(self):
+        if self._locked:
+            self._upload.release()
+            self._locked = False
 
     def _discard_chunk(self):
         """Cut an unverified chunk back off the partial file."""
@@ -326,9 +374,11 @@ class UploadHandler(SyncHandler):
         if self._hash is not None and self._fh is not None:
             self._discard_chunk()
         self._close()
+        self._unlock()
 
     def on_finish(self):
         self._close()
+        self._unlock()
 
     def head(self, upload_id):
         self.set_header("Upload-Offset", str(self._upload.offset))

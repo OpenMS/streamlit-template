@@ -437,8 +437,12 @@ class SyncClient:
                         # Corrupted in transit: the server dropped it, send again.
                         bad_chunks += 1
                         continue
-                    if status != 409:
+                    if status not in (409, 423):
                         raise SyncError(f"{rel}: {exc}") from exc
+                    if status == 423:
+                        # An earlier, timed-out send of this chunk is still
+                        # being written; the server lets it finish or drops it.
+                        self._sleep(2)
                     # A retried chunk had already arrived: continue from
                     # where the server stands.
                     offset = int(self._request("HEAD", location).headers["Upload-Offset"])

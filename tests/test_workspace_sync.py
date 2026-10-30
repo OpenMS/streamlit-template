@@ -482,3 +482,47 @@ def test_runs_directed_from_the_desktop(online, tmp_path, monkeypatch):
     stopped = c.stop_run("topp-workflow")
     assert stopped["status"] == "canceled"
     assert "WORKFLOW CANCELLED" in stopped["log"][-1]
+
+
+def test_concurrent_patch_of_one_upload_is_refused(online, tmp_path, monkeypatch):
+    """A retried PATCH must not append next to one still being written."""
+    url, token = online["url"], online["token"]
+    auth = {"Authorization": f"Bearer {token}", "Tus-Resumable": "1.0.0"}
+    b64 = lambda s: __import__("base64").b64encode(s.encode()).decode()
+    r = requests.post(f"{url}/files", headers={**auth, "Upload-Length": "6",
+                      "Upload-Metadata": f"path {b64('mzML-files/x.mzML')}"})
+    loc = url.rsplit("/sync", 1)[0] + r.headers["Location"]
+    lock = online["root"] / ".sync-uploads" / (r.headers["Location"].rsplit("/", 1)[1] + ".lock")
+    patch = {**auth, "Content-Type": "application/offset+octet-stream", "Upload-Offset": "0"}
+
+    lock.touch()                                    # another request is writing
+    assert requests.patch(loc, data=b"abc", headers=patch).status_code == 423
+    assert requests.head(loc, headers=auth).headers["Upload-Offset"] == "0"
+
+    old = time.time() - server.LOCK_STALE - 1       # its writer died long ago
+    os.utime(lock, (old, old))
+    r = requests.patch(loc, data=b"abc", headers=patch)
+    assert r.status_code == 204 and r.headers["Upload-Offset"] == "3"
+    assert not lock.exists()                        # released when done
+
+    # The client waits for a lock to clear instead of failing the push.
+    ws = _local_workspace(tmp_path)
+    c = client.SyncClient(url, token, chunk_size=MB)
+    monkeypatch.setattr(client.SyncClient, "_sleep", lambda self, s: time.sleep(0.05))
+    waited = []
+    real_request = client.SyncClient._request
+
+    def request(self, method, target, *a, **kw):
+        resp_lock = None
+        if method == "PATCH" and not waited:
+            resp_lock = online["root"] / ".sync-uploads" / (target.rsplit("/", 1)[1] + ".lock")
+            resp_lock.touch()
+            threading.Timer(0.3, resp_lock.unlink).start()
+            waited.append(True)
+        return real_request(self, method, target, *a, **kw)
+
+    monkeypatch.setattr(client.SyncClient, "_request", request)
+    report = c.push(ws, ["topp-workflow/input-files/mzML-files/a.mzML"])
+    assert waited and report.transferred == ["topp-workflow/input-files/mzML-files/a.mzML"]
+    remote = online["ws"] / "topp-workflow/input-files/mzML-files/a.mzML"
+    assert remote.read_bytes() == (ws / "topp-workflow/input-files/mzML-files/a.mzML").read_bytes()

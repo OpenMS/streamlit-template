@@ -342,6 +342,7 @@ def _link_form(workspace: Path) -> None:
                             placeholder="https://example.org/sync")
         token = st.text_input("Sync token", type="password")
         if st.form_submit_button("Link workspace", type="primary"):
+            url, token = url.strip(), token.strip()
             if not (url and token):
                 st.error("Enter both the server URL and the sync token.")
                 return
@@ -350,7 +351,7 @@ def _link_form(workspace: Path) -> None:
             except client.SyncError as exc:
                 st.error(str(exc))
                 return
-            client.write_link(workspace, {"url": url.strip(), "token": token.strip(),
+            client.write_link(workspace, {"url": url, "token": token,
                                           "workspace": name, "uploads": {}})
             _invalidate(workspace)
             st.rerun()
@@ -590,43 +591,24 @@ def render_sync_page() -> None:
 _PAGE = "content/workspace_sync.py"
 
 
-@st.fragment(run_every=2.0)
-def _sidebar_live(workspace: Path) -> None:
-    """Poll a transfer or a state refresh; rerun the app once it is over."""
-    job = _JOBS.get(str(workspace))
-    if job is not None and not job.finished:
-        verb = _VERBS[job.action][0]
-        if job.total:
-            st.progress(min(job.done / job.total, 1.0),
-                        text=f"{verb}: {_size(job.done)} of {_size(job.total)}")
-        else:
-            st.progress(0.0, text=f"{verb}: comparing files…")
-        if job.notice:
-            st.caption(f"📡 {job.notice}")
-        elif job.current:
-            st.caption(Path(job.current).name)
-        if st.button("Cancel", key="sync-sidebar-cancel", width="stretch"):
-            job.cancel.set()
-        return
-    with _STATUS_LOCK:
-        waiting = str(workspace) in _REFRESHING
-    if waiting:
-        st.caption("Checking the online workspace…")
-        return
-    st.rerun()
+# The sidebar panels are fragments that redraw themselves every few seconds
+# from in-memory state. They never rerun the whole app: a page that keeps a
+# result only for the run in which its button was pressed would lose it.
 
 
-@st.fragment(run_every=5.0)
-def _sidebar_watch(workspace: Path, shown_at: float, follow_run: bool) -> None:
-    """Rerun the app when Keep in sync starts a transfer or has fresh
-    states, or, while a cloud run is active, when its state is 10 s old, so
-    the sidebar follows without a click."""
-    job = _JOBS.get(str(workspace))
-    with _STATUS_LOCK:
-        status = _STATUS.get(str(workspace))
-    if ((job is not None and not job.finished) or (status and status["at"] != shown_at)
-            or (follow_run and time.time() - shown_at > 10)):
-        st.rerun()
+def _sidebar_transfer(job: _Job) -> None:
+    verb = _VERBS[job.action][0]
+    if job.total:
+        st.progress(min(job.done / job.total, 1.0),
+                    text=f"{verb}: {_size(job.done)} of {_size(job.total)}")
+    else:
+        st.progress(0.0, text=f"{verb}: comparing files…")
+    if job.notice:
+        st.caption(f"📡 {job.notice}")
+    elif job.current:
+        st.caption(Path(job.current).name)
+    if st.button("Cancel", key="sync-sidebar-cancel", width="stretch"):
+        job.cancel.set()
 
 
 def _sidebar_summary(workspace: Path, link: dict, status: dict | None, prefs: dict) -> None:
@@ -660,38 +642,48 @@ def _sidebar_summary(workspace: Path, link: dict, status: dict | None, prefs: di
                  disabled=not ready):
         up, down = _chosen(status, prefs)
         _start(workspace, "sync", [i.key for i in up + down], link)
-        st.rerun()
+        st.rerun(scope="fragment")
 
 
-@st.fragment(run_every=2.0)
-def _sidebar_incoming(workspace: Path) -> None:
-    """Online: follow the uploads the desktop app is sending; rerun when done."""
-    active = [u for u in server.incoming(workspace.parent, workspace.name) if u["active"]]
-    if not active:
-        st.rerun()
+@st.fragment(run_every=3.0)
+def _sidebar_panel(workspace: Path, link: dict) -> None:
+    """Offline: link state, pending items, cloud runs and transfers."""
+    prefs = client.read_prefs(workspace)
+    _ensure_watcher(workspace)
+    job = _JOBS.get(str(workspace))
+    if job is not None and not job.finished:
+        _sidebar_transfer(job)
         return
-    done = sum(u["offset"] for u in active)
-    total = sum(u["length"] for u in active)
-    st.progress(min(done / total, 1.0) if total else 0.0,
-                text=f"Receiving: {_size(done)} of {_size(total)}")
-    st.caption(", ".join(Path(u["path"]).name for u in active))
+    with _STATUS_LOCK:
+        status = _STATUS.get(str(workspace))
+    # Follow a cloud run more closely than the files.
+    running = status is not None and any(
+        r["status"] in _RUN_ACTIVE for r in status.get("runs", {}).values())
+    max_age = 10 if running else _STATUS_MAX_AGE
+    if status is None or time.time() - status["at"] > max_age:
+        _refresh_in_background(workspace, link)
+    _sidebar_summary(workspace, link, status, prefs)
 
 
-def _online_sidebar(workspace: Path) -> None:
+@st.fragment(run_every=5.0)
+def _online_panel(workspace: Path) -> None:
+    """Online: whether a desktop app is linked, and the uploads arriving."""
     uploads = server.incoming(workspace.parent, workspace.name)
     linked = tokens.active_count(workspace.parent, workspace.name)
-    with st.expander("🔄 **Workspace Sync**", expanded=bool(linked or uploads)):
-        if any(u["active"] for u in uploads):
-            _sidebar_incoming(workspace)
-        elif linked:
-            st.caption(f"🔗 Desktop app linked ({linked} token{'s' if linked > 1 else ''})")
-        else:
-            st.caption("Send large files from the desktop app and fetch the results there.")
-        paused = sum(not u["active"] for u in uploads)
-        if paused:
-            st.caption(f"⏸️ {paused} upload(s) paused until the desktop app continues them.")
-        st.page_link(_PAGE, label="Open sync" if linked or uploads else "Link desktop app",
-                     icon="🔄" if linked or uploads else "🔗")
+    active = [u for u in uploads if u["active"]]
+    if active:
+        done = sum(u["offset"] for u in active)
+        total = sum(u["length"] for u in active)
+        st.progress(min(done / total, 1.0) if total else 0.0,
+                    text=f"Receiving: {_size(done)} of {_size(total)}")
+        st.caption(", ".join(Path(u["path"]).name for u in active))
+    elif linked:
+        st.caption(f"🔗 Desktop app linked ({linked} token{'s' if linked > 1 else ''})")
+    else:
+        st.caption("Send large files from the desktop app and fetch the results there.")
+    paused = len(uploads) - len(active)
+    if paused:
+        st.caption(f"⏸️ {paused} upload(s) paused until the desktop app continues them.")
 
 
 def render_sync_sidebar() -> None:
@@ -700,7 +692,11 @@ def render_sync_sidebar() -> None:
         return
     workspace = Path(st.session_state.workspace)
     if st.session_state.location == "online":
-        _online_sidebar(workspace)
+        linked = tokens.active_count(workspace.parent, workspace.name)
+        with st.expander("🔄 **Workspace Sync**", expanded=bool(linked)):
+            _online_panel(workspace)
+            st.page_link(_PAGE, label="Open sync" if linked else "Link desktop app",
+                         icon="🔄" if linked else "🔗")
         return
     link = client.read_link(workspace)
     with st.expander("🔄 **Workspace Sync**", expanded=True):
@@ -710,25 +706,5 @@ def render_sync_sidebar() -> None:
             return
         # Online workspace names are UUIDs; the start tells them apart.
         st.caption(f"🔗 Linked to `{link.get('workspace', '?')[:8]}`")
-        prefs = client.read_prefs(workspace)
-        _ensure_watcher(workspace)
-        job = _JOBS.get(str(workspace))
-        if job is not None and not job.finished:
-            _sidebar_live(workspace)
-        else:
-            with _STATUS_LOCK:
-                status = _STATUS.get(str(workspace))
-            # Follow a cloud run more closely than the files.
-            running = status is not None and any(
-                r["status"] in _RUN_ACTIVE for r in status.get("runs", {}).values())
-            max_age = 10 if running else _STATUS_MAX_AGE
-            stale = status is None or time.time() - status["at"] > max_age
-            if stale:
-                _refresh_in_background(workspace, link)
-            _sidebar_summary(workspace, link, status, prefs)
-            if stale:
-                # Shows the fresh states as soon as they are in.
-                _sidebar_live(workspace)
-            elif prefs["keep_in_sync"] or running:
-                _sidebar_watch(workspace, status["at"], running)
+        _sidebar_panel(workspace, link)
         st.page_link(_PAGE, label="Open sync", icon="📋")
