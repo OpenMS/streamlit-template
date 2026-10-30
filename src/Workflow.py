@@ -29,12 +29,18 @@ class Workflow(WorkflowManager):
 
     @st.fragment
     def configure(self) -> None:
-        # Allow users to select mzML files for the analysis.
-        self.ui.select_input_file("mzML-files", multiple=True)
+        # Allow users to select mzML files for the analysis. reactive=True so
+        # the experimental design table follows the selection.
+        self.ui.select_input_file("mzML-files", multiple=True, reactive=True)
 
         # Create tabs for different analysis steps.
         t = st.tabs(
-            ["**Feature Detection**", "**Feature Linking**", "**Python Custom Tool**"]
+            [
+                "**Feature Detection**",
+                "**Feature Linking**",
+                "**Python Custom Tool**",
+                "**Experimental Design**",
+            ]
         )
         with t[0]:
             # Parameters for FeatureFinderMetabo TOPP tool.
@@ -51,6 +57,12 @@ class Workflow(WorkflowManager):
             # Generate input widgets for a custom Python tool, located at src/python-tools.
             # Parameters are specified within the file in the DEFAULTS dictionary.
             self.ui.input_python("example")
+        with t[3]:
+            # Condition, replicate and fraction per selected file, saved as an
+            # OpenMS design.tsv in the workflow directory. Pass that file to a
+            # TOPP tool's -design (e.g. ProteomicsLFQ), or read it in
+            # execution() with src.workflow.ExperimentalDesign.load_design().
+            self.ui.experimental_design("mzML-files")
 
     def execution(self) -> bool:
         # Return True only if every step succeeded. The caller
