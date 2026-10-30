@@ -11,6 +11,7 @@ import sys
 import importlib.util
 import time
 from io import BytesIO
+import pandas as pd
 import zipfile
 from datetime import datetime
 
@@ -18,10 +19,23 @@ from datetime import datetime
 from src.common.common import (
     OS_PLATFORM,
     TK_AVAILABLE,
+    export_files,
+    export_folder_input,
     tk_directory_dialog,
     tk_file_dialog,
 )
 from src.workflow._log_status import classify_log_outcome
+from src.workflow.ExperimentalDesign import (
+    align_design,
+    check_design,
+    design_path,
+    load_design,
+    read_design,
+    save_design,
+    to_openms_design,
+)
+from src.workflow.vendor_files import extract_bruker_zip, has_type
+from src.data_import import ui as data_import_ui
 from src.workflow.ParameterManager import (
     InvalidParameterFileError,
     TransientParameterFileError,
@@ -90,6 +104,9 @@ class StreamlitUI:
     # Methods for Streamlit UI components
     def __init__(self, workflow_dir, logger, executor, parameter_manager):
         self.workflow_dir = workflow_dir
+        # upload key -> name, file types, folder and example files of each
+        # upload_widget() on the page, for "Import from a link"
+        self.upload_targets = {}
         self.logger = logger
         self.executor = executor
         self.parameter_manager = parameter_manager
@@ -111,6 +128,9 @@ class StreamlitUI:
         Args:
             key (str): A unique identifier for the upload component.
             file_types (Union[str, List[str]]): Expected file type(s) for the uploaded files.
+                ``"d"`` accepts Bruker .d folders: from a local folder, or online as
+                a zip archive. Convert vendor files before use with
+                ``CommandExecutor.convert_to_mzml()``.
             name (str, optional): Display name for the upload component. Defaults to the key if not provided.
             fallback (Union[List, str], optional): Default files to use if no files are uploaded.
         """
@@ -129,6 +149,18 @@ class StreamlitUI:
 
         if not name:
             name = key.replace("-", " ")
+
+        # Convert file_types to a list if it's a string
+        if isinstance(file_types, str):
+            file_types = [file_types]
+
+        # Where "Import from a link" can put files, see file_upload_section()
+        self.upload_targets[key] = {
+            "name": name,
+            "file_types": list(file_types),
+            "dir": str(files_dir),
+            "fallback": [str(Path(f).resolve()) for f in ([fallback] if isinstance(fallback, str) else fallback or [])],
+        }
 
         c1, c2 = st.columns(2)
 
@@ -151,14 +183,13 @@ class StreamlitUI:
             c1.markdown("**Upload file(s)**")
             use_copy = True
 
-        # Convert file_types to a list if it's a string
-        if isinstance(file_types, str):
-            file_types = [file_types]
-
         if st.session_state.location != "local":
             with c1.form(f"{key}-upload", clear_on_submit=True):
-                # Streamlit file uploader accepts file types as a list or None
-                file_type_for_uploader = file_types if file_types else None
+                # Streamlit file uploader accepts file types as a list or None.
+                # A .d folder cannot be uploaded from a browser, only a zip of it.
+                file_type_for_uploader = (
+                    file_types + ["zip"] if "d" in file_types else file_types
+                ) if file_types else None
 
                 files = st.file_uploader(
                     f"{name}",
@@ -173,14 +204,24 @@ class StreamlitUI:
                         # in case of online mode a single file is returned -> put in list
                         if not isinstance(files, list):
                             files = [files]
+                        failed = False
                         for f in files:
+                            if "d" in file_types and f.name.lower().endswith(".zip"):
+                                try:
+                                    added = extract_bruker_zip(f, files_dir)
+                                except zipfile.BadZipFile:
+                                    added = []
+                                if not added:
+                                    st.error(f"**{f.name}** holds no Bruker .d folder.")
+                                    failed = True
                             # Check if file type is in the list of accepted file types
-                            if f.name not in [
+                            elif f.name not in [
                                 f.name for f in files_dir.iterdir()
-                            ] and any(f.name.endswith(ft) for ft in file_types):
+                            ] and has_type(f.name, file_types):
                                 with open(Path(files_dir, f.name), "wb") as fh:
                                     fh.write(f.getbuffer())
-                        st.success("Successfully added uploaded files!")
+                        if not failed:
+                            st.success("Successfully added uploaded files!")
                     else:
                         st.error("Nothing to add, please upload file.")
         else:
@@ -196,8 +237,16 @@ class StreamlitUI:
                     disabled=not TK_AVAILABLE,
                 )
 
-                # Tk file dialog requires file types to be a list of tuples
-                tk_file_types = [(f"{ft}", f"*.{ft}") for ft in file_types]
+                # Tk file dialog requires file types to be a list of tuples.
+                # Both cases: Thermo writes .raw as well as .RAW.
+                tk_file_types = [
+                    (f"{ft}", f"*.{ft} *.{ft.upper()}") for ft in file_types
+                ]
+                if "d" in file_types:
+                    st.caption(
+                        "Bruker **.d** folders can't be picked here: add the "
+                        "folder that contains them on the right."
+                    )
 
                 if dialog_button:
                     local_files = tk_file_dialog(
@@ -270,9 +319,7 @@ class StreamlitUI:
                     for ft in file_types:
                         # Search for both files and directories with the specified extension
                         for path in local_dir.iterdir():
-                            if path.is_file() and path.name.endswith(f".{ft}"):
-                                files.append(path)
-                            elif path.is_dir() and path.name.endswith(f".{ft}"):
+                            if has_type(path, [ft]):
                                 files.append(path)
 
                     if not files:
@@ -486,7 +533,7 @@ class StreamlitUI:
                 return
 
             def _is_match(p: Path) -> bool:
-                return any(p.name.endswith(f".{ft}") for ft in file_types)
+                return has_type(p, file_types)
 
             subdirs = [p for p in entries if p.is_dir() and not _is_match(p)]
             bundled = [p for p in entries if p.is_dir() and _is_match(p)]
@@ -714,16 +761,23 @@ class StreamlitUI:
         # argument is still hashed into the widget's element id. Since this method feeds
         # the persisted parameter straight back in as that argument, the id changed on
         # every interaction, the following interaction arrived under the now-stale id and
-        # was silently dropped: selecting six mzML files kept only three. Seed the widget
-        # on first render only; from then on session state owns the value.
-        def seed(**kwargs: Any) -> dict:
-            return {} if key in st.session_state else kwargs
+        # was silently dropped: selecting six mzML files kept only three. Passing the
+        # argument on the first render only is not enough either: the id still changes
+        # once, between that render and the next, and the next rerun of the enclosing
+        # fragment resets the widget to empty -- a selection restored from params.json
+        # was wiped (and saved as empty) by the first reactive rerun of configure().
+        # So the argument is never passed: the first render writes the value into
+        # session state, which then owns it, and the id never changes.
+        def seed(initial: Any) -> dict:
+            if key not in st.session_state:
+                st.session_state[key] = initial
+            return {}
 
         if widget_type == "text":
-            st.text_input(name, key=key, help=help, on_change=on_change, **seed(value=value))
+            st.text_input(name, key=key, help=help, on_change=on_change, **seed(value))
 
         elif widget_type == "textarea":
-            st.text_area(name, key=key, help=help, on_change=on_change, **seed(value=value))
+            st.text_area(name, key=key, help=help, on_change=on_change, **seed(value))
 
         elif widget_type == "number":
             number_type = float if isinstance(value, float) else int
@@ -744,11 +798,11 @@ class StreamlitUI:
                 key=key,
                 help=help,
                 on_change=on_change,
-                **seed(value=value),
+                **seed(value),
             )
 
         elif widget_type == "checkbox":
-            st.checkbox(name, key=key, help=help, on_change=on_change, **seed(value=value))
+            st.checkbox(name, key=key, help=help, on_change=on_change, **seed(value))
 
         elif widget_type == "selectbox":
             if options is not None:
@@ -759,7 +813,7 @@ class StreamlitUI:
                     format_func=format_files,
                     help=help,
                     on_change=on_change,
-                    **seed(index=options.index(value) if value in options else 0),
+                    **seed(value if value in options else (options[0] if options else None)),
                 )
             else:
                 st.warning(f"Select widget '{name}' requires options parameter")
@@ -773,7 +827,7 @@ class StreamlitUI:
                     format_func=format_files,
                     help=help,
                     on_change=on_change,
-                    **seed(default=value),
+                    **seed(value),
                 )
             else:
                 st.warning(f"Select widget '{name}' requires options parameter")
@@ -795,7 +849,7 @@ class StreamlitUI:
                     format=None,
                     help=help,
                     on_change=on_change,
-                    **seed(value=value),
+                    **seed(value),
                 )
             else:
                 st.warning(
@@ -803,12 +857,12 @@ class StreamlitUI:
                 )
 
         elif widget_type == "password":
-            st.text_input(name, type="password", key=key, help=help, on_change=on_change, **seed(value=value))
+            st.text_input(name, type="password", key=key, help=help, on_change=on_change, **seed(value))
 
         elif widget_type == "auto":
             # Auto-determine widget type based on value
             if isinstance(value, bool):
-                st.checkbox(name, key=key, help=help, on_change=on_change, **seed(value=value))
+                st.checkbox(name, key=key, help=help, on_change=on_change, **seed(value))
             elif isinstance(value, (int, float)):
                 self._input_widget_impl(
                     key,
@@ -1426,6 +1480,94 @@ class StreamlitUI:
                     cols = st.columns(num_cols)
         self.parameter_manager.save_parameters()
 
+    def experimental_design(self, key: str, name: str = "Experimental design") -> None:
+        """
+        Table assigning each selected input file a condition, biological replicate and fraction.
+
+        Edits are saved to ``<workflow_dir>/experimental-design.tsv`` in the
+        OpenMS design format, so ``execution()`` can pass that file to a TOPP
+        tool's ``-design`` or read it with ``ExperimentalDesign.load_design()``.
+        A design.tsv (one- or two-table) or SDRF file can be imported, and
+        spreadsheet cells can be pasted into the table. Inconsistencies such as
+        missing fractions are shown as notices, not errors.
+
+        Args:
+            key (str): The input file key whose selection the design covers
+                (the key passed to ``select_input_file``). Pass ``reactive=True``
+                to that ``select_input_file`` so the table follows the selection.
+            name (str, optional): The heading shown above the table.
+        """
+        files = st.session_state.get(
+            f"{self.parameter_manager.param_prefix}{key}", self.params.get(key, [])
+        )
+        if isinstance(files, str):
+            files = [files]
+        st.markdown(f"**{name}**")
+        if not files:
+            st.info("Select input files to define the experimental design.")
+            return
+
+        # Widget state keys stay outside param_prefix: save_parameters() writes
+        # every session key with that prefix to params.json.
+        version_key = f"_design-{Path(self.workflow_dir).name}-{key}"
+        st.session_state.setdefault(version_key, 0)
+        stored = load_design(self.workflow_dir, files)
+
+        uploaded = st.file_uploader(
+            "Import design.tsv or SDRF",
+            type=["tsv", "txt", "sdrf"],
+            key=f"{version_key}-import",
+            help="An OpenMS experimental design (one- or two-table) or an SDRF file. "
+            "Files are matched by name; files it does not list keep their current row.",
+        )
+        applied_key = f"{version_key}-applied"
+        if uploaded is not None and st.session_state.get(applied_key) != uploaded.file_id:
+            st.session_state[applied_key] = uploaded.file_id
+            try:
+                imported = read_design(uploaded.getvalue())
+            except (ValueError, KeyError, pd.errors.ParserError) as e:
+                st.error(f"Could not read {uploaded.name}: {e}")
+            else:
+                listed = set(imported["file"])
+                kept = stored[~stored["file"].isin(listed)]
+                stored = align_design(pd.concat([imported, kept]), files)
+                matched = len(listed & set(stored["file"]))
+                save_design(self.workflow_dir, stored, files)
+                st.session_state[version_key] += 1
+                st.toast(f"Imported the design of {matched} of {len(files)} file(s)")
+
+        edited = st.data_editor(
+            stored,
+            key=f"{version_key}-{st.session_state[version_key]}",
+            hide_index=True,
+            num_rows="fixed",
+            disabled=["file"],
+            column_config={
+                "file": st.column_config.TextColumn("File"),
+                "condition": st.column_config.TextColumn(
+                    "Condition", help="The group this file is compared as, e.g. control or treated."
+                ),
+                "replicate": st.column_config.NumberColumn(
+                    "Replicate", help="Biological replicate within the condition.", min_value=1, step=1
+                ),
+                "fraction": st.column_config.NumberColumn(
+                    "Fraction", help="Fraction number; 1 for unfractionated samples.", min_value=1, step=1
+                ),
+            },
+        )
+        path = design_path(self.workflow_dir)
+        if not path.is_file() or path.read_text(encoding="utf-8") != to_openms_design(edited, files):
+            save_design(self.workflow_dir, edited, files)
+
+        for notice in check_design(edited):
+            st.info(notice, icon="ℹ️")
+        st.download_button(
+            "Download design.tsv",
+            to_openms_design(edited, files),
+            file_name="design.tsv",
+            mime="text/tab-separated-values",
+        )
+
     def zip_and_download_files(self, directory: str):
         """
         Creates a zip archive of all files within a specified directory,
@@ -1524,11 +1666,95 @@ class StreamlitUI:
         else:
             st.toast(f"Failed to apply preset: {preset_name}", icon="⚠️")
 
+    def user_presets(self, num_cols: int = 4) -> None:
+        """
+        Renders the presets the user saved, a form to save the current settings as
+        a new one or delete one, and which preset the settings come from.
+
+        Saved presets live in the workflow directory (user-presets.json), so they
+        stay with the workspace. Applying one restores every saved setting.
+        """
+        pm = self.parameter_manager
+        names = pm.get_user_preset_names()
+        if not pm.get_preset_names():
+            st.markdown("---")
+        st.markdown("**Your Presets**")
+        if names:
+            cols = st.columns(num_cols)
+            for i, name in enumerate(names):
+                col_idx = i % num_cols
+                description = pm.get_preset_description(name)
+                with cols[col_idx]:
+                    st.button(
+                        name,
+                        key=f"user_preset_{name}",
+                        help=description if description else None,
+                        use_container_width=True,
+                        on_click=self._apply_preset_callback,
+                        args=(name,),
+                    )
+                if col_idx == num_cols - 1 and i < len(names) - 1:
+                    cols = st.columns(num_cols)
+        else:
+            st.caption("Save the current settings to reuse them in a later run.")
+
+        with st.popover("💾 Save or delete a preset"):
+            st.text_input("Preset name", key="user_preset_name")
+            st.text_input("Description (optional)", key="user_preset_description")
+            st.button(
+                "Save current settings",
+                key="user_preset_save",
+                on_click=self._save_user_preset_callback,
+            )
+            if names:
+                st.selectbox("Saved preset", names, key="user_preset_delete_choice")
+                st.button(
+                    "Delete preset",
+                    key="user_preset_delete",
+                    on_click=self._delete_user_preset_callback,
+                )
+
+        applied, changed = pm.applied_preset_status()
+        if applied and changed:
+            st.caption(
+                f"✏️ Settings changed since you applied **{applied}**. "
+                "Save them as a preset to keep them."
+            )
+        elif applied:
+            st.caption(f"✅ Current settings: **{applied}**")
+
+    def _save_user_preset_callback(self) -> None:
+        name = st.session_state.get("user_preset_name", "").strip()
+        description = st.session_state.get("user_preset_description", "").strip()
+        if not name:
+            st.toast("Enter a name for the preset", icon="⚠️")
+        elif name in self.parameter_manager.get_preset_names():
+            st.toast(f"'{name}' is a built-in preset, choose another name", icon="⚠️")
+        elif self.parameter_manager.save_user_preset(name, description):
+            st.session_state["user_preset_name"] = ""
+            st.session_state["user_preset_description"] = ""
+            st.toast(f"Saved preset: {name}")
+        else:
+            st.toast(f"Could not save preset: {name}", icon="⚠️")
+
+    def _delete_user_preset_callback(self) -> None:
+        name = st.session_state.get("user_preset_delete_choice")
+        if name and self.parameter_manager.delete_user_preset(name):
+            st.toast(f"Deleted preset: {name}")
+        else:
+            st.toast(f"Could not delete preset: {name}", icon="⚠️")
+
     def file_upload_section(self, custom_upload_function) -> None:
+        self.upload_targets = {}
         custom_upload_function()
+        # A local install already has the input files on disk.
+        if st.session_state.location == "local":
+            return
         c1, _ = st.columns(2)
         if c1.button("⬇️ Download files", use_container_width=True):
             self.zip_and_download_files(Path(self.workflow_dir, "input-files"))
+        if data_import_ui.enabled():
+            data_import_ui.link_import_section(self.workflow_dir, self.upload_targets)
 
     def parameter_section(self, custom_parameter_function) -> None:
         st.toggle("Show advanced parameters", value=False, key="advanced")
@@ -1548,6 +1774,7 @@ class StreamlitUI:
 
         # Display preset buttons if presets are available for this workflow
         self.preset_buttons()
+        self.user_presets()
 
         custom_parameter_function()
 
@@ -1562,6 +1789,7 @@ class StreamlitUI:
             ):
                 self.parameter_manager.reset_to_default_parameters()
                 self.parameter_manager.clear_parameter_session_state()
+                self.parameter_manager.forget_applied_preset()
                 st.toast("Parameters reset to defaults")
                 st.rerun()
         with cols[1]:
@@ -1778,6 +2006,9 @@ Started: {status.get('started_at', 'N/A')}""")
         ZIP of the chosen result folders on request. Only the selected file (or
         the ZIP) is read into memory, so large result sets stay cheap to render.
 
+        A local install exports instead: the user sets a folder at the top and
+        one button copies every listed file to ``<folder>/<workflow>-results``.
+
         Args:
             exclude: Names of files or folders to leave out (matched against
                 every part of a file's path relative to the results directory,
@@ -1800,7 +2031,7 @@ Started: {status.get('started_at', 'N/A')}""")
                     files.append(rel)
 
         if not files:
-            st.info("No results to download yet. Run the workflow first.")
+            st.info("No results yet. Run the workflow first.")
             return
 
         def folder_of(rel: Path) -> str:
@@ -1811,6 +2042,11 @@ Started: {status.get('started_at', 'N/A')}""")
                 if n_bytes < 1024 or unit == "GB":
                     return f"{n_bytes:.0f} {unit}" if unit == "B" else f"{n_bytes:.1f} {unit}"
                 n_bytes /= 1024
+
+        key_prefix = f"results-download-{Path(self.workflow_dir).name}"
+        local = st.session_state.get("location") == "local"
+        if local:
+            export_dir = export_folder_input(key_prefix)
 
         st.dataframe(
             [
@@ -1828,7 +2064,19 @@ Started: {status.get('started_at', 'N/A')}""")
             width="stretch",
         )
 
-        key_prefix = f"results-download-{Path(self.workflow_dir).name}"
+        if local:
+            if st.button(
+                "📤 Export",
+                type="primary",
+                key=f"{key_prefix}-export",
+                width="stretch",
+            ):
+                export_files(
+                    [(Path(results_dir, rel), rel) for rel in files],
+                    Path(export_dir, f"{Path(self.workflow_dir).name}-results"),
+                )
+            return
+
         c1, c2 = st.columns(2)
 
         with c1:
@@ -1873,8 +2121,9 @@ Started: {status.get('started_at', 'N/A')}""")
                     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zip_file:
                         for rel in selected_files:
                             zip_file.write(Path(results_dir, rel), Path("results", rel))
-                st.session_state[prepared_key] = sorted(chosen)
-            if st.session_state.get(prepared_key) == sorted(chosen) and zip_path.exists():
+                # Keyed on the folder too: a multi-run workflow offers one run at a time.
+                st.session_state[prepared_key] = (str(results_dir), sorted(chosen))
+            if st.session_state.get(prepared_key) == (str(results_dir), sorted(chosen)) and zip_path.exists():
                 with open(zip_path, "rb") as f:
                     st.download_button(
                         "⬇️ Download ZIP",

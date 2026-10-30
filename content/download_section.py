@@ -3,10 +3,16 @@ import streamlit as st
 from pathlib import Path
 import shutil
 
-from src.common.common import page_setup
+from src.common.common import page_setup, export_files, export_folder_input
 from zipfile import ZipFile, ZIP_DEFLATED
 
 page_setup()
+
+# A local install exports each run to a folder on disk instead of downloading it.
+local = st.session_state.location == "local"
+st.title("Export Results" if local else "Download Results")
+if local:
+    export_dir = export_folder_input("results-export")
 
 # Define output folder here; all subfolders will be handled as downloadable
 # directories
@@ -31,7 +37,7 @@ else:
     # Table Header
     columns = st.columns(3)
     columns[0].write('**Run**')
-    columns[1].write('**Download**')
+    columns[1].write('**Export**' if local else '**Download**')
     columns[2].write('**Delete Result Set**')
 
     # Table Body
@@ -41,10 +47,22 @@ else:
         columns[0].empty().write(directory.name)
         
         with columns[1]:
-            button_placeholder = st.empty()
-            
-            # Show placeholder button before download is prepared
-            clicked = button_placeholder.button('Prepare Download', key=i, use_container_width=True)
+            if local:
+                # One click copies the run's files to <export folder>/<run>.
+                if st.button('📤 Export', key=i, use_container_width=True):
+                    export_files(
+                        [
+                            (f, f.relative_to(directory))
+                            for f in sorted(directory.rglob('*'))
+                            if f.is_file() and f.name != 'output.zip'
+                        ],
+                        Path(export_dir, directory.name),
+                    )
+                clicked = False
+            else:
+                button_placeholder = st.empty()
+                # Show placeholder button before download is prepared
+                clicked = button_placeholder.button('Prepare Download', key=i, use_container_width=True)
             if clicked:
                 button_placeholder.empty()
                 with st.spinner():

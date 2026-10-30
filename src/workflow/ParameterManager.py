@@ -264,6 +264,8 @@ class ParameterManager:
         self.topp_param_prefix = f"{workflow_dir.stem}-TOPP-"
         # Store workflow name for preset loading; default to directory stem if not provided
         self.workflow_name = workflow_name or workflow_dir.stem
+        # Presets the user saved in this workflow, and which preset was applied last
+        self.user_presets_file = Path(workflow_dir, "user-presets.json")
 
     def bool_pairs_session_key(self) -> str:
         """Session state key holding a set of (tool name, param path) for bool TOPP params."""
@@ -600,8 +602,131 @@ class ParameterManager:
             str: Description text for the preset, or empty string if not found.
         """
         presets = self.load_presets()
-        preset = presets.get(preset_name, {})
+        preset = presets.get(preset_name) or self.load_user_presets().get(preset_name, {})
         return preset.get("_description", "")
+
+    def _read_user_preset_state(self, strict: bool = False) -> dict:
+        """
+        The user-presets file: ``{"presets": {name: preset}, "applied": name}``.
+
+        Entries that are not a named dict are dropped, and ``applied`` is a name
+        or None, so callers can use the result without further checks.
+
+        Args:
+            strict: Raise instead of returning an empty state when the file
+                exists but cannot be read. Every read-modify-write uses it, so a
+                failed read never writes an empty state over the saved presets.
+
+        Raises:
+            InvalidParameterFileError: Only with ``strict``, as above.
+        """
+        empty = {"presets": {}, "applied": None}
+        try:
+            state = _read_parameter_file(self.user_presets_file)
+        except InvalidParameterFileError:
+            if strict:
+                raise
+            logger.exception("Could not read %s", self.user_presets_file)
+            return empty
+        presets = state.get("presets", {})
+        if not isinstance(presets, dict):
+            if strict:
+                raise InvalidParameterFileError(
+                    f"{self.user_presets_file} has no valid 'presets' object."
+                )
+            return empty
+        valid = {}
+        for name, preset in presets.items():
+            if isinstance(name, str) and isinstance(preset, dict):
+                if not isinstance(preset.get("_general", {}), dict):
+                    preset = {k: v for k, v in preset.items() if k != "_general"}
+                valid[name] = preset
+        applied = state.get("applied")
+        return {"presets": valid, "applied": applied if isinstance(applied, str) else None}
+
+    def _read_user_preset_state_for_write(self, consequence: str) -> dict | None:
+        """Strict read before a write-back; reports a failure and returns None."""
+        try:
+            return self._read_user_preset_state(strict=True)
+        except InvalidParameterFileError as e:
+            self._report_unreadable_parameter_file(e, consequence)
+            return None
+
+    def _write_user_preset_state(self, state: dict) -> None:
+        _write_parameter_file(self.user_presets_file, state)
+
+    def load_user_presets(self) -> dict:
+        """Presets the user saved in this workflow, in the presets.json format."""
+        return self._read_user_preset_state()["presets"]
+
+    def get_user_preset_names(self) -> list:
+        """Names of the presets the user saved, in the order they were saved."""
+        return list(self.load_user_presets().keys())
+
+    def _input_file_keys(self) -> set:
+        """Parameter keys holding input file selections (one per input-files/<key> directory)."""
+        input_dir = Path(self.params_file.parent, "input-files")
+        if not input_dir.is_dir():
+            return set()
+        return {p.name for p in input_dir.iterdir() if p.is_dir()}
+
+    def snapshot_preset(self) -> dict:
+        """
+        The current parameters as a preset: every TOPP tool's stored values and the
+        custom parameters under ``_general``.
+
+        Input file selections, ``max_threads`` and the reserved ``_``-keys are left
+        out, so applying the preset later changes settings, not which files run or
+        how many threads this machine uses.
+        """
+        params = self.get_parameters_from_json()
+        skip = self._input_file_keys() | {"max_threads"}
+        preset = {"_general": {}}
+        for key, value in params.items():
+            if key.startswith("_") or key in skip:
+                continue
+            if isinstance(value, dict):
+                preset[key] = dict(value)
+            else:
+                preset["_general"][key] = value
+        return preset
+
+    def save_user_preset(self, name: str, description: str = "") -> bool:
+        """
+        Save the current parameters as a user preset called ``name``.
+
+        Returns:
+            bool: False when the name is empty or taken by a built-in preset.
+        """
+        name = name.strip()
+        if not name or name.startswith("_") or name in self.load_presets():
+            return False
+        state = self._read_user_preset_state_for_write(
+            "The preset was not saved, the existing presets are left unchanged."
+        )
+        if state is None:
+            return False
+        preset = self.snapshot_preset()
+        if description:
+            preset["_description"] = description
+        state["presets"][name] = preset
+        # The settings now are exactly this preset
+        state["applied"] = name
+        self._write_user_preset_state(state)
+        return True
+
+    def delete_user_preset(self, name: str) -> bool:
+        """Delete a user preset; returns False if there is none of that name."""
+        state = self._read_user_preset_state_for_write(
+            "No preset was deleted, the existing presets are left unchanged."
+        )
+        if state is None or name not in state["presets"]:
+            return False
+        del state["presets"][name]
+        if state.get("applied") == name:
+            state["applied"] = None
+        self._write_user_preset_state(state)
+        return True
 
     def apply_preset(self, preset_name: str) -> bool:
         """
@@ -611,14 +736,28 @@ class ParameterManager:
         values (which widgets may not reflect immediately due to fragment caching),
         we delete the keys so widgets re-initialize fresh from params.json on rerun.
 
+        A built-in preset (presets.json) changes only the values it names. A user
+        preset is a full snapshot, so it first returns every TOPP parameter to its
+        default and then sets the saved values.
+
         Args:
             preset_name: Name of the preset to apply
 
         Returns:
             bool: True if preset was applied successfully, False otherwise.
         """
-        presets = self.load_presets()
-        preset = presets.get(preset_name)
+        # Read strictly before params.json is written, which records the
+        # applied preset afterwards and must not replace saved presets
+        state = self._read_user_preset_state_for_write(
+            "The preset was not applied, the existing files are left unchanged."
+        )
+        if state is None:
+            return False
+        preset = self.load_presets().get(preset_name)
+        is_user_preset = False
+        if not preset:
+            preset = state["presets"].get(preset_name)
+            is_user_preset = True
         if not preset:
             return False
 
@@ -636,6 +775,15 @@ class ParameterManager:
         # Collect keys to delete from session_state
         keys_to_delete = []
 
+        if is_user_preset:
+            # Back to defaults for every TOPP tool before restoring the snapshot
+            for key, value in list(current_params.items()):
+                if isinstance(value, dict) and not key.startswith("_"):
+                    current_params[key] = {}
+            keys_to_delete.extend(
+                k for k in st.session_state.keys() if k.startswith(self.topp_param_prefix)
+            )
+
         for key, value in preset.items():
             # Skip description key
             if key == "_description":
@@ -643,7 +791,7 @@ class ParameterManager:
 
             if key == "_general":
                 # Handle general workflow parameters
-                for param_name, param_value in value.items():
+                for param_name, param_value in (value if isinstance(value, dict) else {}).items():
                     session_key = f"{self.param_prefix}{param_name}"
                     keys_to_delete.append(session_key)
                     current_params[param_name] = param_value
@@ -665,7 +813,61 @@ class ParameterManager:
         # Save updated parameters to file
         _write_parameter_file(self.params_file, current_params)
 
+        state["applied"] = preset_name
+        self._write_user_preset_state(state)
+
         return True
+
+    @staticmethod
+    def _same_value(a, b) -> bool:
+        """Equal, allowing for 20 vs 20.0 and a list stored as newline-joined text."""
+        if isinstance(a, list) and isinstance(b, str):
+            return "\n".join(map(str, a)) == b
+        if isinstance(b, list) and isinstance(a, str):
+            return "\n".join(map(str, b)) == a
+        return a == b
+
+    def applied_preset_status(self) -> tuple[str | None, bool]:
+        """
+        The preset applied last and whether the settings have changed since.
+
+        A built-in preset counts as changed when a value it sets differs now. A
+        user preset counts as changed when any setting differs from its snapshot.
+
+        Returns:
+            tuple: (preset name or None, changed since applying it).
+        """
+        name = self._read_user_preset_state().get("applied")
+        if not name:
+            return None, False
+        builtin = self.load_presets().get(name)
+        preset = builtin or self.load_user_presets().get(name)
+        if not preset:
+            return None, False
+        current = self.snapshot_preset()
+        for key, values in preset.items():
+            if key == "_description" or not isinstance(values, dict):
+                continue
+            now = current.get(key, {})
+            for param, value in values.items():
+                if param not in now or not self._same_value(now[param], value):
+                    return name, True
+        if builtin is None:
+            # Settings the snapshot left at their default but that are set now
+            for key, values in current.items():
+                saved = preset.get(key, {})
+                if any(param not in saved for param in values):
+                    return name, True
+        return name, False
+
+    def forget_applied_preset(self) -> None:
+        """Clear the applied preset, e.g. after resetting to the default parameters."""
+        state = self._read_user_preset_state_for_write(
+            "The saved presets are left unchanged."
+        )
+        if state is not None and state.get("applied"):
+            state["applied"] = None
+            self._write_user_preset_state(state)
 
     def clear_parameter_session_state(self) -> None:
         """

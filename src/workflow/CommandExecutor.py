@@ -7,6 +7,7 @@ from pathlib import Path
 from .Logger import Logger
 from .ParameterManager import ParameterManager, bool_param_paths_from_param_xml_ini
 from .settings_io import load_settings, detect_cpu_quota
+from .vendor_files import vendor_format
 import sys
 import importlib.util
 import json
@@ -487,3 +488,52 @@ class CommandExecutor:
             0,
         )
         return False
+
+    def convert_to_mzml(self, files: list[str], out_dir: str = None) -> list[str]:
+        """
+        Returns an mzML path for every input file, converting vendor files first.
+
+        mzML files are returned unchanged. Thermo ``.raw`` files are converted
+        with the TOPP tool FileConverter (ThermoRawFileParser; on Linux and
+        macOS it needs mono). Bruker timsTOF ``.d`` folders are converted with
+        ``src/python-tools/bruker_to_mzml.py``. A conversion is done once: the
+        mzML is kept in ``out_dir`` (default ``<workflow_dir>/converted-mzML``)
+        and reused while it is newer than its input.
+
+        Args:
+            files (list[str]): Input files, e.g. ``self.params["mzML-files"]``.
+            out_dir (str, optional): Where converted mzML files are kept.
+
+        Returns:
+            list[str]: mzML paths in input order, or None if a conversion failed
+                (the reason is in the workflow log).
+        """
+        out_dir = Path(out_dir) if out_dir else Path(self.pid_dir.parent, "converted-mzML")
+        mzmls = []
+        for f in files:
+            kind = vendor_format(f)
+            if kind is None:
+                mzmls.append(str(f))
+                continue
+            out = Path(out_dir, f"{Path(f).stem}.mzML")
+            if out.exists() and out.stat().st_mtime >= Path(f).stat().st_mtime:
+                self.logger.log(f"Using converted {out.name} for {Path(f).name}.")
+                mzmls.append(str(out))
+                continue
+            out_dir.mkdir(parents=True, exist_ok=True)
+            # Written under a temporary name so a cancelled or failed
+            # conversion never leaves a truncated mzML that would be reused.
+            tmp = Path(out_dir, f"{out.stem}.part.mzML")
+            tmp.unlink(missing_ok=True)
+            self.logger.log(f"Converting {Path(f).name} to mzML...")
+            if kind == "raw":
+                ok = self.run_topp("FileConverter", {"in": [str(f)], "out": [str(tmp)]})
+            else:
+                ok = self.run_python("bruker_to_mzml", {"in": str(f), "out": str(tmp)})
+            if not ok or not tmp.exists():
+                tmp.unlink(missing_ok=True)
+                self.logger.log(f"ERROR: Could not convert {Path(f).name} to mzML.", 0)
+                return None
+            os.replace(tmp, out)
+            mzmls.append(str(out))
+        return mzmls
