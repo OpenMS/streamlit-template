@@ -16,8 +16,9 @@ env:
   PYTHON_VERSION: 3.11.0
   # Name of the installer
   APP_NAME: OpenMS-StreamlitTemplateApp
-  # Define needed TOPP tools here
-  TOPP_TOOLS: "FeatureFinderMetabo FeatureLinkerUnlabeledKD SiriusExport"
+  # Define needed TOPP tools here. FileConverter converts Thermo .raw input
+  # (CommandExecutor.convert_to_mzml) with share/OpenMS/THIRDPARTY/ThermoRawFileParser.
+  TOPP_TOOLS: "FeatureFinderMetabo FeatureLinkerUnlabeledKD SiriusExport FileConverter"
 
 jobs:
   # `with:` of a reusable-workflow call cannot read `env`, so this job hands

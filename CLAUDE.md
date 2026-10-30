@@ -211,6 +211,8 @@ Two paths produce those references — the local-mode "Make a copy of files" che
 
 Simple-page workflow outputs go to `<workspace>/mzML-workflow-results/<timestamp>/`.
 
+**Vendor formats.** `upload_widget(file_types=["mzML", "raw", "d"])` accepts Thermo `.raw` files and Bruker `.d` folders (local: picked through the folder field, since the Tk file dialog cannot select a folder; online: uploaded as a zip, unpacked by `vendor_files.extract_bruker_zip()`). `execution()` turns them into mzML with `self.executor.convert_to_mzml(paths)`, which passes mzML through, runs **FileConverter** on `.raw` (ThermoRawFileParser; needs `mono` on Linux, .NET Framework on Windows, and FileConverter in the Windows `TOPP_TOOLS`) and `src/python-tools/bruker_to_mzml.py` on `.d` (timsrust + pyOpenMS `PeakPickerHiRes`; timsTOF TDF only, BAF/TSF fail with a message pointing at msconvert). Results are cached in `<workflow_dir>/converted-mzML/` while newer than the input; it returns `None` on failure, so gate on it.
+
 ## Visualization
 
 `src/view.py` plots via the pyopenms-viz **`ms_plotly`** backend on `MSExperiment.get_df()` DataFrames (`df.plot(backend="ms_plotly", kind="chromatogram"|"spectrum"|"peakmap")`), with a 3D peak map only under 2500 points. Use `show_fig()` / `show_table()` from `src/common/common.py` so downloads and the configured image format work consistently.
