@@ -210,6 +210,27 @@ class UploadsHandler(SyncHandler):
         finalize(workspace, upload, self.hash_cache(workspace))
 
 
+def incoming(root: Path, workspace: str, active_within: float = 120) -> list[dict]:
+    """The unfinished uploads into one workspace, for the online app to show.
+
+    ``active`` marks an upload that received data within ``active_within``
+    seconds; the others are paused until the desktop app continues them.
+    """
+    found = []
+    now = time.time()
+    for state_file in Path(root, UPLOAD_DIR).glob("*.json"):
+        try:
+            state = json.loads(state_file.read_text())
+            part = state_file.with_suffix(".part").stat()
+        except (OSError, ValueError):
+            continue
+        if state.get("workspace") != workspace or state.get("completed"):
+            continue
+        found.append({"path": state.get("path", ""), "length": state.get("length", 0),
+                      "offset": part.st_size, "active": now - part.st_mtime < active_within})
+    return sorted(found, key=lambda u: u["path"])
+
+
 def finalize(workspace: Path, upload: _Upload, cache: paths.HashCache) -> None:
     """Verify a complete upload and rename it into the workspace."""
     expected = upload.state.get("sha256")

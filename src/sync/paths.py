@@ -21,6 +21,7 @@ on the server.
 import hashlib
 import json
 import os
+import threading
 from pathlib import Path, PurePosixPath
 from typing import Iterator
 
@@ -190,7 +191,10 @@ class HashCache:
         if not self._dirty:
             return
         self.cache_file.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self.cache_file.with_name(self.cache_file.name + ".tmp")
+        # One temp file per thread: the sidebar refreshes states while a
+        # transfer may be running, and both save the cache.
+        tmp = self.cache_file.with_name(
+            f"{self.cache_file.name}.{os.getpid()}.{threading.get_ident()}.tmp")
         tmp.write_text(json.dumps(self._data))
         os.replace(tmp, self.cache_file)
         self._dirty = False

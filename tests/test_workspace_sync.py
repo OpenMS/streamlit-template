@@ -341,3 +341,53 @@ def test_half_chunk_with_checksum_is_discarded(online):
     assert r.status_code == 460
     head = requests.head(url.rsplit("/sync", 1)[0] + location, headers=auth)
     assert head.headers["Upload-Offset"] == "0"
+
+
+def test_incoming_lists_unfinished_uploads(online, tmp_path):
+    ws = _local_workspace(tmp_path)
+    c = client.SyncClient(online["url"], online["token"], chunk_size=MB)
+    cancel = threading.Event()
+
+    def stop_after_first_chunk(done, total, rel):
+        if rel.endswith("a.mzML") and done >= MB:
+            cancel.set()
+
+    with pytest.raises(client.Cancelled):
+        c.push(ws, ["topp-workflow/input-files/mzML-files/a.mzML"],
+               progress=stop_after_first_chunk, cancel=cancel)
+    [upload] = server.incoming(online["root"], "ws-online")
+    assert upload["path"] == "topp-workflow/input-files/mzML-files/a.mzML"
+    assert 0 < upload["offset"] < upload["length"] and upload["active"]
+    assert server.incoming(online["root"], "other") == []
+    assert not server.incoming(online["root"], "ws-online", active_within=-1)[0]["active"]
+    c.push(ws, ["topp-workflow/input-files/mzML-files/a.mzML"])
+    assert server.incoming(online["root"], "ws-online") == []
+
+
+def test_sidebar_sync_pushes_then_pulls(online, tmp_path, monkeypatch):
+    from src.common import workspace_sync as ui
+
+    monkeypatch.setattr(ui, "_settings", lambda: server.sync_settings({}))
+    ws = _local_workspace(tmp_path)
+    res = online["ws"] / "topp-workflow" / "results"
+    res.mkdir(parents=True)
+    (res / "out.tsv").write_text("result")
+    link = {"url": online["url"], "token": online["token"]}
+
+    ui._STATUS[str(ws)] = {"at": time.time()}
+    ui._start(ws, "sync", [], link)
+    job = ui._JOBS[str(ws)]
+    deadline = time.time() + 30
+    while not job.finished and time.time() < deadline:
+        time.sleep(0.05)
+    assert job.finished and not job.error, job.error
+    assert "topp-workflow/input-files/mzML-files/a.mzML" in job.report.transferred
+    assert "topp-workflow/results/out.tsv" in job.report.transferred
+    assert (ws / "topp-workflow/results/out.tsv").read_text() == "result"
+    # The states shown in the sidebar are stale now and get recomputed.
+    assert str(ws) not in ui._STATUS
+
+    status = ui._compute_status(ws, client.SyncClient(online["url"], online["token"]))
+    assert not ui._pending(status["inputs"], ui._PUSH_PENDING)
+    assert not ui._pending(status["results"], ui._PULL_PENDING)
+    assert ui._STATUS[str(ws)] is status

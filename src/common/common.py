@@ -787,6 +787,10 @@ def render_sidebar(page: str = "") -> None:
                             st.query_params.workspace = "default"
                             st.rerun()
 
+            # Imported here: most apps never enable workspace sync.
+            from src.common.workspace_sync import render_sync_sidebar
+            render_sync_sidebar()
+
             # Demo workspace loader for online mode
             if st.session_state.location == "online":
                 available_demos = get_available_demo_workspaces()

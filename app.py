@@ -39,11 +39,17 @@ if __name__ == '__main__':
         ]
     }
 
-    # Workspace sync with an online workspace (off unless enabled in settings.json)
-    if st.session_state.settings.get("workspace_sync", {}).get("enabled"):
+    # Workspace sync with an online workspace (off unless enabled in settings.json).
+    # It is opened from its sidebar panel, so its menu entry is hidden: this
+    # Streamlit cannot register a page without listing it.
+    sync = st.session_state.settings.get("workspace_sync", {}).get("enabled")
+    if sync:
         pages["Others Topics"].append(
             st.Page(Path("content", "workspace_sync.py"), title="Workspace Sync", icon="🔄")
         )
 
     pg = st.navigation(pages)
+    if sync:
+        st.html('<style>[data-testid="stSidebarNav"] li:has(a[href$="/workspace_sync"])'
+                '{display: none;}</style>')
     pg.run()
