@@ -78,6 +78,9 @@ function startStreamlit({ payload, port, env, logStream }) {
     "--server.address", "127.0.0.1",
     "--server.port", String(port),
     "--browser.gatherUsageStats", "false",
+    // An installed app never edits its own sources; watching them only
+    // offers "File change, Rerun" whenever something touches the folder.
+    "--server.fileWatcherType", "none",
   ];
   const child = spawn(pythonExecutable(payload), args, {
     cwd: payload,

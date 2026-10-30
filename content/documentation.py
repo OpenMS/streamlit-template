@@ -44,18 +44,18 @@ if page == pages[0]:
 #############################################################################################
 
 if page == pages[1]:
-    if Path("OpenMS-App.zip").exists():
+    if Path("OpenMS-App-Setup.exe").exists():
         st.markdown(
             """
 Download the latest version for **Windows** here clicking the button below.
 """
         )
-        with open("OpenMS-App.zip", "rb") as file:
+        with open("OpenMS-App-Setup.exe", "rb") as file:
             st.download_button(
                 label="Download for Windows",
                 data=file,
-                file_name="OpenMS-App.zip",
-                mime="archive/zip",
+                file_name="OpenMS-App-Setup.exe",
+                mime="application/vnd.microsoft.portable-executable",
                 type="primary",
             )
     with open(Path("docs", "installation.md"), "r", encoding="utf-8") as f:
@@ -87,7 +87,7 @@ if page == pages[4]:
         """
 ## 💻  How to package everything for Windows executables
 
-This guide explains how to package OpenMS apps into Windows executables using two different methods:
+This guide explains how to package OpenMS apps for Windows. The embeddable Python route is the one CI uses to build the installer; PyInstaller is an older alternative.
 """
     )
 

@@ -79,23 +79,23 @@ c1.markdown(
 )
 v_space(1, c2)
 c2.image("assets/openms_transparent_bg_logo.svg", width=300)
-if Path("OpenMS-App.zip").exists():
+if Path("OpenMS-App-Setup.exe").exists():
     st.subheader(
         """
 Download the latest version for Windows here by clicking the button below.
 """
     )
-    with open("OpenMS-App.zip", "rb") as file:
+    with open("OpenMS-App-Setup.exe", "rb") as file:
         st.download_button(
             label="Download for Windows",
             data=file,
-            file_name="OpenMS-App.zip",
-            mime="archive/zip",
+            file_name="OpenMS-App-Setup.exe",
+            mime="application/vnd.microsoft.portable-executable",
             type="primary",
         )
     st.markdown(
         """
-Extract the zip file and run the installer (.msi) file to install the app. The app can then be launched using the corresponding desktop icon.
+Run the installer to install the app for your user; no admin rights are needed. The app can then be launched using the corresponding desktop icon or start menu entry.
 """
     )
 

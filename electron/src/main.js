@@ -13,6 +13,12 @@ const SMOKE_TEST = process.env.OPENMS_APP_SMOKE_TEST === "1";
 let server = null;
 let mainWindow = null;
 
+// WebGL plots (3D views, large scatter plots) need a GPU. Without a usable one
+// (remote desktop, virtual machines, blocklisted drivers) Chromium no longer
+// falls back to its software renderer on its own; allow it, since the window
+// only ever shows the app's own local server.
+app.commandLine.appendSwitch("enable-unsafe-swiftshader");
+
 if (!app.requestSingleInstanceLock()) {
   // A second launch would share the same workspaces; focus the first instead.
   app.quit();
@@ -72,7 +78,7 @@ async function start() {
     return;
   }
 
-  if (!SMOKE_TEST) notifyAboutUpdate(settings);
+  if (!SMOKE_TEST && process.env.OPENMS_APP_NO_UPDATE_CHECK !== "1") notifyAboutUpdate(settings);
 }
 
 // The page has rendered once page_setup() created the default workspace in
