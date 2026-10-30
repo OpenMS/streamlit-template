@@ -152,6 +152,8 @@ jobs:
         cp app.py streamlit_exe
         cp settings.json streamlit_exe
         cp default-parameters.json streamlit_exe
+        # Parameter presets of the workflows; without it the preset buttons are missing.
+        if (Test-Path presets.json) { cp presets.json streamlit_exe }
 
         $files = $env:TOPP_TOOLS -split ' '
         foreach ($file in $files) {

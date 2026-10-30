@@ -84,6 +84,7 @@ function makeHelpers(app, page, baseUrl, out) {
     // the navigation ("Workflow"); a title shared by several sections needs
     // the URL path.
     async open(target) {
+      await expandNav(page);
       const link = page.locator(`[data-testid="stSidebarNav"] a[href$="/${target}"]`);
       if ((await link.count()) === 1) await link.click();
       else await page.locator('[data-testid="stSidebarNav"] a', { hasText: target }).first().click();
@@ -107,7 +108,11 @@ function makeHelpers(app, page, baseUrl, out) {
         .filter({ has: page.locator('[data-testid="stWidgetLabel"]', { hasText: label }) })
         .first();
       const multi = (await widget.getAttribute("data-testid")) === "stMultiSelect";
-      await widget.locator('[data-baseweb="select"]').click();
+      // Typing into the search box opens the list and narrows it. A click on
+      // the box can land on a chip already picked, which opens nothing.
+      const search = widget.locator("input").first();
+      await search.click();
+      await search.fill(option);
       await page.getByRole("option", { name: option }).first().click();
       // A multiselect stays open after a pick. Escape on a selectbox would
       // clear the value just chosen.
@@ -162,13 +167,18 @@ function makeHelpers(app, page, baseUrl, out) {
   return t;
 }
 
-async function navTargets(page) {
-  // A long navigation is collapsed behind "View more".
+// A long navigation is collapsed behind "View more"; links past it are only
+// in the page once it is expanded.
+async function expandNav(page) {
   const more = page.locator('[data-testid="stSidebarNavViewButton"]');
   if ((await more.count()) && /more/i.test(await more.first().innerText())) {
     await more.first().click();
     await settle(page);
   }
+}
+
+async function navTargets(page) {
+  await expandNav(page);
   const hrefs = await page
     .locator('[data-testid="stSidebarNav"] a')
     .evaluateAll((as) => as.map((a) => a.getAttribute("href")));

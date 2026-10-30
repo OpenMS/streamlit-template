@@ -32,13 +32,31 @@ function readSettings(payload) {
   return JSON.parse(fs.readFileSync(path.join(payload, "settings.json"), "utf8"));
 }
 
-// Same environment the MSI's .bat file sets up: TOPP tools next to app.py,
+// Folder of the bundled interpreter, or null when running from a checkout.
+function embeddedPythonDir(payload) {
+  const exe = pythonExecutable(payload);
+  return path.isAbsolute(exe) ? path.dirname(isWindows ? exe : path.dirname(exe)) : null;
+}
+
+// Same environment the MSI's .bat file set up: TOPP tools next to app.py,
 // OPENMS_DATA_PATH pointing at share/OpenMS, and every THIRDPARTY tool folder
-// (Comet, Percolator, Sirius, ...) on PATH.
+// (Comet, Percolator, Sirius, ...) on PATH. The bundled interpreter and the
+// console scripts of its packages (pip --target puts them in
+// Lib/site-packages/bin) come first too, so a workflow that calls `python` or
+// a tool such as `pyprophet` finds the bundled one.
 function appEnvironment(payload, workspacesDir) {
   const env = { ...process.env };
   const pathKey = Object.keys(env).find((k) => k.toUpperCase() === "PATH") || "PATH";
   const extraPath = [payload];
+
+  const pythonDir = embeddedPythonDir(payload);
+  if (pythonDir) {
+    extraPath.push(pythonDir);
+    for (const sub of [["Scripts"], ["Lib", "site-packages", "bin"]]) {
+      const dir = path.join(pythonDir, ...sub);
+      if (fs.existsSync(dir)) extraPath.push(dir);
+    }
+  }
 
   const dataPath = path.join(payload, "share", "OpenMS");
   if (fs.existsSync(dataPath)) {
