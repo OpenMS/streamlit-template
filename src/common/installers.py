@@ -62,6 +62,24 @@ def find_installers() -> dict:
     return found
 
 
+def _available():
+    """Platforms with an installer to offer, the release's URLs, and the
+    bundled Windows installer used when the release has none."""
+    if st.session_state.get("location") != "online":
+        return [], {}, None
+    installers = find_installers()
+    windows_file = None
+    if "windows" not in installers and LOCAL_WINDOWS_INSTALLER.exists():
+        windows_file = LOCAL_WINDOWS_INSTALLER
+    available = [p for p in PLATFORMS if p[0] in installers or (p[0] == "windows" and windows_file)]
+    return available, installers, windows_file
+
+
+def installers_available() -> bool:
+    """Whether render_installer_buttons() would show any button."""
+    return bool(_available()[0])
+
+
 def render_installer_buttons(heading: str = "", app_name: str = "") -> bool:
     """One download button per platform that has an installer, below `heading`
     (markdown); renders nothing and returns False if no platform has one.
@@ -69,13 +87,7 @@ def render_installer_buttons(heading: str = "", app_name: str = "") -> bool:
     Only shown in online deployments: the desktop app does not offer to
     download itself.
     """
-    if st.session_state.get("location") != "online":
-        return False
-    installers = find_installers()
-    windows_file = None if "windows" in installers else LOCAL_WINDOWS_INSTALLER
-    if windows_file is not None and not windows_file.exists():
-        windows_file = None
-    available = [p for p in PLATFORMS if p[0] in installers or (p[0] == "windows" and windows_file)]
+    available, installers, windows_file = _available()
     if not available:
         return False
 
