@@ -135,6 +135,8 @@ macOS only opens downloaded apps that are signed with a Developer ID certificate
 | `APPLE_API_KEY_ID` | The key's ID |
 | `APPLE_API_ISSUER` | The issuer ID shown above the key list |
 
+Instead of the three `APPLE_API_*` secrets, notarization also works with an Apple ID: `APPLE_ID` (the developer account's email), `APPLE_APP_SPECIFIC_PASSWORD` (created at account.apple.com under Sign-In and Security → App-Specific Passwords) and `APPLE_TEAM_ID` (the 10-character team ID from developer.apple.com → Membership details).
+
 The `.p12` can be made without a Mac:
 
 ```bash
