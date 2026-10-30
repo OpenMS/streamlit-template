@@ -20,6 +20,10 @@ ARG GITHUB_REPO=streamlit-template
 # Step 1: set up a sane build system
 USER root
 
+# Keep apt from stopping at interactive prompts: tzdata, pulled in by
+# later packages, otherwise waits for a timezone and the build hangs.
+ENV DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC
+
 RUN apt-get -y update
 # note: streamlit in docker needs libgtk2.0-dev (see https://yugdamor.medium.com/importerror-libgthread-2-0-so-0-cannot-open-shared-object-file-no-such-file-or-directory-895b94a7827b)
 RUN apt-get install -y --no-install-recommends --no-install-suggests wget ca-certificates libgtk2.0-dev curl jq cron nginx
@@ -116,12 +120,13 @@ RUN mamba run -n streamlit-env python hooks/hook-analytics.py
 # Set Online Deployment
 RUN jq '.online_deployment = true' settings.json > tmp.json && mv tmp.json settings.json
 
-# Download latest OpenMS App executable as a ZIP file.
+# Download the Windows installer of the latest release, if it has one.
 # ARG declared here (not at the top) — otherwise the per-run token busts the cache.
 ARG GITHUB_TOKEN
 RUN if [ -n "$GITHUB_TOKEN" ]; then \
         echo "GITHUB_TOKEN is set, proceeding to download the release asset..."; \
-        gh release download -R ${GITHUB_USER}/${GITHUB_REPO} -p "OpenMS-App.zip" -D /app; \
+        gh release download -R ${GITHUB_USER}/${GITHUB_REPO} -p "*-Setup.exe" -O /app/OpenMS-App-Setup.exe \
+            || echo "The latest release has no Windows installer, skipping."; \
     else \
         echo "GITHUB_TOKEN is not set, skipping the release asset download."; \
     fi

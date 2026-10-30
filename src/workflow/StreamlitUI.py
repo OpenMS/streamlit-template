@@ -32,10 +32,36 @@ from src.workflow.ExperimentalDesign import (
     save_design,
     to_openms_design,
 )
+from src.workflow.vendor_files import extract_bruker_zip, has_type
 from src.workflow.ParameterManager import (
     InvalidParameterFileError,
     TransientParameterFileError,
 )
+
+
+def _matches_topp_parameter(pattern: str, key: bytes) -> bool:
+    """
+    Match an include/exclude pattern against a TOPP parameter key.
+
+    Key format: b"ToolName:1:section:subsection:param_name"
+
+    A pattern matches the end of the parameter path, bounded by ':' or the
+    start of the path ("tol" matches "FD:tol"). A pattern ending in ':' names
+    a whole section from the top of the path instead ("fd:" matches every
+    parameter under "fd:", but not "FD:" or "algorithm:fd:").
+    """
+    pattern = pattern.lstrip(":")  # Strip legacy leading colon
+    key_str = key.decode()
+
+    # Extract param path after "ToolName:1:"
+    parts = key_str.split(":")
+    param_path = ":".join(parts[2:]) if len(parts) > 2 else key_str
+
+    if pattern.endswith(":"):
+        return param_path.startswith(pattern)
+
+    # Check if pattern matches as a suffix, bounded by ':' or start
+    return param_path == pattern or param_path.endswith(":" + pattern)
 
 
 def _mounted_data_root() -> Union[Path, None]:
@@ -96,6 +122,9 @@ class StreamlitUI:
         Args:
             key (str): A unique identifier for the upload component.
             file_types (Union[str, List[str]]): Expected file type(s) for the uploaded files.
+                ``"d"`` accepts Bruker .d folders: from a local folder, or online as
+                a zip archive. Convert vendor files before use with
+                ``CommandExecutor.convert_to_mzml()``.
             name (str, optional): Display name for the upload component. Defaults to the key if not provided.
             fallback (Union[List, str], optional): Default files to use if no files are uploaded.
         """
@@ -142,8 +171,11 @@ class StreamlitUI:
 
         if st.session_state.location != "local":
             with c1.form(f"{key}-upload", clear_on_submit=True):
-                # Streamlit file uploader accepts file types as a list or None
-                file_type_for_uploader = file_types if file_types else None
+                # Streamlit file uploader accepts file types as a list or None.
+                # A .d folder cannot be uploaded from a browser, only a zip of it.
+                file_type_for_uploader = (
+                    file_types + ["zip"] if "d" in file_types else file_types
+                ) if file_types else None
 
                 files = st.file_uploader(
                     f"{name}",
@@ -158,14 +190,24 @@ class StreamlitUI:
                         # in case of online mode a single file is returned -> put in list
                         if not isinstance(files, list):
                             files = [files]
+                        failed = False
                         for f in files:
+                            if "d" in file_types and f.name.lower().endswith(".zip"):
+                                try:
+                                    added = extract_bruker_zip(f, files_dir)
+                                except zipfile.BadZipFile:
+                                    added = []
+                                if not added:
+                                    st.error(f"**{f.name}** holds no Bruker .d folder.")
+                                    failed = True
                             # Check if file type is in the list of accepted file types
-                            if f.name not in [
+                            elif f.name not in [
                                 f.name for f in files_dir.iterdir()
-                            ] and any(f.name.endswith(ft) for ft in file_types):
+                            ] and has_type(f.name, file_types):
                                 with open(Path(files_dir, f.name), "wb") as fh:
                                     fh.write(f.getbuffer())
-                        st.success("Successfully added uploaded files!")
+                        if not failed:
+                            st.success("Successfully added uploaded files!")
                     else:
                         st.error("Nothing to add, please upload file.")
         else:
@@ -181,8 +223,16 @@ class StreamlitUI:
                     disabled=not TK_AVAILABLE,
                 )
 
-                # Tk file dialog requires file types to be a list of tuples
-                tk_file_types = [(f"{ft}", f"*.{ft}") for ft in file_types]
+                # Tk file dialog requires file types to be a list of tuples.
+                # Both cases: Thermo writes .raw as well as .RAW.
+                tk_file_types = [
+                    (f"{ft}", f"*.{ft} *.{ft.upper()}") for ft in file_types
+                ]
+                if "d" in file_types:
+                    st.caption(
+                        "Bruker **.d** folders can't be picked here: add the "
+                        "folder that contains them on the right."
+                    )
 
                 if dialog_button:
                     local_files = tk_file_dialog(
@@ -255,9 +305,7 @@ class StreamlitUI:
                     for ft in file_types:
                         # Search for both files and directories with the specified extension
                         for path in local_dir.iterdir():
-                            if path.is_file() and path.name.endswith(f".{ft}"):
-                                files.append(path)
-                            elif path.is_dir() and path.name.endswith(f".{ft}"):
+                            if has_type(path, [ft]):
                                 files.append(path)
 
                     if not files:
@@ -471,7 +519,7 @@ class StreamlitUI:
                 return
 
             def _is_match(p: Path) -> bool:
-                return any(p.name.endswith(f".{ft}") for ft in file_types)
+                return has_type(p, file_types)
 
             subdirs = [p for p in entries if p.is_dir() and not _is_match(p)]
             bundled = [p for p in entries if p.is_dir() and _is_match(p)]
@@ -883,7 +931,7 @@ class StreamlitUI:
         Args:
             topp_tool_name (str): The name of the TOPP tool for which to generate inputs.
             num_cols (int, optional): Number of columns to use for the layout. Defaults to 3.
-            exclude_parameters (List[str], optional): List of parameter names to exclude from the widget. Defaults to an empty list.
+            exclude_parameters (List[str], optional): List of parameter names to exclude from the widget. A name ending in ":" excludes that whole top-level section (e.g. "fd:"). Defaults to an empty list.
             include_parameters (List[str], optional): List of parameter names to include in the widget. Defaults to an empty list.
             flag_parameters (List[str], optional): List of parameter names that should
                 be treated as no-value CLI flags during command construction.
@@ -1071,24 +1119,6 @@ class StreamlitUI:
         param = poms.Param()
         poms.ParamXMLFile().load(str(ini_file_path), param)
 
-        def _matches_parameter(pattern: str, key: bytes) -> bool:
-            """
-            Match pattern against TOPP parameter key using suffix matching.
-
-            Key format: b"ToolName:1:section:subsection:param_name"
-
-            Returns True if pattern matches the end of the param path,
-            bounded by ':' or start of path.
-            """
-            pattern = pattern.lstrip(":")  # Strip legacy leading colon
-            key_str = key.decode()
-
-            # Extract param path after "ToolName:1:"
-            parts = key_str.split(":")
-            param_path = ":".join(parts[2:]) if len(parts) > 2 else key_str
-
-            # Check if pattern matches as a suffix, bounded by ':' or start
-            return param_path == pattern or param_path.endswith(":" + pattern)
 
         # Always apply base exclusions (input/output files, standard excludes)
         excluded_keys = [
@@ -1107,7 +1137,7 @@ class StreamlitUI:
             if not (
                 b"input file" in param.getTags(key)
                 or b"output file" in param.getTags(key)
-                or any([_matches_parameter(k, key) for k in excluded_keys])
+                or any([_matches_topp_parameter(k, key) for k in excluded_keys])
             )
         ]
 
@@ -1115,7 +1145,7 @@ class StreamlitUI:
         if include_parameters:
             included_keys = {
                 key for key in valid_keys
-                if any([_matches_parameter(k, key) for k in include_parameters])
+                if any([_matches_topp_parameter(k, key) for k in include_parameters])
             }
         else:
             included_keys = set(valid_keys)  # All are included when no filter specified
@@ -1598,20 +1628,107 @@ class StreamlitUI:
             col_idx = i % num_cols
             description = self.parameter_manager.get_preset_description(preset_name)
             with cols[col_idx]:
-                if st.button(
+                # Applied in a callback, before the rerun starts, rather than with
+                # st.rerun() from the button branch: that interrupts the script before
+                # configure() renders its widgets, and Streamlit drops the state of
+                # every widget a run does not reach. Their keys survive, so the
+                # widgets re-render from an empty value, e.g. the mzML file selection
+                # is lost and the next start fails with no input files.
+                st.button(
                     preset_name,
                     key=f"preset_{preset_name}",
                     help=description if description else None,
                     use_container_width=True,
-                ):
-                    if self.parameter_manager.apply_preset(preset_name):
-                        st.toast(f"Applied preset: {preset_name}")
-                        st.rerun()
-                    else:
-                        st.error(f"Failed to apply preset: {preset_name}")
+                    on_click=self._apply_preset_callback,
+                    args=(preset_name,),
+                )
             # Start new row if needed
             if col_idx == num_cols - 1 and i < len(preset_names) - 1:
                 cols = st.columns(num_cols)
+
+    def _apply_preset_callback(self, preset_name: str) -> None:
+        if self.parameter_manager.apply_preset(preset_name):
+            st.toast(f"Applied preset: {preset_name}")
+        else:
+            st.toast(f"Failed to apply preset: {preset_name}", icon="⚠️")
+
+    def user_presets(self, num_cols: int = 4) -> None:
+        """
+        Renders the presets the user saved, a form to save the current settings as
+        a new one or delete one, and which preset the settings come from.
+
+        Saved presets live in the workflow directory (user-presets.json), so they
+        stay with the workspace. Applying one restores every saved setting.
+        """
+        pm = self.parameter_manager
+        names = pm.get_user_preset_names()
+        if not pm.get_preset_names():
+            st.markdown("---")
+        st.markdown("**Your Presets**")
+        if names:
+            cols = st.columns(num_cols)
+            for i, name in enumerate(names):
+                col_idx = i % num_cols
+                description = pm.get_preset_description(name)
+                with cols[col_idx]:
+                    st.button(
+                        name,
+                        key=f"user_preset_{name}",
+                        help=description if description else None,
+                        use_container_width=True,
+                        on_click=self._apply_preset_callback,
+                        args=(name,),
+                    )
+                if col_idx == num_cols - 1 and i < len(names) - 1:
+                    cols = st.columns(num_cols)
+        else:
+            st.caption("Save the current settings to reuse them in a later run.")
+
+        with st.popover("💾 Save or delete a preset"):
+            st.text_input("Preset name", key="user_preset_name")
+            st.text_input("Description (optional)", key="user_preset_description")
+            st.button(
+                "Save current settings",
+                key="user_preset_save",
+                on_click=self._save_user_preset_callback,
+            )
+            if names:
+                st.selectbox("Saved preset", names, key="user_preset_delete_choice")
+                st.button(
+                    "Delete preset",
+                    key="user_preset_delete",
+                    on_click=self._delete_user_preset_callback,
+                )
+
+        applied, changed = pm.applied_preset_status()
+        if applied and changed:
+            st.caption(
+                f"✏️ Settings changed since you applied **{applied}**. "
+                "Save them as a preset to keep them."
+            )
+        elif applied:
+            st.caption(f"✅ Current settings: **{applied}**")
+
+    def _save_user_preset_callback(self) -> None:
+        name = st.session_state.get("user_preset_name", "").strip()
+        description = st.session_state.get("user_preset_description", "").strip()
+        if not name:
+            st.toast("Enter a name for the preset", icon="⚠️")
+        elif name in self.parameter_manager.get_preset_names():
+            st.toast(f"'{name}' is a built-in preset, choose another name", icon="⚠️")
+        elif self.parameter_manager.save_user_preset(name, description):
+            st.session_state["user_preset_name"] = ""
+            st.session_state["user_preset_description"] = ""
+            st.toast(f"Saved preset: {name}")
+        else:
+            st.toast(f"Could not save preset: {name}", icon="⚠️")
+
+    def _delete_user_preset_callback(self) -> None:
+        name = st.session_state.get("user_preset_delete_choice")
+        if name and self.parameter_manager.delete_user_preset(name):
+            st.toast(f"Deleted preset: {name}")
+        else:
+            st.toast(f"Could not delete preset: {name}", icon="⚠️")
 
     def file_upload_section(self, custom_upload_function) -> None:
         custom_upload_function()
@@ -1637,6 +1754,7 @@ class StreamlitUI:
 
         # Display preset buttons if presets are available for this workflow
         self.preset_buttons()
+        self.user_presets()
 
         custom_parameter_function()
 
@@ -1651,6 +1769,7 @@ class StreamlitUI:
             ):
                 self.parameter_manager.reset_to_default_parameters()
                 self.parameter_manager.clear_parameter_session_state()
+                self.parameter_manager.forget_applied_preset()
                 st.toast("Parameters reset to defaults")
                 st.rerun()
         with cols[1]:

@@ -195,7 +195,7 @@ DEFAULTS = [
 
 ### Presets
 
-`presets.json` maps a workflow name (lowercase, hyphenated) to named parameter sets, surfaced by `ui.preset_buttons()`:
+`presets.json` maps a workflow name (lowercase, hyphenated) to named parameter sets, surfaced by `ui.preset_buttons()`. Users can also save their own presets (`ui.user_presets()`, stored in `<workflow_dir>/user-presets.json` with the last applied preset); a user preset is a full snapshot that leaves out input file selections and `max_threads`, and its name may not shadow a built-in one:
 
 ```json
 {"topp-workflow": {"High Sensitivity": {
@@ -212,6 +212,8 @@ Simple pages keep mzML in `<workspace>/mzML-files/`; workflows keep uploads in `
 Two paths produce those references — the local-mode "Make a copy of files" checkbox (unchecked), and the online-mode mounted-data browser. The latter renders only when `local_data_dir` from settings.json is a **real mount point** (`os.path.ismount`), because the image pre-creates `/mounted-data` as a bind target; this is what makes read-only `-v host:/mounted-data:ro` mounts usable without copying into the workspace volume.
 
 Simple-page workflow outputs go to `<workspace>/mzML-workflow-results/<timestamp>/`.
+
+**Vendor formats.** `upload_widget(file_types=["mzML", "raw", "d"])` accepts Thermo `.raw` files and Bruker `.d` folders (local: picked through the folder field, since the Tk file dialog cannot select a folder; online: uploaded as a zip, unpacked by `vendor_files.extract_bruker_zip()`). `execution()` turns them into mzML with `self.executor.convert_to_mzml(paths)`, which passes mzML through, runs **FileConverter** on `.raw` (ThermoRawFileParser; needs `mono` on Linux, .NET Framework on Windows, and FileConverter in the Windows `TOPP_TOOLS`) and `src/python-tools/bruker_to_mzml.py` on `.d` (timsrust + pyOpenMS `PeakPickerHiRes`; timsTOF TDF only, BAF/TSF fail with a message pointing at msconvert). Results are cached in `<workflow_dir>/converted-mzML/` while newer than the input; it returns `None` on failure, so gate on it.
 
 ## Visualization
 

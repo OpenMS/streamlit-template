@@ -19,10 +19,11 @@ class Workflow(WorkflowManager):
         t = st.tabs(["MS data"])
         with t[0]:
             # Use the upload method from StreamlitUI to handle mzML file uploads.
+            # Thermo .raw and Bruker .d are converted to mzML in execution().
             self.ui.upload_widget(
                 key="mzML-files",
                 name="MS data",
-                file_types="mzML",
+                file_types=["mzML", "raw", "d"],
                 fallback=[str(f) for f in Path("example-data", "mzML").glob("*.mzML")],
             )
 
@@ -76,8 +77,13 @@ class Workflow(WorkflowManager):
             self.logger.log("ERROR: No mzML files selected.")
             return False
 
+        # Convert any Thermo .raw / Bruker .d input to mzML (mzML passes through).
+        in_files = self.executor.convert_to_mzml(self.params["mzML-files"])
+        if in_files is None:
+            return False
+
         # Get mzML files with FileManager
-        in_mzML = self.file_manager.get_files(self.params["mzML-files"])
+        in_mzML = self.file_manager.get_files(in_files)
 
         # Log any messages.
         self.logger.log(f"Number of input mzML files: {len(in_mzML)}")

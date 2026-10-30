@@ -18,6 +18,10 @@ ARG GITHUB_REPO=streamlit-template
 
 USER root
 
+# Keep apt from stopping at interactive prompts: tzdata, pulled in by
+# later packages, otherwise waits for a timezone and the build hangs.
+ENV DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC
+
 # Install required Ubuntu packages.
 RUN apt-get -y update
 RUN apt-get install -y --no-install-recommends --no-install-suggests g++ autoconf automake patch libtool make git gpg wget ca-certificates curl jq libgtk2.0-dev openjdk-8-jdk cron
@@ -129,6 +133,12 @@ FROM compile-openms AS run-app
 RUN apt-get update && apt-get install -y --no-install-recommends redis-server nginx \
     && rm -rf /var/lib/apt/lists/*
 
+# Mono runs the ThermoRawFileParser (THIRDPARTY/All, a .NET Framework build)
+# that FileConverter calls to convert Thermo RAW files to mzML on Linux.
+RUN apt-get update && apt-get install -y --no-install-recommends mono-complete \
+    && rm -rf /var/lib/apt/lists/* \
+    && mono --version
+
 # Create Redis data directory. Default 0755 root-owned is enough: the docker
 # entrypoint runs as root (can write regardless of mode), and the apptainer
 # entrypoint relocates Redis state to /tmp/openms-runtime-* so this dir is
@@ -199,12 +209,13 @@ RUN jq '.online_deployment = true' settings.json > tmp.json && mv tmp.json setti
 # the user starts the container with `-v /host/path:/mounted-data`.
 RUN jq '.local_data_dir = "/mounted-data"' settings.json > tmp.json && mv tmp.json settings.json
 
-# Download latest OpenMS App executable as a ZIP file.
+# Download the Windows installer of the latest release, if it has one.
 # ARG declared here (not at the top) — otherwise the per-run token busts the cache.
 ARG GITHUB_TOKEN
 RUN if [ -n "$GITHUB_TOKEN" ]; then \
         echo "GITHUB_TOKEN is set, proceeding to download the release asset..."; \
-        gh release download -R ${GITHUB_USER}/${GITHUB_REPO} -p "OpenMS-App.zip" -D /app; \
+        gh release download -R ${GITHUB_USER}/${GITHUB_REPO} -p "*-Setup.exe" -O /app/OpenMS-App-Setup.exe \
+            || echo "The latest release has no Windows installer, skipping."; \
     else \
         echo "GITHUB_TOKEN is not set, skipping the release asset download."; \
     fi
