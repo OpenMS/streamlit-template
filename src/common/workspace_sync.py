@@ -433,9 +433,10 @@ def _run_view(workspace: Path, link: dict, workflow: str, run: dict, inputs, bus
         try:
             _client(link, give_up_after=10, timeout=30).stop_run(workflow)
         except client.SyncError as exc:
-            st.error(str(exc))
-        _invalidate(workspace)
-        st.rerun(scope="app")
+            st.error(str(exc))     # kept on screen: no rerun
+        else:
+            _invalidate(workspace)
+            st.rerun(scope="app")
     if run.get("log"):
         with st.expander("Cloud log"):
             st.code("\n".join(run["log"]), language=None)
@@ -745,13 +746,15 @@ def render_sync_sidebar() -> None:
 _HERE, _ONLINE = "This computer", "Online workspace"
 
 
-def render_run_choice(workflow_dir: Path, name_key: str = "") -> bool:
+def render_run_choice(workflow_dir: Path, name_key: str = "", save_parameters=None) -> bool:
     """On a workflow's Run page, offer to run it in the linked online workspace.
 
     Shown offline only, for a linked workspace and a workflow listed in
     ``workspace_sync.workflows``. Returns True when the user chose the online
     workspace, so the caller leaves out its own Start button. ``name_key`` is
     the session key of the run name typed on the page (multi-run workflows).
+    ``save_parameters`` writes the page's parameters to params.json, which the
+    online run is started with; it is called when the user starts it.
     """
     if st.session_state.get("location") != "local" or not sync_enabled():
         return False
@@ -770,7 +773,7 @@ def render_run_choice(workflow_dir: Path, name_key: str = "") -> bool:
     if where != _ONLINE:
         return False
     _ensure_watcher(workspace)
-    _run_panel(workspace, link, workflow, name_key)
+    _run_panel(workspace, link, workflow, name_key, save_parameters)
     return True
 
 
@@ -791,7 +794,8 @@ def _run_transfer(job: _Job, workflow: str) -> None:
 
 
 @st.fragment(run_every=3.0)
-def _run_panel(workspace: Path, link: dict, workflow: str, name_key: str) -> None:
+def _run_panel(workspace: Path, link: dict, workflow: str, name_key: str,
+               save_parameters=None) -> None:
     """The online counterpart of the Run page's controls."""
     job = _JOBS.get(str(workspace))
     if job is not None and not job.finished:
@@ -824,6 +828,8 @@ def _run_panel(workspace: Path, link: dict, workflow: str, name_key: str) -> Non
         if st.button("Start Workflow online", type="primary", width="stretch",
                      key=f"sync-run-start-{workflow}"):
             name = st.session_state.pop(name_key, "") if name_key else ""
+            if save_parameters is not None:
+                save_parameters()
             _start_run(workspace, link, workflow, status["inputs"], name)
             st.rerun(scope="fragment")
     elif st.button("Stop Workflow", type="primary", width="stretch",
@@ -831,10 +837,11 @@ def _run_panel(workspace: Path, link: dict, workflow: str, name_key: str) -> Non
         try:
             _client(link, give_up_after=10, timeout=30).stop_run(workflow)
         except client.SyncError as exc:
-            st.error(str(exc))
-        with _STATUS_LOCK:
-            _STATUS.pop(str(workspace), None)
-        st.rerun(scope="fragment")
+            st.error(str(exc))     # kept on screen: no rerun
+        else:
+            with _STATUS_LOCK:
+                _STATUS.pop(str(workspace), None)
+            st.rerun(scope="fragment")
 
     if run["status"] != "idle":
         name = f" “{run['run_name']}”" if run.get("run_name") else ""

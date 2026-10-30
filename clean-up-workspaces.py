@@ -71,10 +71,30 @@ if sync_tokens.is_dir():
             entry.unlink(missing_ok=True)
 sync_uploads = workspaces_directory / ".sync-uploads"
 if sync_uploads.is_dir():
-    for entry in sync_uploads.iterdir():
-        if os.path.getmtime(entry) < current_time - 86400 * 2:
-            print(f"Deleting stale partial upload: {entry.name}")
-            entry.unlink(missing_ok=True)
+    # An upload is <id>.json, <id>.part and <id>.lock, removed together. Its
+    # age is that of its newest file (the .part grows while data arrives), and
+    # one a request is writing holds the lock, so it is left alone.
+    for upload_id in sorted({p.name.split(".")[0] for p in sync_uploads.iterdir()}):
+        files = [sync_uploads / f"{upload_id}{ext}" for ext in (".json", ".part", ".lock")]
+        ages = [os.path.getmtime(f) for f in files if f.exists()]
+        if not ages or max(ages) >= current_time - 86400 * 2:
+            continue
+        lock = None
+        try:
+            import fcntl
+            lock = os.open(files[2], os.O_CREAT | os.O_RDWR, 0o644)
+            fcntl.lockf(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except ImportError:
+            pass
+        except OSError:
+            if lock is not None:
+                os.close(lock)
+            continue        # still being written, or the lock cannot be taken
+        print(f"Deleting stale partial upload: {upload_id}")
+        for f in files:
+            f.unlink(missing_ok=True)
+        if lock is not None:
+            os.close(lock)
 
 # Print separator
 print(100 * "-")

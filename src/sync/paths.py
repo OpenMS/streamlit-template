@@ -90,7 +90,9 @@ def _walk(base: Path, rel: PurePosixPath) -> Iterator[tuple[str, Path]]:
         for name in sorted(files):
             if name.startswith("."):
                 continue
-            yield str(PurePosixPath(os.path.normpath(root_rel / name))), Path(root, name)
+            # PurePosixPath drops the "." of the top folder; os.path.normpath
+            # would turn the separators into backslashes on Windows.
+            yield str(root_rel / name), Path(root, name)
 
 
 def _input_dir_entries(directory: Path, rel: PurePosixPath) -> Iterator[tuple[str, Path]]:

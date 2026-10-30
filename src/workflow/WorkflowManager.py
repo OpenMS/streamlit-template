@@ -328,9 +328,9 @@ class WorkflowManager:
             return False
         from src.common.workspace_sync import render_run_choice
 
-        # The online run takes the parameters from params.json.
-        self.parameter_manager.save_parameters()
-        return render_run_choice(self.workflow_dir, name_key)
+        # Saved when the online run starts: it takes them from params.json.
+        return render_run_choice(self.workflow_dir, name_key,
+                                 save_parameters=self.parameter_manager.save_parameters)
 
     def show_results_section(self) -> None:
         """

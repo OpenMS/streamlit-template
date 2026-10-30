@@ -85,14 +85,15 @@ def _runs(workflow_dir: Path):
     return RunManager(workflow_dir)
 
 
-_STARTED = ".sync-run"     # the run a desktop start created, for its name
-
-
-def _read_started(workflow_dir: Path) -> str:
+def _job_run(qm, job_id: str | None) -> str | None:
+    """The run a queued job writes into (multi-run workflows), from its arguments."""
+    if not (qm and job_id):
+        return None
     try:
-        return Path(workflow_dir, _STARTED).read_text().strip()
-    except OSError:
-        return ""
+        from rq.job import Job
+        return Job.fetch(job_id, connection=qm._redis).kwargs.get("run_id")
+    except Exception:  # an evicted job, or no Redis
+        return None
 
 
 def status(qm, workspace: Path, workflow: str) -> dict:
@@ -101,11 +102,11 @@ def status(qm, workspace: Path, workflow: str) -> dict:
     info = {"workflow": workflow, "status": "idle", "progress": None, "current_step": "",
             "queue_position": None, "error": "", "log": _log_tail(workflow_dir),
             "run_id": None, "run_name": ""}
-    started = _read_started(workflow_dir)
-    run = _runs(workflow_dir).get(started) if started else None
-    if run is not None:
-        info.update(run_id=started, run_name=run.get("name", ""))
     job_id = qm.load_job_id(workflow_dir) if qm else None
+    run_id = _job_run(qm, job_id)
+    run = _runs(workflow_dir).get(run_id) if run_id else None
+    if run is not None:
+        info.update(run_id=run_id, run_name=run.get("name", ""))
     job = qm.get_job_info(job_id) if job_id else None
     if job is not None:
         # The last line of a traceback names the exception.
@@ -137,7 +138,6 @@ def start(qm, workspace: Path, workflow: str, target: str, params: dict,
     run_id = None
     if is_multi_run(target):
         run_id = _runs(workflow_dir).new_run(name, Path(workflow_dir, "params.json"))
-    Path(workflow_dir, _STARTED).write_text(run_id or "")
 
     from src.workflow.tasks import execute_workflow
     module, _, cls = target.partition(":")
@@ -163,9 +163,9 @@ def stop(qm, workspace: Path, workflow: str) -> dict:
         from src.workflow.Logger import Logger
         Logger(workflow_dir).log("WORKFLOW CANCELLED")
         shutil.rmtree(Path(workflow_dir, "pids"), ignore_errors=True)
-        # As WorkflowManager.stop_workflow: the killed job cannot say how its run ended.
-        from src.workflow.RunManager import CANCELLED, RUNNING
-        manager = _runs(workflow_dir)
-        for run in manager.list_runs(RUNNING):
-            manager.finish(run["id"], CANCELLED)
+        # The killed job cannot say how its run ended; other runs stay as they are.
+        run_id = _job_run(qm, job_id)
+        if run_id:
+            from src.workflow.RunManager import CANCELLED
+            _runs(workflow_dir).finish(run_id, CANCELLED)
     return status(qm, workspace, workflow)

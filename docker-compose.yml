@@ -11,8 +11,9 @@ services:
     ports:
       - 8501:8501
       # The sync service below shares this container's network, so its port
-      # is published here.
-      - 8502:8502
+      # is published here: on loopback only, for the host's TLS proxy to route
+      # /sync to. Plain HTTP would carry sync tokens and files in the clear.
+      - 127.0.0.1:8502:8502
     volumes:
       - workspaces-streamlit-template:/workspaces-streamlit-template
       # Optional: bind-mount a host directory of MS data files at the path

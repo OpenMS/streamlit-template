@@ -579,3 +579,27 @@ def test_concurrent_patch_of_one_upload_is_refused(online, tmp_path, monkeypatch
     assert waited and report.transferred == ["topp-workflow/input-files/mzML-files/a.mzML"]
     remote = online["ws"] / "topp-workflow/input-files/mzML-files/a.mzML"
     assert remote.read_bytes() == (ws / "topp-workflow/input-files/mzML-files/a.mzML").read_bytes()
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="record locks are POSIX")
+def test_cleanup_expires_uploads_as_a_unit(tmp_path):
+    """An upload goes when all its files are old and nobody holds its lock."""
+    uploads = tmp_path / ".sync-uploads"
+    uploads.mkdir()
+    old = time.time() - 3 * 86400
+    for upload_id in ("stale", "growing", "writing"):
+        for ext in (".json", ".part", ".lock"):
+            f = uploads / f"{upload_id}{ext}"
+            f.write_text("x")
+            os.utime(f, (old, old))
+    (uploads / "growing.part").touch()              # data still arriving
+    holder = _hold_lock(uploads / "writing.lock")   # a PATCH holds it
+    try:
+        subprocess.run([sys.executable, "clean-up-workspaces.py"], check=True,
+                       env={**os.environ, "WORKSPACES_DIR": str(tmp_path)},
+                       capture_output=True)
+    finally:
+        holder.kill()
+        holder.wait()
+    left = sorted(p.name for p in uploads.iterdir())
+    assert left == [f"{u}{ext}" for u in ("growing", "writing") for ext in (".json", ".lock", ".part")]
