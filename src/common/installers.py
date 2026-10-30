@@ -7,6 +7,8 @@ called. The buttons link to the release assets instead of serving files from
 the image, so a deployment does not carry several hundred MB of installers.
 """
 
+import threading
+import time
 from pathlib import Path
 
 import requests
@@ -26,10 +28,26 @@ LOCAL_WINDOWS_INSTALLER = Path("OpenMS-App-Setup.exe")
 
 # Five minutes: short enough that installers uploaded after the release was
 # published (or a failed lookup) show up soon, long enough to stay far below
-# GitHub's limit of 60 unauthenticated requests per hour.
-@st.cache_data(ttl=300, show_spinner=False)
+# GitHub's limit of 60 unauthenticated requests per hour. Kept in this module
+# rather than in st.cache_data, which page_setup() clears for every new session.
+RELEASE_CACHE_SECONDS = 300
+_release_cache = {}
+_release_cache_lock = threading.Lock()
+
+
 def latest_release_assets(github_user: str, repository: str) -> dict:
     """Name -> download URL of every asset of the latest release, or {} on failure."""
+    key = (github_user, repository)
+    with _release_cache_lock:
+        hit = _release_cache.get(key)
+        if hit and time.monotonic() - hit[0] < RELEASE_CACHE_SECONDS:
+            return hit[1]
+        assets = _fetch_release_assets(github_user, repository)
+        _release_cache[key] = (time.monotonic(), assets)
+        return assets
+
+
+def _fetch_release_assets(github_user: str, repository: str) -> dict:
     try:
         r = requests.get(
             f"https://api.github.com/repos/{github_user}/{repository}/releases/latest",
