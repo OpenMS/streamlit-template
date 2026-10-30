@@ -38,6 +38,17 @@ echo "Staged $asset as $dest"
 
 "$py" -m pip install --upgrade --no-warn-script-location --disable-pip-version-check -r "$requirements"
 
+# DuckDB's extension wheels (pulled in by some dependencies) append DuckDB's
+# own signature to a Mach-O file, which codesign rejects ("main executable
+# failed strict validation") after the hours-long signing step. Without them,
+# DuckDB downloads an extension on first use.
+if [[ $triple == *apple-darwin ]]; then
+  ext=$("$py" -m pip list --format freeze --disable-pip-version-check | cut -d= -f1 | grep -iE '^duckdb[-_]extension' || true)
+  [[ -z "$ext" ]] || "$py" -m pip uninstall -y --disable-pip-version-check $ext
+  left=$(find "$dest" -name '*.duckdb_extension' | head -n 5)
+  [[ -z "$left" ]] || { echo "::error::DuckDB extensions would fail macOS signing: $left"; exit 1; }
+fi
+
 # Same clean-up as the Windows build, then compile the bytecode now: the shell
 # runs Python with PYTHONDONTWRITEBYTECODE because the signed macOS bundle and
 # the AppImage cannot be written to. unchecked-hash .pyc files stay valid
