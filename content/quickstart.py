@@ -5,7 +5,7 @@ This module sets up and displays the Streamlit app for the OpenMS Template App.
 It includes:
 - Setting the app title.
 - Displaying a description.
-- Providing a download button for the Windows version of the app.
+- Providing download buttons for the desktop app on Windows, macOS and Linux.
 
 Usage:
 Run this script to launch the OpenMS Template App.
@@ -18,10 +18,10 @@ Returns:
     None
 """
 
-from pathlib import Path
 import streamlit as st
 
 from src.common.common import page_setup, v_space
+from src.common.installers import render_installer_buttons
 
 # Spell the skill out by file path rather than by name. Skills are registered
 # from .claude/skills/ when a session starts, so a repository cloned mid-session
@@ -73,31 +73,13 @@ c1.markdown(
 - Workspaces for user data with unique shareable IDs
 - Persistent parameters and input files within a workspace
 - Captcha control
-- Packaged executables for Windows
+- Packaged desktop apps for Windows, macOS and Linux
 - Deploy multiple apps easily with [docker-compose](https://github.com/OpenMS/streamlit-deployment)
 """
 )
 v_space(1, c2)
 c2.image("assets/openms_transparent_bg_logo.svg", width=300)
-if Path("OpenMS-App-Setup.exe").exists():
-    st.subheader(
-        """
-Download the latest version for Windows here by clicking the button below.
-"""
-    )
-    with open("OpenMS-App-Setup.exe", "rb") as file:
-        st.download_button(
-            label="Download for Windows",
-            data=file,
-            file_name="OpenMS-App-Setup.exe",
-            mime="application/vnd.microsoft.portable-executable",
-            type="primary",
-        )
-    st.markdown(
-        """
-Run the installer to install the app for your user; no admin rights are needed. The app can then be launched using the corresponding desktop icon or start menu entry.
-"""
-    )
+render_installer_buttons("### Download the desktop app")
 
 st.markdown("## 📖 Documentation")
 st.markdown(
