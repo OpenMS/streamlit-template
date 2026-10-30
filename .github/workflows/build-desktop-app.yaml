@@ -1,19 +1,21 @@
-name: Build desktop app for macOS and Linux
+name: Build desktop app
+# One run builds the Electron app for Windows, macOS (Apple Silicon) and Linux,
+# and a release gets all installers attached.
 on:
   push:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
   release:
-    types: [created]
+    types: [published]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 env:
-  # Minor version; the latest patch release from python-build-standalone is used.
-  PYTHON_VERSION: "3.11"
+  # Windows uses python.org's embeddable zip, which needs an exact version.
+  WINDOWS_PYTHON_VERSION: 3.11.0
   OPENMS_VERSION: "3.5.0"
   # Name of the app and its installers
   APP_NAME: OpenMS-StreamlitTemplateApp
@@ -21,7 +23,226 @@ env:
   TOPP_TOOLS: "FeatureFinderMetabo FeatureLinkerUnlabeledKD SiriusExport"
 
 jobs:
-  build:
+  # `with:` of a reusable-workflow call cannot read `env`, so this job hands
+  # the settings over as outputs and they stay defined in one place.
+  config:
+    runs-on: ubuntu-latest
+    outputs:
+      topp-tools: ${{ steps.out.outputs.topp-tools }}
+      openms-version: ${{ steps.out.outputs.openms-version }}
+    steps:
+    - id: out
+      run: |
+        echo "topp-tools=$TOPP_TOOLS" >> "$GITHUB_OUTPUT"
+        echo "openms-version=$OPENMS_VERSION" >> "$GITHUB_OUTPUT"
+
+  # OpenMS TOPP tools, DLLs and share/ from the official Windows installer
+  # (`mode: source` builds a branch or fork instead). App repositories call the
+  # same workflow as OpenMS/streamlit-template/.github/workflows/openms-windows.yml@<ref>.
+  build-openms-windows:
+    needs: config
+    uses: ./.github/workflows/openms-windows.yml
+    with:
+      openms-version: ${{ needs.config.outputs.openms-version }}
+      mode: installer
+      topp-tools: ${{ needs.config.outputs.topp-tools }}
+      artifact-name: openms-package
+
+  windows:
+    name: Windows
+    runs-on: windows-2022
+    needs: build-openms-windows
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+
+    - name: Set Version in settings.json
+      env:
+        RELEASE_TAG: ${{ github.event.release.tag_name }}
+      run: |
+        # Only release builds carry a tag; other builds keep settings.json's
+        # version instead of blanking it in the app's sidebar.
+        $VERSION=$env:RELEASE_TAG
+        if ($VERSION) {
+          $content = Get-Content -Raw settings.json | ConvertFrom-Json
+          $content.version = $VERSION
+          $content | ConvertTo-Json -Depth 100 | Set-Content settings.json
+        }
+
+    - name: Download package as artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: openms-package
+        path: openms-package
+
+    - name: Extract bin and share from package
+      run: |
+        cd openms-package
+        unzip "*.zip" -d .
+        cp -r openms-package/bin ../openms-bin
+        cp -r openms-package/share ../share
+
+    - name: Set up Python (regular distribution)
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ env.WINDOWS_PYTHON_VERSION }} # Use the same version as the embeddable version
+    
+    - name: Setup python embeddable version
+      run: |
+        # Create a directory for the embeddable Python version
+        mkdir python-${{ env.WINDOWS_PYTHON_VERSION }}
+        
+        # Download and unzip the embeddable Python version
+        curl -O https://www.python.org/ftp/python/${{ env.WINDOWS_PYTHON_VERSION }}/python-${{ env.WINDOWS_PYTHON_VERSION }}-embed-amd64.zip
+        unzip python-${{ env.WINDOWS_PYTHON_VERSION }}-embed-amd64.zip -d python-${{ env.WINDOWS_PYTHON_VERSION }}
+        rm python-${{ env.WINDOWS_PYTHON_VERSION }}-embed-amd64.zip
+
+        # Define paths for the regular Python distribution and the embeddable distribution
+        $PYTHON_DIR="${{ runner.tool_cache }}/Python/${{ env.WINDOWS_PYTHON_VERSION }}/x64" # Path from actions/setup-python
+        $EMBED_DIR="python-${{ env.WINDOWS_PYTHON_VERSION }}"
+        
+        mkdir -p $EMBED_DIR/Lib/site-packages/tkinter
+        mkdir -p $EMBED_DIR/tcl
+
+        # Copy necessary Tkinter files from the regular Python distribution
+        cp -r $PYTHON_DIR/Lib/tkinter/* $EMBED_DIR/Lib/site-packages/tkinter/
+        cp -r $PYTHON_DIR/tcl/* $EMBED_DIR/tcl/
+        cp $PYTHON_DIR/DLLs/_tkinter.pyd $EMBED_DIR/
+        cp $PYTHON_DIR/DLLs/tcl86t.dll $EMBED_DIR/
+        cp $PYTHON_DIR/DLLs/tk86t.dll $EMBED_DIR/
+
+    - name: Uncomment 'import site' in python311._pth file
+      run: |
+        sed -i 's/#import site/import site/' python-${{ env.WINDOWS_PYTHON_VERSION }}/python311._pth
+
+    - name: Install Required Packages
+      # Use system Python (which has development headers) to compile packages,
+      # installing into the embeddable Python's site-packages directory.
+      # The embeddable Python lacks Python.h headers needed for native extensions.
+      run: python -m pip install -r requirements.txt --target python-${{ env.WINDOWS_PYTHON_VERSION }}/Lib/site-packages --upgrade --no-warn-script-location
+
+    - name: Clean up unnecessary Python files
+      shell: pwsh
+      run: |
+        $sitePkgs = "python-${{ env.WINDOWS_PYTHON_VERSION }}/Lib/site-packages"
+
+        # Remove __pycache__ directories
+        Get-ChildItem -Path $sitePkgs -Recurse -Directory -Filter "__pycache__" | Remove-Item -Recurse -Force
+
+        # Remove test directories
+        Get-ChildItem -Path $sitePkgs -Recurse -Directory | Where-Object { $_.Name -match "^tests?$" } | Remove-Item -Recurse -Force
+
+        # Count remaining files
+        $count = (Get-ChildItem -Path $sitePkgs -Recurse -File).Count
+        Write-Host "Remaining files in site-packages: $count"
+
+    - name: Set to offline deployment
+      run: |
+        $content = Get-Content -Raw settings.json | ConvertFrom-Json
+        $content.online_deployment = $false
+        $content | ConvertTo-Json -Depth 100 | Set-Content settings.json
+
+    - name: Create All-in-one executable folder
+      run: |
+        mkdir streamlit_exe
+
+        mv python-${{ env.WINDOWS_PYTHON_VERSION }} streamlit_exe
+        cp -r src streamlit_exe
+        cp -r utils streamlit_exe
+        cp -r content streamlit_exe
+        cp -r docs streamlit_exe
+        cp -r assets streamlit_exe
+        cp -r example-data streamlit_exe
+        cp openms-bin/*.dll streamlit_exe
+        cp -r .streamlit streamlit_exe
+        cp -r share streamlit_exe/share
+        cp app.py streamlit_exe
+        cp settings.json streamlit_exe
+        cp default-parameters.json streamlit_exe
+
+        $files = $env:TOPP_TOOLS -split ' '
+        foreach ($file in $files) {
+          Copy-Item "openms-bin/${file}.exe" -Destination "streamlit_exe/${file}.exe"
+        }
+
+    - name: Remove server address for local Windows deployment
+      run: |
+        (Get-Content streamlit_exe/.streamlit/config.toml) -notmatch '^address' | Set-Content streamlit_exe/.streamlit/config.toml
+
+    - name: Set up Node.js for the Electron installer
+      uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+        cache: 'npm'
+        cache-dependency-path: electron/package-lock.json
+
+    - name: Build Electron installer
+      # Wraps the folder in the Electron shell (electron/) as a per-user NSIS
+      # installer that needs no admin rights.
+      env:
+        RELEASE_TAG: ${{ github.event.release.tag_name }}
+      run: |
+        Copy-Item -Recurse streamlit_exe electron/payload
+        # electron-builder needs a semver version; take the numeric part of the release tag.
+        $version = "1.0.0"
+        if ($env:RELEASE_TAG -match '(\d+)(?:\.(\d+))?(?:\.(\d+))?') {
+          $version = "$($Matches[1]).$(if ($Matches[2]) { $Matches[2] } else { 0 }).$(if ($Matches[3]) { $Matches[3] } else { 0 })"
+        }
+        cd electron
+        npm ci
+        npx electron-builder --win nsis --publish never `
+          "-c.productName=${{ env.APP_NAME }}" `
+          "-c.appId=de.openms.${{ env.APP_NAME }}" `
+          "-c.extraMetadata.productName=${{ env.APP_NAME }}" `
+          "-c.extraMetadata.version=$version" `
+          ('-c.nsis.artifactName=${{ env.APP_NAME }}-Setup.${ext}')
+
+    - name: Smoke test Electron installer
+      # Installs silently, then checks pyOpenMS, every TOPP tool and the
+      # Streamlit server with the shell's environment, and finally launches the
+      # installed app, which exits 0 once the page has created a workspace.
+      run: |
+        Start-Process -FilePath "electron/dist/${{ env.APP_NAME }}-Setup.exe" -ArgumentList "/S" -Wait
+        $inst = Join-Path $env:LOCALAPPDATA "Programs/${{ env.APP_NAME }}"
+        node electron/scripts/smoke-payload.js "$inst/resources/app-payload" @($env:TOPP_TOOLS -split ' ')
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+        $env:OPENMS_APP_SMOKE_TEST = "1"
+        $app = Start-Process -FilePath "$inst/${{ env.APP_NAME }}.exe" -PassThru
+        if (-not $app.WaitForExit(300000)) { Stop-Process -Id $app.Id -Force; throw "Electron app did not finish its smoke test" }
+        $log = Join-Path $env:APPDATA "${{ env.APP_NAME }}/logs/streamlit.log"
+        if (Test-Path $log) { Get-Content $log }
+        if ($app.ExitCode -ne 0) { throw "Electron app smoke test failed with exit code $($app.ExitCode)" }
+
+    - name: End-to-end test in the Electron window
+      # Drives the installed app with Playwright and opens every page; an app
+      # adds its own steps (run a workflow, check its results) with --scenario.
+      run: |
+        $inst = Join-Path $env:LOCALAPPDATA "Programs/${{ env.APP_NAME }}"
+        node electron/scripts/e2e.js --exe "$inst/${{ env.APP_NAME }}.exe" --out e2e-output
+        $code = $LASTEXITCODE
+        $log = Join-Path $env:APPDATA "${{ env.APP_NAME }}/logs/streamlit.log"
+        if (Test-Path $log) { Get-Content $log -Tail 200 }
+        exit $code
+
+    - name: Archive end-to-end screenshots
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: electron-e2e-screenshots-Windows
+        path: e2e-output
+        if-no-files-found: ignore
+
+    - name: Archive Electron installer
+      uses: actions/upload-artifact@v4
+      with:
+        name: OpenMS-App-Electron
+        path: electron/dist/${{ env.APP_NAME }}-Setup.exe
+
+  macos-linux:
     name: ${{ matrix.platform }}
     strategy:
       fail-fast: false
@@ -40,6 +261,8 @@ jobs:
         shell: bash
     env:
       GH_TOKEN: ${{ github.token }}
+      # Minor version; the latest patch release from python-build-standalone is used.
+      PYTHON_VERSION: "3.11"
 
     steps:
     - name: Checkout
@@ -238,10 +461,10 @@ jobs:
           electron/dist/*.AppImage
           electron/dist/*.deb
 
-  # Only this job can write to the repository; the build job runs third-party
+  # Only this job can write to the repository; the build jobs run third-party
   # code (pip, npm, electron-builder) with a read-only token.
   release:
-    needs: build
+    needs: [windows, macos-linux]
     if: github.event_name == 'release'
     runs-on: ubuntu-latest
     permissions:
@@ -255,7 +478,7 @@ jobs:
         path: dist
 
     - name: Upload installers as release assets
-      uses: softprops/action-gh-release@v2
-      with:
-        files: dist/*
-        token: ${{ github.token }}
+      env:
+        GH_TOKEN: ${{ github.token }}
+        RELEASE_TAG: ${{ github.event.release.tag_name }}
+      run: gh release upload "$RELEASE_TAG" dist/* --clobber -R "$GITHUB_REPOSITORY"

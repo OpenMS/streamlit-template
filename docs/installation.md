@@ -4,7 +4,7 @@
 
 The app is available as a Windows installer (`<APP_NAME>-Setup.exe`) that includes all dependencies. It installs per user and needs no admin rights.
 
-Download it from the latest [release](https://github.com/OpenMS/streamlit-template/releases), or build it with the [GitHub action](https://github.com/OpenMS/streamlit-template/actions/workflows/build-windows-executable-app.yaml): select the latest successful run and download the `OpenMS-App-Electron` artifact while signed in to GitHub.
+Download it from the latest [release](https://github.com/OpenMS/streamlit-template/releases), or build it with the [GitHub action](https://github.com/OpenMS/streamlit-template/actions/workflows/build-desktop-app.yaml): select the latest successful run and download the `OpenMS-App-Electron` artifact while signed in to GitHub.
 
 ## macOS (Apple Silicon)
 
@@ -17,7 +17,7 @@ Two packages contain the same app; both need glibc 2.35 or newer (Ubuntu 22.04, 
 - `<APP_NAME>-Linux-x86_64.AppImage` runs without installation: `chmod +x` it and start it. It needs `libfuse2` (`sudo apt install libfuse2`, on Ubuntu 24.04 `libfuse2t64`).
 - `<APP_NAME>-Linux-amd64.deb` installs to `/opt/<APP_NAME>` with a menu entry: `sudo apt install ./<APP_NAME>-Linux-amd64.deb`.
 
-Both are built by the [GitHub action](https://github.com/OpenMS/streamlit-template/actions/workflows/build-macos-linux-app.yaml) and attached to each release.
+Both are built by the [GitHub action](https://github.com/OpenMS/streamlit-template/actions/workflows/build-desktop-app.yaml) and attached to each release.
 
 ## Python
 

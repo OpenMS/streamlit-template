@@ -92,7 +92,7 @@ This folder is the payload that the Electron shell packages into an installer, a
 
 ## Build the installer in GitHub Actions
 
-The workflow [Build executable for Windows](https://github.com/OpenMS/streamlit-template/blob/main/.github/workflows/build-windows-executable-app.yaml) runs all of these steps, adds the OpenMS TOPP tools listed in `TOPP_TOOLS`, and builds `<APP_NAME>-Setup.exe`. On a release, the installer is attached to the release. The Docker images download it from the latest release and offer it on the Quickstart and Installation pages.
+The workflow [Build desktop app](https://github.com/OpenMS/streamlit-template/blob/main/.github/workflows/build-desktop-app.yaml) runs all of these steps, adds the OpenMS TOPP tools listed in `TOPP_TOOLS`, and builds `<APP_NAME>-Setup.exe`. On a release, the installer is attached to the release. The Docker images download it from the latest release and offer it on the Quickstart and Installation pages.
 </br>
 
 ## Electron desktop app (per-user installer)
@@ -115,7 +115,7 @@ To try the shell from a checkout, run `npm install` and then `npm start` in `ele
 
 ## macOS and Linux
 
-The workflow [Build desktop app for macOS and Linux](https://github.com/OpenMS/streamlit-template/blob/main/.github/workflows/build-macos-linux-app.yaml) wraps the same app in the same Electron shell as `<APP_NAME>-macOS-arm64.dmg` (Apple Silicon only) and as `<APP_NAME>-Linux-x86_64.AppImage` plus `<APP_NAME>-Linux-amd64.deb`. It reads `APP_NAME`, `TOPP_TOOLS` and `OPENMS_VERSION` like the Windows build.
+The same workflow also wraps the app in the same Electron shell as `<APP_NAME>-macOS-arm64.dmg` (Apple Silicon only) and as `<APP_NAME>-Linux-x86_64.AppImage` plus `<APP_NAME>-Linux-amd64.deb`. It reads `APP_NAME`, `TOPP_TOOLS` and `OPENMS_VERSION` like the Windows build.
 
 - `electron/scripts/stage-python.sh` takes CPython from [python-build-standalone](https://github.com/astral-sh/python-build-standalone) (there is no embeddable Python for macOS and Linux), installs `requirements.txt` into it and compiles the bytecode, because the signed app and the AppImage are read-only.
 - `electron/scripts/stage-openms.sh` takes the TOPP tools from the official OpenMS release: the arm64 `.pkg` on macOS, the `.deb` on Linux, whose system libraries (Qt, Xerces, ...) it copies into the bundle. The tools stay in `openms/bin` next to `openms/lib` and find their libraries through a relative rpath; the shell puts `openms/bin` on `PATH`.
