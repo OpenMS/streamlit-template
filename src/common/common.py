@@ -34,6 +34,11 @@ logger = logging.getLogger(__name__)
 # Detect system platform
 OS_PLATFORM = sys.platform
 
+# Demo and example files are symlinked on Linux to save space. An AppImage
+# mounts the app under a new path on every launch, so links into it would
+# dangle after a restart; it copies them instead.
+LINK_EXAMPLE_FILES = OS_PLATFORM == "linux" and "APPIMAGE" not in os.environ
+
 # Default legal/GDPR page links. These point to the centrally maintained
 # official OpenMS pages. Forks that self-host should override them via the
 # "legal_links" key in settings.json (an Impressum must name the actual
@@ -226,8 +231,8 @@ def copy_demo_workspace(demo_name: str, target_path: Path) -> bool:
         if target_path.exists():
             shutil.rmtree(target_path)
 
-        # Use symlinks on Linux for efficiency
-        if OS_PLATFORM == "linux":
+        # Use symlinks on Linux for efficiency (not in an AppImage)
+        if LINK_EXAMPLE_FILES:
             _symlink_tree(demo_path, target_path)
         else:
             shutil.copytree(demo_path, target_path)
@@ -807,8 +812,8 @@ def render_sidebar(page: str = "") -> None:
                                     if item.is_dir():
                                         if target.exists():
                                             shutil.rmtree(target)
-                                        # Use symlinks on Linux for efficiency
-                                        if OS_PLATFORM == "linux":
+                                        # Use symlinks on Linux for efficiency (not in an AppImage)
+                                        if LINK_EXAMPLE_FILES:
                                             _symlink_tree(item, target)
                                         else:
                                             shutil.copytree(item, target)
@@ -816,7 +821,7 @@ def render_sidebar(page: str = "") -> None:
                                         if target.exists():
                                             target.unlink()
                                         # Copy config files so they can be modified independently
-                                        if OS_PLATFORM == "linux" and item.name != "params.json" and item.suffix != ".ini":
+                                        if LINK_EXAMPLE_FILES and item.name != "params.json" and item.suffix != ".ini":
                                             target.symlink_to(item.resolve())
                                         else:
                                             shutil.copy2(item, target)

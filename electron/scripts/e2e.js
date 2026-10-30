@@ -1,6 +1,6 @@
 // End-to-end test of the Electron app: drives the real app window with
 // Playwright, the way a user would.
-//   node scripts/e2e.js [--exe <installed app .exe>] [--out <dir>] [--scenario <file.js>] ...
+//   node scripts/e2e.js [--exe <installed app executable>] [--out <dir>] [--scenario <file.js>] ...
 // Without --exe it starts the shell from this checkout (npx electron .).
 //
 // It first opens every page in the app's navigation and fails on any Python
@@ -37,11 +37,10 @@ async function launch(_electron, exe) {
   // The installed app must not run its own smoke test or update dialog here.
   delete env.OPENMS_APP_SMOKE_TEST;
   env.OPENMS_APP_NO_UPDATE_CHECK = "1";
-  if (exe) return _electron.launch({ executablePath: exe, env, timeout: 120000 });
+  const sandbox = process.platform === "linux" ? ["--no-sandbox"] : [];
+  if (exe) return _electron.launch({ executablePath: exe, args: sandbox, env, timeout: 120000 });
   const electronDir = path.resolve(__dirname, "..");
-  const args = [electronDir];
-  if (process.platform === "linux") args.unshift("--no-sandbox");
-  return _electron.launch({ executablePath: require("electron"), args, env, timeout: 120000 });
+  return _electron.launch({ executablePath: require("electron"), args: [...sandbox, electronDir], env, timeout: 120000 });
 }
 
 // Streamlit marks its root element with the script state; "notRunning" for a

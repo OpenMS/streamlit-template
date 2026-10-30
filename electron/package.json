@@ -10,7 +10,9 @@
   "scripts": {
     "start": "electron .",
     "test": "node --test test/unit.test.js",
-    "dist": "electron-builder --win nsis --publish never"
+    "dist": "electron-builder --win nsis --publish never",
+    "dist:mac": "electron-builder --mac dmg --arm64 --publish never",
+    "dist:linux": "electron-builder --linux AppImage deb --x64 --publish never"
   },
   "devDependencies": {
     "electron": "^44.4.5",
@@ -25,6 +27,7 @@
     "files": [
       "src/**",
       "build/icon.ico",
+      "build/icon.png",
       "package.json"
     ],
     "extraResources": [
@@ -44,6 +47,29 @@
       "createDesktopShortcut": true,
       "license": "../assets/openms_license.rtf"
     },
+    "mac": {
+      "target": "dmg",
+      "icon": "build/icon.png",
+      "category": "public.app-category.education",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist"
+    },
+    "dmg": {
+      "writeUpdateInfo": false
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "icon": "build/icon.png",
+      "category": "Science",
+      "synopsis": "OpenMS web app for mass spectrometry data",
+      "maintainer": "OpenMS Developer Team <open-ms-general@lists.sourceforge.net>"
+    },
     "publish": null
-  }
+  },
+  "homepage": "https://www.openms.de"
 }

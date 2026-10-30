@@ -1,0 +1,220 @@
+name: Build desktop app for macOS and Linux
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  release:
+    types: [created]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  # Minor version; the latest patch release from python-build-standalone is used.
+  PYTHON_VERSION: "3.11"
+  OPENMS_VERSION: "3.5.0"
+  # Name of the app and its installers
+  APP_NAME: OpenMS-StreamlitTemplateApp
+  # Define needed TOPP tools here
+  TOPP_TOOLS: "FeatureFinderMetabo FeatureLinkerUnlabeledKD SiriusExport"
+
+jobs:
+  build:
+    name: ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Apple Silicon only; Intel Macs are not supported.
+          - platform: macOS-arm64
+            runs-on: macos-15
+          # Built on the oldest Ubuntu we support: the bundle needs glibc >= 2.35.
+          - platform: Linux-x86_64
+            runs-on: ubuntu-22.04
+    runs-on: ${{ matrix.runs-on }}
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: bash
+    env:
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Set version and offline deployment in settings.json
+      run: |
+        # Only release builds carry a tag; other builds keep settings.json's version.
+        jq --arg v "${{ github.event.release.tag_name }}" \
+          '.online_deployment = false | if $v != "" then .version = $v else . end' \
+          settings.json > settings.tmp && mv settings.tmp settings.json
+
+    - name: Stage OpenMS TOPP tools
+      # From the official OpenMS release: the arm64 .pkg on macOS (already
+      # self-contained), the .deb on Linux (its system libraries are bundled).
+      run: electron/scripts/stage-openms.sh "$OPENMS_VERSION" electron/payload $TOPP_TOOLS
+
+    - name: Stage Python with the app's requirements
+      run: electron/scripts/stage-python.sh "$PYTHON_VERSION" electron/payload requirements.txt
+
+    - name: Copy the app into the payload
+      run: |
+        p=electron/payload
+        cp -R src utils content docs assets example-data .streamlit app.py settings.json default-parameters.json "$p/"
+        # The local server only listens on loopback; the shell passes the address.
+        grep -v '^address' "$p/.streamlit/config.toml" > config.tmp && mv config.tmp "$p/.streamlit/config.toml"
+        "$p/python-$PYTHON_VERSION/bin/python3" -m compileall -q --invalidation-mode unchecked-hash "$p/src" "$p/utils"
+        du -sh "$p"
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+        cache: 'npm'
+        cache-dependency-path: electron/package-lock.json
+
+    - name: Build installers
+      env:
+        MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+        MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY }}
+        APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+        APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+      run: |
+        # electron-builder needs a semver version; take the numeric part of the release tag.
+        version=1.0.0
+        if [[ "${{ github.event.release.tag_name }}" =~ ([0-9]+)(\.([0-9]+))?(\.([0-9]+))? ]]; then
+          version="${BASH_REMATCH[1]}.${BASH_REMATCH[3]:-0}.${BASH_REMATCH[5]:-0}"
+        fi
+        # Package and executable name: lowercase, so two apps never share a deb package.
+        id=$(tr '[:upper:]' '[:lower:]' <<<"$APP_NAME")
+        args=(
+          --publish never
+          "-c.productName=$APP_NAME"
+          "-c.appId=de.openms.$APP_NAME"
+          "-c.extraMetadata.name=$id"
+          "-c.extraMetadata.productName=$APP_NAME"
+          "-c.extraMetadata.version=$version"
+        )
+        if [[ $RUNNER_OS == macOS ]]; then
+          args+=(--mac dmg --arm64 "-c.dmg.artifactName=$APP_NAME-macOS-arm64.\${ext}")
+          if [[ -n $MACOS_CERTIFICATE ]]; then
+            export CSC_LINK="$MACOS_CERTIFICATE" CSC_KEY_PASSWORD="$MACOS_CERTIFICATE_PASSWORD"
+            if [[ -n $APPLE_API_KEY_CONTENT ]]; then
+              printf '%s\n' "$APPLE_API_KEY_CONTENT" > "$RUNNER_TEMP/AuthKey.p8"
+              export APPLE_API_KEY="$RUNNER_TEMP/AuthKey.p8" APPLE_API_KEY_ID APPLE_API_ISSUER
+              args+=(-c.mac.notarize=true)
+            else
+              echo "::warning::APPLE_API_KEY is not set: the app is signed but not notarized"
+            fi
+          else
+            # Forks and pull requests from forks get no secrets: build unsigned.
+            echo "::warning::MACOS_CERTIFICATE is not set: the app is not signed"
+            export CSC_IDENTITY_AUTO_DISCOVERY=false
+          fi
+        else
+          args+=(--linux AppImage deb --x64
+            "-c.linux.executableName=$id"
+            "-c.appImage.artifactName=$APP_NAME-Linux-x86_64.\${ext}"
+            "-c.deb.artifactName=$APP_NAME-Linux-amd64.\${ext}")
+        fi
+        cd electron
+        npm ci
+        npx electron-builder "${args[@]}"
+        rm -f "$RUNNER_TEMP/AuthKey.p8"
+        ls -la dist
+
+    - name: Smoke test (macOS)
+      if: runner.os == 'macOS'
+      env:
+        SIGNED: ${{ secrets.MACOS_CERTIFICATE != '' }}
+        NOTARIZED: ${{ secrets.APPLE_API_KEY != '' }}
+      run: |
+        # Runs the app from the mounted (read-only) dmg, the way users first start it.
+        mnt="$RUNNER_TEMP/dmg"
+        hdiutil attach -nobrowse -readonly -mountpoint "$mnt" "electron/dist/$APP_NAME-macOS-arm64.dmg"
+        app="$mnt/$APP_NAME.app"
+        if [[ $SIGNED == true ]]; then
+          codesign --verify --deep --strict --verbose=2 "$app"
+          if [[ $NOTARIZED == true ]]; then
+            xcrun stapler validate "$app"
+            spctl --assess --type execute --verbose=2 "$app"
+          fi
+        fi
+        node electron/scripts/smoke-payload.js "$app/Contents/Resources/app-payload" $TOPP_TOOLS
+
+        OPENMS_APP_SMOKE_TEST=1 "$app/Contents/MacOS/$APP_NAME" &
+        pid=$!
+        for _ in $(seq 300); do kill -0 $pid 2>/dev/null || break; sleep 1; done
+        if kill -0 $pid 2>/dev/null; then kill $pid; echo "::error::app did not finish its smoke test"; exit 1; fi
+        wait $pid && code=0 || code=$?
+        cat "$HOME/Library/Application Support/$APP_NAME/logs/streamlit.log" || true
+        exit $code
+
+    - name: Smoke test (Linux)
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt-get install -y -q libfuse2 xvfb
+        id=$(tr '[:upper:]' '[:lower:]' <<<"$APP_NAME")
+        image="$PWD/electron/dist/$APP_NAME-Linux-x86_64.AppImage"
+        chmod +x "$image"
+
+        # The deb installs to /opt/<product name>; check its payload too.
+        sudo apt-get install -y -q "./electron/dist/$APP_NAME-Linux-amd64.deb"
+        node electron/scripts/smoke-payload.js "/opt/$APP_NAME/resources/app-payload" $TOPP_TOOLS
+
+        (cd "$RUNNER_TEMP" && "$image" --appimage-extract >/dev/null)
+        node electron/scripts/smoke-payload.js "$RUNNER_TEMP/squashfs-root/resources/app-payload" $TOPP_TOOLS
+
+        code=0
+        OPENMS_APP_SMOKE_TEST=1 timeout 300 xvfb-run -a "$image" || code=$?
+        cat "$HOME/.config/$APP_NAME/logs/streamlit.log" || true
+        exit $code
+
+    - name: End-to-end test in the app window
+      # Drives the installed app with Playwright and opens every page; an app
+      # adds its own steps (run a workflow, check its results) with --scenario.
+      run: |
+        if [[ $RUNNER_OS == macOS ]]; then
+          exe="$RUNNER_TEMP/dmg/$APP_NAME.app/Contents/MacOS/$APP_NAME"
+          log="$HOME/Library/Application Support/$APP_NAME/logs/streamlit.log"
+          node electron/scripts/e2e.js --exe "$exe" --out e2e-output && code=0 || code=$?
+        else
+          # The extracted AppImage, with APPIMAGE set as its runtime would.
+          exe="$RUNNER_TEMP/squashfs-root/$(tr '[:upper:]' '[:lower:]' <<<"$APP_NAME")"
+          log="$HOME/.config/$APP_NAME/logs/streamlit.log"
+          APPIMAGE="$PWD/electron/dist/$APP_NAME-Linux-x86_64.AppImage" \
+            xvfb-run -a node electron/scripts/e2e.js --exe "$exe" --out e2e-output && code=0 || code=$?
+        fi
+        tail -n 200 "$log" || true
+        exit $code
+
+    - name: Archive end-to-end screenshots
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: electron-e2e-screenshots-${{ matrix.platform }}
+        path: e2e-output
+        if-no-files-found: ignore
+
+    - name: Archive installers
+      uses: actions/upload-artifact@v4
+      with:
+        name: OpenMS-App-${{ matrix.platform }}
+        path: |
+          electron/dist/*.dmg
+          electron/dist/*.AppImage
+          electron/dist/*.deb
+
+    - name: Upload installers as release assets
+      if: github.event_name == 'release'
+      uses: softprops/action-gh-release@v2
+      with:
+        files: |
+          electron/dist/*.dmg
+          electron/dist/*.AppImage
+          electron/dist/*.deb
+        token: ${{ github.token }}
