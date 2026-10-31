@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+# Stages a relocatable CPython (python-build-standalone, the builds uv uses)
+# with the app's requirements for the macOS or Linux Electron app:
+#   <out>/python-<version>/bin/python3
+# The Windows build uses python.org's embeddable zip instead; there is no such
+# distribution for macOS and Linux.
+#
+#   stage-python.sh <python minor version, e.g. 3.11> <out dir> <requirements.txt>
+# Needs gh (GH_TOKEN). PBS_RELEASE pins a python-build-standalone release tag
+# (default: the latest release).
+set -euo pipefail
+
+version="$1"
+out="$2"
+requirements="$3"
+repo=astral-sh/python-build-standalone
+
+case "$(uname -s)-$(uname -m)" in
+  Darwin-arm64) triple=aarch64-apple-darwin ;;
+  Linux-x86_64) triple=x86_64-unknown-linux-gnu ;;
+  *) echo "::error::unsupported platform $(uname -s)-$(uname -m)"; exit 1 ;;
+esac
+
+tag="${PBS_RELEASE:-$(gh release view -R "$repo" --json tagName -q .tagName)}"
+asset=$(gh release view "$tag" -R "$repo" --json assets -q '.assets[].name' |
+  grep -E "^cpython-${version//./\\.}\.[0-9]+\+${tag}-${triple}-install_only\.tar\.gz$" | head -n 1 || true)
+[[ -n "$asset" ]] || { echo "::error::no CPython ${version} for ${triple} in ${repo} ${tag}"; exit 1; }
+
+dl=$(mktemp -d)
+gh release download "$tag" -R "$repo" --pattern "$asset" --dir "$dl"
+mkdir -p "$out"
+tar -xzf "$dl/$asset" -C "$dl"
+dest="$out/python-${version}"
+rm -rf "$dest"
+mv "$dl/python" "$dest"
+py="$dest/bin/python3"
+echo "Staged $asset as $dest"
+
+"$py" -m pip install --upgrade --no-warn-script-location --disable-pip-version-check -r "$requirements"
+
+# DuckDB's extension wheels (pulled in by some dependencies) append DuckDB's
+# own signature to a Mach-O file, which codesign rejects ("main executable
+# failed strict validation") after the hours-long signing step. Without them,
+# DuckDB downloads an extension on first use.
+if [[ $triple == *apple-darwin ]]; then
+  ext=$("$py" -m pip list --format freeze --disable-pip-version-check | cut -d= -f1 | grep -iE '^duckdb[-_]extension' || true)
+  [[ -z "$ext" ]] || "$py" -m pip uninstall -y --disable-pip-version-check $ext
+  left=$(find "$dest" -name '*.duckdb_extension' | head -n 5)
+  [[ -z "$left" ]] || { echo "::error::DuckDB extensions would fail macOS signing: $left"; exit 1; }
+fi
+
+# Same clean-up as the Windows build, then compile the bytecode now: the shell
+# runs Python with PYTHONDONTWRITEBYTECODE because the signed macOS bundle and
+# the AppImage cannot be written to. unchecked-hash .pyc files stay valid
+# whatever timestamps packaging gives the sources.
+site=$("$py" -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')
+find "$site" -type d -name __pycache__ -prune -exec rm -rf {} +
+find "$site" -type d \( -name tests -o -name test \) -prune -exec rm -rf {} +
+"$py" -m compileall -q -j 0 --invalidation-mode unchecked-hash "$dest/lib" >/dev/null || true
+
+# pyOpenMS and scikit-learn each bundle libomp.dylib. Two copies in one process
+# abort it ("OMP: Error #15", or #179 when duplicates are allowed), so every
+# other copy becomes a link to pyOpenMS's, which dyld then loads only once.
+if [[ $triple == *apple-darwin ]]; then
+  keep="$site/pyopenms/libomp.dylib"
+  find "$site" -name libomp.dylib -type f | while read -r lib; do
+    [[ -f $keep ]] || keep=$lib
+    [[ $lib == "$keep" ]] && continue
+    rel=$("$py" -c 'import os, sys; print(os.path.relpath(sys.argv[1], os.path.dirname(sys.argv[2])))' "$keep" "$lib")
+    echo "$lib -> $rel"
+    ln -sf "$rel" "$lib"
+  done
+fi

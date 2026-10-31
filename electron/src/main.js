@@ -3,7 +3,7 @@
 // TOPP tools) when the window closes.
 const fs = require("fs");
 const path = require("path");
-const { app, BrowserWindow, dialog, shell } = require("electron");
+const { app, BrowserWindow, Menu, dialog, shell } = require("electron");
 const payload = require("./payload");
 const { checkForUpdate } = require("./update-check");
 
@@ -53,10 +53,16 @@ async function start() {
     width: 1400,
     height: 900,
     autoHideMenuBar: true,
-    icon: path.join(__dirname, "..", "build", "icon.ico"),
+    icon: path.join(__dirname, "..", "build", process.platform === "win32" ? "icon.ico" : "icon.png"),
     webPreferences: { contextIsolation: true, sandbox: true },
   });
   mainWindow.on("page-title-updated", (e) => e.preventDefault());
+  // Without an application menu macOS has no Edit menu, so Cmd+C/V/A/Q do nothing.
+  if (process.platform === "darwin") {
+    Menu.setApplicationMenu(
+      Menu.buildFromTemplate([{ role: "appMenu" }, { role: "editMenu" }, { role: "windowMenu" }])
+    );
+  }
   await mainWindow.loadURL(LOADING_PAGE);
 
   try {

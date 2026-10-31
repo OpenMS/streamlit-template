@@ -3,7 +3,7 @@ from pathlib import Path
 
 import streamlit as st
 
-from src.common.common import reset_directory, OS_PLATFORM
+from src.common.common import reset_directory, LINK_EXAMPLE_FILES
 
 
 @st.cache_data
@@ -85,7 +85,7 @@ def load_example_mzML_files() -> None:
     # Copy or symlink files from example-data/mzML to workspace mzML directory
     for f in Path("example-data", "mzML").glob("*.mzML"):
         target = mzML_dir / f.name
-        if OS_PLATFORM == "linux":
+        if LINK_EXAMPLE_FILES:
             if target.exists():
                 target.unlink()
             target.symlink_to(f.resolve())
