@@ -385,7 +385,14 @@ jobs:
           echo "open-file limit: $(ulimit -n), payload files: $(find electron/payload -type f | wc -l)"
         fi
         cd electron
-        npx electron-builder "${args[@]}"
+        # codesign can still lose a timestamp request to Apple's service on a
+        # Mach-O file; build again only for that error.
+        for i in 1 2 3; do
+          npx electron-builder "${args[@]}" 2>&1 | tee "$RUNNER_TEMP/electron-builder.log" && break
+          if [[ $i == 3 ]] || ! grep -q "timestamp service is not available" "$RUNNER_TEMP/electron-builder.log"; then exit 1; fi
+          echo "::warning::Apple's timestamp service was not available; building again."
+          sleep 60
+        done
         rm -f "$RUNNER_TEMP/AuthKey.p8"
         ls -la dist
 
