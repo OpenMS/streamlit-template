@@ -439,6 +439,7 @@ jobs:
         exit $code
 
     - name: End-to-end test in the app window
+      timeout-minutes: 120
       # Drives the installed app with Playwright and opens every page; an app
       # adds its own steps (run a workflow, check its results) with --scenario.
       run: |
