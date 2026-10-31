@@ -57,3 +57,17 @@ site=$("$py" -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')
 find "$site" -type d -name __pycache__ -prune -exec rm -rf {} +
 find "$site" -type d \( -name tests -o -name test \) -prune -exec rm -rf {} +
 "$py" -m compileall -q -j 0 --invalidation-mode unchecked-hash "$dest/lib" >/dev/null || true
+
+# pyOpenMS and scikit-learn each bundle libomp.dylib. Two copies in one process
+# abort it ("OMP: Error #15", or #179 when duplicates are allowed), so every
+# other copy becomes a link to pyOpenMS's, which dyld then loads only once.
+if [[ $triple == *apple-darwin ]]; then
+  keep="$site/pyopenms/libomp.dylib"
+  find "$site" -name libomp.dylib -type f | while read -r lib; do
+    [[ -f $keep ]] || keep=$lib
+    [[ $lib == "$keep" ]] && continue
+    rel=$("$py" -c 'import os, sys; print(os.path.relpath(sys.argv[1], os.path.dirname(sys.argv[2])))' "$keep" "$lib")
+    echo "$lib -> $rel"
+    ln -sf "$rel" "$lib"
+  done
+fi
