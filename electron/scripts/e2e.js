@@ -173,7 +173,12 @@ async function close(app) {
   clearTimeout(timer);
   if (!quitInTime) {
     console.error("The app did not quit within 60s; killing it.");
-    proc.kill("SIGKILL");
+    // On Windows Playwright starts Electron through a shell, so kill the tree.
+    if (process.platform === "win32") {
+      require("child_process").spawnSync("taskkill", ["/pid", String(proc.pid), "/T", "/F"]);
+    } else {
+      proc.kill("SIGKILL");
+    }
   }
 }
 
