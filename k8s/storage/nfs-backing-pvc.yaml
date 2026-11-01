@@ -28,6 +28,11 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: nfs-server-data
+  annotations:
+    # Argo CD (docs/kubernetes-deployment.md, "GitOps with Argo CD"): never
+    # prune or cascade-delete this object. On cinder-csi, deleting the claim
+    # deletes the volume with every workspace on it.
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false
   namespace: template-app-storage
   labels:
     app.kubernetes.io/part-of: openms-streamlit

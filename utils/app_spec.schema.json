@@ -193,6 +193,11 @@
           "type": "array",
           "items": {"type": "string"},
           "description": "Glob patterns this app owns. On a merge conflict in one of them the sync keeps the app's version. Everything else is template-owned: a conflict there stops the sync for a human."
+        },
+        "auto_merge": {
+          "type": "boolean",
+          "default": true,
+          "description": "A template-sync PR without any conflict is set to auto-merge (merge commit) once the default branch's required checks pass. Skipped when the branch requires no checks. A PR with resolved app-owned conflicts always waits for a review."
         }
       }
     }

@@ -350,6 +350,16 @@ kubectl -n openms rollout status deployment/<your-app-name>-streamlit --timeout=
 
 Smoke-test the ingress URL in a browser — the app should load, a session cookie `stroute` should be set, and uploading a file should work.
 
+### GitOps with Argo CD
+
+Instead of running Step 6 by hand on every change, Argo CD can apply the overlay from git:
+
+- One Application per app on `k8s/overlays/prod`, with automatic sync, prune and self-heal. Turn automatic sync on only after a first manual sync whose diff you have read.
+- The storage root is an Application of its own on `k8s/storage`, **without** automatic sync. It needs `kustomize.buildOptions: --enable-helm` in `argocd-cm`.
+- The namespaces and both PVCs carry `argocd.argoproj.io/sync-options: Prune=false,Delete=false`. All apps share the `openms` namespace, and deleting a claim on `cinder-csi` deletes its volume, so Argo CD must never remove them.
+- Ignore the data of `<prefix>-streamlit-secrets` (`ignoreDifferences` plus `RespectIgnoreDifferences=true`). The admin password is patched live (Step 5), and self-heal would reset it.
+- Argo CD rolls out changes in git. A rebuilt image under a moving tag (`main-full`, `latest`) is not one, so pin `images[0].newTag` to a release tag through a PR (the `release-app` skill).
+
 ### Automation with Claude skills
 
 If you are using Claude Code, two skills automate this entire flow end-to-end:
