@@ -16,12 +16,14 @@
 # Commits a human pushed onto `template-sync` are never overwritten: the run
 # stops and comments on the PR instead.
 #
-# Token: PRs opened with the default GITHUB_TOKEN do not trigger other
-# workflows, so CI would not run on the sync PR. Set the repository secret
-# TEMPLATE_SYNC_TOKEN (fine-grained PAT or GitHub App token: contents,
-# pull-requests and issues write) to get CI on it. Without it the job still
-# works, and CI starts once someone pushes to the branch. The organization must
-# also allow GitHub Actions to create pull requests.
+# Token: set the repository secret TEMPLATE_SYNC_TOKEN (fine-grained PAT or
+# GitHub App token: contents, pull-requests, issues and workflows write).
+#   - The default GITHUB_TOKEN can never push a commit that changes a file
+#     under .github/workflows/, and most template updates do. Without the
+#     secret those syncs fail at the push, with an error naming the secret.
+#   - PRs opened with GITHUB_TOKEN do not trigger other workflows, so CI would
+#     not run on the sync PR either.
+# The organization must also allow GitHub Actions to create pull requests.
 name: Template sync
 
 on:
@@ -175,7 +177,14 @@ jobs:
           # Lease on the SHA the human-commit check saw (empty: the branch must
           # not exist yet). Anything pushed since makes this fail and leaves the
           # branch as it is.
-          git push --force-with-lease="refs/heads/${SYNC_BRANCH}:${REMOTE_SHA}" origin "$SYNC_BRANCH"
+          if ! git push --force-with-lease="refs/heads/${SYNC_BRANCH}:${REMOTE_SHA}" origin "$SYNC_BRANCH"; then
+            if git diff --name-only "origin/${DEFAULT_BRANCH}" HEAD | grep -q '^\.github/workflows/'; then
+              echo "::error::The merge changes files under .github/workflows/, which GITHUB_TOKEN may not push. Set the TEMPLATE_SYNC_TOKEN secret (contents, pull-requests, issues and workflows write)."
+            else
+              echo "::error::Push refused: someone pushed to ${SYNC_BRANCH} after this run checked it, or the token cannot write. The branch was left as it is."
+            fi
+            exit 1
+          fi
           {
             echo "Merges [${TEMPLATE_REPO}@${SHORT}](https://github.com/${TEMPLATE_REPO}/commit/${TSHA}) into \`${DEFAULT_BRANCH}\`."
             echo
