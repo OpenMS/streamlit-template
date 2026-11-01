@@ -1,5 +1,6 @@
 import streamlit as st
 from src.common.common import page_setup
+from src.common.installers import render_installer_buttons
 from pathlib import Path
 from docs.toppframework import content as topp_framework_content
 
@@ -44,20 +45,7 @@ if page == pages[0]:
 #############################################################################################
 
 if page == pages[1]:
-    if Path("OpenMS-App-Setup.exe").exists():
-        st.markdown(
-            """
-Download the latest version for **Windows** here clicking the button below.
-"""
-        )
-        with open("OpenMS-App-Setup.exe", "rb") as file:
-            st.download_button(
-                label="Download for Windows",
-                data=file,
-                file_name="OpenMS-App-Setup.exe",
-                mime="application/vnd.microsoft.portable-executable",
-                type="primary",
-            )
+    render_installer_buttons("Download the latest version of the desktop app:")
     with open(Path("docs", "installation.md"), "r", encoding="utf-8") as f:
         content = f.read()
     st.markdown(content) 
