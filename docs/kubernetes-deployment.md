@@ -291,7 +291,9 @@ Several of the storage tier's names are **cluster-scoped**, or would otherwise c
 | `k8s/base/workspace-pvc.yaml` | `storageClassName`, which must equal `storageClass.name` above |
 | `k8s/storage/networkpolicy.yaml` | the `app: template-app` literal, which must equal `commonLabels.app` in your overlay |
 
-The last two are checked by CI: `assert_netpol_string_matches_overlay` compares the label, and the kind jobs fail the deploy if the workspaces PVC names a StorageClass the storage root does not publish.
+CI checks all of them. `assert_storage_names_match_slug` compares every name with your overlay's `namePrefix` (`<slug>-storage`, `<slug>-nfs`, `<slug>-nfs-server`), so a fork that kept `template-app-` fails its build instead of taking over another fork's storage on the shared cluster. `assert_netpol_string_matches_overlay` compares the label, and the kind jobs read the storage namespace from `k8s/storage/kustomization.yaml`, so no workflow edit is needed after the rename.
+
+If your app is already deployed under the template names, the rename is a migration (new namespace, new backing volume, new StorageClass): follow `docs/a16-storage-runbook.md` rather than applying the renamed manifests over the old ones.
 
 ### Step 5 — Configure the admin password (optional)
 
