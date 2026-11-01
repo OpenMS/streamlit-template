@@ -826,7 +826,11 @@ jobs:
           # moving, not the passage of time: bump kind, then read the support
           # table again.
           kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.15.1/deploy/static/provider/kind/deploy.yaml
-          kubectl wait --namespace ingress-nginx --for=condition=ready pod --selector=app.kubernetes.io/component=controller --timeout=90s
+          # Wait on the Deployment, not on its pods: right after `apply` the
+          # ReplicaSet may not have created the controller pod yet, and
+          # `kubectl wait --selector` against zero pods fails at once with
+          # "no matching resources found" (seen on the arm64 runners).
+          kubectl rollout status --namespace ingress-nginx deployment/ingress-nginx-controller --timeout=180s
 
       - name: Set up Helm
         # kubectl kustomize --enable-helm shells out to `helm` to inflate the
