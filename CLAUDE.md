@@ -266,6 +266,8 @@ Twenty-five loadable skills live here, each as `<name>/SKILL.md` with YAML front
 
 `.github/workflows/template-sync.yml` runs weekly in every app (never in the template itself): it merges `template.branch` of `template.repository` from `app.yaml`, keeps the app's side of conflicts in app-owned files, and opens or updates one `template-sync` PR; a conflict in a template-owned file, or no common history, opens an issue instead. Set a `TEMPLATE_SYNC_TOKEN` secret (fine-grained PAT or GitHub App token with contents, pull-requests, issues and workflows write): the default `GITHUB_TOKEN` cannot push a merge that changes `.github/workflows/`, and PRs it opens do not trigger CI.
 
+**Review queue** (`docs/review-queue.md`): PRs are sorted by risk. Dependabot patch/minor PRs (`.github/workflows/auto-merge.yml`) and template-sync PRs without any conflict are set to auto-merge, but only where the default branch has required status checks; `.github/CODEOWNERS` marks the full-review paths. `.github/scripts/setup-review-queue.sh OWNER/REPO CHECK...` is the one-time admin setup (merge options + default-branch ruleset). `sync.auto_merge: false` in `app.yaml` opts an app out.
+
 **Notebook → webapp framework** — turns a Jupyter notebook into an app. `notebook-to-webapp` orchestrates; the five stage skills also work standalone against an existing app:
 
 | skill | stage |

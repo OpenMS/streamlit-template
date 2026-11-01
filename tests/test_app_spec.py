@@ -136,3 +136,12 @@ def test_image_and_hosts_must_match_overlay(tmp_path):
     errors = app_spec.consistency_errors(s, root)
     assert any("images[0].newName" in e for e in errors)
     assert any("myapp.webapps.openms.de" in e for e in errors)
+
+
+def test_sync_auto_merge_is_a_boolean(spec):
+    ok = copy.deepcopy(spec)
+    ok.setdefault("sync", {})["auto_merge"] = False
+    assert app_spec.schema_errors(ok) == []
+    bad = copy.deepcopy(spec)
+    bad.setdefault("sync", {})["auto_merge"] = "yes"
+    assert any("sync/auto_merge" in e for e in app_spec.schema_errors(bad))

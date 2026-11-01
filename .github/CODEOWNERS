@@ -1,0 +1,11 @@
+# Review queue (docs/review-queue.md): a PR touching these paths is full-review
+# class and requests its owner automatically. The ruleset from
+# .github/scripts/setup-review-queue.sh does not *require* code-owner approval:
+# the owner authors most of these PRs and cannot approve their own, and in the
+# apps these paths arrive through template-sync PRs already reviewed upstream.
+# An app with other maintainers lists this file in sync.app_owned (app.yaml).
+/src/workflow/   @t0mdavid-m
+/.github/        @t0mdavid-m
+/k8s/            @t0mdavid-m
+/docker/         @t0mdavid-m
+/Dockerfile*     @t0mdavid-m

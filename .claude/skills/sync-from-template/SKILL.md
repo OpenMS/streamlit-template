@@ -22,6 +22,10 @@ skill is for the ones it hands to a human, and for first syncs.
   really needs to differ, and then the difference belongs in the template as an
   option (`upstream-to-template`).
 - **One sync PR at a time**, titled `Sync with template (<short sha>)`.
+- **Clean syncs merge themselves.** The job sets a sync PR without any conflict
+  to auto-merge once the required checks pass (`docs/review-queue.md`). A PR
+  with resolved app-owned conflicts, and any sync done with this skill, waits
+  for a review: merge it with a merge commit.
 
 ## Steps
 

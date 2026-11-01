@@ -24,6 +24,10 @@
 #   - PRs opened with GITHUB_TOKEN do not trigger other workflows, so CI would
 #     not run on the sync PR either.
 # The organization must also allow GitHub Actions to create pull requests.
+#
+# Review queue (docs/review-queue.md): a sync without any conflict is set to
+# auto-merge with a merge commit, if the default branch has required checks and
+# app.yaml does not say sync.auto_merge: false.
 name: Template sync
 
 on:
@@ -174,6 +178,14 @@ jobs:
           REMOTE_SHA: ${{ steps.merge.outputs.remote_sha }}
         run: |
           set -euo pipefail
+          required_checks() {  # number of status checks required on branch $1
+            local a b
+            a=$(gh api "repos/${GITHUB_REPOSITORY}/rules/branches/$1" \
+                  --jq '[.[] | select(.type == "required_status_checks") | .parameters.required_status_checks[]] | length' 2>/dev/null) || a=0
+            b=$(gh api "repos/${GITHUB_REPOSITORY}/branches/$1" \
+                  --jq '(.protection.required_status_checks.contexts // []) | length' 2>/dev/null) || b=0
+            echo $(( ${a:-0} + ${b:-0} ))
+          }
           # Lease on the SHA the human-commit check saw (empty: the branch must
           # not exist yet). Anything pushed since makes this fail and leaves the
           # branch as it is.
@@ -208,6 +220,21 @@ jobs:
           else
             gh pr create --base "$DEFAULT_BRANCH" --head "$SYNC_BRANCH" \
               --title "Sync with template (${SHORT})" --body-file /tmp/body.md
+            PR=$(gh pr list --head "$SYNC_BRANCH" --state open --json number --jq '.[0].number // empty')
+          fi
+
+          # Review queue: a sync without any conflict merges itself once the
+          # required checks pass. Only where checks are required, or auto-merge
+          # would merge untested. Merge commit, never squash (see the PR body).
+          AUTO=$(python -c 'import yaml; s=(yaml.safe_load(open("/tmp/app.yaml")) or {}).get("sync") or {}; print(str(s.get("auto_merge", True)).lower())')
+          if [ "$AUTO" != "true" ]; then
+            echo "Auto-merge off (sync.auto_merge: false in app.yaml)."
+          elif [ -s /tmp/resolved.txt ]; then
+            echo "Conflicts in app-owned files were resolved; left for a human review."
+          elif [ "$(required_checks "$DEFAULT_BRANCH")" -eq 0 ]; then
+            echo "::notice::${DEFAULT_BRANCH} has no required status checks, so the sync PR is not set to auto-merge. See docs/review-queue.md."
+          elif ! gh pr merge "$PR" --auto --merge; then
+            echo "::warning::Could not enable auto-merge on #${PR}. Allow auto-merge and merge commits in the repository settings (docs/review-queue.md)."
           fi
 
       - name: Comment when a human owns the sync branch

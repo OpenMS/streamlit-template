@@ -1,0 +1,47 @@
+# Review queue: dependabot patch and minor updates merge themselves once the
+# required checks pass. Major updates, and everything else, wait for a human.
+# See docs/review-queue.md. Clean template-sync PRs are set to auto-merge by
+# template-sync.yml itself.
+#
+# Auto-merge is enabled only where the base branch has required status checks:
+# without them, GitHub would merge the PR before any test ran.
+name: Auto-merge
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  dependabot:
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PR_URL: ${{ github.event.pull_request.html_url }}
+      BASE: ${{ github.event.pull_request.base.ref }}
+    steps:
+      - name: Read the update type
+        id: meta
+        uses: dependabot/fetch-metadata@v2
+        with:
+          github-token: ${{ github.token }}
+
+      - name: Enable auto-merge for patch and minor updates
+        if: >-
+          steps.meta.outputs.update-type == 'version-update:semver-patch' ||
+          steps.meta.outputs.update-type == 'version-update:semver-minor'
+        run: |
+          set -euo pipefail
+          a=$(gh api "repos/${GITHUB_REPOSITORY}/rules/branches/${BASE}" \
+                --jq '[.[] | select(.type == "required_status_checks") | .parameters.required_status_checks[]] | length' 2>/dev/null) || a=0
+          b=$(gh api "repos/${GITHUB_REPOSITORY}/branches/${BASE}" \
+                --jq '(.protection.required_status_checks.contexts // []) | length' 2>/dev/null) || b=0
+          if [ $(( ${a:-0} + ${b:-0} )) -eq 0 ]; then
+            echo "::notice::${BASE} has no required status checks; leaving ${PR_URL} for a human. See docs/review-queue.md."
+            exit 0
+          fi
+          gh pr merge "$PR_URL" --auto --squash
