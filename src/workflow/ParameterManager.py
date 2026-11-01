@@ -312,11 +312,13 @@ class ParameterManager:
             self._merge_bool_params_from_ini(tool)
         return ini_path.exists()
 
-    def save_parameters(self) -> None:
+    def save_parameters(self) -> bool:
         """
         Saves the current parameters from Streamlit's session state to a JSON file.
         It handles both general parameters and parameters specific to TOPP tools,
         ensuring that only non-default values are stored.
+
+        Returns False when the stored file could not be read and nothing was saved.
         """
         # Everything in session state which begins with self.param_prefix is saved to a json file
         json_params = {
@@ -336,7 +338,7 @@ class ParameterManager:
             self._report_unreadable_parameter_file(
                 e, "Parameters were not saved, the existing file is left unchanged."
             )
-            return
+            return False
         json_params = stored_params | json_params
 
         # get a list of TOPP tools (or tool instance names) which are in session state
@@ -392,6 +394,7 @@ class ParameterManager:
                         json_params[tool][short_key] = value
         # Save to json file
         _write_parameter_file(self.params_file, json_params)
+        return True
 
     def get_parameters_from_json(self) -> dict:
         """

@@ -305,16 +305,33 @@ class WorkflowManager:
         """
         Shows the execution section of the UI with content defined in self.execution().
         """
+        name_key = ""
         if self.multi_run:
-            from .run_widgets import run_name_input
+            from .run_widgets import run_name_input, run_name_key
 
             run_name_input(self.runs, disabled=self.get_workflow_status()["running"])
+            name_key = run_name_key(self.runs)
+        if self._run_online(name_key):
+            return
         self.ui.execution_section(
             start_workflow_function=self.start_workflow,
             get_status_function=self.get_workflow_status,
             stop_workflow_function=self.stop_workflow
         )
         
+    def _run_online(self, name_key: str) -> bool:
+        """Offer the linked online workspace (offline app, workspace sync on).
+
+        True when the user chose it and its controls were drawn instead.
+        """
+        if not st.session_state.get("settings", {}).get("workspace_sync", {}).get("enabled"):
+            return False
+        from src.common.workspace_sync import render_run_choice
+
+        # Saved when the online run starts: it takes them from params.json.
+        return render_run_choice(self.workflow_dir, name_key,
+                                 save_parameters=self.parameter_manager.save_parameters)
+
     def show_results_section(self) -> None:
         """
         Shows the results section of the UI with content defined in self.results().

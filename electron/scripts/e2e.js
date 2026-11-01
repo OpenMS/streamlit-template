@@ -189,9 +189,11 @@ async function navTargets(page) {
     await more.first().click();
     await settle(page);
   }
+  // Pages an app hides from the menu (display: none) are opened from
+  // elsewhere, so only visible entries are targets.
   const hrefs = await page
     .locator('[data-testid="stSidebarNav"] a')
-    .evaluateAll((as) => as.map((a) => a.getAttribute("href")));
+    .evaluateAll((as) => as.filter((a) => a.offsetParent !== null).map((a) => a.getAttribute("href")));
   return [...new Set(hrefs.map((h) => new URL(h, "http://x").pathname.replace(/^\//, "")))];
 }
 

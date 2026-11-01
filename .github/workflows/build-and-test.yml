@@ -1165,6 +1165,10 @@ jobs:
             curl -fsS --resolve "$host:8080:127.0.0.1" "http://$host:8080/_stcore/health"
             echo ""
             echo "$host -> 200 OK"
+            # Workspace sync Deployment, routed at /sync (answers health even
+            # while workspace_sync is disabled).
+            curl -fsS --resolve "$host:8080:127.0.0.1" "http://$host:8080/sync/health" | grep -q '"tus"'
+            echo "$host/sync -> 200 OK"
           done
 
       # Everything below is `.github/scripts/ci-assertions.sh`. Each assertion
@@ -1782,7 +1786,7 @@ jobs:
           SLUG=$(yq '.commonLabels.app' k8s/overlays/prod/kustomization.yaml)
           TRAEFIK_HOSTS=$(kubectl kustomize k8s/overlays/prod/ \
             | yq 'select(.kind == "IngressRoute") | .spec.routes[].match' \
-            | grep -oP "Host\(\`\K[^\`]+" | tr '\n' ' ')
+            | grep -oP "Host\(\`\K[^\`]+" | sort -u | tr '\n' ' ')
           # This shell has no pipefail, so a grep that matches nothing yields an
           # empty string with exit 0 - and "Curl both hostnames via Traefik"
           # below, the ONLY place this job exercises the app through Traefik,
@@ -1886,6 +1890,9 @@ jobs:
             curl -fsS --resolve "$host:8080:127.0.0.1" "http://$host:8080/_stcore/health"
             echo ""
             echo "$host -> 200 OK"
+            # Workspace sync Deployment, routed at /sync by routes/1.
+            curl -fsS --resolve "$host:8080:127.0.0.1" "http://$host:8080/sync/health" | grep -q '"tus"'
+            echo "$host/sync -> 200 OK"
             curled=$((curled + 1))
           done
           # A loop that ran zero times is otherwise indistinguishable from a
