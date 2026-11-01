@@ -832,11 +832,12 @@ def _run_panel(workspace: Path, link: dict, workflow: str, name_key: str,
                        "if the connection drops, also after closing the app.")
         if st.button("Start Workflow online", type="primary", width="stretch",
                      key=f"sync-run-start-{workflow}"):
-            name = st.session_state.pop(name_key, "") if name_key else ""
-            if save_parameters is not None:
-                save_parameters()
-            _start_run(workspace, link, workflow, status["inputs"], name)
-            st.rerun(scope="fragment")
+            # The online run takes its parameters from params.json: a failed
+            # save (already reported) would start it with the stored ones.
+            if save_parameters is None or save_parameters() is not False:
+                name = st.session_state.pop(name_key, "") if name_key else ""
+                _start_run(workspace, link, workflow, status["inputs"], name)
+                st.rerun(scope="fragment")
     elif st.button("Stop Workflow", type="primary", width="stretch",
                    key=f"sync-run-stop-{workflow}"):
         try:

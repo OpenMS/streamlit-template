@@ -156,10 +156,15 @@ def start(qm, workspace: Path, workflow: str, target: str, params: dict,
     return status(qm, workspace, workflow)
 
 
+_ACTIVE = ("queued", "started", "deferred")
+
+
 def stop(qm, workspace: Path, workflow: str) -> dict:
     workflow_dir = Path(workspace, workflow)
     job_id = qm.load_job_id(workflow_dir)
-    if job_id and qm.cancel_job(job_id):
+    job = qm.get_job_info(job_id) if job_id else None
+    # A run that has already ended keeps its outcome.
+    if job is not None and job.status.value in _ACTIVE and qm.cancel_job(job_id):
         from src.workflow.Logger import Logger
         Logger(workflow_dir).log("WORKFLOW CANCELLED")
         shutil.rmtree(Path(workflow_dir, "pids"), ignore_errors=True)

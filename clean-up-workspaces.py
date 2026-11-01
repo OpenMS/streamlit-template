@@ -90,6 +90,11 @@ if sync_uploads.is_dir():
             if lock is not None:
                 os.close(lock)
             continue        # still being written, or the lock cannot be taken
+        # A request may have written it between the check above and the lock.
+        if any(os.path.getmtime(f) >= current_time - 86400 * 2 for f in files[:2] if f.exists()):
+            if lock is not None:
+                os.close(lock)
+            continue
         print(f"Deleting stale partial upload: {upload_id}")
         for f in files:
             f.unlink(missing_ok=True)

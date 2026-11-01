@@ -49,3 +49,11 @@ def test_sync_without_developer_only_and_when_disabled(state):
     state["settings"]["workspace_sync"]["enabled"] = False
     state["developer-mode"] = True
     assert not workspace_sync.sync_enabled()
+
+
+def test_environment_overrides_the_settings_hash(state, monkeypatch):
+    monkeypatch.setenv("DEVELOPER_PASSWORD_SHA256", hashlib.sha256(b"per deployment").hexdigest())
+    assert developer.verify_password("per deployment")
+    assert not developer.verify_password("open sesame")
+    monkeypatch.setenv("DEVELOPER_PASSWORD_SHA256", "none")
+    assert not developer.verify_password("open sesame")

@@ -496,6 +496,11 @@ def test_runs_directed_from_the_desktop(online, tmp_path, monkeypatch):
     assert stopped["status"] == "canceled"
     assert "WORKFLOW CANCELLED" in stopped["log"][-1]
     assert RunManager(remote).get(run["id"])["status"] == "cancelled"
+    # Stop on a job that has ended leaves its run's outcome alone.
+    run_file = remote / "runs" / run["id"] / "run.json"
+    run_file.write_text(json.dumps({**json.loads(run_file.read_text()), "status": "finished"}))
+    assert c.stop_run("topp-workflow")["status"] == "canceled"
+    assert RunManager(remote).get(run["id"])["status"] == "finished"
     # Ended, the run comes down whole, so the desktop's Results page lists it.
     c.pull(ws)
     assert (ws / "topp-workflow" / "runs" / run["id"] / "results" / "out.tsv").read_text() == "x"

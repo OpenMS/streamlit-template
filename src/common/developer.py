@@ -5,13 +5,16 @@ to developers until they are ready for everyone.
 It is unlocked per browser session with a password entered under ⚙️ Settings in
 the sidebar. settings.json holds only the password's sha256
 (``developer_mode.password_sha256``), so the repository and the desktop
-installers never contain it. No hash, no developer mode.
+installers never contain it. A deployment sets its own with the environment
+variable ``DEVELOPER_PASSWORD_SHA256``, which wins over settings.json; ``none``
+there turns developer mode off. No hash, no developer mode.
 
     python -c "import hashlib, getpass; print(hashlib.sha256(getpass.getpass().encode()).hexdigest())"
 """
 
 import hashlib
 import hmac
+import os
 
 import streamlit as st
 
@@ -19,6 +22,9 @@ _KEY = "developer-mode"
 
 
 def _password_hash() -> str:
+    env = os.environ.get("DEVELOPER_PASSWORD_SHA256", "").strip()
+    if env:
+        return "" if env.lower() == "none" else env
     return (st.session_state.settings.get("developer_mode") or {}).get("password_sha256", "")
 
 
