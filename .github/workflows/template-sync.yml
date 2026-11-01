@@ -1,0 +1,233 @@
+# Merge the template into this app once a week and open (or update) one PR.
+#
+# Runs in every app derived from OpenMS/streamlit-template, never in the
+# template itself. The source is `template:` in app.yaml (default
+# OpenMS/streamlit-template, main).
+#
+#   up to date            nothing happens
+#   merges cleanly        branch `template-sync` is pushed, one PR opened/updated
+#   conflicts only in     the app's side is kept for files matching
+#   app-owned files       `sync.app_owned` in app.yaml, then as above; the PR
+#                         lists every file resolved that way
+#   other conflicts, or   the merge is abandoned and one issue titled
+#   no common history     "Template sync needs a human" is opened/updated with
+#                         the file list; the sync-from-template skill does the rest
+#
+# Commits a human pushed onto `template-sync` are never overwritten: the run
+# stops and comments on the PR instead.
+#
+# Token: PRs opened with the default GITHUB_TOKEN do not trigger other
+# workflows, so CI would not run on the sync PR. Set the repository secret
+# TEMPLATE_SYNC_TOKEN (fine-grained PAT or GitHub App token: contents,
+# pull-requests and issues write) to get CI on it. Without it the job still
+# works, and CI starts once someone pushes to the branch. The organization must
+# also allow GitHub Actions to create pull requests.
+name: Template sync
+
+on:
+  schedule:
+    - cron: "17 4 * * 1"   # Mondays 04:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: template-sync
+  cancel-in-progress: false
+
+env:
+  SYNC_BRANCH: template-sync
+  ISSUE_TITLE: Template sync needs a human
+  BOT_NAME: github-actions[bot]
+  BOT_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+
+jobs:
+  sync:
+    if: github.repository != 'OpenMS/streamlit-template'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.TEMPLATE_SYNC_TOKEN || github.token }}
+      DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+          token: ${{ secrets.TEMPLATE_SYNC_TOKEN || github.token }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Read the template source from app.yaml
+        run: |
+          pip install --quiet pyyaml
+          python - <<'PY' >> "$GITHUB_ENV"
+          import os, yaml
+          spec = {}
+          if os.path.isfile("app.yaml"):
+              spec = yaml.safe_load(open("app.yaml", encoding="utf-8")) or {}
+          t = spec.get("template") or {}
+          print(f"TEMPLATE_REPO={t.get('repository', 'OpenMS/streamlit-template')}")
+          print(f"TEMPLATE_BRANCH={t.get('branch', 'main')}")
+          PY
+
+      - name: Merge the template
+        id: merge
+        run: |
+          set -euo pipefail
+          git config user.name  "$BOT_NAME"
+          git config user.email "$BOT_EMAIL"
+          git remote add template "https://github.com/${TEMPLATE_REPO}.git"
+          git fetch --no-tags template "$TEMPLATE_BRANCH"
+          TSHA=$(git rev-parse FETCH_HEAD)
+          SHORT=$(git rev-parse --short "$TSHA")
+          echo "tsha=$TSHA" >> "$GITHUB_OUTPUT"
+          echo "short=$SHORT" >> "$GITHUB_OUTPUT"
+
+          if git merge-base --is-ancestor "$TSHA" HEAD; then
+            echo "status=up-to-date" >> "$GITHUB_OUTPUT"
+            echo "Already contains ${TEMPLATE_REPO}@${SHORT}."
+            exit 0
+          fi
+          if ! BASE=$(git merge-base HEAD "$TSHA"); then
+            echo "status=unrelated" >> "$GITHUB_OUTPUT"
+            echo "No common history with ${TEMPLATE_REPO}; the first sync is manual." > /tmp/conflicts.txt
+            exit 0
+          fi
+          echo "base=$(git rev-parse --short "$BASE")" >> "$GITHUB_OUTPUT"
+
+          # Never overwrite a human's work on the sync branch.
+          if git fetch --no-tags origin "$SYNC_BRANCH" 2>/dev/null; then
+            HUMAN=$(git log --no-merges --format='%ae' FETCH_HEAD "^origin/$DEFAULT_BRANCH" "^$TSHA" | grep -vxF "$BOT_EMAIL" || true)
+            if [ -n "$HUMAN" ]; then
+              echo "status=human-commits" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+
+          git checkout -B "$SYNC_BRANCH"
+          if git merge --no-ff --no-edit -m "Sync with template (${SHORT})" "$TSHA"; then
+            echo "status=merged" >> "$GITHUB_OUTPUT"
+            : > /tmp/resolved.txt
+            exit 0
+          fi
+
+          # Keep the app's side of conflicts in app-owned files.
+          git diff --name-only --diff-filter=U > /tmp/unmerged.txt
+          python - <<'PY'
+          import fnmatch, os, yaml
+          default = ["app.yaml", "app.py", "settings.json", "default-parameters.json",
+                     "presets.json", "README.md", "content/*", "src/Workflow.py",
+                     "src/python-tools/*", "example-data/*", "assets/*", "k8s/overlays/*"]
+          spec = {}
+          if os.path.isfile("app.yaml"):
+              spec = yaml.safe_load(open("app.yaml", encoding="utf-8")) or {}
+          owned = (spec.get("sync") or {}).get("app_owned") or default
+          files = [l.strip() for l in open("/tmp/unmerged.txt") if l.strip()]
+          with open("/tmp/resolved.txt", "w") as r, open("/tmp/conflicts.txt", "w") as c:
+              for f in files:
+                  (r if any(fnmatch.fnmatch(f, p) for p in owned) else c).write(f + "\n")
+          PY
+          while read -r f; do
+            [ -n "$f" ] || continue
+            if git cat-file -e "HEAD:$f" 2>/dev/null; then
+              git checkout --ours -- "$f"
+              git add -- "$f"
+            else
+              git rm --quiet --cached -- "$f" || true
+              rm -f -- "$f"
+            fi
+          done < /tmp/resolved.txt
+
+          if [ -s /tmp/conflicts.txt ]; then
+            git merge --abort
+            echo "status=conflict" >> "$GITHUB_OUTPUT"
+          else
+            git commit --no-edit
+            echo "status=merged" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Push and open or update the PR
+        if: steps.merge.outputs.status == 'merged'
+        env:
+          TSHA: ${{ steps.merge.outputs.tsha }}
+          SHORT: ${{ steps.merge.outputs.short }}
+          BASE: ${{ steps.merge.outputs.base }}
+        run: |
+          set -euo pipefail
+          git push --force origin "$SYNC_BRANCH"
+          {
+            echo "Merges [${TEMPLATE_REPO}@${SHORT}](https://github.com/${TEMPLATE_REPO}/commit/${TSHA}) into \`${DEFAULT_BRANCH}\`."
+            echo
+            echo "Template changes: https://github.com/${TEMPLATE_REPO}/compare/${BASE}...${TSHA}"
+            echo
+            if [ -s /tmp/resolved.txt ]; then
+              echo "Conflicts in app-owned files (\`sync.app_owned\` in app.yaml), resolved by keeping this app's version. Check whether any of these template changes should still be applied by hand:"
+              echo
+              sed 's/^/- `/; s/$/`/' /tmp/resolved.txt
+            else
+              echo "Merged without conflicts."
+            fi
+            echo
+            echo "Before merging: run one workflow on the example data. New template features the app should configure are listed in the template PRs of the range above. Merge with a merge commit, not squash, or the next sync conflicts again on the same lines."
+            echo
+            echo "_Opened by .github/workflows/template-sync.yml. See the sync-from-template skill._"
+          } > /tmp/body.md
+          PR=$(gh pr list --head "$SYNC_BRANCH" --state open --json number --jq '.[0].number // empty')
+          if [ -n "$PR" ]; then
+            gh pr edit "$PR" --title "Sync with template (${SHORT})" --body-file /tmp/body.md
+          else
+            gh pr create --base "$DEFAULT_BRANCH" --head "$SYNC_BRANCH" \
+              --title "Sync with template (${SHORT})" --body-file /tmp/body.md
+          fi
+
+      - name: Comment when a human owns the sync branch
+        if: steps.merge.outputs.status == 'human-commits'
+        env:
+          SHORT: ${{ steps.merge.outputs.short }}
+        run: |
+          PR=$(gh pr list --head "$SYNC_BRANCH" --state open --json number --jq '.[0].number // empty')
+          MSG="The template moved on to ${TEMPLATE_REPO}@${SHORT}, but \`${SYNC_BRANCH}\` carries commits pushed by hand, so the scheduled sync left it alone. Merge \`template/${TEMPLATE_BRANCH}\` into this branch again, or merge this PR and the next run starts fresh."
+          if [ -n "$PR" ]; then
+            gh pr comment "$PR" --body "$MSG"
+          else
+            echo "::warning::$MSG"
+          fi
+
+      - name: Open or update the issue for a manual sync
+        if: steps.merge.outputs.status == 'conflict' || steps.merge.outputs.status == 'unrelated'
+        env:
+          TSHA: ${{ steps.merge.outputs.tsha }}
+          SHORT: ${{ steps.merge.outputs.short }}
+        run: |
+          set -euo pipefail
+          {
+            echo "The scheduled sync could not merge [${TEMPLATE_REPO}@${SHORT}](https://github.com/${TEMPLATE_REPO}/commit/${TSHA}) on its own."
+            echo
+            if [ "${{ steps.merge.outputs.status }}" = "unrelated" ]; then
+              echo "This repository shares no history with the template, so the first sync has to be a manual \`git merge --allow-unrelated-histories\`."
+            else
+              echo "Conflicts in template-owned files:"
+              echo
+              sed 's/^/- `/; s/$/`/' /tmp/conflicts.txt
+              if [ -s /tmp/resolved.txt ]; then
+                echo
+                echo "Also conflicting, but app-owned (keep this app's version unless the template change is needed):"
+                echo
+                sed 's/^/- `/; s/$/`/' /tmp/resolved.txt
+              fi
+            fi
+            echo
+            echo "Follow the sync-from-template skill (.claude/skills/sync-from-template/SKILL.md), push the result to \`${SYNC_BRANCH}\` and open the PR. This issue is updated by every weekly run until then."
+          } > /tmp/issue.md
+          ISSUE=$(gh issue list --state open --search "in:title \"${ISSUE_TITLE}\"" --json number,title \
+                  --jq ".[] | select(.title == \"${ISSUE_TITLE}\") | .number" | head -n1)
+          if [ -n "$ISSUE" ]; then
+            gh issue comment "$ISSUE" --body-file /tmp/issue.md
+          else
+            gh issue create --title "$ISSUE_TITLE" --body-file /tmp/issue.md
+          fi
