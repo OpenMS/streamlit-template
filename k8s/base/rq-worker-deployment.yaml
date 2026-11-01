@@ -39,7 +39,7 @@ spec:
   #     during any node drain, since a cordoned node still counts as a domain
   #     under the default nodeTaintsPolicy;
   #   - the readinessProbe below fails every worker whose mount is blocked
-  #     during a routine Ganesha restart.
+  #     during a routine NFS server restart or failover.
   # Either would then hang `kubectl rollout status deployment/<slug>-rq-worker`
   # and fail CI's `kubectl wait --for=condition=available`, turning a
   # degradation that the design calls survivable into a blocked rollout.
@@ -168,7 +168,7 @@ spec:
           # activate` costs a few hundred ms of shell hooks on every probe, and
           # this is the same env the container command activates one screen up.
           #
-          # Timing, against the ~90s NFSv4 grace period a Ganesha restart
+          # Timing, against the ~90s NFSv4 grace period an NFS server restart
           # imposes - all I/O blocks until it ends, so the numbers have to
           # outlast it or every routine restart flaps the worker:
           #   inner timeout 15s  - a cold interpreter plus `import redis` is
@@ -224,7 +224,7 @@ spec:
       volumes:
         - name: workspaces
           persistentVolumeClaim:
-            claimName: workspaces-nfs-pvc
+            claimName: workspaces-manila-pvc
         - name: config
           configMap:
             name: streamlit-config

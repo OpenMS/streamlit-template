@@ -4,14 +4,14 @@ This guide covers deploying an OpenMS streamlit app to a Kubernetes cluster usin
 
 ## 1. Overview
 
-The template ships a full Kubernetes deployment stack designed for the de.NBI cluster (OpenStack + `cinder-csi` storage + Traefik ingress). The stack includes:
+The template ships a full Kubernetes deployment stack designed for the de.NBI cluster (OpenStack, Manila shares for storage, Traefik ingress). The stack includes:
 
 - A Streamlit Deployment serving the web UI
 - A Redis Deployment as the job-queue backing store
 - An RQ worker Deployment running background workflows
 - A nightly cleanup CronJob for stale workspaces
 - A shared `ReadWriteMany` PersistentVolumeClaim holding per-user workspace data
-- A separate storage tier (`k8s/storage/`) running one NFS-Ganesha server that re-exports a single Cinder volume as `ReadWriteMany`, which is what lets the pods above be placed on any node
+- A cluster-wide storage tier (`k8s/storage/`): the OpenStack Manila CSI driver and a `ReadWriteMany` StorageClass, so each app's workspace volume is a Manila NFS share and the pods above can be placed on any node
 - A Traefik IngressRoute routing external traffic to the Streamlit service (with session affinity)
 
 Every production OpenMS webapp (quantms-web, umetaflow, FLASHApp) deploys via this stack.
@@ -48,8 +48,8 @@ Every production OpenMS webapp (quantms-web, umetaflow, FLASHApp) deploys via th
             └────────────────────────┘   ┌────────────────────────┐
                          ▲               │    Workspace PVC       │
                          │               │   ReadWriteMany 400Gi  │
-                         │ REDIS_URL     │  (<slug>-nfs, served   │
-                         │               │   by k8s/storage/)     │
+                         │ REDIS_URL     │ (openms-manila-nfs: a  │
+                         │               │  Manila NFS share)     │
                          │               └────────────────────────┘
                          │                        ▲
                          │                        │
@@ -83,9 +83,9 @@ Every production OpenMS webapp (quantms-web, umetaflow, FLASHApp) deploys via th
 
 ### Pod placement and the shared workspace volume
 
-All workspace-using pods (Streamlit, RQ worker, Cleanup) of a given fork mount the same `<slug>-workspaces-nfs-pvc`, which is `ReadWriteMany` on the `<slug>-nfs` StorageClass published by the storage tier in `k8s/storage/`. Because it is RWX it imposes **no** placement constraint: any number of pods on any number of nodes can hold it at once, and the scheduler alone decides where they land.
+All workspace-using pods (Streamlit, RQ worker, sync, Cleanup) of a given fork mount the same `<slug>-workspaces-manila-pvc`, which is `ReadWriteMany` on the `openms-manila-nfs` StorageClass published by the storage tier in `k8s/storage/`. Because it is RWX it imposes **no** placement constraint: any number of pods on any number of nodes can hold it at once, and the scheduler alone decides where they land.
 
-That is what the storage tier is for. The previous claim was `ReadWriteOnce` on `cinder-csi`, and a Cinder volume attaches to exactly one node, so every workspace-using pod ended up on that node whether it fitted there or not.
+That is what the storage tier is for. A Cinder volume (`cinder-csi`, `ReadWriteOnce`) attaches to exactly one node, so with it every workspace-using pod ended up on that node whether it fitted there or not. A Manila share is an NFS export served by OpenStack itself: there is no NFS server pod in the cluster, and losing a node costs only the pods on that node.
 
 Nothing else constrains placement either. The `memory-tier-*` components are pure resource patches: they set the Streamlit and worker `requests`/`limits`, and a tier is now a **pod size**, not a set of nodes. No manifest in `k8s/` carries a `nodeSelector`, a `nodeName`, a `nodeAffinity` or an `openms.de/memory-tier` label, and CI fails the build if one reappears (`assert_no_node_pinning_anywhere`). Placement is the scheduler's decision alone; the manifests only tell it how big a worker is. See Step 4b below.
 
@@ -96,9 +96,9 @@ The workers go one step further and are actively spread. `rq-worker` runs a fixe
 
 `whenUnsatisfiable: DoNotSchedule`, so a replica with nowhere to go stays `Pending` instead of quietly doubling up — including during a node drain, where the cordoned node still counts as a domain. That is visible in `kubectl get pods` and recoverable; a soft constraint that silently stops spreading is neither.
 
-Recoverable is not free, though, and it is `strategy` that buys it. A Deployment is `Available` only when `replicas - maxUnavailable` pods are ready, and the RollingUpdate default of 25% rounds *down* to `maxUnavailable: 0` at two replicas — so one `Pending` worker during a drain, or one worker failing its storage readiness probe during a Ganesha restart, would take the whole Deployment out of `Available` and hang every subsequent `kubectl rollout status`. `rq-worker` therefore sets `maxUnavailable: 1` explicitly (and `maxSurge: 0`, because a surge replica needs a whole extra worker's worth of memory free somewhere, which a cluster sized for the steady-state count does not have). The pair is what makes a lost worker a queue running at half rate rather than a blocked rollout. That the *other* replica is genuinely up is asserted directly against `.spec.replicas`, by `assert_workers_spread_across_nodes` in CI, rather than being inferred from the `Available` condition.
+Recoverable is not free, though, and it is `strategy` that buys it. A Deployment is `Available` only when `replicas - maxUnavailable` pods are ready, and the RollingUpdate default of 25% rounds *down* to `maxUnavailable: 0` at two replicas — so one `Pending` worker during a drain, or one worker failing its storage readiness probe during an NFS failover, would take the whole Deployment out of `Available` and hang every subsequent `kubectl rollout status`. `rq-worker` therefore sets `maxUnavailable: 1` explicitly (and `maxSurge: 0`, because a surge replica needs a whole extra worker's worth of memory free somewhere, which a cluster sized for the steady-state count does not have). The pair is what makes a lost worker a queue running at half rate rather than a blocked rollout. That the *other* replica is genuinely up is asserted directly against `.spec.replicas`, by `assert_workers_spread_across_nodes` in CI, rather than being inferred from the `Available` condition.
 
-Forks are isolated from each other: each has its own claim, its own export and its own storage namespace.
+Forks are isolated from each other: each PVC that claims the shared class gets a Manila share of its own, so apps share the StorageClass and the drivers, never the data.
 
 ### Ingress
 
@@ -120,14 +120,12 @@ All resources deploy into the shared `openms` namespace (`namespace: openms` in 
 Redis 7 Deployment (1 replica) + ClusterIP Service on port 6379. Backs the RQ job queue. Low resource requests (64Mi / 50m CPU).
 
 ### `workspace-pvc.yaml`
-PersistentVolumeClaim `workspaces-nfs-pvc`:
+PersistentVolumeClaim `workspaces-manila-pvc`:
 - `accessModes: [ReadWriteMany]`
-- `storageClassName: template-app-nfs` — published by `k8s/storage/`, and cluster-scoped, so a fork renames it (see Step 4c)
-- `resources.requests.storage: 400Gi`
+- `storageClassName: openms-manila-nfs` — published once per cluster by `k8s/storage/`; the same for every app
+- `resources.requests.storage: 400Gi` — the size of this app's Manila share, counted against the project's share quota. Manila grows a share in place, so raising the number and re-applying is enough.
 
-The size has to stay materially below the backing volume in `k8s/storage/nfs-backing-pvc.yaml` (500Gi). nfs-provisioner `statfs()`es its export on every provision and refuses any claim larger than the free space it finds there, so a claim sized equal to the backing volume never binds at all.
-
-This is a **different object** from the `workspaces-pvc` earlier releases used. A bound PVC's spec is immutable apart from `resources.requests`, so the `ReadWriteOnce` claim could not be converted in place — and deleting it would have destroyed its Cinder volume, because `cinder-csi` reclaims with `Delete`. The old claim is therefore left alone, which is also what makes rollback a single re-apply of the previous manifests. Delete it by hand once the cutover has been stable for a week.
+This is a **different object** from the claims earlier releases used (`workspaces-pvc`, `ReadWriteOnce` on `cinder-csi`, and then `workspaces-nfs-pvc` on a per-app Ganesha server). A bound PVC's spec is immutable apart from `resources.requests`, so the class cannot be changed in place. The old claim is left alone, which is also what makes rollback a single re-apply of the previous manifests. Delete it by hand once the cutover has been stable for a week. Workspaces expire after 7 days, so nothing is migrated.
 
 Demo workspaces live under a hidden `.demos/` subdirectory of this PVC (see [Demo workspaces](#demo-workspaces) below). User workspaces live at the PVC root, one directory per session UUID.
 
@@ -190,15 +188,26 @@ Ships with an empty admin password by default and is included in `k8s/base/kusto
 
 ## 3b. The storage tier (`k8s/storage/`)
 
-A **separate kustomize root**, applied on its own — it is not referenced from `k8s/overlays/prod/`, because `k8s/base` sets `namespace: openms` and kustomize's namespace transformer runs after patches, so objects pulled in from there would be dragged back into `openms`.
+**One per cluster, not one per app.** Everything in this root is cluster scoped or lives in `kube-system`, so it is applied once, by whoever operates the cluster, before the first app overlay. Every app on the cluster claims the same StorageClass and gets its own share.
 
 | File | Purpose |
 |------|---------|
-| `namespace.yaml` | `template-app-storage`, at `pod-security.kubernetes.io/enforce=privileged`. Ganesha needs `DAC_READ_SEARCH` and `SYS_RESOURCE`; keeping it out of the shared `openms` namespace is what stops that exemption applying to every co-tenant. |
-| `nfs-backing-pvc.yaml` | `nfs-server-data`, 500Gi `ReadWriteOnce` on `cinder-csi`. The single volume every workspace lives inside. A fresh volume, not a migration. |
-| `ganesha-values.yaml` | Helm values for `nfs-server-provisioner` 1.8.0, pinned. Four settings there are not tunables — `persistence.existingClaim`, `storageClass.reclaimPolicy: Retain`, `replicaCount: 1` and `extraArgs.device-based-fsids` — and the file says why at length. |
-| `networkpolicy.yaml` | Default-deny ingress, plus two holes on TCP 2049: one for pods labelled `app: template-app` in `openms`, one `ipBlock` for the cluster's nodes. **The node CIDR ships as a placeholder and must be set before the first deploy** — see Step 6. |
-| `kustomization.yaml` | Ties the above together and inflates the chart. Carries the fork checklist for the hand-synced names. |
+| `storageclass.yaml` | `openms-manila-nfs`: provisioner `nfs.manila.csi.openstack.org`, `reclaimPolicy: Retain`, volume expansion on, mount options `hard`, `nfsvers=4.1`, `nconnect=4`. Two values are **cluster-specific** and must be set before the first apply: `type` (the NFS share type) and `nfs-shareClient` (the node subnet that gets the share's access rule). |
+| `manila-csi-values.yaml` | Helm values for `openstack-manila-csi` 2.36.3: NFS only, forwarding mounts to the csi-driver-nfs node plugin. |
+| `csi-driver-nfs-values.yaml` | Helm values for `csi-driver-nfs` 4.11.0, used only as the node plugin that does the mount. Its own controller is scaled to zero. |
+| `kustomization.yaml` | Inflates both charts into `kube-system` and adds the StorageClass. |
+
+How a volume comes about: the workspace PVC asks for `openms-manila-nfs`; the manila-csi controller creates an NFS share of that size through the Manila API and adds an IP access rule for `nfs-shareClient`; on every node that runs a pod using it, the csi-driver-nfs node plugin mounts the share's export.
+
+**Credentials.** manila-csi talks to the Manila API with an OpenStack *application credential*, kept in the Secret `manila-csi-credentials` in `kube-system`. It is never committed. Create the credential in Horizon (*Identity → Application Credentials*, role `member`) and then:
+
+```bash
+kubectl -n kube-system create secret generic manila-csi-credentials \
+  --from-literal=os-authURL=https://<keystone>/v3 \
+  --from-literal=os-region=<region> \
+  --from-literal=os-applicationCredentialID=<id> \
+  --from-literal=os-applicationCredentialSecret=<secret>
+```
 
 Rendering this root needs Helm on `PATH`, because of the `helmCharts` block, and `kubectl apply -k` accepts no `--enable-helm` flag:
 
@@ -207,15 +216,16 @@ kubectl kustomize --enable-helm k8s/storage/            # inspect
 kubectl kustomize --enable-helm k8s/storage/ | kubectl apply -f -
 ```
 
-Rendering also writes the vendored chart into `k8s/storage/charts/`. That directory is gitignored and must never be committed.
+Rendering also writes the vendored charts into `k8s/storage/charts/`. That directory is gitignored and must never be committed.
+
+`k8s/ci-storage/` is **not** for real clusters. It is what the kind jobs in CI apply instead: one NFS-Ganesha server inside the cluster, publishing a StorageClass with the same name and mount options, because a GitHub runner cannot reach Manila. `assert_storage_class_contract` keeps the two classes in step.
 
 ## 4. Fork-and-deploy guide
 
 ### Prerequisites
 
 - `kubectl` configured for the target cluster
-- A storage class that supports `ReadWriteOnce` volumes (de.NBI uses `cinder-csi`) — the storage tier turns one such volume into the `ReadWriteMany` class the app claims
-- `mount.nfs` present on every node, since the provisioner emits in-tree `nfs:` PersistentVolumes that the kubelet mounts (`ls -l /sbin/mount.nfs*` on each node)
+- OpenStack Manila with an NFS share type and share quota for the project (Horizon shows a *Share* section under *Project*), and the storage tier in `k8s/storage/` applied once on the cluster (section 3b)
 - An ingress controller (Traefik, or nginx if you patch the nginx Ingress instead)
 - Read access to GHCR for pulling the app image
 - A DNS record pointing to the cluster's ingress load balancer
@@ -278,22 +288,9 @@ patches:
 
 `replicas x worker size` is reserved cluster-wide for as long as the workers run, queue empty or not, so raise it only when there is somewhere for the extra workers to fit. One that does not fit stays `Pending`.
 
-### Step 4c — Rename the storage tier for your fork
+### Step 4c — Storage needs no per-fork renaming
 
-Several of the storage tier's names are **cluster-scoped**, or would otherwise collide when two forks of this template share a cluster, and `namePrefix` cannot reach them (`persistence.existingClaim` is an opaque string kustomize does not rewrite). Change `template-app-` to your own slug in all of these, together:
-
-| Where | Field |
-|-------|-------|
-| `k8s/storage/kustomization.yaml` | `namespace:`, twice |
-| `k8s/storage/namespace.yaml` | `metadata.name` |
-| `k8s/storage/nfs-backing-pvc.yaml` | `metadata.namespace` |
-| `k8s/storage/ganesha-values.yaml` | `fullnameOverride`, `storageClass.name`, `storageClass.provisionerName` |
-| `k8s/base/workspace-pvc.yaml` | `storageClassName`, which must equal `storageClass.name` above |
-| `k8s/storage/networkpolicy.yaml` | the `app: template-app` literal, which must equal `commonLabels.app` in your overlay |
-
-CI checks all of them. `assert_storage_names_match_slug` compares every name with your overlay's `namePrefix` (`<slug>-storage`, `<slug>-nfs`, `<slug>-nfs-server`), so a fork that kept `template-app-` fails its build instead of taking over another fork's storage on the shared cluster. `assert_netpol_string_matches_overlay` compares the label, and the kind jobs read the storage namespace from `k8s/storage/kustomization.yaml`, so no workflow edit is needed after the rename.
-
-If your app is already deployed under the template names, the rename is a data migration (new namespace, new backing volume, new StorageClass), and no runbook for it exists yet: `docs/a16-storage-runbook.md` covers the earlier RWO-to-NFS cutover, which starts from a fresh NFS volume. Plan it with the cluster operator (apply the renamed storage root next to the old one, copy the workspaces across with a one-off job that mounts both claims, then switch the overlay) instead of applying the renamed manifests over the old ones. None of the apps deployed from this template ran the storage tier when this check was added, so a fork adopting the storage tier for the first time renames before its first apply and has nothing to migrate.
+The storage tier is shared by every app on the cluster and carries no app name, so a fork changes nothing in `k8s/storage/`. Its workspace claim gets the overlay's `namePrefix` like every other object, and with it a Manila share of its own. Size it with `resources.requests.storage` in `k8s/base/workspace-pvc.yaml` (and `deploy.k8s.storage` in `app.yaml`, which `python -m utils.app_spec` compares with it).
 
 ### Step 5 — Configure the admin password (optional)
 
@@ -324,22 +321,24 @@ kubectl -n openms rollout restart deployment/<your-app-name>-streamlit
 
 ### Step 6 — Deploy
 
-**Set the node CIDR first.** `k8s/storage/networkpolicy.yaml` ships `192.0.2.0/24` (RFC 5737 TEST-NET-1) as a placeholder, which admits nothing. The provisioner emits in-tree `nfs:` volumes, and the kubelet mounts those from the node's own address rather than from a pod IP, so without this every mount hangs on a CNI that enforces NetworkPolicy. Read the node addresses off the cluster and narrow the range as far as it will go:
-
-```bash
-kubectl get nodes -o wide          # the INTERNAL-IP column
-```
-
-Then apply the storage tier **before** the overlay. It publishes the StorageClass the workspaces PVC claims; applied in the other order, every pod sits `Pending` on a class that does not exist yet:
+**The storage tier first, once per cluster.** If no other app on the cluster has applied it yet, set the two cluster-specific values in `k8s/storage/storageclass.yaml`, create the credentials Secret (section 3b) and apply the root. It publishes the StorageClass the workspace PVC claims; applied in the other order, every pod sits `Pending` on a class that does not exist yet:
 
 ```bash
 kubectl kustomize --enable-helm k8s/storage/ | kubectl apply -f -
-kubectl -n template-app-storage rollout status statefulset -l app=nfs-server --timeout=300s
-
-kubectl apply -k k8s/overlays/prod/
+kubectl -n kube-system rollout status statefulset -l app=openstack-manila-csi --timeout=300s
+kubectl get storageclass openms-manila-nfs
 ```
 
-The first of those needs Helm on `PATH`. Both applies are idempotent, and on an upgrade the storage one is usually a no-op.
+Then the app:
+
+```bash
+kubectl apply -k k8s/overlays/prod/
+kubectl -n openms get pvc     # <slug>-workspaces-manila-pvc Bound, RWX; the share appears in Horizon
+```
+
+The first needs Helm on `PATH`. Both applies are idempotent, and on an upgrade the storage one is usually a no-op.
+
+**Coming from the Ganesha storage tier** (`<slug>-storage` namespace, `<slug>-nfs` class): apply the new storage root, then the overlay. The overlay's claim has a new name, so it binds a fresh Manila share and the pods move to it; the old claim, the Ganesha StatefulSet and its Cinder volume keep running untouched until you remove them (`kubectl delete namespace <slug>-storage`, then the released PV and the old claim) once the new deployment has been stable for a week.
 
 ### Step 7 — Verify
 
@@ -355,8 +354,8 @@ Smoke-test the ingress URL in a browser — the app should load, a session cooki
 Instead of running Step 6 by hand on every change, Argo CD can apply the overlay from git:
 
 - One Application per app on `k8s/overlays/prod`, with automatic sync, prune and self-heal. Turn automatic sync on only after a first manual sync whose diff you have read.
-- The storage root is an Application of its own on `k8s/storage`, **without** automatic sync. It needs `kustomize.buildOptions: --enable-helm` in `argocd-cm`.
-- The namespaces and both PVCs carry `argocd.argoproj.io/sync-options: Prune=false,Delete=false`. All apps share the `openms` namespace, and deleting a claim on `cinder-csi` deletes its volume, so Argo CD must never remove them.
+- The storage root is one Application per cluster on `k8s/storage`, **without** automatic sync. It needs `kustomize.buildOptions: --enable-helm` in `argocd-cm`.
+- The `openms` namespace, the workspace PVC and the StorageClass carry `argocd.argoproj.io/sync-options: Prune=false,Delete=false`. All apps share the namespace and the class, and the claim holds every workspace, so Argo CD must never remove them.
 - Ignore the data of `<prefix>-streamlit-secrets` (`ignoreDifferences` plus `RespectIgnoreDifferences=true`). The admin password is patched live (Step 5), and self-heal would reset it.
 - Argo CD rolls out changes in git. A rebuilt image under a moving tag (`main-full`, `latest`) is not one, so pin `images[0].newTag` to a release tag through a PR (the `release-app` skill).
 - `k8s/argocd/` holds this app's `Application` and `ImageUpdater`, applied once with `kubectl apply -n argocd -f k8s/argocd/`. It is not part of the overlay (the overlay forces every resource into `openms`). Each app keeps its own copy (`k8s/argocd/*` is app-owned), with its own name, repo, branch, image and release-tag pattern.
@@ -380,17 +379,17 @@ One unified workflow owns manifest lint, Docker build, push, and kind integratio
   - `kubeconform` runs against `k8s/base/*.yaml` with strict mode and Kubernetes 1.28 schemas (excluding `kustomization.yaml` and the Traefik CRD `traefik-ingressroute.yaml`).
   - `kubectl kustomize k8s/overlays/prod/` must succeed; the kustomized output is re-validated through `kubeconform` (with `IngressRoute` skipped).
   - `kubectl kustomize k8s/overlays/ci/` — the overlay the kind jobs apply — must succeed and validate the same way. Because a `patches:` entry whose target matches nothing is not an error in kustomize, the step additionally checks that the rendered CI worker is actually *smaller* than prod's and still has `requests == limits`; otherwise a renamed patch target would hand the kind jobs a full-sized worker no runner can schedule, an hour before anything noticed.
-  - `kubectl kustomize --enable-helm k8s/storage/` must succeed and its output is validated the same way, so the Ganesha chart's own rendered objects are covered too.
-- **Job 1b — `assert-invariants`:** static assertions from `.github/scripts/ci-assertions.sh` over the manifests — that the storage NetworkPolicy still admits exactly the overlay's `commonLabels.app`, that `device-based-fsids` is pinned off, and that nothing anywhere pins a pod to a node. It deliberately has no `needs:` and nothing needs it, so a red invariant cannot hide the build.
+  - `kubectl kustomize --enable-helm` on `k8s/storage/` (Manila) and on `k8s/ci-storage/` (the CI stand-in) must succeed and their output is validated the same way, so the charts' own rendered objects are covered too.
+- **Job 1b — `assert-invariants`:** static assertions from `.github/scripts/ci-assertions.sh` over the manifests — that the workspace PVC, the Manila StorageClass and the CI stand-in agree on the class name, `Retain` and the mount options (`assert_storage_class_contract`), that the CI NFS server pins `device-based-fsids` off, and that nothing anywhere pins a pod to a node. It deliberately has no `needs:` and nothing needs it, so a red invariant cannot hide the build.
   - Takes ~30s. Fails fast so manifest typos never trigger the hours-long full Docker build.
 - **Job 2 — `build`** (`needs: lint-manifests`, matrix over `[full, simple]`):
   - Builds `Dockerfile` (full, includes TOPP tools) or `Dockerfile_simple` (pyOpenMS only) depending on the matrix leg.
   - **Buildx registry cache** (`type=registry,…,mode=max`) stored at `ghcr.io/<repo>/cache:full` and `:simple`. A `cache-from` read is attempted on every event; `cache-to` write only on push/tag/workflow_dispatch (fork PRs can't write). Repeat builds with an unchanged Dockerfile finish in minutes.
   - **Push** on push/tag/workflow_dispatch events (not on PRs). Tags: `<branch>-full` / `<branch>-simple`, `v<version>-full` / `v<version>-simple`, `<sha>-full` / `<sha>-simple`. `latest` is emitted only for the full variant on push to `main`.
-  - **Kind integration** runs per variant: creates a two-node kind cluster, loads the just-built image, installs the nginx ingress controller, applies the storage root (rewriting the backing claim's `cinder-csi` to kind's `standard`), then applies the kustomized **`ci`** overlay (filtering Traefik `IngressRoute`, forcing `imagePullPolicy: Never`, and shrinking the workspaces claim to fit the runner's disk). It asserts Redis and every Deployment become ready, curls both `.de` and `.org` hostnames through the nginx ingress, and then runs the assertions from `.github/scripts/ci-assertions.sh`: that every worker replica is Running on more than one node within the declared `maxSkew` (`assert_workers_spread_across_nodes`), that the Running workers are `Guaranteed` QoS (`assert_worker_qos_guaranteed`), cross-node write visibility, the POSIX contract, a workflow surviving a Ganesha restart, stable file-handle identity across that restart, and two pods on two nodes sharing the volume. The two placement assertions run first because they take seconds while the storage ones budget up to 45 minutes of deliberate timeouts.
+  - **Kind integration** runs per variant: creates a two-node kind cluster, loads the just-built image, installs the nginx ingress controller, applies the CI storage stand-in `k8s/ci-storage/` (an in-cluster Ganesha server publishing `openms-manila-nfs`), then applies the kustomized **`ci`** overlay (filtering Traefik `IngressRoute`, forcing `imagePullPolicy: Never`, and shrinking the workspaces claim to fit the runner's disk). It asserts Redis and every Deployment become ready, curls both `.de` and `.org` hostnames through the nginx ingress, and then runs the assertions from `.github/scripts/ci-assertions.sh`: that every worker replica is Running on more than one node within the declared `maxSkew` (`assert_workers_spread_across_nodes`), that the Running workers are `Guaranteed` QoS (`assert_worker_qos_guaranteed`), cross-node write visibility, the POSIX contract, a workflow surviving an NFS server restart, stable file-handle identity across that restart, and two pods on two nodes sharing the volume. The two placement assertions run first because they take seconds while the storage ones budget up to 45 minutes of deliberate timeouts.
 
 The kind jobs apply `k8s/overlays/ci/`, which is `k8s/overlays/prod/` with the worker `resources` patched down and nothing else changed. Production sizes a worker at 16Gi / 4 cpu with requests equal to limits; a GitHub runner has 4 vCPU and ~15.6Gi in total, every kind node is a container on that one host advertising the whole of it, and both replicas would sit `Pending` for ever. Same replica count, same spread constraint, same labels, same images — and every static assertion still renders `k8s/overlays/prod/`, so the sizing is the only thing CI does not observe directly.
-- **Job 3 — `traefik-integration`** (`needs: lint-manifests`, runs once on `Dockerfile_simple`): builds the simple image, brings up a second kind cluster, installs Traefik via Helm (`service.type=ClusterIP`), applies the storage root and then the full kustomized `ci` overlay without filtering the `IngressRoute` (still patching `imagePullPolicy: Never` and the claim size for kind compatibility), and curls both hostnames through Traefik. Catches IngressRoute-syntax regressions that the nginx-side test cannot. It runs the same placement and storage assertions as the nginx job.
+- **Job 3 — `traefik-integration`** (`needs: lint-manifests`, runs once on `Dockerfile_simple`): builds the simple image, brings up a second kind cluster, installs Traefik via Helm (`service.type=ClusterIP`), applies the CI storage stand-in and then the full kustomized `ci` overlay without filtering the `IngressRoute` (still patching `imagePullPolicy: Never` and the claim size for kind compatibility), and curls both hostnames through Traefik. Catches IngressRoute-syntax regressions that the nginx-side test cannot. It runs the same placement and storage assertions as the nginx job.
 - **Auth:** uses the workflow's `GITHUB_TOKEN` for GHCR login and as a build argument for in-image private-resource access. Fork PRs skip login (their `GITHUB_TOKEN` is read-only) but can still read the public cache.
 - **PR behavior:** all three jobs run on pull requests. No tags are pushed and no cache is written. The kind integration still runs, exercising manifests end-to-end. If branch protection requires these checks, a failure blocks merge.
 

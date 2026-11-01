@@ -1,3 +1,9 @@
+> **Superseded.** Production storage is now OpenStack Manila (`k8s/storage/`,
+> see `docs/kubernetes-deployment.md` section 3b). The per-app Ganesha tier this
+> document describes survives only as CI's in-cluster stand-in in
+> `k8s/ci-storage/`. Kept for the reasoning, which still explains the client
+> mount options and the worker topology.
+
 > **What this is.** The operational runbook for the NFS-Ganesha storage tier
 > that makes the workspace volume ReadWriteMany, so the app can run on more than
 > one Kubernetes node. It covers the cutover, the verification matrix and the

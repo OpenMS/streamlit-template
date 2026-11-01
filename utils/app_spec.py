@@ -3,8 +3,8 @@
 The spec says what an app built from this template is: identity, inputs,
 workflows, result views, deployment targets and which files the app owns.
 Generators (the ``new-app-from-spec`` skill), the template-sync job and CI read
-it, so the names that used to be repeated across settings.json, the k8s overlay
-and the storage tier have one source.
+it, so the names that used to be repeated across settings.json and the k8s
+overlay have one source.
 
 Streamlit-free on purpose: CI and the sync job import it.
 
@@ -144,19 +144,19 @@ def consistency_errors(spec: dict, root: Path | str = ".") -> list[str]:
                     f"Host(`{host}`) route"
                 )
 
-    storage = root / "k8s" / "storage" / "kustomization.yaml"
-    storage_doc = _yaml_doc(storage)
-    if storage_doc is _MISSING:
-        errors.append(f"{storage.relative_to(root)} is not valid YAML")
-    elif storage_doc is not None:
-        ns = _field(storage_doc, "namespace")
-        if not ns:
-            errors.append(f"{storage.relative_to(root)} sets no namespace")
-        elif slug and ns != f"{slug}-storage":
+    # The storage tier (k8s/storage/) is shared by every app on a cluster and
+    # carries no app name; what is per app is the size of its workspace share.
+    want_size = spec.get("deploy", {}).get("k8s", {}).get("storage")
+    pvc = root / "k8s" / "base" / "workspace-pvc.yaml"
+    pvc_doc = _yaml_doc(pvc)
+    if pvc_doc is _MISSING:
+        errors.append(f"{pvc.relative_to(root)} is not valid YAML")
+    elif pvc_doc is not None and want_size:
+        size = _field(pvc_doc, "spec", "resources", "requests", "storage")
+        if size != want_size:
             errors.append(
-                f"app.slug is {slug!r} but {storage.relative_to(root)} puts the "
-                f"storage tier in {ns!r} (expected {slug + '-storage'!r}); see "
-                "the configure-k8s-deployment skill, Step 4"
+                f"deploy.k8s.storage is {want_size!r} but "
+                f"{pvc.relative_to(root)} requests {size!r}"
             )
 
     input_keys = set(spec.get("inputs", {}))

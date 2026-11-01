@@ -16,7 +16,7 @@ spec:
           # 1Gi / 500m is what the low tier used to REQUEST before requests
           # and limits converged, so it is a size a worker has always been
           # started at; two replicas of it leave the runner room for the
-          # Streamlit pods, Ganesha, the ingress controller and kube-system on
+          # Streamlit pods, the CI NFS server, the ingress controller and kube-system on
           # one physical 4-cpu host.
           resources:
             requests:
