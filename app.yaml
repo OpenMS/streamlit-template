@@ -1,0 +1,81 @@
+# App spec: what this app is. Schema: utils/app_spec.schema.json.
+# Check it with `python -m utils.app_spec` (tests/test_app_spec.py runs it).
+#
+# In the template this file describes the template's own example app and is
+# the starting point for a new app (new-app-from-spec skill). In an app it is
+# app-owned: the template-sync job never overwrites it.
+spec_version: 1
+
+template:
+  repository: OpenMS/streamlit-template
+  branch: main
+
+app:
+  slug: template-app
+  name: OpenMS WebApp Template
+  description: Template and example pages for OpenMS Streamlit web apps.
+  repository: OpenMS/streamlit-template
+  domain: template
+  image: ghcr.io/openms/streamlit-template
+
+inputs:
+  mzML-files:
+    types: [mzML, raw, d]
+    multiple: true
+    description: LC-MS runs; Thermo .raw and Bruker .d are converted to mzML.
+
+workflows:
+  - name: TOPP Workflow
+    class: src/Workflow.py:Workflow
+    inputs: [mzML-files]
+    steps:
+      - {tool: FeatureFinderMetabo, in: mzML-files}
+      - {tool: FeatureLinkerUnlabeledKD, in: FeatureFinderMetabo, collect: true}
+      - {python: export_consensus_feature_df, in: FeatureLinkerUnlabeledKD}
+      - {python: example, in: mzML-files, optional: true}
+    presets: true
+
+results:
+  - {role: table, workflow: TOPP Workflow, title: Consensus features, source: feature-linking}
+
+pages:
+  - content/quickstart.py
+  - content/documentation.py
+  - content/digest.py
+  - content/peptide_mz_calculator.py
+  - content/isotope_pattern_generator.py
+  - content/fragmentation.py
+  - content/file_upload.py
+  - content/raw_data_viewer.py
+  - content/run_example_workflow.py
+  - content/download_section.py
+  - content/simple_workflow.py
+  - content/run_subprocess.py
+
+deploy:
+  k8s:
+    enabled: true
+    hosts: [template.webapps.openms.de, template.webapps.openms.org]
+    storage: 400Gi
+    worker_tier: low
+  docker_compose: true
+  desktop: [windows]
+  online_deployment: false
+
+sync:
+  # Files the app owns. A merge conflict in one of them keeps the app's
+  # version; a conflict anywhere else stops the sync for a human. Apps copy
+  # this list and add their own paths.
+  app_owned:
+    - app.yaml
+    - app.py
+    - settings.json
+    - default-parameters.json
+    - presets.json
+    - README.md
+    - content/*
+    - src/Workflow.py
+    - src/python-tools/*
+    - example-data/*
+    - assets/*
+    - k8s/overlays/*
