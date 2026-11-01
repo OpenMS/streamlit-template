@@ -92,7 +92,7 @@ This folder is the payload that the Electron shell packages into an installer, a
 
 ## Build the installer in GitHub Actions
 
-The workflow [Build executable for Windows](https://github.com/OpenMS/streamlit-template/blob/main/.github/workflows/build-windows-executable-app.yaml) runs all of these steps, adds the OpenMS TOPP tools listed in `TOPP_TOOLS`, and builds `<APP_NAME>-Setup.exe`. On a release, the installer is attached to the release. The Docker images download it from the latest release and offer it on the Quickstart and Installation pages.
+The workflow [Build desktop app](https://github.com/OpenMS/streamlit-template/blob/main/.github/workflows/build-desktop-app.yaml) runs all of these steps, adds the OpenMS TOPP tools listed in `TOPP_TOOLS`, and builds `<APP_NAME>-Setup.exe`. On a release, the installer is attached to the release. The Docker images download it from the latest release and offer it on the Quickstart and Installation pages.
 </br>
 
 ## Electron desktop app (per-user installer)
@@ -112,3 +112,40 @@ CI then runs `electron/scripts/e2e.js` against the installed app: it drives the 
 The window allows Chromium's software WebGL renderer, so WebGL plots also draw without a usable GPU (remote desktop, virtual machines).
 
 To try the shell from a checkout, run `npm install` and then `npm start` in `electron/`. It runs `app.py` from the repository with the `python` on your `PATH`. Set `OPENMS_APP_PAYLOAD` to use a built payload folder instead.
+
+## macOS and Linux
+
+The same workflow also wraps the app in the same Electron shell as `<APP_NAME>-macOS-arm64.dmg` (Apple Silicon only) and as `<APP_NAME>-Linux-x86_64.AppImage`. It reads `APP_NAME`, `TOPP_TOOLS` and `OPENMS_VERSION` like the Windows build.
+
+- `electron/scripts/stage-python.sh` takes CPython from [python-build-standalone](https://github.com/astral-sh/python-build-standalone) (there is no embeddable Python for macOS and Linux), installs `requirements.txt` into it and compiles the bytecode, because the signed app and the AppImage are read-only.
+- `electron/scripts/stage-openms.sh` takes the TOPP tools from the official OpenMS release: the arm64 `.pkg` on macOS, the `.deb` on Linux, whose system libraries (Qt, Xerces, ...) it copies into the bundle. The tools stay in `openms/bin` next to `openms/lib` and find their libraries through a relative rpath; the shell puts `openms/bin` on `PATH`.
+- Workspaces and the log live in `~/Library/Application Support/<APP_NAME>` on macOS and in `~/.config/<APP_NAME>` on Linux.
+
+CI runs the same smoke and end-to-end tests as on Windows, on macOS from the mounted dmg and on Linux against the AppImage.
+
+### Signing for macOS
+
+macOS only opens downloaded apps that are signed with a Developer ID certificate and notarized by Apple. The workflow does both when these repository or organization secrets exist, and builds an unsigned app otherwise:
+
+| Secret | Content |
+|---|---|
+| `MACOS_CERTIFICATE` | The "Developer ID Application" certificate with its private key, as a base64-encoded `.p12` |
+| `MACOS_CERTIFICATE_PASSWORD` | The `.p12` password |
+| `APPLE_API_KEY` | Contents of an App Store Connect API key (`.p8`, Team key with the Developer role) |
+| `APPLE_API_KEY_ID` | The key's ID |
+| `APPLE_API_ISSUER` | The issuer ID shown above the key list |
+
+Instead of the three `APPLE_API_*` secrets, notarization also works with an Apple ID: `APPLE_ID` (the developer account's email), `APPLE_APP_SPECIFIC_PASSWORD` (created at account.apple.com under Sign-In and Security → App-Specific Passwords) and `APPLE_TEAM_ID` (the 10-character team ID from developer.apple.com → Membership details).
+
+The `.p12` can be made without a Mac:
+
+```bash
+openssl genrsa -out devid.key 2048
+openssl req -new -key devid.key -out devid.csr -subj "/emailAddress=<Apple ID>/CN=<name>/C=<country>"
+# developer.apple.com: Certificates -> + -> Developer ID Application (G2 Sub-CA), upload devid.csr
+openssl x509 -inform DER -in developerID_application.cer -out devid.pem
+openssl pkcs12 -export -legacy -inkey devid.key -in devid.pem -name "Developer ID Application" -out cert.p12
+base64 -w0 cert.p12   # -> MACOS_CERTIFICATE
+```
+
+`-legacy` keeps the `.p12` readable by the macOS keychain. The entitlements the bundled Python and TOPP tools need under the hardened runtime are in `electron/build/entitlements.mac.plist`.

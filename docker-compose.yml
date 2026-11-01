@@ -10,6 +10,10 @@ services:
     restart: always
     ports:
       - 8501:8501
+      # The sync service below shares this container's network, so its port
+      # is published here: on loopback only, for the host's TLS proxy to route
+      # /sync to. Plain HTTP would carry sync tokens and files in the clear.
+      - 127.0.0.1:8502:8502
     volumes:
       - workspaces-streamlit-template:/workspaces-streamlit-template
       # Optional: bind-mount a host directory of MS data files at the path
@@ -21,5 +25,27 @@ services:
       # Number of Streamlit server instances (default: 1 = no load balancer).
       # Set to >1 to enable nginx load balancing across multiple Streamlit instances.
       - STREAMLIT_SERVER_COUNT=1
+      # The sync service below; with STREAMLIT_SERVER_COUNT > 1 the bundled
+      # nginx proxies /sync/ to it.
+      - SYNC_UPSTREAM=127.0.0.1:8502
+  # Workspace sync service for the desktop app (workspace_sync in
+  # settings.json), in its own container so large transfers neither compete
+  # with the app nor break when it restarts. Same image, same workspaces
+  # volume. Put it behind the same reverse proxy as the app at /sync/, or set
+  # workspace_sync.public_url to wherever it is reachable. It shares the app
+  # container's network namespace to reach the Redis queue that container
+  # runs on localhost: the desktop app starts workflow runs through it.
+  sync:
+    image: openms_streamlit_template
+    container_name: openms-streamlit-template-sync
+    restart: always
+    depends_on:
+      - openms-streamlit-template
+    entrypoint: ["/bin/bash", "-c", "source /root/miniforge3/bin/activate streamlit-env && exec python -m src.sync.server --port 8502"]
+    network_mode: "service:openms-streamlit-template"
+    environment:
+      - REDIS_URL=redis://localhost:6379/0
+    volumes:
+      - workspaces-streamlit-template:/workspaces-streamlit-template
 volumes:
   workspaces-streamlit-template:

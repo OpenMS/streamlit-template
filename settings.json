@@ -38,6 +38,19 @@
             "example-data/workspaces"
         ]
     },
+    "developer_mode": {
+        "password_sha256": "175550fe24ea744ec1bc4c56c1724c81913d90b7143a7153ae6c74a1ac66d05e"
+    },
+    "workspace_sync": {
+        "enabled": true,
+        "developer_only": true,
+        "public_url": "",
+        "token_ttl_hours": 24,
+        "max_file_gb": 50,
+        "max_workspace_gb": 200,
+        "chunk_mb": 32,
+        "workflows": {"topp-workflow": "src.Workflow:Workflow"}
+    },
     "max_threads": {
         "local": 4,
         "online": 2
