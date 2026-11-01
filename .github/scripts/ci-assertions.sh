@@ -30,6 +30,10 @@
 #                                    static; the storage NetworkPolicy admits
 #                                    exactly the overlay's commonLabels.app, in
 #                                    the overlay's namespace, on 2049 alone
+#   assert_storage_names_match_slug  static; every hand-written storage name
+#                                    carries the overlay's namePrefix, so two
+#                                    forks never share a namespace or a
+#                                    cluster-scoped StorageClass
 #   assert_no_node_pinning_anywhere  static; no nodeSelector, nodeName,
 #                                    nodeAffinity or memory tier
 #   assert_doc_links_resolve         static; every backticked *.md path in
@@ -53,7 +57,9 @@
 #                      which is already on every kind node so nothing pulls)
 #   CI_ASSERT_TIMEOUT  seconds to wait for a pod      (default: 180)
 #   CI_ASSERT_STORAGE_NS    namespace of the NFS server
-#                           (default: template-app-storage)
+#                           (default: the top-level `namespace:` of
+#                           $CI_ASSERT_STORAGE_ROOT/kustomization.yaml, read
+#                           with yq; empty if it cannot be read)
 #   CI_ASSERT_STORAGE_ROOT  kustomize root serving it    (default: k8s/storage)
 
 CI_ASSERT_NS="${CI_ASSERT_NS:-openms}"
@@ -65,8 +71,18 @@ CI_ASSERT_CI_OVERLAY="${CI_ASSERT_CI_OVERLAY:-k8s/overlays/ci}"
 CI_ASSERT_MOUNT="${CI_ASSERT_MOUNT:-/workspaces-streamlit-template}"
 CI_ASSERT_TIMEOUT="${CI_ASSERT_TIMEOUT:-180}"
 CI_ASSERT_BASE="${CI_ASSERT_BASE:-k8s/base}"
-CI_ASSERT_STORAGE_NS="${CI_ASSERT_STORAGE_NS:-template-app-storage}"
 CI_ASSERT_STORAGE_ROOT="${CI_ASSERT_STORAGE_ROOT:-k8s/storage}"
+# Read, never assumed: a fork renames the storage namespace together with the
+# rest of its storage identity (see assert_storage_names_match_slug), and a
+# hardcoded default here pointed every runtime assertion at the template's.
+# Parsed with yq so a quoted value is read correctly. Sourcing must not fail, so
+# an unreadable root leaves it empty, and every assertion that uses it then
+# fails naming the namespace it could not find instead of querying a guess.
+if [ -z "${CI_ASSERT_STORAGE_NS:-}" ] && [ -f "$CI_ASSERT_STORAGE_ROOT/kustomization.yaml" ] && command -v yq >/dev/null 2>&1; then
+    CI_ASSERT_STORAGE_NS="$(yq '.namespace' "$CI_ASSERT_STORAGE_ROOT/kustomization.yaml" 2>/dev/null || true)"
+    [ "$CI_ASSERT_STORAGE_NS" = "null" ] && CI_ASSERT_STORAGE_NS=""
+fi
+CI_ASSERT_STORAGE_NS="${CI_ASSERT_STORAGE_NS:-}"
 # Seconds to wait for the NFS server to come back, and for a client operation to
 # get through afterwards. NFSv4.1's grace period is ~90s by default, during
 # which state-mutating operations are refused and a `hard` mount simply retries.
@@ -1738,6 +1754,63 @@ CLEAN
     fi
     _ci_pass "file handles survive an NFS server restart ($_ci_before, uid $_ci_before_uid -> $_ci_after_uid)"
     return 0
+}
+
+assert_storage_names_match_slug() {
+    # The storage root cannot take a namePrefix (kustomization.yaml explains
+    # why), so its names carry the app slug by hand. Several forks share one
+    # cluster: a fork that keeps the template's `template-app-` names applies
+    # its NFS server into the template's namespace and overwrites the
+    # cluster-scoped StorageClass, ClusterRole and provisioner of whichever
+    # fork applied first. Nothing failed on that before; every name was valid.
+    #
+    # The slug is the prod overlay's namePrefix without its trailing dash,
+    # which is what configure-k8s-deployment asks for first. Read from the
+    # source files rather than the rendered root: the comparison is between
+    # literals a human typed, and the render needs Helm for no gain here.
+    _ci_require yq || return 1
+    _ci_rc=0
+
+    _ci_prefix="$(yq '.namePrefix' "$CI_ASSERT_OVERLAY/kustomization.yaml" 2>/dev/null || true)"
+    if [ -z "$_ci_prefix" ] || [ "$_ci_prefix" = "null" ]; then
+        _ci_fail "$CI_ASSERT_OVERLAY/kustomization.yaml has no namePrefix - there is no slug to compare the storage names with"
+        return 1
+    fi
+    _ci_slug="${_ci_prefix%-}"
+    _ci_root="$CI_ASSERT_STORAGE_ROOT"
+
+    # expected value | actual value | where it lives
+    _ci_checks="$(cat <<EOF_CHECKS
+${_ci_slug}-storage|$(yq '.namespace' "$_ci_root/kustomization.yaml")|namespace: in $_ci_root/kustomization.yaml
+${_ci_slug}-storage|$(yq '.helmCharts[0].namespace' "$_ci_root/kustomization.yaml")|helmCharts[0].namespace in $_ci_root/kustomization.yaml
+${_ci_slug}-storage|$(yq 'select(.kind == "Namespace") | .metadata.name' "$_ci_root/namespace.yaml")|metadata.name in $_ci_root/namespace.yaml
+${_ci_slug}-storage|$(yq 'select(.kind == "PersistentVolumeClaim") | .metadata.namespace' "$_ci_root/nfs-backing-pvc.yaml")|metadata.namespace in $_ci_root/nfs-backing-pvc.yaml
+${_ci_slug}-nfs-server|$(yq '.fullnameOverride' "$_ci_root/ganesha-values.yaml")|fullnameOverride in $_ci_root/ganesha-values.yaml
+cluster.local/${_ci_slug}-nfs-server|$(yq '.storageClass.provisionerName' "$_ci_root/ganesha-values.yaml")|storageClass.provisionerName in $_ci_root/ganesha-values.yaml
+${_ci_slug}-nfs|$(yq '.storageClass.name' "$_ci_root/ganesha-values.yaml")|storageClass.name in $_ci_root/ganesha-values.yaml
+${_ci_slug}-nfs|$(yq 'select(.kind == "PersistentVolumeClaim") | .spec.storageClassName' "$CI_ASSERT_BASE/workspace-pvc.yaml")|spec.storageClassName in $CI_ASSERT_BASE/workspace-pvc.yaml
+EOF_CHECKS
+)"
+    _ci_n=0
+    while IFS='|' read -r _ci_want _ci_got _ci_where; do
+        [ -n "$_ci_want" ] || continue
+        _ci_n=$((_ci_n + 1))
+        if [ "$_ci_got" != "$_ci_want" ]; then
+            _ci_fail "$_ci_where is '$_ci_got', expected '$_ci_want' (namePrefix '$_ci_prefix' in $CI_ASSERT_OVERLAY)"
+            _ci_rc=1
+        fi
+    done <<EOF_LOOP
+$_ci_checks
+EOF_LOOP
+
+    if [ "$_ci_n" -ne 8 ]; then
+        _ci_fail "compared $_ci_n storage names instead of 8 - the check itself is broken"
+        return 1
+    fi
+    if [ "$_ci_rc" -eq 0 ]; then
+        _ci_pass "all 8 storage names carry the slug '$_ci_slug' (namespace ${_ci_slug}-storage, StorageClass ${_ci_slug}-nfs, server ${_ci_slug}-nfs-server)"
+    fi
+    return "$_ci_rc"
 }
 
 assert_netpol_string_matches_overlay() {

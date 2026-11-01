@@ -254,9 +254,17 @@ Downstream apps also use **OpenMS-Insight** (`Table`, `LinePlot`, `Heatmap`, `Vo
 
 ## Repo skills in `.claude/skills/`
 
-Fifteen loadable skills live here, each as `<name>/SKILL.md` with YAML frontmatter, so they surface automatically.
+Twenty-five loadable skills live here, each as `<name>/SKILL.md` with YAML frontmatter, so they surface automatically.
 
 **Task playbooks** (originally flat `.md` files, converted): `create-page`, `create-workflow`, `add-presets`, `add-python-tool`, `add-visualization`, `configure-app-settings`, `configure-docker-compose-deployment`, `configure-k8s-deployment`.
+
+**Software factory** (one template feeds the apps): `new-app-from-spec` (generate an app from `app.yaml`), `configure-app-identity` (every place the slug and name live), `sync-from-template` (merge the template into an app, conflicts resolved by `sync.app_owned`), `upstream-to-template` (template-first rule), `configure-desktop-installers`, `release-app`, `upgrade-openms`, `upgrade-openms-insight`, `parity-check`, `triage-ci`.
+
+### App spec and template sync
+
+`app.yaml` (schema `utils/app_spec.schema.json`) says what an app is: identity, inputs, workflows as TOPP/python steps, result views by Insight role, deploy targets, and `sync.app_owned`, the files the app owns. `python -m utils.app_spec` validates it and checks it against `settings.json` (`app-name`, `online_deployment`), the prod overlay's `namePrefix` and the storage namespace; `tests/test_app_spec.py` runs that. In the template it describes the example app and is the starting point for a new one.
+
+`.github/workflows/template-sync.yml` runs weekly in every app (never in the template itself): it merges `template.branch` of `template.repository` from `app.yaml`, keeps the app's side of conflicts in app-owned files, and opens or updates one `template-sync` PR; a conflict in a template-owned file, or no common history, opens an issue instead. PRs opened with the default `GITHUB_TOKEN` do not trigger CI, so set a `TEMPLATE_SYNC_TOKEN` secret (fine-grained PAT or GitHub App token with contents, pull-requests and issues write) for CI to run on them.
 
 **Notebook → webapp framework** — turns a Jupyter notebook into an app. `notebook-to-webapp` orchestrates; the five stage skills also work standalone against an existing app:
 

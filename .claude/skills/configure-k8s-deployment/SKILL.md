@@ -38,7 +38,8 @@ Before asking the user anything, read a small known set of files directly (do no
    - Deployments reference `image: openms-streamlit` (the placeholder Kustomize swaps).
    - `streamlit-deployment.yaml` and `rq-worker-deployment.yaml` both carry `claimName: workspaces-nfs-pvc`. Being RWX, that claim constrains placement not at all: the workspace-using pods are placed independently by the scheduler, not co-located, and there is no pod-affinity rule pulling them together either.
    - `rq-worker-deployment.yaml` has a fixed `replicas` and a `topologySpreadConstraints` block over `kubernetes.io/hostname` with `maxSkew: 1`. Read the replica count from here — it is the default you propose in Q6.
-4. `.github/workflows/build-and-test.yml` — confirm which tags CI publishes (the OpenMS template publishes `<branch>-full`, `<branch>-simple`, `<tag>-full`, `<tag>-simple`, plus `latest` on `main`-full pushes).
+4. `k8s/storage/kustomization.yaml`, `namespace.yaml`, `nfs-backing-pvc.yaml`, `ganesha-values.yaml`, `networkpolicy.yaml` — note whether the storage names still carry `template-app-` or already carry this fork's slug (Step 4).
+5. `.github/workflows/build-and-test.yml` — confirm which tags CI publishes (the OpenMS template publishes `<branch>-full`, `<branch>-simple`, `<tag>-full`, `<tag>-simple`, plus `latest` on `main`-full pushes).
 
 If any of those files are missing, renamed, or significantly restructured, stop and ask the user how to proceed. Do not pattern-match the standard answers onto an unknown layout.
 
@@ -56,7 +57,7 @@ The user confirms or overrides each one. Do not omit the "what this controls" li
 
 ### Q1. App slug
 
-- *What this controls:* every Kubernetes resource for this app gets prefixed with `<slug>-` (Pods, Services, PVCs, ConfigMaps), so the slug is what cluster operators see in `kubectl get pods/svc/pvc -n openms`. It also becomes the DNS name worker pods use to reach Redis (`<slug>-redis`).
+- *What this controls:* every Kubernetes resource for this app gets prefixed with `<slug>-` (Pods, Services, PVCs, ConfigMaps), so the slug is what cluster operators see in `kubectl get pods/svc/pvc -n openms`. It also becomes the DNS name worker pods use to reach Redis (`<slug>-redis`), and the prefix of the storage tier's namespace (`<slug>-storage`), StorageClass (`<slug>-nfs`) and NFS server (`<slug>-nfs-server`), which Step 4 writes by hand.
 - *Default:* repo name lowercased, with `streamlit-` / `-template` prefixes/suffixes stripped. Examples: `OpenDIAKiosk` → `opendiakiosk`; `umetaflow-gui` → `umetaflow-gui`; `streamlit-template` → `template-app`.
 - *Format:* single lowercase token, no spaces.
 
@@ -173,7 +174,39 @@ About `images[0].name: openms-streamlit` — **this is the match key, not a valu
 
 About the `||` in the IngressRoute match — both TLDs always go in. The OpenMS infra publishes apps on both `.de` and `.org` so users land on the same app no matter which they remember. One IngressRoute, two `Host(...)` matchers OR-ed together is the right shape; do not split into two IngressRoute objects.
 
-## Step 4 — Optional storage resize
+## Step 4 — Storage tier identity (always)
+
+`k8s/storage/` is a separate kustomize root and cannot take a `namePrefix` (its `kustomization.yaml` explains why), so its names carry the slug **by hand**. The template ships them as `template-app-*`. Leaving them is not harmless: every fork on the cluster would apply its NFS server into the same `template-app-storage` namespace and overwrite the same cluster-scoped StorageClass, ClusterRole and provisioner, so the second fork to deploy takes over the first one's storage.
+
+Replace `template-app` with `<slug>` (Q1) in all of these, together:
+
+| File | Field | Value |
+|---|---|---|
+| `k8s/storage/kustomization.yaml` | top-level `namespace:` | `<slug>-storage` |
+| `k8s/storage/kustomization.yaml` | `helmCharts[0].namespace` | `<slug>-storage` |
+| `k8s/storage/namespace.yaml` | `metadata.name` | `<slug>-storage` |
+| `k8s/storage/nfs-backing-pvc.yaml` | `metadata.namespace` | `<slug>-storage` |
+| `k8s/storage/ganesha-values.yaml` | `fullnameOverride` | `<slug>-nfs-server` |
+| `k8s/storage/ganesha-values.yaml` | `storageClass.provisionerName` | `cluster.local/<slug>-nfs-server` |
+| `k8s/storage/ganesha-values.yaml` | `storageClass.name` | `<slug>-nfs` |
+| `k8s/base/workspace-pvc.yaml` | `spec.storageClassName` | `<slug>-nfs` |
+| `k8s/storage/networkpolicy.yaml` | `podSelector.matchLabels.app` | `<slug>` (= `commonLabels.app`) |
+
+Edit the YAML fields, not every occurrence: the comments in those files also say `template-app-` as the example, and a blind `sed` over them is harmless but makes the diff hard to review. A field-level replace that keeps comments:
+
+```bash
+for f in k8s/storage/kustomization.yaml k8s/storage/namespace.yaml k8s/storage/nfs-backing-pvc.yaml \
+         k8s/storage/ganesha-values.yaml k8s/storage/networkpolicy.yaml k8s/base/workspace-pvc.yaml; do
+  sed -i -E '/^[[:space:]]*#/! s/template-app(-storage|-nfs-server|-nfs\b|$)/<slug>\1/g' "$f"
+done
+grep -rn 'template-app' k8s/storage k8s/base/workspace-pvc.yaml | grep -v '^[^:]*:[0-9]*:[[:space:]]*#'   # must print nothing
+```
+
+CI checks all eight names against the overlay's `namePrefix` (`assert_storage_names_match_slug`) and the NetworkPolicy label against `commonLabels.app` (`assert_netpol_string_matches_overlay`), and the kind jobs read the storage namespace from `k8s/storage/kustomization.yaml`, so no workflow edit is needed.
+
+**A fork that is already deployed** under the template names is a migration, not a rename: the new names create a new namespace, a new backing volume and a new StorageClass, and the workspaces PVC cannot change its `storageClassName` in place. Do not change the names of a live deployment in this skill. Tell the user that this needs a data migration planned with the operator (`docs/kubernetes-deployment.md` step 4c); no runbook covers it yet. A fork adopting `k8s/storage/` for the first time renames before its first apply and has nothing to migrate.
+
+## Step 5 — Optional storage resize
 
 Skip this step if the user accepted the 400 Gi default.
 
@@ -199,7 +232,7 @@ Do **not** rename either PVC, the base `kustomization.yaml` resource list, or th
 
 Operator caveat (mention in handoff, not your job to verify): in-place expansion of an *already-deployed* PVC requires the StorageClass to have `allowVolumeExpansion: true`, and that applies to the backing `cinder-csi` claim. If the class does not allow expansion, growing a live volume requires recreation, not a manifest edit. Sizing on first deploy is unaffected.
 
-## Step 5 — Handoff
+## Step 6 — Handoff
 
 After committing the edits, tell the user the next steps belong to a human operator (or CI) and are out of scope for you:
 
@@ -227,6 +260,7 @@ After committing the edits, tell the user the next steps belong to a human opera
 - [ ] Worker size component selected (Q5)
 - [ ] Worker replica count (Q6) patched into the overlay only if it differs from the base default; the base Deployment left untouched
 - [ ] No `nodeSelector`, `nodeName`, `nodeAffinity` or `openms.de/memory-tier` anywhere in the overlay or the components — `assert_no_node_pinning_anywhere` fails the PR on any of them
+- [ ] Storage names carry the slug in all nine places of Step 4 (or the user was told that a live deployment needs a migration instead)
 - [ ] Storage sizes in `k8s/storage/nfs-backing-pvc.yaml` and `k8s/base/workspace-pvc.yaml` changed together, backing volume materially larger, and only if the user picked a non-default size; PVC names and `claimName`s untouched
 - [ ] `.github/workflows/build-and-test.yml` uses dynamic overlay discovery (no `template-app` / `template.webapps.openms.*` literals); patched in if the fork's workflow was on the old hardcoded shape
 - [ ] Changes committed on a feature branch (no PR opened unless the user asked for one)

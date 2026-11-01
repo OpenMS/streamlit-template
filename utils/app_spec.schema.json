@@ -1,0 +1,200 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/OpenMS/streamlit-template/utils/app_spec.schema.json",
+  "title": "OpenMS web app spec (app.yaml)",
+  "description": "What an app built from OpenMS/streamlit-template is: its identity, inputs, workflows, result views, deployment targets and which files it owns. It says what, never how: anything that needs code lives in app-owned files the spec points at.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["spec_version", "app", "template"],
+  "properties": {
+    "spec_version": {
+      "const": 1,
+      "description": "Version of this schema. Bumped only on an incompatible change."
+    },
+    "template": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "branch"],
+      "description": "Where this app syncs from. The scheduled template-sync job reads it.",
+      "properties": {
+        "repository": {"type": "string", "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"},
+        "branch": {"type": "string", "minLength": 1}
+      }
+    },
+    "app": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["slug", "name", "repository", "domain"],
+      "properties": {
+        "slug": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*[a-z0-9]$",
+          "description": "Lowercase identifier. The k8s namePrefix is '<slug>-', the storage tier is '<slug>-storage' / '<slug>-nfs'."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Display name. Must equal 'app-name' in settings.json."
+        },
+        "description": {"type": "string"},
+        "repository": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
+          "description": "GitHub owner/name of this app."
+        },
+        "domain": {
+          "enum": ["proteomics", "metabolomics", "top-down-proteomics", "dia-proteomics", "visualization", "template", "other"]
+        },
+        "image": {
+          "type": "string",
+          "description": "Container image without tag, e.g. ghcr.io/openms/umetaflow."
+        }
+      }
+    },
+    "inputs": {
+      "type": "object",
+      "description": "Upload targets, keyed by the upload_widget() key.",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["types"],
+        "properties": {
+          "types": {
+            "type": "array",
+            "minItems": 1,
+            "items": {"type": "string", "pattern": "^[A-Za-z0-9.]+$"}
+          },
+          "multiple": {"type": "boolean", "default": true},
+          "description": {"type": "string"}
+        }
+      }
+    },
+    "workflows": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The name passed to WorkflowManager.__init__; its lowercase-hyphenated form is the workflow directory and presets.json key."
+          },
+          "class": {
+            "type": "string",
+            "description": "module:Class of the WorkflowManager subclass, e.g. src/Workflow.py:Workflow."
+          },
+          "inputs": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Keys of 'inputs' this workflow uploads into."
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["tool"],
+                  "properties": {
+                    "tool": {"type": "string", "description": "TOPP tool name."},
+                    "instance": {"type": "string", "description": "tool_instance_name, when the tool appears more than once."},
+                    "in": {"type": "string", "description": "An input key or an earlier step's tool/instance/python name."},
+                    "collect": {"type": "boolean", "description": "All files go to one call (file_manager.get_files(collect=True))."},
+                    "optional": {"type": "boolean", "description": "Runs only when a parameter enables it."},
+                    "note": {"type": "string"}
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["python"],
+                  "properties": {
+                    "python": {"type": "string", "description": "Script name in src/python-tools/ without .py."},
+                    "in": {"type": "string"},
+                    "optional": {"type": "boolean"},
+                    "note": {"type": "string"}
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["external"],
+                  "properties": {
+                    "external": {"type": "string", "description": "A non-TOPP executable (e.g. a search engine), named for documentation."},
+                    "in": {"type": "string"},
+                    "optional": {"type": "boolean"},
+                    "note": {"type": "string"}
+                  }
+                }
+              ]
+            }
+          },
+          "multi_run": {"type": "boolean"},
+          "presets": {"type": "boolean", "description": "presets.json has an entry for this workflow."}
+        }
+      }
+    },
+    "results": {
+      "type": "array",
+      "description": "Result views. role is the build-insight-dashboard vocabulary; 'custom' means an app-owned page draws it.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["role"],
+        "properties": {
+          "role": {"enum": ["table", "mirror", "peakmap", "chromatogram", "spectrum", "heatmap", "volcano", "sequence", "custom"]},
+          "title": {"type": "string"},
+          "workflow": {"type": "string"},
+          "source": {"type": "string", "description": "File, results subdirectory or DataFrame key the view reads."},
+          "page": {"type": "string", "description": "content/ page that draws it, for role custom."}
+        }
+      }
+    },
+    "pages": {
+      "type": "array",
+      "description": "App-owned pages outside the four generated workflow pages.",
+      "items": {"type": "string", "pattern": "^content/.+\\.py$"}
+    },
+    "deploy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "k8s": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {"type": "boolean"},
+            "hosts": {"type": "array", "items": {"type": "string"}},
+            "storage": {"type": "string", "pattern": "^[0-9]+(Gi|Ti)$"},
+            "worker_tier": {"enum": ["low", "high"]},
+            "replicas": {"type": "integer", "minimum": 1}
+          }
+        },
+        "docker_compose": {"type": "boolean"},
+        "desktop": {
+          "type": "array",
+          "items": {"enum": ["windows", "macos", "linux"]},
+          "uniqueItems": true
+        },
+        "online_deployment": {
+          "type": "boolean",
+          "description": "Must equal online_deployment in settings.json."
+        }
+      }
+    },
+    "sync": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The template-owned vs app-owned split the template-sync job uses.",
+      "properties": {
+        "app_owned": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Glob patterns this app owns. On a merge conflict in one of them the sync keeps the app's version. Everything else is template-owned: a conflict there stops the sync for a human."
+        }
+      }
+    }
+  }
+}
