@@ -35,6 +35,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
+from src.common.developer import is_developer
 from src.sync import client, server, tokens
 
 
@@ -79,8 +80,12 @@ _WATCH_INTERVAL = 30
 
 
 def sync_enabled() -> bool:
+    """Whether this session shows workspace sync (``developer_only``: after unlocking)."""
     settings = st.session_state.settings
-    return bool(server.sync_settings(settings)["enabled"] and settings.get("enable_workspaces"))
+    cfg = server.sync_settings(settings)
+    if not (cfg["enabled"] and settings.get("enable_workspaces")):
+        return False
+    return not cfg["developer_only"] or is_developer()
 
 
 def _settings() -> dict:

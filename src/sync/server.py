@@ -58,6 +58,9 @@ _UPLOAD_ID = re.compile(r"^[0-9a-f]{32}$")
 
 DEFAULTS = {
     "enabled": False,
+    # Shown in the app only to sessions that unlocked developer mode
+    # (src/common/developer.py); the service itself runs either way.
+    "developer_only": False,
     "public_url": "",
     "token_ttl_hours": 24,
     "max_file_gb": 50,

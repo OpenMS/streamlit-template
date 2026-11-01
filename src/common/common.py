@@ -21,6 +21,7 @@ try:
 except ImportError:
     TK_AVAILABLE = False
 
+from src.common.developer import render_developer_toggle
 from src.common.captcha_ import captcha_control
 from src.common.admin import (
     is_admin_configured,
@@ -911,6 +912,7 @@ def render_sidebar(page: str = "") -> None:
                 )
             else:
                 st.session_state["spectrum_num_bins"] = 50
+            render_developer_toggle()
 
         render_resource_utilization()
 
