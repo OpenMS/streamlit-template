@@ -139,10 +139,18 @@ jobs:
           # Never, so the image must be loaded into kind under that name. Read
           # it from the overlay, so an app that renames its image keeps working.
           OVERLAY=k8s/overlays/prod/kustomization.yaml
-          NAME=$(awk '$1 == "newName:" {print $2; exit}' "$OVERLAY")
-          TAG=$(awk '$1 == "newTag:" {print $2; exit}' "$OVERLAY")
+          python3 -c 'import yaml' 2>/dev/null || python3 -m pip install --quiet pyyaml
+          # The `openms-streamlit` entry of `images:`, parsed as YAML so the
+          # list order and quoting do not matter.
+          read -r NAME TAG < <(python3 - "$OVERLAY" <<'PY'
+          import sys, yaml
+          images = yaml.safe_load(open(sys.argv[1])).get("images") or []
+          entry = next((i for i in images if i.get("name") == "openms-streamlit"), {})
+          print(entry.get("newName", ""), entry.get("newTag", ""))
+          PY
+          )
           if [ -z "$NAME" ] || [ -z "$TAG" ]; then
-            echo "::error::no newName/newTag in $OVERLAY"
+            echo "::error::no newName/newTag for openms-streamlit in $OVERLAY"
             exit 1
           fi
           KIND_REF="$NAME:$TAG"
