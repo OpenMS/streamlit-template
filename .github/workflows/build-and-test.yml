@@ -732,8 +732,12 @@ jobs:
         # it. Reading it here instead of naming it keeps this job working in
         # every fork that renamed it correctly.
         run: |
-          STORAGE_NS=$(awk '/^namespace:/ {print $2; exit}' k8s/storage/kustomization.yaml)
-          if [ -z "$STORAGE_NS" ]; then
+          # yq, not a text match: a quoted `namespace: "x"` is valid YAML.
+          if ! STORAGE_NS=$(yq '.namespace' k8s/storage/kustomization.yaml); then
+            echo "::error::could not parse k8s/storage/kustomization.yaml"
+            exit 1
+          fi
+          if [ -z "$STORAGE_NS" ] || [ "$STORAGE_NS" = "null" ]; then
             echo "::error::k8s/storage/kustomization.yaml sets no top-level namespace"
             exit 1
           fi
@@ -1482,8 +1486,12 @@ jobs:
         # it. Reading it here instead of naming it keeps this job working in
         # every fork that renamed it correctly.
         run: |
-          STORAGE_NS=$(awk '/^namespace:/ {print $2; exit}' k8s/storage/kustomization.yaml)
-          if [ -z "$STORAGE_NS" ]; then
+          # yq, not a text match: a quoted `namespace: "x"` is valid YAML.
+          if ! STORAGE_NS=$(yq '.namespace' k8s/storage/kustomization.yaml); then
+            echo "::error::could not parse k8s/storage/kustomization.yaml"
+            exit 1
+          fi
+          if [ -z "$STORAGE_NS" ] || [ "$STORAGE_NS" = "null" ]; then
             echo "::error::k8s/storage/kustomization.yaml sets no top-level namespace"
             exit 1
           fi

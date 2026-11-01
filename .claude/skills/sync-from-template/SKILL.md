@@ -29,7 +29,9 @@ skill is for the ones it hands to a human, and for first syncs.
 git remote add template https://github.com/OpenMS/streamlit-template.git 2>/dev/null
 git fetch template main
 git merge-base HEAD template/main || echo "NO COMMON HISTORY"
-git checkout -b template-sync
+git fetch origin template-sync 2>/dev/null && git log --oneline origin/template-sync -5   # an open sync branch?
+# Reuse it if it exists (it may already hold the bot's merge or someone's resolution):
+git checkout template-sync 2>/dev/null || git checkout -b template-sync --track origin/template-sync 2>/dev/null || git checkout -b template-sync
 git merge --no-ff template/main
 ```
 

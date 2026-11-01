@@ -204,7 +204,7 @@ grep -rn 'template-app' k8s/storage k8s/base/workspace-pvc.yaml | grep -v '^[^:]
 
 CI checks all eight names against the overlay's `namePrefix` (`assert_storage_names_match_slug`) and the NetworkPolicy label against `commonLabels.app` (`assert_netpol_string_matches_overlay`), and the kind jobs read the storage namespace from `k8s/storage/kustomization.yaml`, so no workflow edit is needed.
 
-**A fork that is already deployed** under the template names is a migration, not a rename: the new names create a new namespace, a new backing volume and a new StorageClass, and the workspaces PVC cannot change its `storageClassName` in place. Do not change the names of a live deployment in this skill. Tell the user, and point the operator at `docs/a16-storage-runbook.md` for moving the data.
+**A fork that is already deployed** under the template names is a migration, not a rename: the new names create a new namespace, a new backing volume and a new StorageClass, and the workspaces PVC cannot change its `storageClassName` in place. Do not change the names of a live deployment in this skill. Tell the user that this needs a data migration planned with the operator (`docs/kubernetes-deployment.md` step 4c); no runbook covers it yet. A fork adopting `k8s/storage/` for the first time renames before its first apply and has nothing to migrate.
 
 ## Step 5 — Optional storage resize
 

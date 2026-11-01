@@ -20,7 +20,7 @@ Electron multi-platform work, and an app adopts them through
 
 ## What an app sets
 
-All in the `env:` block of `build-windows-executable-app.yaml`:
+In `build-windows-executable-app.yaml`, the first three keys live in the top-level `env:` block and `openms-version` lives in `jobs.build-openms.with:` (a reusable-workflow call cannot read `env`):
 
 | Key | What |
 |---|---|

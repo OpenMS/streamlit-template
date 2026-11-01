@@ -98,7 +98,41 @@ def test_missing_python_tool_and_unknown_input(tmp_path):
     assert any("does_not_exist" in e for e in errors)
 
 
-def test_is_app_owned(spec):
-    assert app_spec.is_app_owned(spec, "content/quickstart.py")
-    assert app_spec.is_app_owned(spec, "src/python-tools/example.py")
-    assert not app_spec.is_app_owned(spec, "src/workflow/WorkflowManager.py")
+def test_is_app_owned():
+    # A spec built here, not the repo's: a derived app edits its own list, and
+    # this test must not fail on that.
+    s = {"sync": {"app_owned": ["content/*", "src/python-tools/*", "app.yaml"]}}
+    assert app_spec.is_app_owned(s, "content/quickstart.py")
+    assert app_spec.is_app_owned(s, "src/python-tools/example.py")
+    assert app_spec.is_app_owned(s, "app.yaml")
+    assert not app_spec.is_app_owned(s, "src/workflow/WorkflowManager.py")
+    assert not app_spec.is_app_owned({"sync": {"app_owned": []}}, "app.yaml")
+
+
+def test_duplicate_keys_are_rejected(tmp_path):
+    p = tmp_path / "app.yaml"
+    p.write_text("sync:\n  app_owned: [a]\nsync:\n  app_owned: [b]\n")
+    with pytest.raises(Exception, match="duplicate key"):
+        app_spec.load_spec(p)
+
+
+def test_overlay_without_name_prefix_fails(tmp_path):
+    root = _app_tree(tmp_path)
+    (root / "k8s/overlays/prod/kustomization.yaml").write_text("resources: [../../base]\n")
+    errors = app_spec.consistency_errors(_spec(), root)
+    assert any("no namePrefix" in e for e in errors)
+
+
+def test_image_and_hosts_must_match_overlay(tmp_path):
+    root = _app_tree(tmp_path)
+    (root / "k8s/overlays/prod/kustomization.yaml").write_text(
+        "namePrefix: myapp-\n"
+        "images:\n  - name: openms-streamlit\n    newName: ghcr.io/openms/streamlit-template\n"
+        "patches:\n  - patch: (Host(`template.webapps.openms.de`))\n"
+    )
+    s = _spec()
+    s["app"]["image"] = "ghcr.io/openms/myapp"
+    s["deploy"] = {"k8s": {"hosts": ["myapp.webapps.openms.de"]}}
+    errors = app_spec.consistency_errors(s, root)
+    assert any("images[0].newName" in e for e in errors)
+    assert any("myapp.webapps.openms.de" in e for e in errors)

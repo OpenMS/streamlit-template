@@ -100,14 +100,25 @@ jobs:
           fi
           echo "base=$(git rev-parse --short "$BASE")" >> "$GITHUB_OUTPUT"
 
-          # Never overwrite a human's work on the sync branch.
+          # Never overwrite a human's work on the sync branch. Merge commits
+          # count too: a conflict is often resolved by one merge commit alone.
+          # The push below leases against the SHA seen here, so a push that
+          # lands after this check makes our push fail instead of replacing it.
+          REMOTE_SHA=""
           if git fetch --no-tags origin "$SYNC_BRANCH" 2>/dev/null; then
-            HUMAN=$(git log --no-merges --format='%ae' FETCH_HEAD "^origin/$DEFAULT_BRANCH" "^$TSHA" | grep -vxF "$BOT_EMAIL" || true)
+            REMOTE_SHA=$(git rev-parse FETCH_HEAD)
+            HUMAN=$(git log --format='%ae' "$REMOTE_SHA" "^origin/$DEFAULT_BRANCH" "^$TSHA" | grep -vxF "$BOT_EMAIL" || true)
             if [ -n "$HUMAN" ]; then
               echo "status=human-commits" >> "$GITHUB_OUTPUT"
               exit 0
             fi
           fi
+          echo "remote_sha=$REMOTE_SHA" >> "$GITHUB_OUTPUT"
+
+          # Ownership comes from app.yaml as committed, read before the merge:
+          # if app.yaml itself conflicts, the working copy holds conflict
+          # markers and cannot be parsed.
+          git show HEAD:app.yaml > /tmp/app.yaml 2>/dev/null || : > /tmp/app.yaml
 
           git checkout -B "$SYNC_BRANCH"
           if git merge --no-ff --no-edit -m "Sync with template (${SHORT})" "$TSHA"; then
@@ -123,10 +134,11 @@ jobs:
           default = ["app.yaml", "app.py", "settings.json", "default-parameters.json",
                      "presets.json", "README.md", "content/*", "src/Workflow.py",
                      "src/python-tools/*", "example-data/*", "assets/*", "k8s/overlays/*"]
-          spec = {}
-          if os.path.isfile("app.yaml"):
-              spec = yaml.safe_load(open("app.yaml", encoding="utf-8")) or {}
-          owned = (spec.get("sync") or {}).get("app_owned") or default
+          spec = yaml.safe_load(open("/tmp/app.yaml", encoding="utf-8")) or {}
+          sync = spec.get("sync") or {}
+          # An explicit empty list means the app owns nothing; the default
+          # applies only when the key is absent.
+          owned = sync["app_owned"] if "app_owned" in sync else default
           files = [l.strip() for l in open("/tmp/unmerged.txt") if l.strip()]
           with open("/tmp/resolved.txt", "w") as r, open("/tmp/conflicts.txt", "w") as c:
               for f in files:
@@ -157,9 +169,13 @@ jobs:
           TSHA: ${{ steps.merge.outputs.tsha }}
           SHORT: ${{ steps.merge.outputs.short }}
           BASE: ${{ steps.merge.outputs.base }}
+          REMOTE_SHA: ${{ steps.merge.outputs.remote_sha }}
         run: |
           set -euo pipefail
-          git push --force origin "$SYNC_BRANCH"
+          # Lease on the SHA the human-commit check saw (empty: the branch must
+          # not exist yet). Anything pushed since makes this fail and leaves the
+          # branch as it is.
+          git push --force-with-lease="refs/heads/${SYNC_BRANCH}:${REMOTE_SHA}" origin "$SYNC_BRANCH"
           {
             echo "Merges [${TEMPLATE_REPO}@${SHORT}](https://github.com/${TEMPLATE_REPO}/commit/${TSHA}) into \`${DEFAULT_BRANCH}\`."
             echo

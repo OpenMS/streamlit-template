@@ -28,7 +28,7 @@ cause, and never make CI green by skipping, disabling or weakening a check.
 2. **Classify**: our change / flaky infrastructure (runner disk, registry
    rate limit, network) / upstream (a dependency release, an OpenMS branch
    change).
-3. **Flaky**: re-run once. If it fails the same way twice it is not flaky.
+3. **Flaky** only with evidence: the failing step shows an infrastructure cause (runner lost, registry 429/5xx, DNS or network timeout, disk full), or the same check passed on recent runs of the base branch with the same inputs. Re-run once to confirm. Two identical failures do not prove the code is at fault when the error itself is infrastructural; check the job's history before changing code. A failure in our own assertion or test with no infrastructure error is ours.
 4. **Reproduce** with the table above, and show the same check failing.
 5. **Fix the cause**, then show the same check passing locally.
 6. **Recurring patterns:**

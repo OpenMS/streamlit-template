@@ -293,7 +293,7 @@ Several of the storage tier's names are **cluster-scoped**, or would otherwise c
 
 CI checks all of them. `assert_storage_names_match_slug` compares every name with your overlay's `namePrefix` (`<slug>-storage`, `<slug>-nfs`, `<slug>-nfs-server`), so a fork that kept `template-app-` fails its build instead of taking over another fork's storage on the shared cluster. `assert_netpol_string_matches_overlay` compares the label, and the kind jobs read the storage namespace from `k8s/storage/kustomization.yaml`, so no workflow edit is needed after the rename.
 
-If your app is already deployed under the template names, the rename is a migration (new namespace, new backing volume, new StorageClass): follow `docs/a16-storage-runbook.md` rather than applying the renamed manifests over the old ones.
+If your app is already deployed under the template names, the rename is a data migration (new namespace, new backing volume, new StorageClass), and no runbook for it exists yet: `docs/a16-storage-runbook.md` covers the earlier RWO-to-NFS cutover, which starts from a fresh NFS volume. Plan it with the cluster operator (apply the renamed storage root next to the old one, copy the workspaces across with a one-off job that mounts both claims, then switch the overlay) instead of applying the renamed manifests over the old ones. None of the apps deployed from this template ran the storage tier when this check was added, so a fork adopting the storage tier for the first time renames before its first apply and has nothing to migrate.
 
 ### Step 5 — Configure the admin password (optional)
 

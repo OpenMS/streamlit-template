@@ -58,7 +58,8 @@
 #   CI_ASSERT_TIMEOUT  seconds to wait for a pod      (default: 180)
 #   CI_ASSERT_STORAGE_NS    namespace of the NFS server
 #                           (default: the top-level `namespace:` of
-#                           $CI_ASSERT_STORAGE_ROOT/kustomization.yaml)
+#                           $CI_ASSERT_STORAGE_ROOT/kustomization.yaml, read
+#                           with yq; empty if it cannot be read)
 #   CI_ASSERT_STORAGE_ROOT  kustomize root serving it    (default: k8s/storage)
 
 CI_ASSERT_NS="${CI_ASSERT_NS:-openms}"
@@ -74,10 +75,14 @@ CI_ASSERT_STORAGE_ROOT="${CI_ASSERT_STORAGE_ROOT:-k8s/storage}"
 # Read, never assumed: a fork renames the storage namespace together with the
 # rest of its storage identity (see assert_storage_names_match_slug), and a
 # hardcoded default here pointed every runtime assertion at the template's.
-if [ -z "${CI_ASSERT_STORAGE_NS:-}" ] && [ -f "$CI_ASSERT_STORAGE_ROOT/kustomization.yaml" ]; then
-    CI_ASSERT_STORAGE_NS="$(awk '/^namespace:/ {print $2; exit}' "$CI_ASSERT_STORAGE_ROOT/kustomization.yaml")"
+# Parsed with yq so a quoted value is read correctly. Sourcing must not fail, so
+# an unreadable root leaves it empty, and every assertion that uses it then
+# fails naming the namespace it could not find instead of querying a guess.
+if [ -z "${CI_ASSERT_STORAGE_NS:-}" ] && [ -f "$CI_ASSERT_STORAGE_ROOT/kustomization.yaml" ] && command -v yq >/dev/null 2>&1; then
+    CI_ASSERT_STORAGE_NS="$(yq '.namespace' "$CI_ASSERT_STORAGE_ROOT/kustomization.yaml" 2>/dev/null || true)"
+    [ "$CI_ASSERT_STORAGE_NS" = "null" ] && CI_ASSERT_STORAGE_NS=""
 fi
-CI_ASSERT_STORAGE_NS="${CI_ASSERT_STORAGE_NS:-template-app-storage}"
+CI_ASSERT_STORAGE_NS="${CI_ASSERT_STORAGE_NS:-}"
 # Seconds to wait for the NFS server to come back, and for a client operation to
 # get through afterwards. NFSv4.1's grace period is ~90s by default, during
 # which state-mutating operations are refused and a `hard` mount simply retries.

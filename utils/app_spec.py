@@ -30,9 +30,28 @@ def load_schema() -> dict:
     return json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
 
 
+class _UniqueKeyLoader(yaml.SafeLoader):
+    """SafeLoader that refuses a repeated key instead of keeping the last one.
+
+    A second `sync:` block would otherwise silently replace the ownership rules
+    the template-sync job applies to conflicts.
+    """
+
+    def construct_mapping(self, node, deep=False):
+        seen = set()
+        for key_node, _ in node.value:
+            key = self.construct_object(key_node, deep=deep)
+            if key in seen:
+                raise yaml.constructor.ConstructorError(
+                    None, None, f"duplicate key {key!r}", key_node.start_mark
+                )
+            seen.add(key)
+        return super().construct_mapping(node, deep=deep)
+
+
 def load_spec(path: Path | str = DEFAULT_SPEC) -> dict:
     with open(path, encoding="utf-8") as f:
-        spec = yaml.safe_load(f)
+        spec = yaml.load(f, Loader=_UniqueKeyLoader)  # noqa: S506 - SafeLoader subclass
     if not isinstance(spec, dict):
         raise ValueError(f"{path} does not hold a YAML mapping")
     return spec
@@ -47,14 +66,20 @@ def schema_errors(spec: dict) -> list[str]:
     return errors
 
 
-def _yaml_field(path: Path, *keys):
-    """Read a nested field from a single-document YAML file, or None."""
+_MISSING = object()
+
+
+def _yaml_doc(path: Path):
+    """Parsed single-document YAML file, None if absent, _MISSING if unparsable."""
     if not path.is_file():
         return None
     try:
-        doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+        return yaml.safe_load(path.read_text(encoding="utf-8"))
     except yaml.YAMLError:
-        return None
+        return _MISSING
+
+
+def _field(doc, *keys):
     for key in keys:
         if isinstance(doc, dict):
             doc = doc.get(key)
@@ -91,21 +116,48 @@ def consistency_errors(spec: dict, root: Path | str = ".") -> list[str]:
             )
 
     overlay = root / "k8s" / "overlays" / "prod" / "kustomization.yaml"
-    prefix = _yaml_field(overlay, "namePrefix")
-    if slug and prefix is not None and prefix != f"{slug}-":
-        errors.append(
-            f"app.slug is {slug!r} but {overlay.relative_to(root)} has "
-            f"namePrefix {prefix!r} (expected {slug + '-'!r})"
-        )
+    overlay_doc = _yaml_doc(overlay)
+    rel = overlay.relative_to(root) if overlay_doc is not None else None
+    if overlay_doc is _MISSING:
+        errors.append(f"{rel} is not valid YAML")
+    elif overlay_doc is not None:
+        prefix = _field(overlay_doc, "namePrefix")
+        if not prefix:
+            errors.append(f"{rel} has no namePrefix")
+        elif slug and prefix != f"{slug}-":
+            errors.append(
+                f"app.slug is {slug!r} but {rel} has namePrefix {prefix!r} "
+                f"(expected {slug + '-'!r})"
+            )
+        image = app.get("image")
+        new_name = _field(overlay_doc, "images", 0, "newName")
+        if image and new_name and new_name != image:
+            errors.append(
+                f"app.image is {image!r} but {rel} deploys {new_name!r} "
+                "(images[0].newName)"
+            )
+        overlay_text = overlay.read_text(encoding="utf-8")
+        for host in spec.get("deploy", {}).get("k8s", {}).get("hosts", []):
+            if f"Host(`{host}`)" not in overlay_text:
+                errors.append(
+                    f"deploy.k8s.hosts lists {host!r}, but {rel} has no "
+                    f"Host(`{host}`) route"
+                )
 
     storage = root / "k8s" / "storage" / "kustomization.yaml"
-    ns = _yaml_field(storage, "namespace")
-    if slug and ns is not None and ns != f"{slug}-storage":
-        errors.append(
-            f"app.slug is {slug!r} but {storage.relative_to(root)} puts the "
-            f"storage tier in {ns!r} (expected {slug + '-storage'!r}); see "
-            "the configure-k8s-deployment skill, Step 4"
-        )
+    storage_doc = _yaml_doc(storage)
+    if storage_doc is _MISSING:
+        errors.append(f"{storage.relative_to(root)} is not valid YAML")
+    elif storage_doc is not None:
+        ns = _field(storage_doc, "namespace")
+        if not ns:
+            errors.append(f"{storage.relative_to(root)} sets no namespace")
+        elif slug and ns != f"{slug}-storage":
+            errors.append(
+                f"app.slug is {slug!r} but {storage.relative_to(root)} puts the "
+                f"storage tier in {ns!r} (expected {slug + '-storage'!r}); see "
+                "the configure-k8s-deployment skill, Step 4"
+            )
 
     input_keys = set(spec.get("inputs", {}))
     for wf in spec.get("workflows", []):

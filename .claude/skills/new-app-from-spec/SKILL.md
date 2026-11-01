@@ -40,8 +40,13 @@ git clone https://github.com/OpenMS/streamlit-template <slug>
 cd <slug>
 git remote rename origin template
 git remote add origin https://github.com/<app.repository>.git
-git checkout -b main
+git branch --show-current     # the template's default, main; rename only if it differs
+cp /path/to/the/spec/app.yaml app.yaml   # the user's spec replaces the template's example
+python -m utils.app_spec      # schema check now; the consistency errors are expected until step 3
 ```
+
+From here on every step reads `app.yaml` in the new repository, never the
+template's example.
 
 Creating the GitHub repository itself is the user's step (or an org admin's);
 ask for it and continue locally meanwhile.

@@ -20,7 +20,7 @@ cluster is updated by changing the image tag the prod overlay pulls.
    what changed in results, what they must re-run. Collect them from merged
    PRs since the last tag:
    ```bash
-   git log --merges --first-parent --format='%s' $(git describe --tags --abbrev=0)..HEAD
+   git log --first-parent --format='%s' $(git describe --tags --abbrev=0)..HEAD   # merge, squash and rebase merges alike
    ```
 3. **PR, merge** to the default branch.
 4. **Tag and release** on the merge commit: `v<version>`. Creating the GitHub
