@@ -1,6 +1,6 @@
 // End-to-end test of the Electron app: drives the real app window with
 // Playwright, the way a user would.
-//   node scripts/e2e.js [--exe <installed app .exe>] [--out <dir>] [--scenario <file.js>] ...
+//   node scripts/e2e.js [--exe <installed app executable>] [--out <dir>] [--scenario <file.js>] ...
 // Without --exe it starts the shell from this checkout (npx electron .).
 //
 // It first opens every page in the app's navigation and fails on any Python
@@ -37,11 +37,10 @@ async function launch(_electron, exe) {
   // The installed app must not run its own smoke test or update dialog here.
   delete env.OPENMS_APP_SMOKE_TEST;
   env.OPENMS_APP_NO_UPDATE_CHECK = "1";
-  if (exe) return _electron.launch({ executablePath: exe, env, timeout: 120000 });
+  const sandbox = process.platform === "linux" ? ["--no-sandbox"] : [];
+  if (exe) return _electron.launch({ executablePath: exe, args: sandbox, env, timeout: 120000 });
   const electronDir = path.resolve(__dirname, "..");
-  const args = [electronDir];
-  if (process.platform === "linux") args.unshift("--no-sandbox");
-  return _electron.launch({ executablePath: require("electron"), args, env, timeout: 120000 });
+  return _electron.launch({ executablePath: require("electron"), args: [...sandbox, electronDir], env, timeout: 120000 });
 }
 
 // Streamlit marks its root element with the script state; "notRunning" for a
@@ -82,12 +81,13 @@ function makeHelpers(app, page, baseUrl, out) {
 
     // Open a page by its URL path ("FLASHDeconvWorkflow") or by a title from
     // the navigation ("Workflow"); a title shared by several sections needs
-    // the URL path.
-    async open(target) {
+    // the URL path. A page that does heavy work on its first draw can pass a
+    // longer { timeout } for settling.
+    async open(target, opts) {
       const link = page.locator(`[data-testid="stSidebarNav"] a[href$="/${target}"]`);
       if ((await link.count()) === 1) await link.click();
       else await page.locator('[data-testid="stSidebarNav"] a', { hasText: target }).first().click();
-      await settle(page);
+      await settle(page, opts);
     },
 
     async clickTab(name) {
@@ -162,6 +162,26 @@ function makeHelpers(app, page, baseUrl, out) {
   return t;
 }
 
+// Quits the app; kills it when it does not quit, so a stuck window cannot keep
+// the test (and the CI job) running until its timeout.
+async function close(app) {
+  const proc = app.process();
+  let timer;
+  const quit = app.close().then(() => true, () => true);
+  const late = new Promise((resolve) => (timer = setTimeout(resolve, 60000, false)));
+  const quitInTime = await Promise.race([quit, late]);
+  clearTimeout(timer);
+  if (!quitInTime) {
+    console.error("The app did not quit within 60s; killing it.");
+    // On Windows Playwright starts Electron through a shell, so kill the tree.
+    if (process.platform === "win32") {
+      require("child_process").spawnSync("taskkill", ["/pid", String(proc.pid), "/T", "/F"]);
+    } else {
+      proc.kill("SIGKILL");
+    }
+  }
+}
+
 async function navTargets(page) {
   // A long navigation is collapsed behind "View more".
   const more = page.locator('[data-testid="stSidebarNavViewButton"]');
@@ -214,7 +234,7 @@ async function main() {
       }
     }
   } finally {
-    await app.close().catch(() => {});
+    await close(app);
   }
   if (failed) throw new Error("one or more scenarios failed");
 }

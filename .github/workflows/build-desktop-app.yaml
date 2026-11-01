@@ -1,0 +1,505 @@
+name: Build desktop app
+# One run builds the Electron app for Windows, macOS (Apple Silicon) and Linux,
+# and a release gets all installers attached.
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # Windows uses python.org's embeddable zip, which needs an exact version.
+  WINDOWS_PYTHON_VERSION: 3.11.0
+  OPENMS_VERSION: "3.5.0"
+  # Name of the app and its installers
+  APP_NAME: OpenMS-StreamlitTemplateApp
+  # Define needed TOPP tools here. FileConverter converts Thermo .raw input
+  # (CommandExecutor.convert_to_mzml) with share/OpenMS/THIRDPARTY/ThermoRawFileParser.
+  TOPP_TOOLS: "FeatureFinderMetabo FeatureLinkerUnlabeledKD SiriusExport FileConverter"
+
+jobs:
+  # `with:` of a reusable-workflow call cannot read `env`, so this job hands
+  # the settings over as outputs and they stay defined in one place.
+  config:
+    runs-on: ubuntu-latest
+    outputs:
+      topp-tools: ${{ steps.out.outputs.topp-tools }}
+      openms-version: ${{ steps.out.outputs.openms-version }}
+    steps:
+    - id: out
+      run: |
+        echo "topp-tools=$TOPP_TOOLS" >> "$GITHUB_OUTPUT"
+        echo "openms-version=$OPENMS_VERSION" >> "$GITHUB_OUTPUT"
+
+  # OpenMS TOPP tools, DLLs and share/ from the official Windows installer
+  # (`mode: source` builds a branch or fork instead). App repositories call the
+  # same workflow as OpenMS/streamlit-template/.github/workflows/openms-windows.yml@<ref>.
+  build-openms-windows:
+    needs: config
+    uses: ./.github/workflows/openms-windows.yml
+    with:
+      openms-version: ${{ needs.config.outputs.openms-version }}
+      mode: installer
+      topp-tools: ${{ needs.config.outputs.topp-tools }}
+      artifact-name: openms-package
+
+  windows:
+    name: Windows
+    runs-on: windows-2022
+    needs: build-openms-windows
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+
+    - name: Set Version in settings.json
+      env:
+        RELEASE_TAG: ${{ github.event.release.tag_name }}
+      run: |
+        # Only release builds carry a tag; other builds keep settings.json's
+        # version instead of blanking it in the app's sidebar.
+        $VERSION=$env:RELEASE_TAG
+        if ($VERSION) {
+          $content = Get-Content -Raw settings.json | ConvertFrom-Json
+          $content.version = $VERSION
+          $content | ConvertTo-Json -Depth 100 | Set-Content settings.json
+        }
+
+    - name: Download package as artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: openms-package
+        path: openms-package
+
+    - name: Extract bin and share from package
+      run: |
+        cd openms-package
+        unzip "*.zip" -d .
+        cp -r openms-package/bin ../openms-bin
+        cp -r openms-package/share ../share
+
+    - name: Set up Python (regular distribution)
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ env.WINDOWS_PYTHON_VERSION }} # Use the same version as the embeddable version
+    
+    - name: Setup python embeddable version
+      run: |
+        # Create a directory for the embeddable Python version
+        mkdir python-${{ env.WINDOWS_PYTHON_VERSION }}
+        
+        # Download and unzip the embeddable Python version
+        curl -O https://www.python.org/ftp/python/${{ env.WINDOWS_PYTHON_VERSION }}/python-${{ env.WINDOWS_PYTHON_VERSION }}-embed-amd64.zip
+        unzip python-${{ env.WINDOWS_PYTHON_VERSION }}-embed-amd64.zip -d python-${{ env.WINDOWS_PYTHON_VERSION }}
+        rm python-${{ env.WINDOWS_PYTHON_VERSION }}-embed-amd64.zip
+
+        # Define paths for the regular Python distribution and the embeddable distribution
+        $PYTHON_DIR="${{ runner.tool_cache }}/Python/${{ env.WINDOWS_PYTHON_VERSION }}/x64" # Path from actions/setup-python
+        $EMBED_DIR="python-${{ env.WINDOWS_PYTHON_VERSION }}"
+        
+        mkdir -p $EMBED_DIR/Lib/site-packages/tkinter
+        mkdir -p $EMBED_DIR/tcl
+
+        # Copy necessary Tkinter files from the regular Python distribution
+        cp -r $PYTHON_DIR/Lib/tkinter/* $EMBED_DIR/Lib/site-packages/tkinter/
+        cp -r $PYTHON_DIR/tcl/* $EMBED_DIR/tcl/
+        cp $PYTHON_DIR/DLLs/_tkinter.pyd $EMBED_DIR/
+        cp $PYTHON_DIR/DLLs/tcl86t.dll $EMBED_DIR/
+        cp $PYTHON_DIR/DLLs/tk86t.dll $EMBED_DIR/
+
+    - name: Uncomment 'import site' in python311._pth file
+      run: |
+        sed -i 's/#import site/import site/' python-${{ env.WINDOWS_PYTHON_VERSION }}/python311._pth
+
+    - name: Install Required Packages
+      # Use system Python (which has development headers) to compile packages,
+      # installing into the embeddable Python's site-packages directory.
+      # The embeddable Python lacks Python.h headers needed for native extensions.
+      run: python -m pip install -r requirements.txt --target python-${{ env.WINDOWS_PYTHON_VERSION }}/Lib/site-packages --upgrade --no-warn-script-location
+
+    - name: Clean up unnecessary Python files
+      shell: pwsh
+      run: |
+        $sitePkgs = "python-${{ env.WINDOWS_PYTHON_VERSION }}/Lib/site-packages"
+
+        # Remove __pycache__ directories
+        Get-ChildItem -Path $sitePkgs -Recurse -Directory -Filter "__pycache__" | Remove-Item -Recurse -Force
+
+        # Remove test directories
+        Get-ChildItem -Path $sitePkgs -Recurse -Directory | Where-Object { $_.Name -match "^tests?$" } | Remove-Item -Recurse -Force
+
+        # Count remaining files
+        $count = (Get-ChildItem -Path $sitePkgs -Recurse -File).Count
+        Write-Host "Remaining files in site-packages: $count"
+
+    - name: Set to offline deployment
+      run: |
+        $content = Get-Content -Raw settings.json | ConvertFrom-Json
+        $content.online_deployment = $false
+        $content | ConvertTo-Json -Depth 100 | Set-Content settings.json
+
+    - name: Create All-in-one executable folder
+      run: |
+        mkdir streamlit_exe
+
+        mv python-${{ env.WINDOWS_PYTHON_VERSION }} streamlit_exe
+        cp -r src streamlit_exe
+        cp -r utils streamlit_exe
+        cp -r content streamlit_exe
+        cp -r docs streamlit_exe
+        cp -r assets streamlit_exe
+        cp -r example-data streamlit_exe
+        cp openms-bin/*.dll streamlit_exe
+        cp -r .streamlit streamlit_exe
+        cp -r share streamlit_exe/share
+        cp app.py streamlit_exe
+        cp settings.json streamlit_exe
+        cp default-parameters.json streamlit_exe
+
+        $files = $env:TOPP_TOOLS -split ' '
+        foreach ($file in $files) {
+          Copy-Item "openms-bin/${file}.exe" -Destination "streamlit_exe/${file}.exe"
+        }
+
+    - name: Remove server address for local Windows deployment
+      run: |
+        (Get-Content streamlit_exe/.streamlit/config.toml) -notmatch '^address' | Set-Content streamlit_exe/.streamlit/config.toml
+
+    - name: Set up Node.js for the Electron installer
+      uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+        cache: 'npm'
+        cache-dependency-path: electron/package-lock.json
+
+    - name: Build Electron installer
+      # Wraps the folder in the Electron shell (electron/) as a per-user NSIS
+      # installer that needs no admin rights.
+      env:
+        RELEASE_TAG: ${{ github.event.release.tag_name }}
+      run: |
+        Copy-Item -Recurse streamlit_exe electron/payload
+        # electron-builder needs a semver version; take the numeric part of the release tag.
+        $version = "1.0.0"
+        if ($env:RELEASE_TAG -match '(\d+)(?:\.(\d+))?(?:\.(\d+))?') {
+          $version = "$($Matches[1]).$(if ($Matches[2]) { $Matches[2] } else { 0 }).$(if ($Matches[3]) { $Matches[3] } else { 0 })"
+        }
+        cd electron
+        npm ci
+        npx electron-builder --win nsis --publish never `
+          "-c.productName=${{ env.APP_NAME }}" `
+          "-c.appId=de.openms.${{ env.APP_NAME }}" `
+          "-c.extraMetadata.productName=${{ env.APP_NAME }}" `
+          "-c.extraMetadata.version=$version" `
+          ('-c.nsis.artifactName=${{ env.APP_NAME }}-Setup.${ext}')
+
+    - name: Smoke test Electron installer
+      # Installs silently, then checks pyOpenMS, every TOPP tool and the
+      # Streamlit server with the shell's environment, and finally launches the
+      # installed app, which exits 0 once the page has created a workspace.
+      run: |
+        Start-Process -FilePath "electron/dist/${{ env.APP_NAME }}-Setup.exe" -ArgumentList "/S" -Wait
+        $inst = Join-Path $env:LOCALAPPDATA "Programs/${{ env.APP_NAME }}"
+        node electron/scripts/smoke-payload.js "$inst/resources/app-payload" @($env:TOPP_TOOLS -split ' ')
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+        $env:OPENMS_APP_SMOKE_TEST = "1"
+        $app = Start-Process -FilePath "$inst/${{ env.APP_NAME }}.exe" -PassThru
+        if (-not $app.WaitForExit(300000)) { Stop-Process -Id $app.Id -Force; throw "Electron app did not finish its smoke test" }
+        $log = Join-Path $env:APPDATA "${{ env.APP_NAME }}/logs/streamlit.log"
+        if (Test-Path $log) { Get-Content $log }
+        if ($app.ExitCode -ne 0) { throw "Electron app smoke test failed with exit code $($app.ExitCode)" }
+
+    - name: End-to-end test in the Electron window
+      # Drives the installed app with Playwright and opens every page; an app
+      # adds its own steps (run a workflow, check its results) with --scenario.
+      run: |
+        $inst = Join-Path $env:LOCALAPPDATA "Programs/${{ env.APP_NAME }}"
+        node electron/scripts/e2e.js --exe "$inst/${{ env.APP_NAME }}.exe" --out e2e-output
+        $code = $LASTEXITCODE
+        $log = Join-Path $env:APPDATA "${{ env.APP_NAME }}/logs/streamlit.log"
+        if (Test-Path $log) { Get-Content $log -Tail 200 }
+        exit $code
+
+    - name: Archive end-to-end screenshots
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: electron-e2e-screenshots-Windows
+        path: e2e-output
+        if-no-files-found: ignore
+
+    - name: Archive Electron installer
+      uses: actions/upload-artifact@v4
+      with:
+        name: OpenMS-App-Electron
+        path: electron/dist/${{ env.APP_NAME }}-Setup.exe
+
+  macos-linux:
+    name: ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Apple Silicon only; Intel Macs are not supported.
+          - platform: macOS-arm64
+            runs-on: macos-15
+          # Built on the oldest Ubuntu we support: the bundle needs glibc >= 2.35.
+          - platform: Linux-x86_64
+            runs-on: ubuntu-22.04
+    runs-on: ${{ matrix.runs-on }}
+    # Signing takes minutes now that bytecode and data files are skipped
+    # (mac.signIgnore), but took hours before; the limit leaves room for
+    # the timestamp-service rebuilds below and for an app with a larger payload.
+    timeout-minutes: 300
+    defaults:
+      run:
+        shell: bash
+    env:
+      GH_TOKEN: ${{ github.token }}
+      # Minor version; the latest patch release from python-build-standalone is used.
+      PYTHON_VERSION: "3.11"
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+
+    - name: Set version and offline deployment in settings.json
+      env:
+        RELEASE_TAG: ${{ github.event.release.tag_name }}
+      run: |
+        # Only release builds carry a tag; other builds keep settings.json's version.
+        jq --arg v "$RELEASE_TAG" \
+          '.online_deployment = false | if $v != "" then .version = $v else . end' \
+          settings.json > settings.tmp && mv settings.tmp settings.json
+
+    - name: Stage OpenMS TOPP tools
+      # From the official OpenMS release: the arm64 .pkg on macOS (already
+      # self-contained), the .deb on Linux (its system libraries are bundled).
+      run: electron/scripts/stage-openms.sh "$OPENMS_VERSION" electron/payload $TOPP_TOOLS
+
+    - name: Stage Python with the app's requirements
+      run: electron/scripts/stage-python.sh "$PYTHON_VERSION" electron/payload requirements.txt
+
+    - name: Copy the app into the payload
+      run: |
+        p=electron/payload
+        cp -R src utils content docs assets example-data .streamlit app.py settings.json default-parameters.json "$p/"
+        # The local server only listens on loopback; the shell passes the address.
+        grep -v '^address' "$p/.streamlit/config.toml" > config.tmp && mv config.tmp "$p/.streamlit/config.toml"
+        "$p/python-$PYTHON_VERSION/bin/python3" -m compileall -q --invalidation-mode unchecked-hash "$p/src" "$p/utils"
+        du -sh "$p"
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+        cache: 'npm'
+        cache-dependency-path: electron/package-lock.json
+
+    - name: Install Electron dependencies
+      # Separate from the build step, so dependency install scripts never see
+      # the signing secrets.
+      working-directory: electron
+      run: npm ci
+
+    - name: Build installers
+      env:
+        RELEASE_TAG: ${{ github.event.release.tag_name }}
+        MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+        MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY }}
+        APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+        APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        APPLE_ID: ${{ secrets.APPLE_ID }}
+        APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      run: |
+        # electron-builder needs a semver version; take the numeric part of the release tag.
+        version=1.0.0
+        if [[ "$RELEASE_TAG" =~ ([0-9]+)(\.([0-9]+))?(\.([0-9]+))? ]]; then
+          version="${BASH_REMATCH[1]}.${BASH_REMATCH[3]:-0}.${BASH_REMATCH[5]:-0}"
+        fi
+        # Package and executable name: lowercase, as Linux desktop entries expect.
+        id=$(tr '[:upper:]' '[:lower:]' <<<"$APP_NAME")
+        args=(
+          --publish never
+          "-c.productName=$APP_NAME"
+          "-c.appId=de.openms.$APP_NAME"
+          "-c.extraMetadata.name=$id"
+          "-c.extraMetadata.productName=$APP_NAME"
+          "-c.extraMetadata.version=$version"
+        )
+        if [[ $RUNNER_OS == macOS ]]; then
+          # Notarization runs in our afterSign hook, which retries Apple's flaky
+          # stapling service instead of failing the build.
+          args+=(--mac dmg --arm64 "-c.dmg.artifactName=$APP_NAME-macOS-arm64.\${ext}"
+            -c.mac.notarize=false -c.afterSign=scripts/notarize.js)
+          # dmgbuild's own size estimate is too small for payloads with tens of
+          # thousands of files (ditto runs out of space inside the volume);
+          # electron-builder shrinks the image afterwards.
+          payload_mb=$(du -sm electron/payload | cut -f1)
+          args+=("-c.dmg.size=$(( payload_mb * 14 / 10 + 600 ))m")
+          if [[ -n $MACOS_CERTIFICATE ]]; then
+            export CSC_LINK="$MACOS_CERTIFICATE" CSC_KEY_PASSWORD="$MACOS_CERTIFICATE_PASSWORD"
+            # electron-builder skips signing in pull requests by default. Only PRs from
+            # branches of this repository see the secret, so sign those too.
+            export CSC_FOR_PULL_REQUEST=true
+            # Notarize with an App Store Connect API key, or else with an Apple ID
+            # and an app-specific password.
+            if [[ -n $APPLE_API_KEY_CONTENT ]]; then
+              printf '%s\n' "$APPLE_API_KEY_CONTENT" > "$RUNNER_TEMP/AuthKey.p8"
+              export APPLE_API_KEY="$RUNNER_TEMP/AuthKey.p8" APPLE_API_KEY_ID APPLE_API_ISSUER
+              unset APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID
+            elif [[ -n $APPLE_API_KEY_ID && -z $APPLE_ID ]]; then
+              echo "::warning::APPLE_API_KEY_ID is set but APPLE_API_KEY (the .p8 contents) is empty or not shared with this repository: the app is signed but not notarized"
+            elif [[ -n $APPLE_ID ]]; then
+              unset APPLE_API_KEY_ID APPLE_API_ISSUER
+            else
+              echo "::warning::neither APPLE_API_KEY nor APPLE_ID is set: the app is signed but not notarized"
+            fi
+          else
+            # Forks and pull requests from forks get no secrets: build unsigned.
+            echo "::warning::MACOS_CERTIFICATE is not set: the app is not signed"
+            export CSC_IDENTITY_AUTO_DISCOVERY=false
+            unset APPLE_ID
+          fi
+        else
+          args+=(--linux AppImage --x64
+            "-c.linux.executableName=$id"
+            "-c.appImage.artifactName=$APP_NAME-Linux-x86_64.\${ext}")
+        fi
+        # The signer opens every file of the payload (tens of thousands) at once;
+        # lift macOS's per-process limit above that.
+        if [[ $RUNNER_OS == macOS ]]; then
+          sudo sysctl -w kern.maxfiles=524288 kern.maxfilesperproc=524288 >/dev/null
+          ulimit -n 524288
+          echo "open-file limit: $(ulimit -n), payload files: $(find electron/payload -type f | wc -l)"
+        fi
+        cd electron
+        # codesign can still lose a timestamp request to Apple's service on a
+        # Mach-O file; build again only for that error.
+        for i in 1 2 3; do
+          npx electron-builder "${args[@]}" 2>&1 | tee "$RUNNER_TEMP/electron-builder.log" && break
+          if [[ $i == 3 ]] || ! grep -q "timestamp service is not available" "$RUNNER_TEMP/electron-builder.log"; then exit 1; fi
+          echo "::warning::Apple's timestamp service was not available; building again."
+          sleep 60
+        done
+        rm -f "$RUNNER_TEMP/AuthKey.p8"
+        ls -la dist
+
+    - name: Smoke test (macOS)
+      if: runner.os == 'macOS'
+      env:
+        SIGNED: ${{ secrets.MACOS_CERTIFICATE != '' }}
+        NOTARIZED: ${{ secrets.APPLE_API_KEY != '' || secrets.APPLE_ID != '' }}
+      run: |
+        # Runs the app from the mounted (read-only) dmg, the way users first start it.
+        mnt="$RUNNER_TEMP/dmg"
+        hdiutil attach -nobrowse -readonly -mountpoint "$mnt" "electron/dist/$APP_NAME-macOS-arm64.dmg"
+        app="$mnt/$APP_NAME.app"
+        if [[ $SIGNED == true ]]; then
+          codesign --verify --deep --strict --verbose=2 "$app"
+          if [[ $NOTARIZED == true ]]; then
+            # stapler validate talks to Apple's CloudKit, whose connection
+            # sometimes drops (exit 68).
+            for i in 1 2 3; do
+              xcrun stapler validate "$app" && break
+              [[ $i == 3 ]] && exit 1
+              sleep 30
+            done
+            spctl --assess --type execute --verbose=2 "$app"
+          fi
+        fi
+        node electron/scripts/smoke-payload.js "$app/Contents/Resources/app-payload" $TOPP_TOOLS
+
+        OPENMS_APP_SMOKE_TEST=1 "$app/Contents/MacOS/$APP_NAME" &
+        pid=$!
+        for _ in $(seq 300); do kill -0 $pid 2>/dev/null || break; sleep 1; done
+        if kill -0 $pid 2>/dev/null; then kill $pid; echo "::error::app did not finish its smoke test"; exit 1; fi
+        wait $pid && code=0 || code=$?
+        cat "$HOME/Library/Application Support/$APP_NAME/logs/streamlit.log" || true
+        exit $code
+
+    - name: Smoke test (Linux)
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt-get install -y -q libfuse2 xvfb
+        id=$(tr '[:upper:]' '[:lower:]' <<<"$APP_NAME")
+        image="$PWD/electron/dist/$APP_NAME-Linux-x86_64.AppImage"
+        chmod +x "$image"
+
+        (cd "$RUNNER_TEMP" && "$image" --appimage-extract >/dev/null)
+        node electron/scripts/smoke-payload.js "$RUNNER_TEMP/squashfs-root/resources/app-payload" $TOPP_TOOLS
+
+        code=0
+        OPENMS_APP_SMOKE_TEST=1 timeout 300 xvfb-run -a "$image" || code=$?
+        cat "$HOME/.config/$APP_NAME/logs/streamlit.log" || true
+        exit $code
+
+    - name: End-to-end test in the app window
+      timeout-minutes: 120
+      # Drives the installed app with Playwright and opens every page; an app
+      # adds its own steps (run a workflow, check its results) with --scenario.
+      run: |
+        if [[ $RUNNER_OS == macOS ]]; then
+          exe="$RUNNER_TEMP/dmg/$APP_NAME.app/Contents/MacOS/$APP_NAME"
+          log="$HOME/Library/Application Support/$APP_NAME/logs/streamlit.log"
+          node electron/scripts/e2e.js --exe "$exe" --out e2e-output && code=0 || code=$?
+        else
+          # The extracted AppImage, with APPIMAGE set as its runtime would.
+          exe="$RUNNER_TEMP/squashfs-root/$(tr '[:upper:]' '[:lower:]' <<<"$APP_NAME")"
+          log="$HOME/.config/$APP_NAME/logs/streamlit.log"
+          APPIMAGE="$PWD/electron/dist/$APP_NAME-Linux-x86_64.AppImage" \
+            xvfb-run -a node electron/scripts/e2e.js --exe "$exe" --out e2e-output && code=0 || code=$?
+        fi
+        tail -n 200 "$log" || true
+        exit $code
+
+    - name: Archive end-to-end screenshots
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: electron-e2e-screenshots-${{ matrix.platform }}
+        path: e2e-output
+        if-no-files-found: ignore
+
+    - name: Archive installers
+      uses: actions/upload-artifact@v4
+      with:
+        name: OpenMS-App-${{ matrix.platform }}
+        path: |
+          electron/dist/*.dmg
+          electron/dist/*.AppImage
+
+  # Only this job can write to the repository; the build jobs run third-party
+  # code (pip, npm, electron-builder) with a read-only token.
+  release:
+    needs: [windows, macos-linux]
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+    - name: Download installers
+      uses: actions/download-artifact@v4
+      with:
+        pattern: OpenMS-App-*
+        merge-multiple: true
+        path: dist
+
+    - name: Upload installers as release assets
+      env:
+        GH_TOKEN: ${{ github.token }}
+        RELEASE_TAG: ${{ github.event.release.tag_name }}
+      run: gh release upload "$RELEASE_TAG" dist/* --clobber -R "$GITHUB_REPOSITORY"
