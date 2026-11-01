@@ -1,5 +1,5 @@
 # Reusable workflow: OpenMS TOPP tools for Windows, uploaded as the artifact that
-# the windows job of build-desktop-app.yaml consumes (a zip of openms-package/{bin,share}).
+# the build job of build-desktop-app.yaml stages on Windows with electron/scripts/stage-openms.sh (a zip of openms-package/{bin,share}).
 # `installer` repackages the official release installer; `source` builds
 # openms-ref with the vcpkg presets (a cold build takes hours).
 
@@ -451,7 +451,7 @@ jobs:
       run: |
         set -euo pipefail
         cd "$RUNNER_TEMP/staging"
-        # The windows job unzips "*.zip" and expects openms-package/{bin,share} inside.
+        # stage-openms.sh unzips it and expects openms-package/{bin,share} inside.
         7z a -tzip -mx=5 "$RUNNER_TEMP/openms-package.zip" openms-package > /dev/null
         ls -l "$RUNNER_TEMP/openms-package.zip"
 
