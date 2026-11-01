@@ -133,15 +133,25 @@ jobs:
 
       - name: Retag for kind (image name the kustomize overlay points at)
         run: |
-          # The prod overlay sets `newName: ghcr.io/openms/streamlit-template`,
-          # `newTag: main-full`. The rendered manifests reference that exact
-          # ref, so we need it loaded into kind under that name. Tag invariant
-          # across branches/variants so the test always works.
+          # The kind jobs apply k8s/overlays/ci, which keeps the prod overlay's
+          # `images:` entry (`newName`, `newTag`, e.g. ghcr.io/<owner>/<app>:main-full).
+          # The rendered manifests reference that exact ref with pull policy
+          # Never, so the image must be loaded into kind under that name. Read
+          # it from the overlay, so an app that renames its image keeps working.
+          OVERLAY=k8s/overlays/prod/kustomization.yaml
+          NAME=$(awk '$1 == "newName:" {print $2; exit}' "$OVERLAY")
+          TAG=$(awk '$1 == "newTag:" {print $2; exit}' "$OVERLAY")
+          if [ -z "$NAME" ] || [ -z "$TAG" ]; then
+            echo "::error::no newName/newTag in $OVERLAY"
+            exit 1
+          fi
+          KIND_REF="$NAME:$TAG"
+          echo "KIND_REF=$KIND_REF" >> "$GITHUB_ENV"
           FIRST_TAG=$(printf '%s\n' "${{ steps.meta.outputs.tags }}" | head -n 1)
-          docker tag "$FIRST_TAG" ghcr.io/openms/streamlit-template:main-full
+          docker tag "$FIRST_TAG" "$KIND_REF"
 
       - name: Save image as tar
-        run: docker save ghcr.io/openms/streamlit-template:main-full -o /tmp/image.tar
+        run: docker save "$KIND_REF" -o /tmp/image.tar
 
       - name: Upload image artifact
         uses: actions/upload-artifact@v4
