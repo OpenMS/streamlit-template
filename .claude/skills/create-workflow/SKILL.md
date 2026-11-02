@@ -125,7 +125,7 @@ The 4 pages call these methods respectively:
 - `self.file_manager.get_files("name.ext", set_results_dir="dir")` — single result file
 
 ### Execution
-- `self.executor.run_topp("ToolName", input_output={"in": [...], "out": [...]})` — run a TOPP tool; returns `False` if any command failed
+- `self.executor.run_topp("ToolName", input_output={"in": [...], "out": [...]})` — run a TOPP tool; returns `False` if any command failed. Each call shows on the Run page as a step with "file n of N" and elapsed times, and a failure is reported as "While running ToolName on file 2 of 3 (x.mzML)" with the tool output (`src/workflow/progress.py`)
 - `self.executor.run_python("script_name", {"in": [...]})` — run a Python tool from `src/python-tools/`; returns `False` if the script is missing or exited non-zero
 - **`execution()` must be annotated `-> bool` and return `True` only when every step
   succeeded**, `False` on bad input or a failed tool. `workflow_process()` logs the
