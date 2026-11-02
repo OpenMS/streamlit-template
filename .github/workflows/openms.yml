@@ -392,7 +392,7 @@ jobs:
       run: |
         mkdir -p bld
         if [[ $RUNNER_OS == Windows ]]; then
-          export CMAKE_PREFIX_PATH="$QT_ROOT_DIR/lib/cmake;$QT_ROOT_DIR"
+          export CMAKE_PREFIX_PATH="$QT_ROOT_DIR/lib/cmake;$QT_ROOT_DIR;C:\ProgramData\chocolatey\lib\eigen"
           export OPENMS_CONTRIB_LIBS="$GITHUB_WORKSPACE/contrib"
           export Eigen3_DIR='C:\ProgramData\chocolatey\lib\eigen\share\cmake'
           export USE_EXTERNAL_JSON=OFF BOOST_USE_STATIC=ON USE_STATIC_BOOST=On
@@ -404,6 +404,13 @@ jobs:
           export OPENMS_CONTRIB_LIBS="$GITHUB_WORKSPACE/contrib"
           export USE_EXTERNAL_JSON="$DEPS_JSON" BOOST_USE_STATIC=OFF
           export BUILD_FLAGS="-j$DEPS_JOBS"
+        fi
+        # Newer sources' cibuild.cmake no longer reads these variables from
+        # the environment: their CI seeds bld/CMakeCache.txt with
+        # capture-env.sh first (without it, a contrib build fails to find
+        # XercesC: "OPENMS_CONTRIB_LIBS not set").
+        if [[ -f tools/ci/capture-env.sh ]]; then
+          bash tools/ci/capture-env.sh -v "$GITHUB_WORKSPACE/bld/CMakeCache.txt"
         fi
         set +e
         ctest --output-on-failure -V -S "$GITHUB_WORKSPACE/tools/ci/cibuild.cmake"
