@@ -36,6 +36,9 @@ cluster is updated by changing the image tag the prod overlay pulls.
    to `<tag>-full` (e.g. `v1.3-full` or `OpenDDA-1.3-full`) in a PR; after merge the operator (or the GitOps
    controller, if the cluster has one) applies it. Pinning a tag instead of
    `latest` is what makes a rollback a one-line revert.
+   With Argo CD Image Updater (`k8s/argocd/image-updater.yaml`) the cluster
+   moves to the new release image by itself; pin `newTag` anyway, so a
+   re-created Application starts from the current release.
 
 Tagging, publishing and deploying are visible to users and cannot be taken
 back cleanly; do them only when the user asked for the release.

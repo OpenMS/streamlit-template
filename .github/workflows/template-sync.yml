@@ -139,7 +139,8 @@ jobs:
           import fnmatch, os, yaml
           default = ["app.yaml", "app.py", "settings.json", "default-parameters.json",
                      "presets.json", "README.md", "content/*", "src/Workflow.py",
-                     "src/python-tools/*", "example-data/*", "assets/*", "k8s/overlays/*"]
+                     "src/python-tools/*", "example-data/*", "assets/*", "k8s/overlays/*",
+                     "k8s/argocd/*"]
           spec = yaml.safe_load(open("/tmp/app.yaml", encoding="utf-8")) or {}
           sync = spec.get("sync") or {}
           # An explicit empty list means the app owns nothing; the default
