@@ -12,6 +12,16 @@ import traceback
 from pathlib import Path
 
 
+class WorkerBuildMismatchError(RuntimeError):
+    """
+    Raised when the worker runs other code than the page that queued the job.
+
+    The page's parameters (and the TOPP .ini files it wrote) belong to its own
+    TOPP tools; running them with the worker's tools fails with an error that
+    does not name the cause. See src/workflow/app_build.py.
+    """
+
+
 class WorkflowExecutionError(RuntimeError):
     """
     Raised when a workflow's execution() reports failure by returning False.
@@ -49,7 +59,9 @@ def execute_workflow(
     Raises:
         Exception: Anything raised while setting up or running the workflow is
             re-raised after the failure has been written to the workflow logs,
-            and a WorkflowExecutionError if execution() returned False. RQ
+            a WorkerBuildMismatchError (before anything runs) if the page that
+            queued the job runs other code than this worker, and a
+            WorkflowExecutionError if execution() returned False. RQ
             needs the job function to raise to record the job as failed. A
             legacy execution() returning None is accepted as success with a
             deprecation warning in the workflow log.
@@ -83,6 +95,13 @@ def execute_workflow(
 
         # Delete the log file if it already exists
         shutil.rmtree(Path(workflow_path, "logs"), ignore_errors=True)
+
+        # Refuse a job queued by a page that runs other code than this worker
+        # (a release that reached the web pods but not the worker pods).
+        from src.workflow.app_build import build_mismatch
+        mismatch = build_mismatch((job.meta or {}).get("app_build") if job else None)
+        if mismatch:
+            raise WorkerBuildMismatchError(mismatch)
 
         # Load parameters from saved params.json
         params_file = workflow_path / "params.json"
@@ -192,7 +211,7 @@ def execute_workflow(
                     f.write(f"\n\nERROR: {str(e)}\n")
                     # A workflow reporting failure by returning False is not a
                     # crash, the reason is in the tool output above.
-                    if not isinstance(e, WorkflowExecutionError):
+                    if not isinstance(e, (WorkflowExecutionError, WorkerBuildMismatchError)):
                         f.write(traceback.format_exc())
         except Exception:
             pass

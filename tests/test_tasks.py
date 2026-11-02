@@ -545,3 +545,86 @@ def test_queued_multi_run_failure_marks_run_failed(tmp_path):
     _run_multi_in_worker(workflow_dir, "FalseReturningWorkflow", run_id)
 
     assert runs.get(run_id)["status"] == "failed"
+
+
+# ------------------- worker running other code than the page -------------------
+
+
+class RecordingWorkflow:
+    """A workflow that notes it ran, so a refused job can be told apart."""
+
+    ran = False
+
+    def execution(self) -> bool:
+        RecordingWorkflow.ran = True
+        return True
+
+
+def _run_with_build(tmp_path: Path, page_build) -> tuple:
+    workflow_dir = _prepare_workflow_dir(tmp_path, "build-check")
+    run_id = uuid.uuid4().hex[:8]
+    job_id = f"job-build-{run_id}"
+    connection = fakeredis.FakeStrictRedis()
+    queue = Queue(f"{QUEUE_NAME}-{run_id}", connection=connection)
+    meta = {} if page_build is None else {"app_build": page_build}
+    queue.enqueue(
+        tasks.execute_workflow,
+        kwargs={
+            "workflow_dir": str(workflow_dir),
+            "workflow_class": "RecordingWorkflow",
+            "workflow_module": __name__,
+        },
+        job_id=job_id,
+        meta=meta,
+    )
+    RecordingWorkflow.ran = False
+    _FakeRedisSimpleWorker([queue], connection=connection).work(
+        burst=True, logging_level="CRITICAL"
+    )
+    return workflow_dir, queue, job_id
+
+
+def test_worker_refuses_job_from_other_build(tmp_path):
+    """
+    A release that reached the web pods but not the worker pods: the page's
+    parameters belong to its TOPP tools, the worker's tools reject them.
+    The worker must stop before running anything and say why.
+    """
+    from src.workflow.app_build import app_build
+
+    mine = app_build()
+    assert mine["code"], "run from the repository root"
+    other = {"version": "9.9.9", "code": "0" * 12}
+    workflow_dir, queue, job_id = _run_with_build(tmp_path, other)
+
+    assert not RecordingWorkflow.ran
+    assert job_id in queue.failed_job_registry.get_job_ids()
+    log = _read_logs(workflow_dir)["minimal.log"]
+    assert "9.9.9" in log and "Restart the workers" in log
+    assert "WORKFLOW FINISHED" not in log
+    assert "Traceback" not in log
+
+
+@pytest.mark.parametrize("same", [True, False])
+def test_worker_runs_job_from_same_or_unstamped_page(tmp_path, same):
+    from src.workflow.app_build import app_build
+
+    workflow_dir, queue, job_id = _run_with_build(
+        tmp_path, app_build() if same else None
+    )
+    assert RecordingWorkflow.ran
+    assert job_id in queue.finished_job_registry.get_job_ids()
+
+
+def test_submit_job_stamps_the_page_build(monkeypatch):
+    from src.workflow.app_build import app_build
+
+    qm = object.__new__(QueueManager)
+    qm._is_online = True
+    qm._default_timeout = 60
+    qm._default_result_ttl = 60
+    qm._default_failure_ttl = 60
+    qm._queue = Queue(f"{QUEUE_NAME}-{uuid.uuid4().hex[:8]}",
+                      connection=fakeredis.FakeStrictRedis())
+    job_id = qm.submit_job(func=tasks.execute_workflow, kwargs={}, description="d")
+    assert qm._queue.fetch_job(job_id).meta["app_build"] == app_build()
