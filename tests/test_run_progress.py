@@ -33,6 +33,7 @@ from src.workflow.Logger import Logger
 from src.workflow.progress import (
     RunProgress,
     failure_context,
+    file_counts,
     failures,
     format_duration,
     key_message,
@@ -51,7 +52,8 @@ for _key in list(sys.modules.keys()):
         sys.modules.pop(_key, None)
 
 FAKE_TOOL = """#!{python}
-import sys
+import os, sys, time
+time.sleep(float(os.environ.get("FAKE_TOOL_SECONDS", "0")))
 args = sys.argv[1:]
 name = args[args.index("-in") + 1]
 print("Progress: loading " + name)
@@ -177,3 +179,107 @@ def test_progress_helpers(tmp_path):
     assert format_duration(42) == "0:42"
     assert format_duration(725) == "12:05"
     assert format_duration(3725) == "1:02:05"
+
+
+def _max_overlap(entries):
+    """Most files whose [started, ended] intervals overlap at one moment."""
+    events = sorted(
+        [(e["started"], 1) for e in entries] + [(e["ended"], -1) for e in entries],
+        key=lambda ev: (ev[0], ev[1]),
+    )
+    running = most = 0
+    for _, delta in events:
+        running += delta
+        most = max(most, running)
+    return most
+
+
+def test_parallel_files_are_each_tracked(workflow, monkeypatch):
+    """Files run two at a time; every start and end lands in progress.json."""
+    wf_dir, executor = workflow
+    monkeypatch.setenv("FAKE_TOOL_SECONDS", "0.4")
+    names = [f"s{i}.mzML" for i in range(6)]
+    names[3] = "bad.mzML"
+    ok = executor.run_topp(
+        "FakeTool", {"in": names, "out": [str(i) for i in range(6)]}
+    )
+    assert not ok
+    step = read_progress(wf_dir)["steps"][0]
+    assert (step["threads"], step["parallel"]) == (1, 2)
+    statuses = [f["status"] for f in step["files"]]
+    assert statuses == ["done", "done", "done", "failed", "done", "done"]
+    assert file_counts(step) == {"pending": 0, "running": 0, "done": 5, "failed": 1}
+    # Two at a time, never more: the semaphore, as recorded
+    assert _max_overlap(step["files"]) == 2
+    (failure,) = failures(read_progress(wf_dir))
+    assert failure["context"] == "While running FakeTool on file 4 of 6 (bad.mzML)"
+
+
+def test_concurrent_updates_are_not_lost(tmp_path):
+    """Many threads updating the same step at once: no entry is lost."""
+    import threading
+
+    progress = RunProgress(tmp_path)
+    step = progress.start_step("T", [str(i) for i in range(40)], parallel=8)
+
+    def work(i):
+        progress.file_started(step, i)
+        progress.file_finished(step, i, ok=i % 7 != 0, returncode=1)
+
+    threads = [threading.Thread(target=work, args=(i,)) for i in range(40)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    counts = file_counts(read_progress(tmp_path)["steps"][0])
+    assert counts == {"pending": 0, "running": 0, "done": 34, "failed": 6}
+    assert not list((tmp_path / "logs").glob(".progress-*"))
+
+
+def test_replace_is_retried_while_the_file_is_held(tmp_path, monkeypatch):
+    """Windows refuses the replace while the Run page reads the file."""
+    import src.workflow.progress as progress_module
+
+    real_replace = os.replace
+    calls = {"n": 0}
+
+    def flaky_replace(src, dst):
+        calls["n"] += 1
+        if calls["n"] <= 2:
+            raise PermissionError("in use")
+        real_replace(src, dst)
+
+    monkeypatch.setattr(progress_module.os, "replace", flaky_replace)
+    monkeypatch.setattr(progress_module.time, "sleep", lambda s: None)
+    progress = RunProgress(tmp_path)
+    assert progress.start_step("T", ["a"]) == 0
+    assert read_progress(tmp_path)["steps"][0]["tool"] == "T"
+
+
+def test_progress_that_cannot_be_written_does_not_stop_the_run(tmp_path, monkeypatch):
+    import src.workflow.progress as progress_module
+
+    def refuse(src, dst):
+        raise PermissionError("in use")
+
+    monkeypatch.setattr(progress_module.os, "replace", refuse)
+    monkeypatch.setattr(progress_module.time, "sleep", lambda s: None)
+    progress = RunProgress(tmp_path)
+    step = progress.start_step("T", ["a"])
+    assert step == -1
+    progress.file_started(step, 0)
+    progress.file_finished(step, 0, ok=False)
+    progress.end_step(step)
+    assert read_progress(tmp_path) is None
+    assert not list((tmp_path / "logs").glob(".progress-*"))
+
+
+def test_missing_tool_in_parallel_fails_the_step(workflow):
+    """A command that cannot start in a worker thread counts as failed."""
+    wf_dir, executor = workflow
+    ok = executor.run_topp(
+        "NoSuchTool", {"in": ["x.mzML", "y.mzML"], "out": ["1", "2"]}
+    )
+    assert ok is False
+    step = read_progress(wf_dir)["steps"][0]
+    assert [f["status"] for f in step["files"]] == ["failed", "failed"]

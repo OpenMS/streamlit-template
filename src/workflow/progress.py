@@ -22,6 +22,8 @@ from typing import List, Optional
 
 # Lines of tool output kept for a failed file
 OUTPUT_TAIL = 200
+# Tries at replacing progress.json while a reader holds it open (Windows)
+REPLACE_ATTEMPTS = 20
 
 PENDING, RUNNING, DONE, FAILED = "pending", "running", "done", "failed"
 
@@ -40,7 +42,14 @@ def read_progress(workflow_dir) -> Optional[dict]:
 
 
 class RunProgress:
-    """Writes progress.json; one per CommandExecutor, safe across its threads."""
+    """Writes progress.json; one per CommandExecutor, safe across its threads.
+
+    run_multiple_commands() runs several files at once, each in its own
+    thread, so every update is a read-modify-write under one lock: two files
+    finishing together both land. The file is replaced atomically, so the Run
+    page never reads half of it. Progress is only for display: an update that
+    cannot be written is dropped, never raised into the run.
+    """
 
     def __init__(self, workflow_dir) -> None:
         self.workflow_dir = Path(workflow_dir)
@@ -58,12 +67,33 @@ class RunProgress:
         tmp = path.with_name(f".progress-{os.getpid()}-{threading.get_ident()}.json")
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(state, f)
-        os.replace(tmp, path)
+        # On Windows the replace fails while the Run page has the file open
+        # for reading; that read takes milliseconds, so try again briefly.
+        for attempt in range(REPLACE_ATTEMPTS):
+            try:
+                os.replace(tmp, path)
+                return
+            except PermissionError:
+                if attempt == REPLACE_ATTEMPTS - 1:
+                    tmp.unlink(missing_ok=True)
+                    raise
+                time.sleep(0.05)
+
+    def _update(self, change) -> Optional[int]:
+        """Apply change(state) under the lock and save; None if that failed."""
+        with self._lock:
+            try:
+                state = self._load()
+                result = change(state)
+                self._save(state)
+                return result
+            except (OSError, ValueError, KeyError, IndexError, TypeError):
+                return None
 
     def start_step(self, tool: str, labels: List[str], threads: int = 1, parallel: int = 1) -> int:
         """Record a tool call with one entry per label; returns the step index."""
-        with self._lock:
-            state = self._load()
+
+        def change(state):
             state["steps"].append(
                 {
                     "tool": tool,
@@ -77,16 +107,20 @@ class RunProgress:
                     ],
                 }
             )
-            self._save(state)
             return len(state["steps"]) - 1
 
+        step = self._update(change)
+        # Not recorded: later updates of this step find no entry and are dropped
+        return -1 if step is None else step
+
     def file_started(self, step: int, index: int) -> None:
-        with self._lock:
-            state = self._load()
+        def change(state):
             entry = state["steps"][step]["files"][index]
             entry["status"] = RUNNING
             entry["started"] = time.time()
-            self._save(state)
+
+        if step >= 0:
+            self._update(change)
 
     def file_finished(
         self,
@@ -96,21 +130,33 @@ class RunProgress:
         returncode: int = 0,
         output: Optional[List[str]] = None,
     ) -> None:
-        with self._lock:
-            state = self._load()
+        def change(state):
             entry = state["steps"][step]["files"][index]
             entry["status"] = DONE if ok else FAILED
             entry["ended"] = time.time()
+            if entry["started"] is None:
+                entry["started"] = entry["ended"]
             if not ok:
                 entry["returncode"] = returncode
                 entry["output"] = list(output or [])[-OUTPUT_TAIL:]
-            self._save(state)
+
+        if step >= 0:
+            self._update(change)
 
     def end_step(self, step: int) -> None:
-        with self._lock:
-            state = self._load()
+        def change(state):
             state["steps"][step]["ended"] = time.time()
-            self._save(state)
+
+        if step >= 0:
+            self._update(change)
+
+
+def file_counts(step: dict) -> dict:
+    """How many files of a step are pending, running, done and failed."""
+    counts = {PENDING: 0, RUNNING: 0, DONE: 0, FAILED: 0}
+    for entry in step["files"]:
+        counts[entry["status"]] = counts.get(entry["status"], 0) + 1
+    return counts
 
 
 def file_position(step: dict, index: int) -> str:

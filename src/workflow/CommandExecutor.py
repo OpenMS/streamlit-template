@@ -134,10 +134,16 @@ class CommandExecutor:
 
         def run_and_track(i, cmd):
             with semaphore:
-                if step is None:
-                    success = self.run_command(cmd)
-                else:
-                    success = self.run_command(cmd, task=(step, i))
+                try:
+                    if step is None:
+                        success = self.run_command(cmd)
+                    else:
+                        success = self.run_command(cmd, task=(step, i))
+                except Exception as e:
+                    # e.g. the tool is not installed. A thread that dies here
+                    # would add no result, and the step would count as passed.
+                    self.logger.log(f"ERROR: {cmd[0]}: {e}", 0)
+                    success = False
                 with lock:
                     results.append(success)
 
@@ -248,6 +254,8 @@ class CommandExecutor:
 
     def _log_failure_context(self, task: tuple, returncode: int) -> None:
         """Log which tool failed on which file, e.g. 'While running X on file 2 of 3 (a.mzML)'."""
+        if task[0] < 0:  # the step could not be recorded
+            return
         state = read_progress(self.progress.workflow_dir)
         try:
             step = state["steps"][task[0]]

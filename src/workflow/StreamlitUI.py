@@ -30,6 +30,7 @@ from src.workflow.progress import (
     FAILED,
     RUNNING,
     failures,
+    file_counts,
     format_duration,
     read_progress,
 )
@@ -1972,11 +1973,17 @@ class StreamlitUI:
                 + ("" if step["ended"] is None else " finished")
             )
             if step["ended"] is None:
-                if active:
+                counts = file_counts(step)
+                if active and n > 1:
                     which = ", ".join(str(i + 1) for i in active)
-                    where = f"file{'s' if len(active) > 1 else ''} {which} of {n}"
+                    where = (
+                        f"running file{'s' if len(active) > 1 else ''} {which} of {n}"
+                        f" · {counts[DONE]} done"
+                    )
                 else:
-                    where = f"{finished} of {n} files done"
+                    where = f"{counts[DONE]} of {n} file{'s' if n > 1 else ''} done"
+                if counts[FAILED]:
+                    where += f" · :red[{counts[FAILED]} failed]"
                 threads = step.get("threads", 1)
                 parallel = step.get("parallel", 1)
                 text = (
@@ -2006,7 +2013,13 @@ class StreamlitUI:
         """'FeatureFinderMetabo: 3 files in 0:20'."""
         n = len(step["files"])
         took = format_duration((step["ended"] or time.time()) - step["started"])
-        return f"{step['tool']}: " + (f"{n} files in {took}" if n > 1 else took)
+        summary = f"{step['tool']}: " + (f"{n} files in {took}" if n > 1 else took)
+        failed = file_counts(step)[FAILED]
+        if failed and n > 1:
+            summary += f" ({n - failed} done, {failed} failed)"
+        elif failed:
+            summary += " (failed)"
+        return summary
 
     def _show_run_summary(self, show_failures: bool) -> None:
         """After a run: the time per tool and, for a failed tool, where it failed."""
