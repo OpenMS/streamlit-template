@@ -1,0 +1,34 @@
+# Argo CD Image Updater: deploys every new release of this app. It watches
+# ghcr.io/openms/streamlit-template for release images (`^v[0-9]+(\.[0-9]+)*-full$`; the per-commit,
+# `-simple`, `-amd64`/`-arm64` and moving tags never match), picks the most
+# recently built one, and sets it on the `streamlit-template` Application (write-back
+# `argocd`, so nothing is committed to the repo). Needs Image Updater >= 1.0
+# (the ImageUpdater CRD) installed in the argocd namespace.
+#
+# Pause: add `ignoreTags: ["*"]` under commonUpdateSettings.
+# If the Application itself is ever synced from git (app-of-apps), the parent
+# must ignore `.spec.source.kustomize.images`, or it undoes every update.
+#
+# Keep `newTag` in k8s/overlays/prod on the current release (the release-app
+# skill does this), so a re-created Application starts from it.
+apiVersion: argocd-image-updater.argoproj.io/v1alpha1
+kind: ImageUpdater
+metadata:
+  name: streamlit-template
+  namespace: argocd
+spec:
+  writeBackConfig:
+    method: argocd
+  applicationRefs:
+    - namePattern: streamlit-template
+      images:
+        - alias: app
+          imageName: ghcr.io/openms/streamlit-template
+          commonUpdateSettings:
+            updateStrategy: newest-build
+            allowTags: 'regexp:^v[0-9]+(\.[0-9]+)*-full$'
+          manifestTargets:
+            kustomize:
+              # The placeholder image name k8s/base uses and the overlay's
+              # `images` entry rewrites.
+              name: openms-streamlit

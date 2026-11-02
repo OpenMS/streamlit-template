@@ -79,3 +79,4 @@ sync:
     - example-data/*
     - assets/*
     - k8s/overlays/*
+    - k8s/argocd/*
