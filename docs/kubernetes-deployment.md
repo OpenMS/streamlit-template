@@ -359,6 +359,7 @@ Instead of running Step 6 by hand on every change, Argo CD can apply the overlay
 - The namespaces and both PVCs carry `argocd.argoproj.io/sync-options: Prune=false,Delete=false`. All apps share the `openms` namespace, and deleting a claim on `cinder-csi` deletes its volume, so Argo CD must never remove them.
 - Ignore the data of `<prefix>-streamlit-secrets` (`ignoreDifferences` plus `RespectIgnoreDifferences=true`). The admin password is patched live (Step 5), and self-heal would reset it.
 - Argo CD rolls out changes in git. A rebuilt image under a moving tag (`main-full`, `latest`) is not one, so pin `images[0].newTag` to a release tag through a PR (the `release-app` skill).
+- To deploy every new release without a PR per release, add [Argo CD Image Updater](https://argocd-image-updater.readthedocs.io/) with one `ImageUpdater` entry per app: `updateStrategy: newest-build`, `allowTags` a regular expression matching only that app's release images (here `regexp:^v[0-9]+(\.[0-9]+)*-full$`; an app with app-prefixed tags such as `OpenDDA-1.2.2` matches `^OpenDDA-...-full$`), `manifestTargets.kustomize.name: openms-streamlit`, and `writeBackConfig.method: argocd`. Keep `newTag` in git on the current release, so a re-created Application starts from it.
 
 ### Automation with Claude skills
 
