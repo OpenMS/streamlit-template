@@ -36,6 +36,8 @@ Confirm them with the user in one question.
 | name (no spaces) | `.github/workflows/build-windows-executable-app.yaml` | `env.APP_NAME`; it becomes the installer file name and the Electron `appId` `de.openms.<APP_NAME>` |
 | slug | `docker-compose.yml` | service, `image`, `container_name`, and the `workspaces-<repository-name>` volume |
 | repository | `k8s/base/{streamlit,rq-worker}-deployment.yaml`, `k8s/base/cleanup-cronjob.yaml` | `WORKSPACES_DIR=/workspaces-<repository-name>` (only on a new app; on a deployed one it moves user data) |
+| logo | `assets/*.svg` + `settings.json` | `branding`: `page_icon`, `logo`, `logo_icon`, `app_icon` (each one path or `{"light", "dark"}`), `logo_size`; see the README section "Logo" |
+| logo | `electron/build/icon.png` (512 px or more), `electron/build/icon.ico` | the desktop app and installer icon |
 
 Use `configure-app-settings` for the remaining settings.json keys and
 `configure-k8s-deployment` for capacity.
