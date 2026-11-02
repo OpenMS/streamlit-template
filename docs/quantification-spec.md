@@ -33,10 +33,18 @@ feature), one column per sample, raw (not log) abundances, null for not measured
 | one column per sample | float | name = sample name in C2 |
 | optional annotation columns | any | e.g. `MonoisotopicMass`, `RT`, `Runs`, accession; kept through the chain, not used for statistics |
 
-**C2 Experimental design.** Sample → condition, plus biological replicate and fraction where the
-experiment has them. The template's `ExperimentalDesign.py` (OpenMS two-table format,
+**C2 Experimental design.** One row per file: `file`, `condition`, `replicate` (biological
+replicate), `fraction`. The template's `ExperimentalDesign.py` (OpenMS two-table format,
 `experimental-design.tsv`) is the store; `StreamlitUI.experimental_design()` is the editor, with
 design.tsv and SDRF import.
+
+**C1 ↔ C2 sample key.** A sample is one (condition, biological replicate) pair, the OpenMS
+`Sample` of the design. When every sample is one file, the C1 column is named after the file
+stem. When a sample spans several files (fractions, technical replicates), the producer merges
+them into one C1 column named `<condition>_<replicate>`. Before B3 runs, the app checks that every
+C1 sample column maps to exactly one C2 sample and every C2 sample to one column, and stops with
+a message naming the ones that do not. (OpenDDA still shows fractions as separate columns on its
+results pages; merging them is open.)
 
 **C3 Statistics table.** C1's id column plus `log2FC`, `p-value`, `p-adj`, `stat`. Sign
 convention: a positive log2FC means higher in the second condition of the comparison
@@ -121,6 +129,13 @@ functions. It returns the four intermediate tables (`filtered_df`, `imputed_df`,
 
 - **Inputs**: C1, C2. At least two conditions; `valid_test()` falls back to a test that fits
   the number of conditions.
+- **Paired test**: `calculate_statistical_tests(method="paired")` pairs the samples of the two
+  conditions by position, and needs the same number in both. The pairing key is the biological
+  replicate: the app orders each condition's samples by `replicate` before the call, so replicate
+  *n* of one condition pairs with replicate *n* of the other (the same patient or culture). When
+  the replicate numbers of the two conditions differ, `valid_test()` must fall back to
+  `limma_like` and say why; today it only checks the number of conditions, and the test raises
+  `ValueError` on unequal sizes.
 - **Output**: C3.
 - `reference_feature` normalization needs an entity the user names; apps without that input
   must not offer it (FLASHApp's copy has no input for it).
