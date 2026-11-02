@@ -185,6 +185,28 @@ name the **actual operator**, not OpenMS:
 Any link you omit falls back to its OpenMS default. The `privacy` URL is reused
 for the consent banner's privacy-policy link, so consent and policy stay in sync.
 
+## 🖼️ Logo
+
+Every page shows the OpenMS logo in the browser tab and at the top of the
+sidebar. An app sets its own in `settings.json`, with one image per theme where
+it has light and dark variants:
+
+```json
+"branding": {
+    "page_icon": "assets/myapp-icon-small.svg",
+    "logo": {"light": "assets/myapp-logo-light.svg", "dark": "assets/myapp-logo-white.svg"},
+    "logo_icon": {"light": "assets/myapp-icon-light.svg", "dark": "assets/myapp-icon.svg"},
+    "app_icon": {"light": "assets/myapp-icon-light.svg", "dark": "assets/myapp-icon.svg"},
+    "logo_size": "large"
+}
+```
+
+`logo` is shown at the top of the open sidebar, `logo_icon` when it is
+collapsed, `page_icon` in the browser tab, and `app_icon` is the image a page
+can place next to its title (`get_branding()["app_icon"]` in
+`src/common/common.py`). Any image you leave out is the OpenMS logo. Use
+`"logo_size": "large"` for a wide logo that includes the app name.
+
 ## Documentation
 
 Documentation for **users** and **developers** is included as pages in [this template app](https://abi-services.cs.uni-tuebingen.de/streamlit-template/), indicated by the 📖 icon.
