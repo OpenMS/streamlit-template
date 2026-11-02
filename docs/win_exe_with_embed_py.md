@@ -121,10 +121,11 @@ To try the shell from a checkout, run `npm install` and then `npm start` in `ele
 
 ## macOS and Linux
 
-The same job wraps the app in the same Electron shell as `<APP_NAME>-macOS-arm64.dmg` (Apple Silicon only) and as `<APP_NAME>-Linux-x86_64.AppImage`, from `APP_NAME`, `TOPP_TOOLS` and `OPENMS_VERSION`.
+The same job wraps the app in the same Electron shell as `<APP_NAME>-macOS-arm64.dmg` (Apple Silicon only) and as `<APP_NAME>-Linux-x86_64.AppImage`, from `APP_NAME`, `TOPP_TOOLS` and the `openms:` setting.
 
 - `electron/scripts/stage-python.sh` also compiles the bytecode there, because the signed app and the AppImage are read-only (Windows writes it on first use).
-- `electron/scripts/stage-openms.sh` takes the TOPP tools from the official OpenMS release: the arm64 `.pkg` on macOS, the `.deb` on Linux, whose system libraries (Qt, Xerces, ...) it copies into the bundle. The tools stay in `openms/bin` next to `openms/lib` and find their libraries through a relative rpath. On Windows it unpacks the release's installer, and the DLLs sit next to the tools in `openms/bin`. `OPENMS_PACKAGE` names a local `.pkg`, `.deb` or Windows zip to stage instead of the release, e.g. one built from an OpenMS branch (on Windows by the reusable `openms-windows.yml` with `mode: source`).
+- `electron/scripts/stage-openms.sh` takes the TOPP tools from the official OpenMS release: the arm64 `.pkg` on macOS, the `.deb` on Linux, whose system libraries (Qt, Xerces, ...) it copies into the bundle. The tools stay in `openms/bin` next to `openms/lib` and find their libraries through a relative rpath. On Windows it unpacks the release's installer, and the DLLs sit next to the tools in `openms/bin`. `OPENMS_PACKAGE` names a local `.pkg`, `.deb` or Windows zip to stage instead of the release.
+- Which OpenMS is used is set once, as `openms:` of the workflow's `openms` job (`.github/workflows/openms.yml`). A release such as `"3.5.0"` is downloaded as above and nothing is built. A branch, tag or commit, such as `"OpenMS/OpenMS@develop"` or `"<owner>/OpenMS@<branch>"`, is built from source on all three platforms (on Windows with the vcpkg presets of OpenMS 3.6+, or else against a prebuilt OpenMS/contrib release), packaged like an OpenMS release and handed to `stage-openms.sh` as `OPENMS_PACKAGE`. The packages are cached per commit, so a source build only runs again when the branch has new commits.
 - Workspaces and the log live in `~/Library/Application Support/<APP_NAME>` on macOS and in `~/.config/<APP_NAME>` on Linux.
 
 CI runs the same smoke and end-to-end tests on every platform: on Windows against the installed app, on macOS from the mounted dmg and on Linux against the AppImage.

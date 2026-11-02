@@ -9,12 +9,16 @@ on:
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      openms:
+        description: 'OpenMS for this run: a release ("3.5.0") or "[owner/repo@]ref" to build. Empty uses the default below.'
+        type: string
+        default: ""
 
 permissions:
   contents: read
 
 env:
-  OPENMS_VERSION: "3.5.0"
   # Name of the app and its installers
   APP_NAME: OpenMS-StreamlitTemplateApp
   # Define needed TOPP tools here. FileConverter converts Thermo .raw input
@@ -22,16 +26,22 @@ env:
   TOPP_TOOLS: "FeatureFinderMetabo FeatureLinkerUnlabeledKD SiriusExport FileConverter"
 
 jobs:
+  # Release or build? A released OpenMS ("3.5.0") is downloaded by the build
+  # job's "Stage OpenMS TOPP tools" step on every platform, and this job only
+  # takes seconds. A branch, tag or commit ("OpenMS/OpenMS@develop",
+  # "t0mdavid-m/OpenMS@FDmerge") is built here on all three platforms, once
+  # per commit: later runs of the same commit restore the cached packages.
+  openms:
+    uses: ./.github/workflows/openms.yml
+    with:
+      openms: ${{ inputs.openms || '3.5.0' }}
+
   # One job for all three platforms: the same steps stage OpenMS, Python and
   # the app into electron/payload, then a single packaging step turns it into
   # this platform's installer, which the same test steps install and drive.
-  # OpenMS comes from its official release on every platform. An app that
-  # needs an OpenMS branch builds it in a job of its own (Windows: the
-  # reusable OpenMS/streamlit-template/.github/workflows/openms-windows.yml
-  # with `mode: source`), lists that job in `needs`, downloads the package
-  # and passes it to stage-openms.sh as OPENMS_PACKAGE.
   build:
     name: ${{ matrix.platform }}
+    needs: openms
     strategy:
       fail-fast: false
       matrix:
@@ -73,11 +83,25 @@ jobs:
           '.online_deployment = false | if $v != "" then .version = $v else . end' \
           settings.json > settings.tmp && mv settings.tmp settings.json
 
+    - name: Download the OpenMS build
+      if: needs.openms.outputs.source == 'build'
+      uses: actions/download-artifact@v4
+      with:
+        name: openms-${{ matrix.platform }}
+        path: openms-package
+
     - name: Stage OpenMS TOPP tools
-      # From the official OpenMS release: the Windows installer, the arm64 .pkg
-      # on macOS (already self-contained), the .deb on Linux (its system
-      # libraries are bundled).
-      run: electron/scripts/stage-openms.sh "$OPENMS_VERSION" electron/payload $TOPP_TOOLS
+      # A release: its Windows installer, arm64 .pkg (already self-contained)
+      # or .deb (its system libraries are bundled). A build: the package above.
+      env:
+        OPENMS_VERSION: ${{ needs.openms.outputs.version }}
+        OPENMS_REPOSITORY: ${{ needs.openms.outputs.repository }}
+      run: |
+        if [[ -d openms-package ]]; then
+          export OPENMS_PACKAGE
+          OPENMS_PACKAGE=$(find openms-package -maxdepth 1 -type f | head -n 1)
+        fi
+        electron/scripts/stage-openms.sh "$OPENMS_VERSION" electron/payload $TOPP_TOOLS
 
     - name: Stage Python with the app's requirements
       run: electron/scripts/stage-python.sh "$PYTHON_VERSION" electron/payload requirements.txt

@@ -12,9 +12,8 @@
 # By default it takes the official release package of each platform: the
 # Windows installer (.exe), the arm64 .pkg on macOS, the .deb on Linux.
 # OPENMS_PACKAGE names a local package to stage instead, e.g. one built from a
-# branch with unreleased tools: a .pkg or .deb (OpenMS's cipackage.cmake), or on
-# Windows the zip of openms-package/{bin,share} that openms-windows.yml uploads
-# from a source build.
+# branch with unreleased tools by .github/workflows/openms.yml: a .pkg or .deb
+# (OpenMS's cipackage.cmake), or on Windows a zip of openms-package/{bin,share}.
 # Needs gh (GH_TOKEN), admin rights to run the installer (Windows), and sudo to
 # install the release package (macOS) or the deb's dependencies (Linux).
 # OPENMS_REPOSITORY overrides the repository the release comes from.
@@ -43,7 +42,7 @@ if [[ -n "${OPENMS_PACKAGE:-}" ]]; then
   cp "$OPENMS_PACKAGE" "$dl/"
   local_asset=$(basename "$OPENMS_PACKAGE")
 else
-  # Same tag schemes as openms-windows.yml.
+  # Same tag schemes as .github/workflows/openms.yml.
   tag=""
   for candidate in "v${version}" "release/${version}" "Release${version}"; do
     if gh release view "$candidate" -R "$repo" --json tagName >/dev/null 2>&1; then
