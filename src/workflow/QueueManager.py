@@ -13,6 +13,7 @@ from enum import Enum
 from pathlib import Path
 
 from .settings_io import load_settings
+from .app_build import app_build
 
 
 class JobStatus(Enum):
@@ -155,6 +156,14 @@ class QueueManager:
         if failure_ttl is None:
             failure_ttl = self._default_failure_ttl
 
+        meta = {"description": description, "progress": 0.0, "current_step": ""}
+        # The worker refuses a job from a page that runs other code than it does
+        # (tasks.execute_workflow, src/workflow/app_build.py).
+        try:
+            meta["app_build"] = app_build()
+        except Exception:
+            pass
+
         try:
             job = self._queue.enqueue(
                 func,
@@ -165,7 +174,7 @@ class QueueManager:
                 result_ttl=result_ttl,
                 failure_ttl=failure_ttl,
                 description=description,
-                meta={"description": description, "progress": 0.0, "current_step": ""}
+                meta=meta,
             )
             return job.id
         except Exception:

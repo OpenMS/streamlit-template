@@ -20,6 +20,23 @@ def bool_param_paths_from_param_xml_ini(ini_path: Path, tool_stem: str) -> set[s
 
     Paths match the suffix after ``Tool:1:`` in pyOpenMS (e.g. ``algorithm:epd:masstrace_snr_filtering``).
     """
+    return param_paths_from_param_xml_ini(ini_path, tool_stem, bool_only=True)
+
+
+def param_paths_from_param_xml_ini(
+    ini_path: Path, tool_stem: str, bool_only: bool = False
+) -> set[str]:
+    """
+    Return short parameter paths for the ``<ITEM>`` / ``<ITEMLIST>`` entries of a ParamXML .ini file.
+
+    Paths match the suffix after ``Tool:1:`` in pyOpenMS (e.g. ``algorithm:epd:masstrace_snr_filtering``).
+    An unreadable file gives an empty set.
+
+    Args:
+        ini_path: The .ini file.
+        tool_stem: The tool name, the root NODE of the file.
+        bool_only: Only ``<ITEM type="bool">`` entries.
+    """
     try:
         root = ET.parse(ini_path).getroot()
     except (ET.ParseError, OSError):
@@ -37,7 +54,10 @@ def bool_param_paths_from_param_xml_ini(ini_path: Path, tool_stem: str) -> set[s
             if lt == "NODE":
                 nm = ch.get("name") or ""
                 walk(ch, parts + (nm,))
-            elif lt == "ITEM" and (ch.get("type") or "").lower() == "bool":
+            elif lt in ("ITEM", "ITEMLIST") and (
+                not bool_only
+                or (lt == "ITEM" and (ch.get("type") or "").lower() == "bool")
+            ):
                 nm = ch.get("name") or ""
                 segs = [p for p in parts if p]
                 if nm:
@@ -290,9 +310,30 @@ class ParameterManager:
             # No Streamlit session (e.g. plain `python` import)
             pass
 
+    @staticmethod
+    def _ini_is_stale(tool: str, ini_path: Path) -> bool:
+        """
+        True when the tool's executable is newer than its cached .ini.
+
+        Workspaces outlive the image they were created with: after an upgrade
+        the cached .ini still describes the old tool, so the page would show
+        parameters the new tool no longer has (and hide the ones it added).
+        An executable that cannot be found or stat'ed keeps the cached file.
+        """
+        exe = shutil.which(tool)
+        if not exe:
+            return False
+        try:
+            return Path(exe).stat().st_mtime > ini_path.stat().st_mtime
+        except OSError:
+            return False
+
     def create_ini(self, tool: str) -> bool:
         """
-        Create an ini file for a TOPP tool if it doesn't exist.
+        Create an ini file for a TOPP tool if it doesn't exist or is older than the tool.
+
+        The file is written next to the target and then moved into place, so a
+        failed ``-write_ini`` leaves the previous file as it was.
 
         Args:
             tool: Name of the TOPP tool (e.g., "CometAdapter")
@@ -301,16 +342,48 @@ class ParameterManager:
             True if ini file exists (created or already existed), False if creation failed
         """
         ini_path = Path(self.ini_dir, tool + ".ini")
-        if ini_path.exists():
+        if ini_path.exists() and not self._ini_is_stale(tool, ini_path):
             self._merge_bool_params_from_ini(tool)
             return True
+        if ini_path.exists():
+            logger.info("Regenerating %s: %s is newer than it", ini_path, tool)
+        tmp_path = Path(self.ini_dir, f".{tool}.{uuid.uuid4().hex}.ini")
         try:
-            subprocess.call([tool, "-write_ini", str(ini_path)])
+            subprocess.call([tool, "-write_ini", str(tmp_path)])
         except FileNotFoundError:
             return False
+        finally:
+            if tmp_path.exists():
+                try:
+                    os.replace(tmp_path, ini_path)
+                except OSError:
+                    tmp_path.unlink(missing_ok=True)
         if ini_path.exists():
             self._merge_bool_params_from_ini(tool)
         return ini_path.exists()
+
+    def known_topp_params(self, tool: str) -> set[str] | None:
+        """
+        The parameters the installed ``tool`` accepts, from its .ini.
+
+        Only an .ini that already exists is consulted (refreshed first when the
+        tool is newer than it); without one the answer is None, so a caller
+        cannot tell and must not filter.
+
+        Args:
+            tool: Name of the TOPP tool executable.
+
+        Returns:
+            set[str] | None: Short parameter paths (``algorithm:section:param``),
+                or None when there is no .ini to read.
+        """
+        ini_path = Path(self.ini_dir, f"{tool}.ini")
+        if not ini_path.exists():
+            return None
+        if self._ini_is_stale(tool, ini_path):
+            self.create_ini(tool)
+        known = param_paths_from_param_xml_ini(ini_path, tool)
+        return known or None
 
     def save_parameters(self) -> bool:
         """
