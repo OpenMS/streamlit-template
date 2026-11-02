@@ -7,7 +7,7 @@ on:
     branches: [main]
     # `v1.2` and app-prefixed release tags such as `OpenDDA-1.3` or
     # `FLASHApp-1.1.0` both publish versioned images (`<tag>-full`, ...).
-    tags: ['v*', '*-[0-9]*']
+    tags: ['v*', '*-[0-9]+.[0-9]*']
   workflow_dispatch:
 
 env:
