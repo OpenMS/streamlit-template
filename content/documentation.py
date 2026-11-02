@@ -75,7 +75,7 @@ if page == pages[4]:
         """
 ## 💻  How to package everything for Windows executables
 
-This guide explains how to package OpenMS apps for Windows. The embeddable Python route is the one CI uses to build the installer; PyInstaller is an older alternative.
+This guide explains how to package OpenMS apps for Windows. The embeddable Python route builds a Windows app folder by hand; CI builds the Windows, macOS and Linux installers with one shared job (see the last sections). PyInstaller is an older alternative.
 """
     )
 
