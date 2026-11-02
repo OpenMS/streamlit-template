@@ -391,6 +391,11 @@ jobs:
       id: cibuild
       run: |
         mkdir -p bld
+        # Sources before OpenMS/OpenMS develop dropped the pin ask for one Arrow
+        # major (find_package(Arrow 23 CONFIG)), and Arrow's SameMajorVersion
+        # check then rejects the newer release that apt and Homebrew install.
+        # Drop the pin as develop did; its own minimum check stays as it is.
+        perl -pi -e 's/find_package\((Arrow|Parquet) [0-9.]+ CONFIG/find_package($1 CONFIG/' cmake/cmake_findExternalLibs.cmake
         if [[ $RUNNER_OS == Windows ]]; then
           export CMAKE_PREFIX_PATH="$QT_ROOT_DIR/lib/cmake;$QT_ROOT_DIR;C:\ProgramData\chocolatey\lib\eigen"
           export OPENMS_CONTRIB_LIBS="$GITHUB_WORKSPACE/contrib"
