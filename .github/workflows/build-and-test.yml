@@ -7,6 +7,12 @@ on:
     branches: [main]
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      openms_branch:
+        description: 'OpenMS branch or tag for the full images (e.g. v3.6.0, develop). Empty: the Dockerfile default.'
+        required: false
+        default: ''
+        type: string
 
 env:
   REGISTRY: ghcr.io
@@ -305,6 +311,7 @@ jobs:
       arch: amd64
       runner: ubuntu-latest
       platform: linux/amd64
+      openms_branch: ${{ inputs.openms_branch || '' }}
     secrets: inherit
 
   build-simple-amd64:
@@ -336,6 +343,7 @@ jobs:
       runner: ubuntu-24.04-arm
       platform: linux/arm64
       free_disk_space: true
+      openms_branch: ${{ inputs.openms_branch || '' }}
     secrets: inherit
 
   build-simple-arm64:

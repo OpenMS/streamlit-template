@@ -9,7 +9,7 @@ OpenMS appears in four places, which must move together:
 
 | Where | Field |
 |---|---|
-| `Dockerfile`, `Dockerfile.arm` | `ARG OPENMS_BRANCH=release/<x.y.z>` (TOPP tools and pyOpenMS built from source) |
+| `Dockerfile`, `Dockerfile.arm` | `ARG OPENMS_BRANCH=release/<x.y.z>` or `v<x.y.z>` (TOPP tools and pyOpenMS built from source; 3.5 and 3.6+ build with the same steps) |
 | `Dockerfile_simple*` / `requirements.txt` | the `pyopenms==` pin |
 | `.github/workflows/build-windows-executable-app.yaml` | `openms-version:` passed to `openms-windows.yml` |
 | CI (`ci.yml`, `workflow-tests.yml`) | whatever pyOpenMS they install, via requirements |
@@ -28,8 +28,8 @@ template does not yet use, and then says so in the PR.
    key stop applying without an error. Check presets.json keys against the new
    ini (`tests/test_parameter_presets.py` covers the template's).
 3. **Bump all four places** in one commit.
-4. **Build the full image** (`docker build -f Dockerfile .`, slow: OpenMS from
-   source) and run each workflow on example data inside it. Compare result
+4. **Build the full image** (`docker build -f Dockerfile --build-arg OPENMS_BRANCH=<ref> .`,
+   slow: OpenMS from source; or dispatch `build-and-test.yml` with `openms_branch`) and run each workflow on example data inside it. Compare result
    counts (features, PSMs, proteins) with the previous version; a large shift
    is a finding to report, not to hide.
 5. **Windows build** runs on the PR; its smoke test checks each tool in
