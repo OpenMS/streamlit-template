@@ -71,10 +71,10 @@ class Workflow(WorkflowManager):
 
     def execution(self) -> bool:
         # Return True only if every step succeeded. The caller
-        # (WorkflowManager.workflow_process in local mode, tasks.execute_workflow
-        # in queue mode) writes the "WORKFLOW FINISHED" marker based on this,
-        # and that marker is the only thing the run page reads to decide whether
-        # the workflow succeeded. Returning None marks a successful run failed;
+        # (tasks.execute_workflow, in local and queue mode) writes the
+        # "WORKFLOW FINISHED" marker based on this, and that marker is the only
+        # thing the run page reads to decide whether the workflow succeeded.
+        # Returning None is still accepted, with a deprecation warning;
         # ignoring an executor result marks a failed run successful.
 
         # Any parameter checks, here simply checking if mzML files are selected

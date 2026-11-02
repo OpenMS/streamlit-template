@@ -98,7 +98,7 @@ Every session gets a **workspace directory** holding that user's files and param
 
 | | local | online |
 |---|---|---|
-| Workflow execution | `multiprocessing.Process` | Redis/RQ queue |
+| Workflow execution | own `python -c` process running `tasks.execute_workflow` | Redis/RQ queue |
 | Captcha + GDPR consent | skipped (`controllo` forced true) | enforced |
 | mzML upload | many files at once, or reference a local folder | one file at a time |
 | Save-as-demo | hidden | shown if admin password set |
@@ -145,7 +145,7 @@ Each workflow gets four thin content pages calling `wf.show_file_upload_section(
 
 **Experimental design**: `self.ui.experimental_design("mzML-files")` in `configure()` shows a condition / biological replicate / fraction table for the selected files (pass `reactive=True` to that `select_input_file` so the table follows the selection), with design.tsv and SDRF import. It saves `<workflow_dir>/experimental-design.tsv` in the OpenMS two-table format, which a TOPP tool takes as `-design`; `src/workflow/ExperimentalDesign.py` (Streamlit-free, so usable in `execution()`) reads, writes and checks it.
 
-**`execution()` must be annotated `-> bool` and `return True` only when every step succeeded.** Both callers — `workflow_process()` locally and `tasks.execute_workflow()` in queue mode — log the `WORKFLOW FINISHED` marker only for a truthy return, and a missing marker is classified as an error. `run_topp()` and `run_python()` both return `False` on failure; gate every call on it, or a run whose third tool died is still reported as a success. The shipped example (`src/Workflow.py`) does exactly this — copy its structure *and* its return type.
+**`execution()` must be annotated `-> bool` and `return True` only when every step succeeded.** `tasks.execute_workflow()`, which runs it in local and queue mode alike (`workflow_process()` only in a frozen build), logs the `WORKFLOW FINISHED` marker only for a truthy return, and a missing marker is classified as an error. `run_topp()` and `run_python()` both return `False` on failure; gate every call on it, or a run whose third tool died is still reported as a success. The shipped example (`src/Workflow.py`) does exactly this — copy its structure *and* its return type.
 
 **Upgrading a fork:** queue mode previously wrote the marker unconditionally and returned a result dict from its exception handler, so *every* queued job was recorded successful and RQ's `FailedJobRegistry` was structurally empty. It now honours the return value and re-raises. A subclass still declared `execution() -> None` keeps working — `None` is accepted as success with a deprecation warning in the workflow log — but it reports nothing when a tool fails, so fix the signature when you rebase.
 
@@ -158,7 +158,7 @@ The workflow directory is `<workspace>/<workflow-name-lowercased-hyphenated>/`, 
 
 ### Queue mode (online)
 
-`start_workflow()` flushes params to disk, then dispatches to Redis/RQ if `online_deployment` is true and Redis is reachable, else to a local `multiprocessing.Process`. The container entrypoint starts `redis-server`, N × `rq worker openms-workflows`, and the Streamlit server(s) — all in one image.
+`start_workflow()` flushes params to disk, then dispatches to Redis/RQ if `online_deployment` is true and Redis is reachable, else to a local process: `sys.executable -c` running the same `tasks.execute_workflow`, so a local run gets a fresh interpreter. Never fork the server for it — a forked child inherits the OpenMP (pyOpenMS) and polars thread pools without their threads and hangs at its first mzML load or polars query; `spawn` re-runs the page script. Only a frozen (PyInstaller) build still uses `multiprocessing.Process`, which cannot run `-c`. Either way the workflow class is imported by `__module__` in the new process, so define it in `src/`, never in a page script. The container entrypoint starts `redis-server`, N × `rq worker openms-workflows`, and the Streamlit server(s) — all in one image.
 
 **`src/workflow/tasks.py` runs inside the RQ worker and must stay importable without Streamlit.** It rebuilds the workflow object with `object.__new__(WorkflowClass)` and hand-injects the members, deliberately bypassing `__init__` because that needs Streamlit. So **anything reachable from `execution()` must be session-state free** — the worker has no `st.session_state`. Worker and UI share state only through the workspace filesystem (`params.json`, `logs/`, `pids/`) and RQ job metadata. `REDIS_URL` defaults to `redis://localhost:6379/0`.
 
