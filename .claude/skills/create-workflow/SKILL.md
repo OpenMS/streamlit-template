@@ -137,7 +137,7 @@ The 4 pages call these methods respectively:
 ### UI widgets
 - `self.ui.upload_widget(key, name, file_types, fallback)` — file upload with example data fallback
 - `self.ui.select_input_file(key, multiple)` — select from uploaded files
-- `self.ui.input_TOPP("ToolName", custom_defaults={})` — auto-generated TOPP parameter UI
+- `self.ui.input_TOPP("ToolName", custom_defaults={})` — auto-generated TOPP parameter UI, with an "All N parameters" dialog (filter, per-parameter reset to the default or the applied preset)
 - `self.ui.input_python("script_name")` — auto-generated Python tool parameter UI
 - `self.ui.input_widget(key, default, label)` — single custom widget
 - `select_input_file`, `input_TOPP` and `input_widget` accept `reactive=True` to rerun `configure()` when the widget changes (for conditional UI — see below)
