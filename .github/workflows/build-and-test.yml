@@ -381,7 +381,9 @@ jobs:
     # and a teardown failure blocks publishing for a reason unrelated to the
     # image. That is the trade; the alternative was publishing untested.
     needs: [build-full-amd64, build-simple-amd64, build-full-arm64, build-simple-arm64, test-nginx, test-traefik]
-    if: github.event_name != 'pull_request'
+    # A dispatch with openms_branch builds and tests another OpenMS; it pushes
+    # no per-arch tags, so there is nothing to stitch or publish.
+    if: github.event_name != 'pull_request' && (inputs.openms_branch || '') == ''
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -632,7 +634,9 @@ jobs:
     # and lets HPC users `apptainer pull oras://...` without the 5-15 min
     # on-the-fly OCI->SIF conversion the docker:// path requires.
     needs: test-apptainer
-    if: github.event_name != 'pull_request'
+    # Not for a dispatch with openms_branch: its SIF would take the default
+    # build's <ref>/<sha> tags.
+    if: github.event_name != 'pull_request' && (inputs.openms_branch || '') == ''
     runs-on: ubuntu-latest
     permissions:
       contents: read

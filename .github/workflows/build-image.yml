@@ -125,7 +125,10 @@ jobs:
           file: ${{ inputs.dockerfile }}
           platforms: ${{ inputs.platform }}
           load: true
-          push: ${{ github.event_name != 'pull_request' }}
+          # A build of another OpenMS (openms_branch) is tested from the
+          # artifact below but never pushed, so it cannot replace the
+          # <ref>/<sha>/latest tags of the default build.
+          push: ${{ github.event_name != 'pull_request' && inputs.openms_branch == '' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           # provenance/attestations turn the pushed tag into a manifest list,
