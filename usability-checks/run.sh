@@ -50,7 +50,10 @@ for app in "${APPS[@]}"; do
     git -C "$src" log -1 --format='%H %cs %s' >"$appout/commit.txt"
     venv="$VENVS/$app"
     [ -x "$venv/bin/python" ] || uv venv -q -p 3.11 "$venv" >>"$log" 2>&1
-    if ! UV_HTTP_TIMEOUT=600 VIRTUAL_ENV="$venv" uv pip install -q -r "$src/requirements.txt" >>"$log" 2>&1; then
+    # The apps' images install with pip, which takes each package from whichever
+    # index has the pinned version; uv's default stops at the first index that
+    # lists the package (quantms-web adds the pytorch CPU index).
+    if ! UV_HTTP_TIMEOUT=600 UV_INDEX_STRATEGY=unsafe-best-match VIRTUAL_ENV="$venv" uv pip install -q -r "$src/requirements.txt" >>"$log" 2>&1; then
       echo '{"app":"'"$app"'","setupError":"installing requirements.txt failed (see setup.log)","pages":[],"scenarios":[],"failed":1}' >"$appout/results.json"
       continue
     fi
