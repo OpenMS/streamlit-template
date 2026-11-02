@@ -219,3 +219,21 @@ def test_damaged_member_data_is_refused(tmp_path):
     with pytest.raises(RunImportError, match="damaged"):
         runs.import_zip(io.BytesIO(bytes(data)))
     assert runs.list_runs() == []
+
+
+def test_unreadable_members_are_refused(tmp_path, monkeypatch):
+    runs = RunManager(tmp_path / "wf")
+    # Over-nested JSON in run.json: json.loads raises RecursionError
+    nested = "[" * 100_000 + "]" * 100_000
+    with pytest.raises(RunImportError, match="can not be read"):
+        runs.import_zip(_zip({"run.json": nested, "results/a": "1"}))
+
+    # Encrypted members: ZipFile.open raises RuntimeError
+    def encrypted(*args, **kwargs):
+        raise RuntimeError("File 'results/a' is encrypted, password required")
+
+    archive = _zip({"results/a": "1"})
+    monkeypatch.setattr(zipfile.ZipFile, "open", encrypted)
+    with pytest.raises(RunImportError, match="can not be read"):
+        runs.import_zip(archive)
+    assert runs.list_runs() == []

@@ -112,12 +112,15 @@ def _plain(value):
 
 def _as_str_list(value) -> list[str]:
     """A list parameter's value as a list of str: bytes items decoded, and
-    newline-separated text (as params.json stores lists) split into items."""
+    newline-separated text (as params.json stores lists) split into items,
+    empty ones included, as CommandExecutor.run_topp() passes them."""
     if isinstance(value, (list, tuple)):
         return [v.decode() if isinstance(v, bytes) else str(v) for v in value]
     if isinstance(value, bytes):
         value = value.decode()
-    return [v for v in str(value or "").split("\n") if v]
+    if value is None or value == "":
+        return []
+    return str(value).split("\n")
 
 
 def _short(value) -> str:

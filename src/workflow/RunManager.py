@@ -218,6 +218,10 @@ class RunManager:
                 return self._import_archive(archive, name, max_bytes)
         except (zipfile.BadZipFile, zlib.error, EOFError) as e:
             raise RunImportError(f"The ZIP is damaged ({e}).") from e
+        except RuntimeError as e:
+            # Encrypted members, an unsupported compression method, or JSON
+            # nested too deeply to parse
+            raise RunImportError(f"The ZIP can not be read ({e}).") from e
         except OSError as e:
             raise RunImportError(f"The ZIP could not be unpacked ({e}).") from e
 

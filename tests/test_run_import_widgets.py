@@ -48,6 +48,8 @@ def test_list_values_as_str_lists():
     from src.workflow.StreamlitUI import _as_str_list
 
     assert _as_str_list([b"a", "b", 3]) == ["a", "b", "3"]
-    assert _as_str_list("a\nb\n") == ["a", "b"]
+    # Empty entries stay: run_topp() passes them to the tool
+    assert _as_str_list("a\nb\n") == ["a", "b", ""]
+    assert _as_str_list(0) == ["0"]
     assert _as_str_list(b"a\nb") == ["a", "b"]
     assert _as_str_list("") == [] and _as_str_list(None) == []
