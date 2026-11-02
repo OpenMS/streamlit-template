@@ -105,8 +105,21 @@ jobs:
         sha=$(gh api "repos/$repo/commits/$ref" --jq .sha) ||
           { echo "::error::$repo has no branch, tag or commit $ref"; exit 1; }
         echo "Building $repo@$ref ($sha)."
-        # Matches the Linux runner of the build job below.
-        { echo "source=build"; echo "version="; echo "repository=$repo"; echo "sha=$sha"; echo "linux-runner=ubuntu-22.04"; } >> "$GITHUB_OUTPUT"
+        # The Linux build runs where that source's tools/ci/deps-ubuntu.sh
+        # works: OpenMS 3.6 and later install packages only Ubuntu 24.04 has
+        # (libsqlitecpp-dev, Arrow/Parquet), earlier ones build on 22.04,
+        # whose older glibc lets the app run on more systems.
+        runner=ubuntu-22.04
+        cmake=$(gh api -H "Accept: application/vnd.github.raw" "repos/$repo/contents/CMakeLists.txt?ref=$sha" 2>/dev/null || true)
+        major=$(sed -n 's/^set(OPENMS_PACKAGE_VERSION_MAJOR "\([0-9]*\)").*/\1/p' <<<"$cmake")
+        minor=$(sed -n 's/^set(OPENMS_PACKAGE_VERSION_MINOR "\([0-9]*\)").*/\1/p' <<<"$cmake")
+        if [[ -n "$major" && -n "$minor" ]]; then
+          echo "The source is OpenMS $major.$minor."
+          if (( major > 3 || (major == 3 && minor >= 6) )); then runner=ubuntu-24.04; fi
+        else
+          echo "::warning::no OpenMS version in $repo@$sha's CMakeLists.txt; building on $runner"
+        fi
+        { echo "source=build"; echo "version="; echo "repository=$repo"; echo "sha=$sha"; echo "linux-runner=$runner"; } >> "$GITHUB_OUTPUT"
         echo "OpenMS: \`$repo@$ref\` → \`$sha\`, built from source (cached per commit)" >> "$GITHUB_STEP_SUMMARY"
 
   build:
@@ -127,13 +140,12 @@ jobs:
             runs-on: macos-15
             thirdparty: MacOS/arm64
             package_type: pkg
-          # The oldest Ubuntu the app supports: the bundle needs glibc >= 2.35.
-          # Keep in step with linux-runner in the resolve job.
+          # The Ubuntu the resolve job picked for this source (linux-runner).
           - platform: Linux-x86_64
-            runs-on: ubuntu-22.04
+            runs-on: linux
             thirdparty: Linux/x86_64
             package_type: deb
-    runs-on: ${{ matrix.runs-on }}
+    runs-on: ${{ matrix.runs-on == 'linux' && needs.resolve.outputs.linux-runner || matrix.runs-on }}
     # A cold build compiles every dependency (vcpkg on Windows) and OpenMS;
     # 6 hours is the hosted runners' limit.
     timeout-minutes: 350
