@@ -1,5 +1,5 @@
 # Reusable workflow: OpenMS TOPP tools for Windows, uploaded as the artifact that
-# the build job of build-desktop-app.yaml stages on Windows with electron/scripts/stage-openms.sh (a zip of openms-package/{bin,share}).
+# an app's build-desktop-app.yaml passes to electron/scripts/stage-openms.sh as OPENMS_PACKAGE (a zip of openms-package/{bin,share}).
 # `installer` repackages the official release installer; `source` builds
 # openms-ref with the vcpkg presets (a cold build takes hours).
 

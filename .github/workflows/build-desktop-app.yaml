@@ -22,38 +22,16 @@ env:
   TOPP_TOOLS: "FeatureFinderMetabo FeatureLinkerUnlabeledKD SiriusExport FileConverter"
 
 jobs:
-  # `with:` of a reusable-workflow call cannot read `env`, so this job hands
-  # the settings over as outputs and they stay defined in one place.
-  config:
-    runs-on: ubuntu-latest
-    outputs:
-      topp-tools: ${{ steps.out.outputs.topp-tools }}
-      openms-version: ${{ steps.out.outputs.openms-version }}
-    steps:
-    - id: out
-      run: |
-        echo "topp-tools=$TOPP_TOOLS" >> "$GITHUB_OUTPUT"
-        echo "openms-version=$OPENMS_VERSION" >> "$GITHUB_OUTPUT"
-
-  # OpenMS TOPP tools, DLLs and share/ for Windows from the official installer
-  # (`mode: source` builds a branch or fork instead); the build job stages them
-  # like the macOS and Linux release packages. App repositories call the
-  # same workflow as OpenMS/streamlit-template/.github/workflows/openms-windows.yml@<ref>.
-  build-openms-windows:
-    needs: config
-    uses: ./.github/workflows/openms-windows.yml
-    with:
-      openms-version: ${{ needs.config.outputs.openms-version }}
-      mode: installer
-      topp-tools: ${{ needs.config.outputs.topp-tools }}
-      artifact-name: openms-package
-
   # One job for all three platforms: the same steps stage OpenMS, Python and
   # the app into electron/payload, then a single packaging step turns it into
   # this platform's installer, which the same test steps install and drive.
+  # OpenMS comes from its official release on every platform. An app that
+  # needs an OpenMS branch builds it in a job of its own (Windows: the
+  # reusable OpenMS/streamlit-template/.github/workflows/openms-windows.yml
+  # with `mode: source`), lists that job in `needs`, downloads the package
+  # and passes it to stage-openms.sh as OPENMS_PACKAGE.
   build:
     name: ${{ matrix.platform }}
-    needs: build-openms-windows
     strategy:
       fail-fast: false
       matrix:
@@ -95,24 +73,11 @@ jobs:
           '.online_deployment = false | if $v != "" then .version = $v else . end' \
           settings.json > settings.tmp && mv settings.tmp settings.json
 
-    - name: Download OpenMS for Windows
-      # macOS and Linux take the official release package in the next step.
-      if: runner.os == 'Windows'
-      uses: actions/download-artifact@v4
-      with:
-        name: openms-package
-        path: openms-package
-
     - name: Stage OpenMS TOPP tools
-      # Windows: the openms-windows.yml zip. macOS: the release's arm64 .pkg
-      # (already self-contained). Linux: the release's .deb, with its system
-      # libraries bundled.
-      run: |
-        if [[ $RUNNER_OS == Windows ]]; then
-          export OPENMS_PACKAGE
-          OPENMS_PACKAGE=$(find openms-package -maxdepth 1 -name '*.zip' | head -n 1)
-        fi
-        electron/scripts/stage-openms.sh "$OPENMS_VERSION" electron/payload $TOPP_TOOLS
+      # From the official OpenMS release: the Windows installer, the arm64 .pkg
+      # on macOS (already self-contained), the .deb on Linux (its system
+      # libraries are bundled).
+      run: electron/scripts/stage-openms.sh "$OPENMS_VERSION" electron/payload $TOPP_TOOLS
 
     - name: Stage Python with the app's requirements
       run: electron/scripts/stage-python.sh "$PYTHON_VERSION" electron/payload requirements.txt
