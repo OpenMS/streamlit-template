@@ -55,7 +55,9 @@ case "$(uname -s)" in
     ;;
 
   Linux)
-    sudo apt-get install -y -q libfuse2 xvfb
+    # libfuse2t64 from Ubuntu 24.04 on, where libfuse2 is only a virtual package.
+    sudo apt-get update -q
+    sudo apt-get satisfy -y -q "libfuse2t64 | libfuse2, xvfb"
     exe=$(realpath "$installer")
     chmod +x "$exe"
     (cd "$tmp" && "$exe" --appimage-extract >/dev/null)

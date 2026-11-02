@@ -51,10 +51,11 @@ jobs:
           # Apple Silicon only; Intel Macs are not supported.
           - platform: macOS-arm64
             runs-on: macos-15
-          # Built on the oldest Ubuntu we support: the bundle needs glibc >= 2.35.
+          # Built on the Ubuntu the OpenMS .deb was built for (22.04 up to
+          # OpenMS 3.5, 24.04 from 3.6), whose glibc the bundle then needs.
           - platform: Linux-x86_64
-            runs-on: ubuntu-22.04
-    runs-on: ${{ matrix.runs-on }}
+            runs-on: linux
+    runs-on: ${{ matrix.runs-on == 'linux' && needs.openms.outputs.linux-runner || matrix.runs-on }}
     # Signing takes minutes now that bytecode and data files are skipped
     # (mac.signIgnore), but took hours before; the limit leaves room for
     # the timestamp-service rebuilds and for an app with a larger payload.

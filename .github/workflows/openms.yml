@@ -49,6 +49,11 @@ on:
       sha:
         description: Commit that was built (build source), else empty.
         value: ${{ jobs.resolve.outputs.sha }}
+      linux-runner:
+        description: >-
+          The Ubuntu runner whose system libraries the Linux OpenMS package
+          was built against; the app's Linux build runs there.
+        value: ${{ jobs.resolve.outputs.linux-runner }}
 
 permissions:
   contents: read
@@ -62,6 +67,7 @@ jobs:
       version: ${{ steps.resolve.outputs.version }}
       repository: ${{ steps.resolve.outputs.repository }}
       sha: ${{ steps.resolve.outputs.sha }}
+      linux-runner: ${{ steps.resolve.outputs.linux-runner }}
     steps:
     - name: Release or build?
       id: resolve
@@ -83,7 +89,12 @@ jobs:
           for tag in "v$version" "release/$version" "Release$version"; do
             if gh release view "$tag" -R "$repo" --json tagName >/dev/null 2>&1; then
               echo "OpenMS $version is released in $repo ($tag): nothing to build."
-              { echo "source=release"; echo "version=$version"; echo "repository=$repo"; echo "sha="; } >> "$GITHUB_OUTPUT"
+              # The .deb of OpenMS 3.6 and later is built on Ubuntu 24.04
+              # (libc6 >= 2.38, the t64 Qt packages); earlier ones on 22.04.
+              runner=ubuntu-22.04
+              IFS=. read -r major minor _ <<<"$version"
+              if (( major > 3 || (major == 3 && minor >= 6) )); then runner=ubuntu-24.04; fi
+              { echo "source=release"; echo "version=$version"; echo "repository=$repo"; echo "sha="; echo "linux-runner=$runner"; } >> "$GITHUB_OUTPUT"
               exit 0
             fi
           done
@@ -94,7 +105,8 @@ jobs:
         sha=$(gh api "repos/$repo/commits/$ref" --jq .sha) ||
           { echo "::error::$repo has no branch, tag or commit $ref"; exit 1; }
         echo "Building $repo@$ref ($sha)."
-        { echo "source=build"; echo "version="; echo "repository=$repo"; echo "sha=$sha"; } >> "$GITHUB_OUTPUT"
+        # Matches the Linux runner of the build job below.
+        { echo "source=build"; echo "version="; echo "repository=$repo"; echo "sha=$sha"; echo "linux-runner=ubuntu-22.04"; } >> "$GITHUB_OUTPUT"
         echo "OpenMS: \`$repo@$ref\` → \`$sha\`, built from source (cached per commit)" >> "$GITHUB_STEP_SUMMARY"
 
   build:
@@ -116,6 +128,7 @@ jobs:
             thirdparty: MacOS/arm64
             package_type: pkg
           # The oldest Ubuntu the app supports: the bundle needs glibc >= 2.35.
+          # Keep in step with linux-runner in the resolve job.
           - platform: Linux-x86_64
             runs-on: ubuntu-22.04
             thirdparty: Linux/x86_64
