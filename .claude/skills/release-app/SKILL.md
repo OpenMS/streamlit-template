@@ -23,7 +23,9 @@ cluster is updated by changing the image tag the prod overlay pulls.
    git log --first-parent --format='%s' $(git describe --tags --abbrev=0)..HEAD   # merge, squash and rebase merges alike
    ```
 3. **PR, merge** to the default branch.
-4. **Tag and release** on the merge commit: `v<version>`. Creating the GitHub
+4. **Tag and release** on the merge commit: `v<version>`, or
+   `<AppName>-<version>` (e.g. `OpenDDA-1.3`) for an app that names its tags
+   that way; `build-and-test.yml` builds both forms. Creating the GitHub
    release (not only the tag) is what triggers the installer build
    (`release: created`) and attaches the installers; the tag push triggers
    `build-and-test.yml`, which publishes `<tag>-full`, `<tag>-simple` and the
