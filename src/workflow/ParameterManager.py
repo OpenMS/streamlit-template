@@ -936,6 +936,107 @@ class ParameterManager:
                     return name, True
         return name, False
 
+    def get_topp_defaults(self, tool: str, tool_instance_name: str = None) -> dict:
+        """
+        Effective defaults of a TOPP tool: the ini values with the workflow's
+        ``custom_defaults`` (``_defaults``) on top. User values are left out.
+
+        Returns:
+            dict: Short parameter name -> default value (empty without an ini file).
+        """
+        instance_name = tool_instance_name or tool
+        ini_path = Path(self.ini_dir, f"{tool}.ini")
+        if not ini_path.exists():
+            return {}
+        param = poms.Param()
+        poms.ParamXMLFile().load(str(ini_path), param)
+        prefix = f"{tool}:1:"
+        defaults = {}
+        for key in param.keys():
+            key_str = key.decode() if isinstance(key, bytes) else str(key)
+            if prefix in key_str:
+                defaults[key_str.split(prefix, 1)[1]] = param.getValue(key)
+        stored = self.get_parameters_from_json().get("_defaults", {})
+        defaults.update(stored.get(instance_name, {}))
+        return defaults
+
+    def _topp_session_keys(self, tool_instance_name: str, name: str) -> list:
+        key = f"{self.topp_param_prefix}{tool_instance_name}:1:{name}"
+        return [key, f"{key}_display"]
+
+    def set_topp_parameter(
+        self, tool_instance_name: str, name: str, value, default=None
+    ) -> bool:
+        """
+        Store one TOPP parameter in params.json, outside its input_TOPP() widget.
+
+        A value equal to ``default`` is removed instead, so the parameter
+        follows the default again. The widget's session keys are deleted so it
+        shows the new value on the next rerun (as apply_preset() does).
+
+        Returns:
+            bool: False when params.json could not be read; nothing is written then.
+        """
+        try:
+            params = self.read_parameters_strict()
+        except InvalidParameterFileError as e:
+            self._report_unreadable_parameter_file(
+                e, "The parameter was not changed, the existing file is left unchanged."
+            )
+            return False
+        values = params.get(tool_instance_name)
+        if not isinstance(values, dict):
+            values = {}
+        if default is not None and self._same_value(value, default):
+            values.pop(name, None)
+        else:
+            values[name] = value
+        params[tool_instance_name] = values
+        _write_parameter_file(self.params_file, params)
+        for key in self._topp_session_keys(tool_instance_name, name):
+            if key in st.session_state:
+                del st.session_state[key]
+        return True
+
+    def reset_topp_parameter(self, tool_instance_name: str, name: str) -> bool:
+        """Return one TOPP parameter to its default (see set_topp_parameter())."""
+        try:
+            params = self.read_parameters_strict()
+        except InvalidParameterFileError as e:
+            self._report_unreadable_parameter_file(
+                e, "The parameter was not reset, the existing file is left unchanged."
+            )
+            return False
+        values = params.get(tool_instance_name)
+        if isinstance(values, dict) and name in values:
+            del values[name]
+            _write_parameter_file(self.params_file, params)
+        for key in self._topp_session_keys(tool_instance_name, name):
+            if key in st.session_state:
+                del st.session_state[key]
+        return True
+
+    def applied_preset_values(self, tool_instance_name: str) -> tuple[str | None, dict, bool]:
+        """
+        What the applied preset sets for one TOPP tool.
+
+        Returns:
+            tuple: (preset name or None, {parameter: value}, complete). A user
+                preset is a complete snapshot: a parameter it does not list is
+                at its default there. A built-in preset only sets the values it
+                names, so ``complete`` is False and other parameters have no
+                preset value.
+        """
+        name = self._read_user_preset_state().get("applied")
+        if not name:
+            return None, {}, False
+        builtin = self.load_presets().get(name)
+        preset = builtin or self.load_user_presets().get(name)
+        if not preset:
+            return None, {}, False
+        values = preset.get(tool_instance_name, {})
+        return name, dict(values) if isinstance(values, dict) else {}, builtin is None
+
     def forget_applied_preset(self) -> None:
         """Clear the applied preset, e.g. after resetting to the default parameters."""
         state = self._read_user_preset_state_for_write(

@@ -38,6 +38,7 @@ from src.workflow.vendor_files import extract_bruker_zip, has_type
 from src.data_import import ui as data_import_ui
 from src.workflow.ParameterManager import (
     InvalidParameterFileError,
+    ParameterManager,
     TransientParameterFileError,
 )
 
@@ -91,6 +92,24 @@ def _mounted_data_root() -> Union[Path, None]:
     if not os.path.ismount(p):
         return None
     return p
+
+
+def _plain(value):
+    """A parameter value as params.json stores it (lists as newline-joined text)."""
+    if isinstance(value, list):
+        return "\n".join(v.decode() if isinstance(v, bytes) else str(v) for v in value)
+    return value
+
+
+def _short(value) -> str:
+    """A parameter value for a caption or tooltip."""
+    if isinstance(value, list):
+        text = ", ".join(str(v) for v in value) or "empty"
+    elif value == "":
+        text = "empty"
+    else:
+        text = str(value)
+    return text if len(text) <= 40 else text[:37] + "..."
 
 
 class StreamlitUI:
@@ -1229,9 +1248,29 @@ class StreamlitUI:
                 if st.session_state["advanced"] or (not p["advanced"] and not p["non_included"])
             ]
 
-        # Display tool name if required
+        # Values changed in the "All parameters" dialog, before the widgets are drawn
+        self._apply_all_params_pending(tool_instance_name)
+
+        # Tool name, and the button for the "All parameters" dialog
+        all_rows = self._all_parameter_rows(params, ini_params, tool_instance_name)
+        name_col, all_col = st.columns([3, 2], vertical_alignment="bottom")
         if display_tool_name:
-            st.markdown(f"**{tool_instance_name}**")
+            name_col.markdown(f"**{tool_instance_name}**")
+        n_changed = sum(not r["is_default"] for r in all_rows)
+        if all_col.button(
+            f"All {len(all_rows)} parameters"
+            + (f" ({n_changed} changed)" if n_changed else ""),
+            key=f"all-params-{tool_instance_name}",
+            icon=":material/tune:",
+            type="tertiary",
+            help="Search every parameter of this tool, including advanced ones, "
+            "and reset single parameters to the default or the applied preset.",
+            use_container_width=True,
+        ):
+            st.session_state["_all_params_filter"] = ""
+            st.dialog(f"All parameters of {tool_instance_name}", width="large")(
+                self._all_parameters_dialog
+            )(topp_tool_name, tool_instance_name, exclude_parameters)
 
         tab_names = [k for k in param_sections.keys() if ":" not in k]
         tabs = None
@@ -1387,6 +1426,275 @@ class StreamlitUI:
         
         self.parameter_manager.save_parameters()
             
+
+    def _apply_all_params_pending(self, tool_instance_name: str) -> None:
+        """Give this tool's widgets the values set in the "All parameters" dialog."""
+        pending = st.session_state.get("_all_params_pending")
+        if not pending:
+            return
+        prefix = f"{self.parameter_manager.topp_param_prefix}{tool_instance_name}:1:"
+        for key in [k for k in pending if k.startswith(prefix)]:
+            st.session_state[key] = pending.pop(key)
+
+    def _all_parameter_rows(
+        self, params: list, ini_params: dict, tool_instance_name: str
+    ) -> list:
+        """One row per parameter of a TOPP tool for the "All parameters" dialog."""
+        stored = self.parameter_manager.get_parameters_from_json()
+        custom = stored.get("_defaults", {}).get(tool_instance_name, {})
+        rows = []
+        for p in params:
+            name = p["key"].decode().split(":1:")[1]
+            value = p["value"]
+            if isinstance(value, list):
+                value = [v.decode() if isinstance(v, bytes) else v for v in value]
+            default = custom.get(name, ini_params.get(name))
+            if isinstance(default, list):
+                default = [v.decode() if isinstance(v, bytes) else v for v in default]
+            rows.append(
+                {
+                    "name": name,
+                    "label": p["name"],
+                    "section": ":".join(name.split(":")[:-1]),
+                    "description": p["description"],
+                    "value": value,
+                    "default": default,
+                    "valid_strings": p["valid_strings"],
+                    "is_list": p["original_is_list"],
+                    "advanced": p["advanced"],
+                    "is_default": ParameterManager._same_value(value, default),
+                }
+            )
+        return rows
+
+    def _all_parameters_dialog(
+        self, topp_tool_name: str, tool_instance_name: str, exclude_parameters: list
+    ) -> None:
+        """Every parameter of a TOPP tool: filter, edit, reset to default or preset.
+
+        Changes go straight to params.json (ParameterManager.set_topp_parameter),
+        under their own widget keys, because the tool's widgets on the page are
+        drawn in the same run and can not share theirs.
+        """
+        pm = self.parameter_manager
+        ini_path = Path(pm.ini_dir, f"{topp_tool_name}.ini")
+        param = poms.Param()
+        poms.ParamXMLFile().load(str(ini_path), param)
+        stored = pm.get_parameters_from_json()
+        user = stored.get(tool_instance_name, {})
+        defaults = pm.get_topp_defaults(topp_tool_name, tool_instance_name)
+
+        # The same parameters the page offers: no file parameters, no standard flags
+        excluded = [
+            "log", "debug", "threads", "no_progress", "force", "version", "test"
+        ] + list(exclude_parameters)
+        rows = []
+        for key in param.keys():
+            tags = param.getTags(key)
+            if b"input file" in tags or b"output file" in tags:
+                continue
+            if any(_matches_topp_parameter(k, key) for k in excluded):
+                continue
+            entry = param.getEntry(key)
+            name = key.decode().split(":1:")[1]
+            default = defaults.get(name, entry.value)
+            value = user.get(name, default)
+            if isinstance(entry.value, list) and isinstance(value, str):
+                value = value.split("\n") if value else []
+            rows.append(
+                {
+                    "name": name,
+                    "label": entry.name.decode(),
+                    "section": ":".join(name.split(":")[:-1]),
+                    "description": entry.description.decode(),
+                    "value": value,
+                    "default": default,
+                    "valid_strings": [v.decode() for v in entry.valid_strings],
+                    "advanced": b"advanced" in tags,
+                    "is_list": isinstance(entry.value, list),
+                }
+            )
+
+        preset_name, preset_values, preset_complete = pm.applied_preset_values(
+            tool_instance_name
+        )
+
+        def preset_value(row):
+            if row["name"] in preset_values:
+                return True, preset_values[row["name"]]
+            if preset_complete:
+                return True, row["default"]
+            return False, None
+
+        def same(a, b):
+            return ParameterManager._same_value(_plain(a), _plain(b))
+
+        n_changed = sum(not same(r["value"], r["default"]) for r in rows)
+        off_preset = [
+            r for r in rows if preset_value(r)[0] and not same(r["value"], preset_value(r)[1])
+        ]
+
+        c1, c2 = st.columns([3, 1], vertical_alignment="bottom")
+        query = c1.text_input(
+            "Filter",
+            key="_all_params_filter",
+            placeholder="Filter by name, section or description, e.g. tolerance",
+            label_visibility="collapsed",
+        )
+        only_changed = c2.toggle("Changed only", key=f"_all_params_changed_{tool_instance_name}")
+        summary = f"{len(rows)} parameters, {n_changed} changed from the default"
+        if preset_name:
+            summary += (
+                f" · preset **{preset_name}**: "
+                + (f"{len(off_preset)} differ" if off_preset else "all as in the preset")
+            )
+        st.caption(summary)
+
+        words = query.lower().split()
+        shown = [
+            r
+            for r in rows
+            if all(
+                w in f"{r['name']} {r['description']}".lower() for w in words
+            )
+            and (not only_changed or not same(r["value"], r["default"]))
+        ]
+        if not shown:
+            st.info("No parameter matches the filter.")
+
+        with st.container(height=520, border=False):
+            for row in shown:
+                self._all_parameters_row(
+                    tool_instance_name, row, same, preset_name, preset_value(row)
+                )
+
+        if st.button("Done", type="primary", key="_all_params_done"):
+            st.rerun()
+
+    def _all_parameters_row(self, instance, row, same, preset_name, preset) -> None:
+        """One parameter in the "All parameters" dialog: label, widget, reset buttons."""
+        pm = self.parameter_manager
+        wkey = f"_all_params_value_{instance}:{row['name']}"
+        value, default = row["value"], row["default"]
+        changed = not same(value, default)
+        has_preset, preset_val = preset
+
+        def show_on_page(r, new):
+            # The tool's widgets on the page take the new value on the next
+            # full run, before they are drawn (_apply_all_params_pending).
+            # Setting their keys now would not stick: the browser sends their
+            # old values with the next rerun, and save_parameters() would
+            # write those back.
+            main_key = f"{pm.topp_param_prefix}{instance}:1:{r['name']}"
+            pending = st.session_state.setdefault("_all_params_pending", {})
+            if r["is_list"]:
+                items = new if isinstance(new, list) else [v for v in str(new).split("\n") if v]
+                pending[main_key] = "\n".join(str(v) for v in items)
+                if r["valid_strings"]:
+                    pending[f"{main_key}_display"] = [
+                        v for v in items if v in r["valid_strings"]
+                    ]
+            else:
+                pending[main_key] = new
+
+        def store(k=wkey, r=row):
+            new = st.session_state[k]
+            stored = new
+            if isinstance(new, list):
+                stored = "\n".join(str(v) for v in new)
+            elif r["is_list"]:
+                stored = "\n".join(line for line in str(new).splitlines() if line)
+            if pm.set_topp_parameter(instance, r["name"], stored, default=_plain(r["default"])):
+                show_on_page(r, stored)
+
+        def as_widget_value(r, v):
+            # What this row's widget holds (deleting its key instead would let
+            # the browser send the old value back as a change).
+            if r["is_list"]:
+                items = v if isinstance(v, list) else [x for x in str(v).split("\n") if x]
+                items = [x.decode() if isinstance(x, bytes) else str(x) for x in items]
+                if r["valid_strings"]:
+                    return [x for x in items if x in r["valid_strings"]]
+                return "\n".join(items)
+            if isinstance(r["default"], bool):
+                return v if isinstance(v, bool) else str(v).lower() == "true"
+            if isinstance(r["default"], float):
+                return float(v)
+            if isinstance(r["default"], int):
+                return int(v)
+            return v
+
+        def reset(k=wkey, r=row):
+            if pm.reset_topp_parameter(instance, r["name"]):
+                show_on_page(r, r["default"])
+                st.session_state[k] = as_widget_value(r, r["default"])
+
+        def to_preset(k=wkey, r=row, v=preset_val):
+            if pm.set_topp_parameter(instance, r["name"], _plain(v), default=_plain(r["default"])):
+                show_on_page(r, v)
+                st.session_state[k] = as_widget_value(r, v)
+
+        c_label, c_value, c_actions = st.columns([5, 4, 3], vertical_alignment="center")
+        section = f":gray[{row['section']}:]" if row["section"] else ""
+        marker = " :orange[●]" if changed else ""
+        c_label.markdown(
+            f"{section}**{row['label']}**{marker}"
+            + (" :gray[· advanced]" if row["advanced"] else ""),
+            help=row["description"] or None,
+        )
+        if changed:
+            c_label.caption(f"default: {_short(default)}")
+
+        common = dict(key=wkey, label_visibility="collapsed", on_change=store)
+        label = row["label"]
+        if isinstance(default, bool):
+            current = value if isinstance(value, bool) else str(value).lower() == "true"
+            c_value.checkbox(label, value=current, **common)
+        elif isinstance(default, list):
+            items = [str(v) for v in value] if isinstance(value, list) else str(value).split("\n")
+            if row["valid_strings"]:
+                c_value.multiselect(
+                    label,
+                    options=sorted(row["valid_strings"]),
+                    default=[v for v in items if v in row["valid_strings"]],
+                    **common,
+                )
+            else:
+                c_value.text_area(label, value="\n".join(items), height=68, **common)
+        elif isinstance(default, str) and row["valid_strings"]:
+            options = row["valid_strings"]
+            c_value.selectbox(
+                label,
+                options=options,
+                index=options.index(value) if value in options else 0,
+                **common,
+            )
+        elif isinstance(default, int) and not isinstance(default, bool):
+            c_value.number_input(label, value=int(value), step=1, **common)
+        elif isinstance(default, float):
+            c_value.number_input(label, value=float(value), format="%g", **common)
+        else:
+            c_value.text_input(label, value=str(value), **common)
+
+        b1, b2 = c_actions.columns(2)
+        if changed:
+            b1.button(
+                "Default",
+                key=f"_all_params_reset_{instance}:{row['name']}",
+                icon=":material/restart_alt:",
+                help=f"Back to the default ({_short(default)})",
+                on_click=reset,
+                type="tertiary",
+            )
+        if has_preset and not same(value, preset_val):
+            b2.button(
+                "Preset",
+                key=f"_all_params_preset_{instance}:{row['name']}",
+                icon=":material/undo:",
+                help=f"Back to the value of preset {preset_name} ({_short(preset_val)})",
+                on_click=to_preset,
+                type="tertiary",
+            )
 
     @st.fragment
     def input_python(
