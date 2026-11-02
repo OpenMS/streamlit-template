@@ -95,20 +95,23 @@ SHELL ["mamba", "run", "-n", "streamlit-env", "/bin/bash", "-c"]
 RUN git clone --depth=1 -b ${OPENMS_BRANCH} --single-branch ${OPENMS_REPO} /OpenMS
 WORKDIR /OpenMS
 
-# Python packages for the pyOpenMS build. OpenMS 3.6 builds pyOpenMS with
-# nanobind (its pyproject.toml lists the build requirements); earlier versions
-# with autowrap and Cython. src/CMakeLists.txt defines the pyopenms_wheel target
-# only in the nanobind generation.
+# Python packages for the pyOpenMS build, as the checked-out source lists them.
+# OpenMS 3.6 builds pyOpenMS with nanobind (build requirements in
+# src/pyOpenMS/pyproject.toml); earlier versions with autowrap and Cython
+# (src/pyOpenMS/requirements_bld.txt). src/CMakeLists.txt defines the
+# pyopenms_wheel target only in the nanobind generation.
 # cython<3.3: Cython 3.3.0 (2026-08-22) removed Cython.Compiler.Nodes.CConstOrVolatileTypeNode,
-# which the pinned autowrap<=0.24 needs, breaking `make pyopenms`.
+# which autowrap up to 0.24 needs, breaking `make pyopenms`.
 RUN pip install --upgrade pip && python -m pip install -U setuptools wheel pandas numpy pytest \
     && if grep -q pyopenms_wheel src/CMakeLists.txt; then \
-        python -c "import tomllib; print('\n'.join(tomllib.load(open('src/pyOpenMS/pyproject.toml', 'rb'))['build-system']['requires']))" > /tmp/pyopenms-build.txt \
-        && cat /tmp/pyopenms-build.txt \
-        && python -m pip install -r /tmp/pyopenms-build.txt; \
+        python -c "import tomllib; print('\n'.join(tomllib.load(open('src/pyOpenMS/pyproject.toml', 'rb'))['build-system']['requires']))" > /tmp/pyopenms-build.txt; \
+    elif [ -f src/pyOpenMS/requirements_bld.txt ]; then \
+        cp src/pyOpenMS/requirements_bld.txt /tmp/pyopenms-build.txt && printf '%s\n' nose "cython<3.3" "autowrap<=0.24" >> /tmp/pyopenms-build.txt; \
     else \
-        python -m pip install nose "cython>=3.1.0,<3.3" "autowrap<=0.24"; \
-    fi
+        printf '%s\n' nose "cython>=3.1.0,<3.3" "autowrap<=0.24" > /tmp/pyopenms-build.txt; \
+    fi \
+    && cat /tmp/pyopenms-build.txt \
+    && python -m pip install -r /tmp/pyopenms-build.txt
 
 # Pull Linux compatible third-party dependencies and store them in directory thirdparty.
 RUN mkdir /thirdparty && \
