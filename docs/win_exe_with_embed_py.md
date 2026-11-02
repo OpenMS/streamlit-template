@@ -90,14 +90,20 @@ python -m pip install -r requirements.txt --target python-3.11.9/Lib/site-packag
 
 This folder is the payload that the Electron shell packages into an installer, as described below.
 
-## Build the installer in GitHub Actions
+## Build the installers in GitHub Actions
 
-The workflow [Build desktop app](https://github.com/OpenMS/streamlit-template/blob/main/.github/workflows/build-desktop-app.yaml) runs all of these steps, adds the OpenMS TOPP tools listed in `TOPP_TOOLS`, and builds `<APP_NAME>-Setup.exe`. On a release, the installer is attached to the release. The Docker images download it from the latest release and offer it on the Quickstart and Installation pages.
+The workflow [Build desktop app](https://github.com/OpenMS/streamlit-template/blob/main/.github/workflows/build-desktop-app.yaml) does not use the embeddable Python above. It builds the Windows, macOS and Linux installers in one job, run on all three platforms with the same steps:
+
+1. **Stage** the payload in `electron/payload`, identically everywhere: `electron/scripts/stage-openms.sh` copies the TOPP tools listed in `TOPP_TOOLS` and `share/OpenMS`, `electron/scripts/stage-python.sh` installs `requirements.txt` into a relocatable CPython from [python-build-standalone](https://github.com/astral-sh/python-build-standalone) (which has the development headers and tkinter, so no system Python is needed), and the app's files are copied next to them.
+2. **Package** it with `electron/scripts/package.sh`, the only platform-specific step: `<APP_NAME>-Setup.exe` (NSIS) on Windows, `<APP_NAME>-macOS-arm64.dmg` (signed and notarized) on macOS, `<APP_NAME>-Linux-x86_64.AppImage` on Linux.
+3. **Test** the result: `electron/scripts/install-app.sh` installs it the way a user would, then `smoke-payload.js`, `smoke-app.js` and `e2e.js` run against the installed app.
+
+On a release, every installer is attached to the release. The Docker images download them from the latest release and offer them on the Quickstart and Installation pages.
 </br>
 
 ## Electron desktop app (per-user installer)
 
-The Windows build produces `<APP_NAME>-Setup.exe`, which packages the folder above (embedded Python, pyOpenMS, TOPP tools, `share/OpenMS`) in the Electron shell from `electron/`. The older MSI installer is no longer built.
+The Windows build produces `<APP_NAME>-Setup.exe`, which packages the staged payload (Python, pyOpenMS, TOPP tools, `share/OpenMS`) in the Electron shell from `electron/`. The older MSI installer is no longer built.
 
 - It installs per user to `%LOCALAPPDATA%\Programs\<APP_NAME>` and needs no admin rights.
 - The app opens in its own window. The shell starts Streamlit on a free loopback port and stops it, together with any running TOPP tools, when the window closes.
@@ -105,7 +111,7 @@ The Windows build produces `<APP_NAME>-Setup.exe`, which packages the folder abo
 - On start, it checks the latest release of `github-user`/`repository-name` from `settings.json` and links to the release page when a newer version exists. It never downloads anything by itself.
 - Streamlit's output is written to `%APPDATA%\<APP_NAME>\logs\streamlit.log`.
 
-The shell sets up the environment for the TOPP tools: the install folder and every `share\OpenMS\THIRDPARTY\*` folder go on `PATH`, and `OPENMS_DATA_PATH` points to `share\OpenMS`. CI installs the result silently and checks pyOpenMS, every tool in `TOPP_TOOLS`, and the app page before uploading it.
+The shell sets up the environment for the TOPP tools: `openms\bin` (the tools and their DLLs) and every `share\OpenMS\THIRDPARTY\*` folder go on `PATH`, and `OPENMS_DATA_PATH` points to `share\OpenMS`. CI installs the result silently and checks pyOpenMS, every tool in `TOPP_TOOLS`, and the app page before uploading it.
 
 CI then runs `electron/scripts/e2e.js` against the installed app: it drives the app window with Playwright, opens every page in the navigation and fails on any Python exception shown there. An app adds its own steps, such as running a workflow and checking its results page, as scenario modules passed with `--scenario <file.js>`; each module exports `async (t) => {...}` and gets helpers such as `t.open(page)`, `t.clickTab`, `t.clickButton`, `t.choose(label, option)`, `t.waitForText` and `t.waitForComponent(selector)`. Locally, `node scripts/e2e.js` (run in `electron/`) without `--exe` runs the shell from the checkout (on Linux under `xvfb-run`).
 
@@ -115,13 +121,14 @@ To try the shell from a checkout, run `npm install` and then `npm start` in `ele
 
 ## macOS and Linux
 
-The same workflow also wraps the app in the same Electron shell as `<APP_NAME>-macOS-arm64.dmg` (Apple Silicon only) and as `<APP_NAME>-Linux-x86_64.AppImage`. It reads `APP_NAME`, `TOPP_TOOLS` and `OPENMS_VERSION` like the Windows build.
+The same job wraps the app in the same Electron shell as `<APP_NAME>-macOS-arm64.dmg` (Apple Silicon only) and as `<APP_NAME>-Linux-x86_64.AppImage`, from `APP_NAME`, `TOPP_TOOLS` and the `openms:` setting.
 
-- `electron/scripts/stage-python.sh` takes CPython from [python-build-standalone](https://github.com/astral-sh/python-build-standalone) (there is no embeddable Python for macOS and Linux), installs `requirements.txt` into it and compiles the bytecode, because the signed app and the AppImage are read-only.
-- `electron/scripts/stage-openms.sh` takes the TOPP tools from the official OpenMS release: the arm64 `.pkg` on macOS, the `.deb` on Linux, whose system libraries (Qt, Xerces, ...) it copies into the bundle. The tools stay in `openms/bin` next to `openms/lib` and find their libraries through a relative rpath; the shell puts `openms/bin` on `PATH`.
+- `electron/scripts/stage-python.sh` also compiles the bytecode there, because the signed app and the AppImage are read-only (Windows writes it on first use).
+- `electron/scripts/stage-openms.sh` takes the TOPP tools from the official OpenMS release: the arm64 `.pkg` on macOS, the `.deb` on Linux, whose system libraries (Qt, Xerces, ...) it copies into the bundle. The tools stay in `openms/bin` next to `openms/lib` and find their libraries through a relative rpath. On Windows it unpacks the release's installer, and the DLLs sit next to the tools in `openms/bin`. `OPENMS_PACKAGE` names a local `.pkg`, `.deb` or Windows zip to stage instead of the release.
+- Which OpenMS is used is set once, as `openms:` of the workflow's `openms` job (`.github/workflows/openms.yml`). A release such as `"3.5.0"` is downloaded as above and nothing is built. A branch, tag or commit, such as `"OpenMS/OpenMS@develop"` or `"<owner>/OpenMS@<branch>"`, is built from source on all three platforms (on Windows with the vcpkg presets of OpenMS 3.6+, or else against a prebuilt OpenMS/contrib release), packaged like an OpenMS release and handed to `stage-openms.sh` as `OPENMS_PACKAGE`. The packages are cached per commit, so a source build only runs again when the branch has new commits.
 - Workspaces and the log live in `~/Library/Application Support/<APP_NAME>` on macOS and in `~/.config/<APP_NAME>` on Linux.
 
-CI runs the same smoke and end-to-end tests as on Windows, on macOS from the mounted dmg and on Linux against the AppImage.
+CI runs the same smoke and end-to-end tests on every platform: on Windows against the installed app, on macOS from the mounted dmg and on Linux against the AppImage.
 
 ### Signing for macOS
 
