@@ -65,8 +65,10 @@ The subdirectory name will be determined by a **key** that is defined in the `se
 Calling this method will create a complete file upload page with the following components:
 
 - file uploader
-- list of currently uploaded files with this key (or a warning if there are none)
+- list of currently uploaded files with this key (or a warning if there are none), with the **input check** of each mzML and FASTA file: its spectrum or protein count, and whether it is unusable (not an mzML, cut off, no spectra, a FASTA without entries or with a duplicate accession) or has smaller issues (lowercase residues, a byte-order mark)
 - button to delete all files
+
+The Run page repeats the input check for the files the workflow parameters point to and refuses to start while one of them is unusable. Set `require_ms2 = True` on your workflow class when it needs MS2 spectra. The check lives in `src/workflow/input_check.py` without Streamlit, so `execution()` can call `check_inputs(paths)` too.
 
 Fallback files(s) can be specified, which will be used if the user doesn't upload any files. This can be useful for example for database files where a default is provided.
 """

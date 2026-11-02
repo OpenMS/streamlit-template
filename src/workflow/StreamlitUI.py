@@ -35,6 +35,7 @@ from src.workflow.ExperimentalDesign import (
     to_openms_design,
 )
 from src.workflow.vendor_files import extract_bruker_zip, has_type
+from src.workflow.input_check import inspect_file, summarize
 from src.data_import import ui as data_import_ui
 from src.workflow.ParameterManager import (
     InvalidParameterFileError,
@@ -111,6 +112,9 @@ class StreamlitUI:
         self.executor = executor
         self.parameter_manager = parameter_manager
         self.params = self.parameter_manager.get_parameters_from_json()
+        # Input check: an mzML without MS2 spectra is unusable (set by
+        # WorkflowManager from its require_ms2 class attribute)
+        self.require_ms2 = False
 
     @st.fragment
     def upload_widget(
@@ -370,6 +374,8 @@ class StreamlitUI:
             line.strip() and os.path.exists(line.strip())
             for line in external_files_path.read_text().splitlines()
         )
+        # (display name, path) of every current file, for the list and its check
+        current_files = []
         if fallback and not has_real_files and not has_external_picks:
             if isinstance(fallback, str):
                 fallback = [fallback]
@@ -377,39 +383,31 @@ class StreamlitUI:
                 c1, _ = st.columns(2)
                 if not Path(files_dir, f).exists():
                     shutil.copy(f, Path(files_dir, Path(f).name))
-            current_files = [f.name for f in files_dir.iterdir() if f.name != "external_files.txt"]
+            current_files = [
+                (f.name, f) for f in sorted(files_dir.iterdir()) if f.name != "external_files.txt"
+            ]
             c1.warning("**No data yet. Using example data file(s).**")
-        else:
-            if files_dir.exists():
-                current_files = [
-                    f.name
-                    for f in files_dir.iterdir()
-                    if "external_files.txt" not in f.name
+        elif files_dir.exists():
+            current_files = [
+                (f.name, f)
+                for f in sorted(files_dir.iterdir())
+                if "external_files.txt" not in f.name
+            ]
+            # Referenced local files, only those that still exist
+            if external_files_path.exists():
+                current_files += [
+                    (f"(local) {Path(f).name}", Path(f))
+                    for f in external_files_path.read_text().splitlines()
+                    if f.strip() and os.path.exists(f)
                 ]
-
-                # Check if local files are available
-                external_files = Path(
-                    self.workflow_dir, "input-files", key, "external_files.txt"
-                )
-
-                if external_files.exists():
-                    with open(external_files, "r") as f:
-                        external_files_list = f.read().splitlines()
-                    # Only make files available that still exist
-                    current_files += [
-                        f"(local) {Path(f).name}"
-                        for f in external_files_list
-                        if os.path.exists(f)
-                    ]
-            else:
-                current_files = []
 
         if files_dir.exists() and not any(files_dir.iterdir()):
             shutil.rmtree(files_dir)
 
         c1, _ = st.columns(2)
         if current_files:
-            c1.info(f"Current **{name}** files:\n\n" + "\n\n".join(current_files))
+            with c1.container(border=True):
+                self._show_current_files(name, current_files)
             if c1.button(
                 f"🗑️ Clear **{name}** files.",
                 use_container_width=True,
@@ -425,6 +423,37 @@ class StreamlitUI:
                 st.rerun()
         elif not fallback:
             st.warning(f"No **{name}** files!")
+
+    def _show_current_files(self, name: str, current_files: list) -> None:
+        """List the current files of an upload widget with their input check.
+
+        mzML and FASTA files show their spectrum or protein count; a file the
+        workflow can not run with is marked unusable (the Run page refuses to
+        start with it), smaller issues are shown as warnings.
+        """
+        st.markdown(f"Current **{name}** files")
+        n_unusable = 0
+        for display, path in current_files:
+            report = inspect_file(path, require_ms2=self.require_ms2)
+            icon = {
+                "unusable": ":red[:material/block:]",
+                "warning": ":orange[:material/warning:]",
+                "ok": ":green[:material/check_circle:]",
+            }.get(report.status, ":gray[:material/draft:]")
+            line = f"{icon} {display}"
+            if report.summary:
+                line += f" :gray[· {report.summary}]"
+            if report.errors:
+                n_unusable += 1
+                line += "  \n:red[**Unusable:** " + "; ".join(report.errors) + "]"
+            if report.warnings:
+                line += "  \n:orange[" + "; ".join(report.warnings) + "]"
+            st.markdown(line)
+        if n_unusable:
+            st.caption(
+                f"{n_unusable} file{'s' if n_unusable > 1 else ''} can not be used: "
+                "replace or remove before starting the workflow."
+            )
 
     def _resolve_browser_cwd(self, key: str, mount_root: Path) -> Path:
         """Read cwd for this widget from session state, confine it to mount_root."""
@@ -1833,7 +1862,8 @@ class StreamlitUI:
         self,
         start_workflow_function,
         get_status_function=None,
-        stop_workflow_function=None
+        stop_workflow_function=None,
+        input_check_function=None,
     ) -> None:
         with st.expander("**Summary**"):
             st.markdown(self.export_parameters_markdown())
@@ -1877,6 +1907,11 @@ class StreamlitUI:
         if status.get("job_id"):
             self._show_queue_status(status)
 
+        # Input check: refuse to start with an unusable file
+        blocked = False
+        if not is_running and input_check_function is not None:
+            blocked = self._show_input_check(input_check_function())
+
         # Control buttons
         if is_running:
             if c1.button("Stop Workflow", type="primary", use_container_width=True):
@@ -1885,7 +1920,13 @@ class StreamlitUI:
                 else:
                     self.executor.stop()
                 st.rerun()
-        elif c1.button("Start Workflow", type="primary", use_container_width=True):
+        elif c1.button(
+            "Start Workflow",
+            type="primary",
+            use_container_width=True,
+            disabled=blocked,
+            help="An input file is unusable, see above." if blocked else None,
+        ):
             start_workflow_function()
             with st.spinner("**Workflow starting...**"):
                 time.sleep(1)
@@ -1937,6 +1978,30 @@ class StreamlitUI:
             else:
                 display_lines = lines[-st.session_state.log_lines_count:]
             st.code("".join(display_lines), language="neon", line_numbers=False)
+
+    def _show_input_check(self, reports: list) -> bool:
+        """Show the input check above the Start button; True if a file is unusable."""
+        bad = [r for r in reports if r.errors]
+        warn = [r for r in reports if not r.errors and r.warnings]
+        if bad:
+            st.error(
+                "**Can not start: "
+                + (f"{len(bad)} input files are" if len(bad) > 1 else "an input file is")
+                + " unusable.** Replace or remove "
+                + ("them" if len(bad) > 1 else "it")
+                + " on the upload page, or pick other files on the configure page.\n\n"
+                + "\n".join(f"- **{r.name}**: {'; '.join(r.errors)}" for r in bad)
+            )
+        if warn:
+            st.warning(
+                "**Input check warnings**\n\n"
+                + "\n".join(f"- **{r.name}**: {'; '.join(r.warnings)}" for r in warn)
+            )
+        if not bad and not warn:
+            checked = summarize(reports)
+            if checked:
+                st.caption(f":green[:material/check_circle:] Input check passed ({checked}).")
+        return bool(bad)
 
     def _show_queue_status(self, status: dict) -> None:
         """Display queue job status for online mode"""

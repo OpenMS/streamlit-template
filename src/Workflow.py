@@ -1,5 +1,6 @@
 import streamlit as st
 from src.workflow.WorkflowManager import WorkflowManager
+from src.workflow.input_check import check_inputs
 
 # for result section:
 from pathlib import Path
@@ -81,6 +82,13 @@ class Workflow(WorkflowManager):
         if not self.params["mzML-files"]:
             self.logger.log("ERROR: No mzML files selected.")
             return False
+
+        # The input check of the Run page, again here for runs started another
+        # way (e.g. queued): stop before a TOPP tool fails on an unusable file.
+        for report in check_inputs(self.params["mzML-files"], require_ms2=self.require_ms2):
+            if report.errors:
+                self.logger.log(f"ERROR: Unusable input file {report.describe()}")
+                return False
 
         # Convert any Thermo .raw / Bruker .d input to mzML (mzML passes through).
         in_files = self.executor.convert_to_mzml(self.params["mzML-files"])

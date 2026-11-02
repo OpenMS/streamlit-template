@@ -135,7 +135,7 @@ The 4 pages call these methods respectively:
   return value too, or a tool that fails halfway is still reported as a success.
 
 ### UI widgets
-- `self.ui.upload_widget(key, name, file_types, fallback)` — file upload with example data fallback
+- `self.ui.upload_widget(key, name, file_types, fallback)` — file upload with example data fallback; mzML and FASTA files are inspected (`src/workflow/input_check.py`) and the Run page refuses to start with an unusable one. Set the class attribute `require_ms2 = True` when the workflow needs MS2 spectra
 - `self.ui.select_input_file(key, multiple)` — select from uploaded files
 - `self.ui.input_TOPP("ToolName", custom_defaults={})` — auto-generated TOPP parameter UI
 - `self.ui.input_python("script_name")` — auto-generated Python tool parameter UI

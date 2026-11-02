@@ -401,6 +401,30 @@ def test_failed_jobs_are_evicted_rather_than_kept_for_a_year(tmp_path, monkeypat
 
 # ============================ src.Workflow.Workflow ==========================
 
+# Real files: execution() runs the input check before the first tool.
+EXAMPLE_MZML = [
+    str(Path(__file__).resolve().parents[1] / "example-data" / "mzML" / name)
+    for name in ("Blank.mzML", "Pool.mzML")
+]
+
+
+def test_execution_refuses_unusable_input(tmp_path):
+    """An unusable input file stops execution() before any tool runs."""
+    workflow_dir = _prepare_workflow_dir(tmp_path, "topp-workflow")
+    executor = _make_executor()
+    broken = tmp_path / "broken.mzML"
+    broken.write_text("not an mzML")
+    workflow = _make_workflow(
+        workflow_dir,
+        {"mzML-files": [EXAMPLE_MZML[0], str(broken)], "run-python-script": False},
+        executor,
+    )
+
+    assert workflow.execution() is False
+    executor.run_topp.assert_not_called()
+    log = Path(workflow_dir, "logs", "minimal.log").read_text()
+    assert "Unusable input file broken.mzML: not an mzML file" in log
+
 
 def test_execution_returns_true_on_success(tmp_path):
     """
@@ -414,7 +438,7 @@ def test_execution_returns_true_on_success(tmp_path):
     executor = _make_executor()
     workflow = _make_workflow(
         workflow_dir,
-        {"mzML-files": ["a.mzML", "b.mzML"], "run-python-script": False},
+        {"mzML-files": EXAMPLE_MZML, "run-python-script": False},
         executor,
     )
 
@@ -472,7 +496,7 @@ def test_tool_failure_propagates(tmp_path, topp_results, python_result):
     executor = _make_executor(topp_results=topp_results, python_result=python_result)
     workflow = _make_workflow(
         workflow_dir,
-        {"mzML-files": ["a.mzML", "b.mzML"], "run-python-script": False},
+        {"mzML-files": EXAMPLE_MZML, "run-python-script": False},
         executor,
     )
 

@@ -18,6 +18,10 @@ class WorkflowManager:
     # to opt in, and read and write results through self.results_dir.
     multi_run = False
 
+    # Input check: set to True when the workflow needs MS2 spectra (e.g. a
+    # peptide search), so an mzML without them is marked unusable.
+    require_ms2 = False
+
     # Core workflow logic using the above classes
     def __init__(self, name: str, workspace: str):
         self.name = name
@@ -40,6 +44,7 @@ class WorkflowManager:
         self.parameter_manager = ParameterManager(self.workflow_dir, workflow_name=name)
         self.executor = CommandExecutor(self.workflow_dir, self.logger, self.parameter_manager)
         self.ui = StreamlitUI(self.workflow_dir, self.logger, self.executor, self.parameter_manager)
+        self.ui.require_ms2 = self.require_ms2
         self.params = self.parameter_manager.get_parameters_from_json()
 
         # Initialize queue manager for online mode
@@ -316,8 +321,24 @@ class WorkflowManager:
         self.ui.execution_section(
             start_workflow_function=self.start_workflow,
             get_status_function=self.get_workflow_status,
-            stop_workflow_function=self.stop_workflow
+            stop_workflow_function=self.stop_workflow,
+            input_check_function=self.check_inputs,
         )
+
+    def check_inputs(self) -> list:
+        """
+        Input check of the files the next run would use (see
+        src/workflow/input_check.py). The Run page refuses to start while one
+        of them is unusable and shows warnings for the others.
+
+        By default every mzML and FASTA path in the workflow parameters is
+        checked. Override to check other files, or call
+        input_check.check_inputs() yourself, e.g. in execution().
+        """
+        from .input_check import check_inputs, param_files
+
+        params = self.parameter_manager.get_parameters_from_json()
+        return check_inputs(param_files(params), require_ms2=self.require_ms2)
         
     def _run_online(self, name_key: str) -> bool:
         """Offer the linked online workspace (offline app, workspace sync on).
