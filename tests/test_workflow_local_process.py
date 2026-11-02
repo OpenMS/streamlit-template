@@ -107,7 +107,7 @@ def _kill_leftovers(pid_dir: Path) -> None:
     if pid_dir.exists():
         for f in pid_dir.iterdir():
             try:
-                os.kill(int(f.name), signal.SIGKILL)
+                os.kill(int(f.name), signal.SIGTERM)
             except (ValueError, OSError):
                 pass
 
