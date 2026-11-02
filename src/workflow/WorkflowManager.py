@@ -340,7 +340,13 @@ class WorkflowManager:
         self.results_dir at the chosen run.
         """
         if self.multi_run and not self.select_run():
-            st.info("No finished runs yet. Start the workflow on the **Run** page.")
+            from .run_widgets import run_import
+
+            st.info(
+                "No finished runs yet. Start the workflow on the **Run** page, "
+                "or open a run someone shared as a ZIP."
+            )
+            run_import(self.runs)
             return
         self.ui.results_section(self.results)
 

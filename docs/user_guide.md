@@ -63,6 +63,7 @@ Workflows that keep their runs store every analysis you start as its own result 
 - **Run page**: give the run a name before you start it (optional; runs are numbered otherwise).
 - **Results pages**: the *Run* picker at the top chooses which run is shown. The choice applies to all results pages.
 - **Download page**: lists every run with its start time and status. 👁️ shows it on the results pages, ✏️ renames it, 📦 packs its results, parameters and logs into a ZIP to download, 🗑️ deletes it.
+- **Open a run from a ZIP** (Download page, or the Results page before the first run): adds a ZIP made with 📦 as a new run, with its results, parameters, logs and name, so a run can be passed to a colleague or moved to another installation. Unsafe ZIPs, such as ones with paths leading out of the run folder or symbolic links, are refused.
 
 ## Getting Started
 
