@@ -299,14 +299,23 @@ Today B3 and B8 exist twice: `quantms-web/src/common/differential.py` and
 come from; `postprocessing_plots.py` is the same file in both. That is the first thing to fix
 before a third app copies them.
 
+Split: **openms-insight shares components and math, the template holds this spec and handles
+layouts.**
+
 | Piece | Home | Why |
 |---|---|---|
-| B3 `run_differential`, `default_settings`, `describe_settings`, `count_significant`, `comparison_groups`, `valid_test` | openms-insight, as `openms_insight.analysis.differential` | It is a thin layer over `openms_insight.analysis`, Streamlit-free, and the template does not depend on openms-insight |
-| B8 diagnostic figures | openms-insight, as `openms_insight.analysis.plots` (Plotly) | Same inputs as B3; used by every app that has B3 |
-| B13 dashboard (panel catalog, default layout, rendering) | openms-insight, next to the components it lays out (proposed) | Needs Streamlit and Insight components, which the template does not ship |
-| B1 design editor and store | streamlit-template (already there) | Template-level, no openms-insight needed |
-| B4–B7, B9 pages | each app, following this spec | Pages carry app wording and navigation; the components and settings they use are fixed here |
+| B3 `run_differential`, `default_settings`, `describe_settings`, `count_significant`, `comparison_groups`, `valid_test` | openms-insight, as `openms_insight.analysis.differential` | Math; a thin layer over `openms_insight.analysis`, Streamlit-free |
+| B8 diagnostic figures | openms-insight, as `openms_insight.analysis.plots` (Plotly) | Math and figures on the same inputs as B3 |
+| B5–B7 components (`VolcanoPlot`, `SeriesPlot`, `PCAPlot`, `ClusteredHeatmap`, `Table`) | openms-insight (already there) | Components |
+| B13 dashboard layout: panel registry, default layout, layout editor, layout persistence per workflow, rendering a layout into a grid with one shared state | streamlit-template | Layout is app framework. The template does not import openms-insight: an app registers its panels (callables that draw Insight components), the template places and stores them |
+| This spec and the default quant layout | streamlit-template | One place that every app syncs from |
+| B1 design editor and store | streamlit-template (already there) | Template-level |
+| Panel functions (volcano panel, PCA panel, …) | each app at first, wrapping the Insight components with the app's wording; moved to openms-insight once two apps use the same panel unchanged | Keeps the template free of Insight |
 | Part A producers | each app | Different TOPP chains |
+
+FLASHApp's Layout Manager (`src/render/layout_editor/`, catalog + `validate_layout` + Vue
+editor) is the starting point for the template's layout module; FLASHApp then uses the template's
+version for its viewers as well.
 
 ## Checklist: quantification in a new app
 
