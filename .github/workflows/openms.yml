@@ -56,7 +56,7 @@ permissions:
 jobs:
   resolve:
     name: OpenMS (resolve)
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     outputs:
       source: ${{ steps.resolve.outputs.source }}
       version: ${{ steps.resolve.outputs.version }}
@@ -117,7 +117,7 @@ jobs:
             package_type: pkg
           # The oldest Ubuntu the app supports: the bundle needs glibc >= 2.35.
           - platform: Linux-x86_64
-            runs-on: ubuntu-22.04
+            runs-on: self-hosted
             thirdparty: Linux/x86_64
             package_type: deb
     runs-on: ${{ matrix.runs-on }}

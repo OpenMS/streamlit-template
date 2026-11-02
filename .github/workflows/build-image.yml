@@ -76,7 +76,7 @@ jobs:
         # OpenMS source build needs ~25 GB of scratch space; the ARM runner
         # image is tighter than the AMD one out of the box. Mirrors what
         # FLASHApp's publish-docker-images.yml does at the top of its ARM job.
-        if: inputs.free_disk_space
+        if: inputs.free_disk_space && runner.environment == 'github-hosted'
         run: |
           # Keep /opt/hostedtoolcache: helm/kind-action and setup-kubectl
           # cache binaries there and fail if the directory is missing.
