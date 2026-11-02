@@ -109,16 +109,20 @@ jobs:
         # works: OpenMS 3.6 and later install packages only Ubuntu 24.04 has
         # (libsqlitecpp-dev, Arrow/Parquet), earlier ones build on 22.04,
         # whose older glibc lets the app run on more systems.
-        runner=ubuntu-22.04
-        cmake=$(gh api -H "Accept: application/vnd.github.raw" "repos/$repo/contents/CMakeLists.txt?ref=$sha" 2>/dev/null || true)
+        cmake=
+        for attempt in 1 2 3; do
+          cmake=$(gh api -H "Accept: application/vnd.github.raw" "repos/$repo/contents/CMakeLists.txt?ref=$sha") && break
+          sleep $((attempt * 5))
+        done
         major=$(sed -n 's/^set(OPENMS_PACKAGE_VERSION_MAJOR "\([0-9]*\)").*/\1/p' <<<"$cmake")
         minor=$(sed -n 's/^set(OPENMS_PACKAGE_VERSION_MINOR "\([0-9]*\)").*/\1/p' <<<"$cmake")
-        if [[ -n "$major" && -n "$minor" ]]; then
-          echo "The source is OpenMS $major.$minor."
-          if (( major > 3 || (major == 3 && minor >= 6) )); then runner=ubuntu-24.04; fi
-        else
-          echo "::warning::no OpenMS version in $repo@$sha's CMakeLists.txt; building on $runner"
+        if [[ -z "$major" || -z "$minor" ]]; then
+          echo "::error::could not read the OpenMS version from $repo@$sha's CMakeLists.txt, so the Linux runner is unknown"
+          exit 1
         fi
+        echo "The source is OpenMS $major.$minor."
+        runner=ubuntu-22.04
+        if (( major > 3 || (major == 3 && minor >= 6) )); then runner=ubuntu-24.04; fi
         { echo "source=build"; echo "version="; echo "repository=$repo"; echo "sha=$sha"; echo "linux-runner=$runner"; } >> "$GITHUB_OUTPUT"
         echo "OpenMS: \`$repo@$ref\` → \`$sha\`, built from source (cached per commit)" >> "$GITHUB_STEP_SUMMARY"
 
@@ -394,8 +398,8 @@ jobs:
         # Sources before OpenMS/OpenMS develop dropped the pin ask for one Arrow
         # major (find_package(Arrow 23 CONFIG)), and Arrow's SameMajorVersion
         # check then rejects the newer release that apt and Homebrew install.
-        # Drop the pin as develop did; its own minimum check stays as it is.
-        perl -pi -e 's/find_package\((Arrow|Parquet) [0-9.]+ CONFIG/find_package($1 CONFIG/' cmake/cmake_findExternalLibs.cmake
+        # Do what develop did: find any version, then require the minimum.
+        perl -pi -e 's/^(\s*)find_package\((Arrow|Parquet) ([0-9.]+) CONFIG REQUIRED\)/$1find_package($2 CONFIG REQUIRED)\n$1if($2_VERSION VERSION_LESS $3)\n$1  message(FATAL_ERROR "Apache $2 >= $3 required (found \${$2_VERSION}).")\n$1endif()/' cmake/cmake_findExternalLibs.cmake
         if [[ $RUNNER_OS == Windows ]]; then
           export CMAKE_PREFIX_PATH="$QT_ROOT_DIR/lib/cmake;$QT_ROOT_DIR;C:\ProgramData\chocolatey\lib\eigen"
           export OPENMS_CONTRIB_LIBS="$GITHUB_WORKSPACE/contrib"
