@@ -6,7 +6,7 @@ parameters it has, and where every app stands. Use it to keep the apps in sync a
 checklist when quantification comes to a new app.
 
 Surveyed on 2026-11-02 at: quantms-web (OpenDDA) `main` 0961fbd, FLASHApp `develop` 9584eb3
-and branch `claude/project-thread-y0mgos-quant` 6ba4aca, OpenDIAKiosk `main`, umetaflow `main`,
+and integration branch `claude/project-thread-hxjbbs` 929bcd0, OpenDIAKiosk `main`, umetaflow `main`,
 openms-insight 0.4.0.
 
 ## How to use this document
@@ -246,6 +246,29 @@ Quantified entities per sample (Plotly bar via `show_fig()`) and key figures of 
 |---|---|---|---|
 | ✅ | 🔶 FLASHQuant results are uploads per dataset, not runs; compare settings saved in the compare cache | 🔶 | 🔶 |
 
+### B13 Quant dashboard (proposed)
+
+One configurable page that shows the whole comparison, instead of one page per view.
+
+- **Inputs**: C1, C2, B3 settings. **Output**: C3 and the B3 intermediates, persisted per run
+  (not only in `st.session_state`), so every panel and every Streamlit replica reads the same
+  result.
+- **Panels** (a catalog, each a function of C1/C2/C3 plus the shared `StateManager`, linked by the
+  entity id): key figures (counts up/down), volcano (B5), abundance per sample of the selected
+  entity (`SeriesPlot`), statistics table (B2/B4), PCA (B6), clustered heatmap (B7), diagnostics
+  (B8), GO enrichment (B9, where it applies), per-sample counts (B11).
+- **Layout**: a default layout per app, which the user can change and which is saved with the
+  workspace. FLASHApp's Layout Manager (`src/render/layout_editor/`: component catalog,
+  `validate_layout`, drag-and-drop editor) is the model; a fixed list of views with a segmented
+  control is the minimum.
+- **Settings**: the B4 expander on the same page; step pages, where an app has them, write the
+  same setting keys.
+- Today: FLASHApp's Compare Runs (`src/render/compare.py`) is the closest; one page, persisted
+  compare cache, linked views, but a fixed set of four views. OpenDDA spreads the same views over
+  Compare groups, Volcano plot, Sample similarity, Clustered heatmap, Heatmap, Protein abundances,
+  Per-sample counts and GO enrichment, each its own page, with the comparison held in session
+  state.
+
 ## Status at a glance
 
 | Feature | OpenDDA | FLASHApp | OpenDIAKiosk | UmetaFlow |
@@ -264,9 +287,10 @@ Quantified entities per sample (Plotly bar via `show_fig()`) and key figures of 
 | B10 Contaminants | ✅ | — | ❌ | — |
 | B11 Per-sample counts | ✅ | 🟡 | 🔶 | 🔶 |
 | B12 Runs and export | ✅ | 🔶 | 🔶 | 🔶 |
+| B13 Quant dashboard | ❌ (10 separate pages) | 🔶 (one page, 4 fixed views) | ❌ | ❌ |
 
-FLASHApp's 🟡 items are all on `claude/project-thread-y0mgos-quant` (commit 1d56dab, "Compare
-runs: reuse OpenDDA's comparison chain and views"), which has no PR yet.
+FLASHApp's 🟡 items are the Compare Runs page of FLASHApp #118, merged into the integration
+branch `claude/project-thread-hxjbbs` but not yet into `develop`.
 
 ## Where the code lives
 
@@ -279,6 +303,7 @@ before a third app copies them.
 |---|---|---|
 | B3 `run_differential`, `default_settings`, `describe_settings`, `count_significant`, `comparison_groups`, `valid_test` | openms-insight, as `openms_insight.analysis.differential` | It is a thin layer over `openms_insight.analysis`, Streamlit-free, and the template does not depend on openms-insight |
 | B8 diagnostic figures | openms-insight, as `openms_insight.analysis.plots` (Plotly) | Same inputs as B3; used by every app that has B3 |
+| B13 dashboard (panel catalog, default layout, rendering) | openms-insight, next to the components it lays out (proposed) | Needs Streamlit and Insight components, which the template does not ship |
 | B1 design editor and store | streamlit-template (already there) | Template-level, no openms-insight needed |
 | B4–B7, B9 pages | each app, following this spec | Pages carry app wording and navigation; the components and settings they use are fixed here |
 | Part A producers | each app | Different TOPP chains |
