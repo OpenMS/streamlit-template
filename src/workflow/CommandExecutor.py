@@ -316,6 +316,23 @@ class CommandExecutor:
         # Load merged parameters (_defaults + user overrides) for this tool instance
         merged_params = self.parameter_manager.get_merged_params(params_key)
 
+        # A stored parameter the installed tool does not have (saved before an
+        # upgrade that removed or renamed it) makes the tool refuse the whole
+        # run: "Parameters passed to '<tool>' are invalid", exit code 6. Leave
+        # it out and say so. Only when the tool's .ini is there to tell.
+        known_params = self.parameter_manager.known_topp_params(tool)
+        if isinstance(known_params, set):
+            unknown = sorted(k for k in merged_params if k not in known_params)
+            for k in unknown:
+                del merged_params[k]
+            if unknown:
+                self.logger.log(
+                    f"WARNING: {tool} has no parameter {', '.join(unknown)}; "
+                    "the stored value is not passed on. Check the parameters "
+                    "of this tool on the configuration page.",
+                    0,
+                )
+
         # Load flag parameter names: params.json takes priority (survives session restart),
         # session_state is the live fallback during the current session.
         flag_map = self.parameter_manager.get_parameters_from_json().get("_flag_params", {})

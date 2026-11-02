@@ -162,6 +162,8 @@ The workflow directory is `<workspace>/<workflow-name-lowercased-hyphenated>/`, 
 
 **`src/workflow/tasks.py` runs inside the RQ worker and must stay importable without Streamlit.** It rebuilds the workflow object with `object.__new__(WorkflowClass)` and hand-injects the members, deliberately bypassing `__init__` because that needs Streamlit. So **anything reachable from `execution()` must be session-state free** — the worker has no `st.session_state`. Worker and UI share state only through the workspace filesystem (`params.json`, `logs/`, `pids/`) and RQ job metadata. `REDIS_URL` defaults to `redis://localhost:6379/0`.
 
+**The worker refuses a job from a page that runs other code.** `submit_job()` stamps `job.meta["app_build"]` (`src/workflow/app_build.py`: `settings.json` version plus a hash of `src/**/*.py`), and `execute_workflow()` stops before anything runs with a `WorkerBuildMismatchError` when the worker's hash differs, telling the user to restart the workers. Web and worker pods are separate Deployments of one image; with a moving tag such as `latest` a release reaches only the pods that restart, and an old worker then runs the new page's parameters with its old TOPP tools ("Parameters passed to '<tool>' are invalid", exit code 6). A job without a stamp, or a side whose hash is empty, is let through.
+
 The off-switches are `online_deployment` and unsetting `REDIS_URL`. `docs/REDIS_QUEUE_IMPLEMENTATION_PLAN.md` is a pre-implementation design doc written in future tense — the work shipped, its line references are stale, and the `queue_settings.enabled` flag it describes is read nowhere. Read the code.
 
 ### Parameters — two independent systems
@@ -180,7 +182,7 @@ Workflow keys carry prefixes built from the workflow slug (`ParameterManager.py:
 - `param_prefix` = `"<slug>-param-"` — custom widgets
 - `topp_param_prefix` = `"<slug>-TOPP-"` — TOPP params, keyed `"<Instance>:1:<param:path>"`. The literal `:1:` segment separates instance from parameter path and is load-bearing throughout.
 
-TOPP defaults come from `ini/<Tool>.ini`, generated on demand via `<Tool> -write_ini` and never mutated. Values merge as **ini defaults < `_defaults` (from `custom_defaults=`) < user overrides**, and only values differing from the effective default are persisted. `-ini` is never passed on the command line — every effective parameter becomes an explicit CLI arg.
+TOPP defaults come from `ini/<Tool>.ini`, generated on demand via `<Tool> -write_ini` and never edited; `create_ini()` writes it again when the tool executable is newer than the file (workspaces outlive images), and `run_topp()` leaves out, with a warning in the log, any stored parameter the tool's .ini does not list. Values merge as **ini defaults < `_defaults` (from `custom_defaults=`) < user overrides**, and only values differing from the effective default are persisted. `-ini` is never passed on the command line — every effective parameter becomes an explicit CLI arg.
 
 **Reserved keys in a workflow's `params.json`** — never use as widget keys: `_defaults`, `_flag_params`, `max_threads`, or anything containing `.py:` (python-tool params) or `:1:` (TOPP params).
 
