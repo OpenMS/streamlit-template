@@ -827,7 +827,9 @@ class StreamlitUI:
                     format_func=format_files,
                     help=help,
                     on_change=on_change,
-                    **seed(value),
+                    # A saved value that is no longer an option (a deleted
+                    # file, a renamed choice) is dropped; Streamlit raises on it.
+                    **seed([v for v in (value or []) if v in options]),
                 )
             else:
                 st.warning(f"Select widget '{name}' requires options parameter")
