@@ -307,6 +307,9 @@ jobs:
       arch: amd64
       runner: ubuntu-latest
       platform: linux/amd64
+      # The amd64 runner image has grown too: exporting the full image to a
+      # tar for the test jobs ran out of space ("no space left on device").
+      free_disk_space: true
     secrets: inherit
 
   build-simple-amd64:

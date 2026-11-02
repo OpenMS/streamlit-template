@@ -52,8 +52,8 @@ on:
       free_disk_space:
         description: >-
           Reclaim runner disk before checkout. True for arm64, whose runner image
-          is tighter out of the box than the amd64 one; false for amd64, which is
-          how these two jobs behaved before they were merged into this file.
+          is tighter out of the box, and for the full amd64 image, whose export
+          no longer fits on a stock amd64 runner.
         required: false
         default: false
         type: boolean
