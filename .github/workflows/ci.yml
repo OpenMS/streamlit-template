@@ -7,7 +7,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [self-hosted]
+        os: ["${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'self-hosted' }}"]
         # Match the python version used in the committed Dockerfile (release/3.5.0)
         python-version: ["3.10"]
     steps:

@@ -12,7 +12,7 @@ on:
 
 jobs:
   cleanup-app-images:
-    runs-on: self-hosted
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'self-hosted' }}
     permissions:
       packages: write
     steps:
@@ -38,7 +38,7 @@ jobs:
           dry-run: ${{ github.event.inputs.dry-run || 'false' }}
 
   cleanup-cache-images:
-    runs-on: self-hosted
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'self-hosted' }}
     permissions:
       packages: write
     steps:
@@ -53,7 +53,7 @@ jobs:
           dry-run: ${{ github.event.inputs.dry-run || 'false' }}
 
   cleanup-sif-images:
-    runs-on: self-hosted
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'self-hosted' }}
     permissions:
       packages: write
     steps:

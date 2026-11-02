@@ -16,7 +16,7 @@ env:
 
 jobs:
   lint-manifests:
-    runs-on: self-hosted
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'self-hosted' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -173,7 +173,7 @@ jobs:
     # `nodeSelector` keys would otherwise be found by the pinning scan for
     # ever. k8s/storage/charts/ is .gitignored and the scan asks git for its
     # file list with `--exclude-standard`, so the two steps do not collide.
-    runs-on: self-hosted
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'self-hosted' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -305,7 +305,7 @@ jobs:
       variant: full
       dockerfile: Dockerfile
       arch: amd64
-      runner: self-hosted
+      runner: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'self-hosted' }}
       platform: linux/amd64
     secrets: inherit
 
@@ -319,7 +319,7 @@ jobs:
       variant: simple
       dockerfile: Dockerfile_simple
       arch: amd64
-      runner: self-hosted
+      runner: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'self-hosted' }}
       platform: linux/amd64
     secrets: inherit
 
@@ -374,7 +374,7 @@ jobs:
     # image. That is the trade; the alternative was publishing untested.
     needs: [build-full-amd64, build-simple-amd64, build-full-arm64, build-simple-arm64, test-nginx, test-traefik]
     if: github.event_name != 'pull_request'
-    runs-on: self-hosted
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'self-hosted' }}
     permissions:
       contents: read
       packages: write
@@ -454,7 +454,7 @@ jobs:
     # image - so the coverage worth rescuing from a one-variant break is the
     # kind suite, not this. Add the same override here if that ever changes.
     needs: [build-full-amd64, build-simple-amd64]
-    runs-on: self-hosted
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'self-hosted' }}
     strategy:
       fail-fast: false
       matrix:
@@ -628,7 +628,7 @@ jobs:
     # on-the-fly OCI->SIF conversion the docker:// path requires.
     needs: test-apptainer
     if: github.event_name != 'pull_request'
-    runs-on: self-hosted
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'self-hosted' }}
     permissions:
       contents: read
       packages: write
@@ -718,13 +718,13 @@ jobs:
         include:
           - variant: full
             arch: amd64
-            runner: self-hosted
+            runner: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'self-hosted' }}
           - variant: full
             arch: arm64
             runner: ubuntu-24.04-arm
           - variant: simple
             arch: amd64
-            runner: self-hosted
+            runner: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'self-hosted' }}
           - variant: simple
             arch: arm64
             runner: ubuntu-24.04-arm
@@ -1479,13 +1479,13 @@ jobs:
         include:
           - variant: full
             arch: amd64
-            runner: self-hosted
+            runner: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'self-hosted' }}
           - variant: full
             arch: arm64
             runner: ubuntu-24.04-arm
           - variant: simple
             arch: amd64
-            runner: self-hosted
+            runner: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'self-hosted' }}
           - variant: simple
             arch: arm64
             runner: ubuntu-24.04-arm
