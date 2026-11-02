@@ -287,6 +287,8 @@ The `self.executor.run_multiple_commands` method takes a list of commands as inp
 The `self.executor.run_topp` method takes a TOPP tool name as input and a dictionary of input and output files as input. The **keys** need to match the actual input and output parameter names of the TOPP tool. The **values** should be of type `FileManager`. All other **non-default parameters (from input widgets)** will be passed to the TOPP tool automatically.
 
 Depending on the number of input files, the TOPP tool will be run either in parallel or in a single run (using **`FileManager.collect`**).
+
+While it runs, the Run page shows the tool, which file it is on ("file 2 of 3"), elapsed times and the threads used. If a file fails, the page names the tool and the file ("While running FeatureFinderMetabo on file 2 of 3 (x.mzML)"), shows the tool's error line, and puts its raw output in a collapsed section. The progress is written to `logs/progress.json` by `src/workflow/progress.py`, which also works in queue mode.
 """
     )
 
