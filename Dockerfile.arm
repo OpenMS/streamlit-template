@@ -106,7 +106,7 @@ RUN pip install --upgrade pip && python -m pip install -U setuptools wheel panda
     && if grep -q pyopenms_wheel src/CMakeLists.txt; then \
         python -c "import tomllib; print('\n'.join(tomllib.load(open('src/pyOpenMS/pyproject.toml', 'rb'))['build-system']['requires']))" > /tmp/pyopenms-build.txt; \
     elif [ -f src/pyOpenMS/requirements_bld.txt ]; then \
-        cp src/pyOpenMS/requirements_bld.txt /tmp/pyopenms-build.txt && printf '%s\n' nose "cython<3.3" "autowrap<=0.24" >> /tmp/pyopenms-build.txt; \
+        { cat src/pyOpenMS/requirements_bld.txt; echo; printf '%s\n' nose "cython<3.3" "autowrap<=0.24"; } > /tmp/pyopenms-build.txt; \
     else \
         printf '%s\n' nose "cython>=3.1.0,<3.3" "autowrap<=0.24" > /tmp/pyopenms-build.txt; \
     fi \
