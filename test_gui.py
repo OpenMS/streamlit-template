@@ -36,6 +36,7 @@ def launch(request):
         "content/download_section.py",
         "content/simple_workflow.py",
         "content/run_subprocess.py",
+        "content/dashboard_example.py",
     ),
     indirect=True,
 )

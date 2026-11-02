@@ -328,9 +328,13 @@ layouts.**
 | Panel functions (volcano panel, PCA panel, …) | each app at first, wrapping the Insight components with the app's wording; moved to openms-insight once two apps use the same panel unchanged | Keeps the template free of Insight |
 | Part A producers | each app | Different TOPP chains |
 
-FLASHApp's Layout Manager (`src/render/layout_editor/`, catalog + `validate_layout` + Vue
-editor) is the starting point for the template's layout module; FLASHApp then uses the template's
-version for its viewers as well.
+The template's layout module is `src/common/dashboard/`: `layout.py` (`Panel`, `validate_layout`,
+saved layouts in `<directory>/dashboards/<name>.json`), `quant.py` (the quant panel names and
+`QUANT_DEFAULT_LAYOUT`; apps attach render functions with `quant_panels()`), `ui.py`
+(`render_dashboard`, and `layout_editor`, FLASHApp's drag-and-drop Layout Manager made generic).
+`content/dashboard_example.py` shows it on made-up data. The math is
+`openms_insight.analysis.differential` and `openms_insight.analysis.plots`. FLASHApp's own Layout
+Manager can move to the template's version for its viewers too.
 
 ## Checklist: quantification in a new app
 

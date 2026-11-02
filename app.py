@@ -38,6 +38,7 @@ if __name__ == '__main__':
         "Others Topics": [
             st.Page(Path("content", "simple_workflow.py"), title="Simple Workflow", icon="⚙️"),
             st.Page(Path("content", "run_subprocess.py"), title="Run Subprocess", icon="🖥️"),
+            st.Page(Path("content", "dashboard_example.py"), title="Dashboard", icon="🧩"),
         ]
     }
 
