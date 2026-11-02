@@ -133,15 +133,24 @@ jobs:
 
       - name: Retag for kind (image name the kustomize overlay points at)
         run: |
-          # The prod overlay sets `newName: ghcr.io/openms/streamlit-template`,
-          # `newTag: main-full`. The rendered manifests reference that exact
-          # ref, so we need it loaded into kind under that name. Tag invariant
-          # across branches/variants so the test always works.
+          # The rendered manifests reference the prod overlay's `newName` and
+          # `newTag` exactly, so the image is loaded into kind under that ref.
+          # Read from the overlay, not written here: in an app generated from
+          # the template it names the app's own image, and a hardcoded
+          # template ref leaves every pod in ErrImageNeverPull.
+          overlay=k8s/overlays/prod/kustomization.yaml
+          name=$(awk '$1 == "newName:" {print $2; exit}' "$overlay")
+          tag=$(awk '$1 == "newTag:" {print $2; exit}' "$overlay")
+          if [ -z "$name" ] || [ -z "$tag" ]; then
+            echo "::error::$overlay has no images newName/newTag to tag the kind image with"
+            exit 1
+          fi
+          echo "KIND_IMAGE=$name:$tag" >> "$GITHUB_ENV"
           FIRST_TAG=$(printf '%s\n' "${{ steps.meta.outputs.tags }}" | head -n 1)
-          docker tag "$FIRST_TAG" ghcr.io/openms/streamlit-template:main-full
+          docker tag "$FIRST_TAG" "$name:$tag"
 
       - name: Save image as tar
-        run: docker save ghcr.io/openms/streamlit-template:main-full -o /tmp/image.tar
+        run: docker save "$KIND_IMAGE" -o /tmp/image.tar
 
       - name: Upload image artifact
         uses: actions/upload-artifact@v4
