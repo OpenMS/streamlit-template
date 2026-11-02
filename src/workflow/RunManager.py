@@ -16,6 +16,8 @@ This module must stay importable without Streamlit: the RQ worker
 
 import json
 import shutil
+import stat
+import uuid
 import zipfile
 from datetime import datetime
 from pathlib import Path
@@ -23,6 +25,12 @@ from typing import Optional
 
 RUN_FILE = "run.json"
 MAX_NAME_LENGTH = 100
+# Largest unpacked size import_zip() accepts by default
+MAX_IMPORT_BYTES = 20 * 1024**3
+
+
+class RunImportError(ValueError):
+    """A ZIP that can not be imported as a run; the message says why."""
 
 # Run states written to run.json. A run whose process died without reaching
 # finish() stays "running"; the UI shows it as interrupted once the workflow
@@ -166,6 +174,115 @@ class RunManager:
                     zf.write(path, rel)
         return zip_path
 
+    def import_zip(
+        self, source, name: str = "", max_bytes: int = MAX_IMPORT_BYTES
+    ) -> str:
+        """
+        Add a run from a ZIP made by zip() and return its new id.
+
+        The ZIP holds ``results/`` and, as zip() writes them, ``run.json``,
+        ``params.json`` and ``logs/``; a ZIP of the run folder itself (all of
+        that under one top folder) works too. The run keeps its name, status,
+        times and parameters, and gets a new id, so importing the same ZIP
+        twice gives two runs.
+
+        Every member is checked before anything is written: absolute paths,
+        ``..``, drive letters, backslashes and symbolic links are refused, as
+        is a ZIP that unpacks to more than ``max_bytes``. Unpacking goes to a
+        temporary folder that becomes the run only when it is complete.
+
+        Args:
+            source: Path or binary file object (e.g. a Streamlit upload).
+            name: Display name; defaults to the name in run.json, then
+                "Imported run".
+            max_bytes: Largest unpacked size accepted.
+
+        Raises:
+            RunImportError: The file is not such a ZIP, or is unsafe.
+        """
+        try:
+            archive = zipfile.ZipFile(source)
+        except (zipfile.BadZipFile, OSError) as e:
+            raise RunImportError("This is not a ZIP file.") from e
+        with archive:
+            members = [m for m in archive.infolist() if not m.is_dir()]
+            for m in archive.infolist():
+                _check_member(m)
+            total = sum(m.file_size for m in members)
+            if total > max_bytes:
+                raise RunImportError(
+                    f"The ZIP unpacks to {total / 1024**3:.1f} GB, more than "
+                    f"the {max_bytes / 1024**3:.1f} GB allowed."
+                )
+            prefix = _run_prefix([m.filename for m in members])
+            if prefix is None:
+                raise RunImportError(
+                    "This ZIP holds no run: a run's ZIP has a results/ folder."
+                )
+
+            meta = {}
+            if f"{prefix}{RUN_FILE}" in archive.namelist():
+                try:
+                    meta = json.loads(archive.read(f"{prefix}{RUN_FILE}"))
+                except ValueError:
+                    meta = {}
+            if not isinstance(meta, dict):
+                meta = {}
+
+            tmp = Path(self.workflow_dir, f".run-import-{uuid.uuid4().hex[:8]}")
+            tmp.mkdir(parents=True)
+            try:
+                for m in members:
+                    rel = m.filename[len(prefix):]
+                    if not rel or rel == RUN_FILE:
+                        continue
+                    target = Path(tmp, *rel.split("/"))
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    with archive.open(m) as src, open(target, "wb") as dst:
+                        shutil.copyfileobj(src, dst)
+                params = Path(tmp, "params.json")
+                if params.exists():
+                    try:
+                        if not isinstance(json.loads(params.read_text(encoding="utf-8")), dict):
+                            raise ValueError
+                    except ValueError:
+                        params.unlink()
+                Path(tmp, "results").mkdir(exist_ok=True)
+
+                run = {
+                    "name": _clean_name(name) or _clean_name(meta.get("name")) or "Imported run",
+                    "created": meta.get("created") or _now(),
+                    "status": meta.get("status") if meta.get("status") in (
+                        FINISHED, FAILED, CANCELLED
+                    ) else FINISHED,
+                    "imported": _now(),
+                }
+                if meta.get("finished"):
+                    run["finished"] = meta["finished"]
+                run["name"] = self._unique_name(run["name"][:MAX_NAME_LENGTH])
+
+                self.runs_dir.mkdir(parents=True, exist_ok=True)
+                base = datetime.now().strftime("%Y%m%d-%H%M%S")
+                run_id, n = base, 1
+                while self.run_dir(run_id).exists():
+                    n += 1
+                    run_id = f"{base}-{n}"
+                with open(Path(tmp, RUN_FILE), "w", encoding="utf-8") as f:
+                    json.dump(run, f, indent=2)
+                tmp.rename(self.run_dir(run_id))
+            finally:
+                shutil.rmtree(tmp, ignore_errors=True)
+        return run_id
+
+    def _unique_name(self, name: str) -> str:
+        taken = {r.get("name") for r in self.list_runs()}
+        if name not in taken:
+            return name
+        n = 2
+        while f"{name} ({n})" in taken:
+            n += 1
+        return f"{name} ({n})"
+
     def adopt_legacy_results(self) -> Optional[str]:
         """
         Turn a ``<workflow_dir>/results`` left by a single-run version of the
@@ -223,6 +340,38 @@ def _is_safe_id(run_id: str) -> bool:
     # Run ids come from session state and query parameters; never let one
     # leave the runs directory.
     return bool(run_id) and "/" not in run_id and "\\" not in run_id and run_id not in (".", "..")
+
+
+def _check_member(member: zipfile.ZipInfo) -> None:
+    """Refuse a ZIP member that could land outside the folder it is unpacked to."""
+    name = member.filename
+    parts = name.replace("\\", "/").split("/")
+    if (
+        "\\" in name
+        or name.startswith("/")
+        or ".." in parts
+        or (len(name) > 1 and name[1] == ":")
+        or "\x00" in name
+    ):
+        raise RunImportError(f"Refused: the ZIP has an unsafe path ({name!r}).")
+    mode = member.external_attr >> 16
+    if stat.S_ISLNK(mode):
+        raise RunImportError(f"Refused: the ZIP holds a symbolic link ({name!r}).")
+
+
+def _run_prefix(names: list[str]) -> Optional[str]:
+    """
+    Where the run sits in the ZIP: "" when results/ is at the top, "<dir>/"
+    when everything is in one folder, None when there is no results/ folder.
+    """
+    if any(n.startswith("results/") for n in names):
+        return ""
+    tops = {n.split("/", 1)[0] for n in names}
+    if len(tops) == 1:
+        top = tops.pop() + "/"
+        if any(n.startswith(f"{top}results/") for n in names):
+            return top
+    return None
 
 
 def format_time(iso: Optional[str]) -> str:
