@@ -157,6 +157,14 @@ WORKDIR /openms-build
 # Build TOPP tools.
 RUN make -j4 TOPP
 
+# pyOpenMS runs in the mamba environment's Python, whose OpenSSL is newer than
+# Ubuntu's. Loading libOpenMS (which links the system libcurl) next to it mixes
+# the two libssl/libcrypto builds and the import fails ("OPENSSL_3.3.0 not
+# found"); pyOpenMS 3.6 imports itself during the build to generate its stubs.
+# Taking the environment's libraries first keeps one OpenSSL in the process;
+# they are newer and keep the symbol versions the system libraries ask for.
+ENV LD_LIBRARY_PATH="/root/miniforge3/envs/streamlit-env/lib"
+
 # Build the pyOpenMS wheel (pyopenms_wheel from 3.6 on, pyopenms before).
 RUN if grep -q pyopenms_wheel /OpenMS/src/CMakeLists.txt; then \
         make -j4 pyopenms_wheel && mkdir -p /pyopenms-wheel && cp pyopenms_wheels/*.whl /pyopenms-wheel/; \
@@ -181,7 +189,7 @@ ENV PATH="/openms/bin/:${PATH}"
 
 # Copy TOPP tools bin directory, add to PATH.
 RUN cp -r openms-build/lib /openms/lib
-ENV LD_LIBRARY_PATH="/openms/lib/:${LD_LIBRARY_PATH}"
+ENV LD_LIBRARY_PATH="/openms/lib/:/root/miniforge3/envs/streamlit-env/lib"
 
 # Copy share folder, add to PATH, remove source directory.
 RUN cp -r OpenMS/share/OpenMS /openms/share
