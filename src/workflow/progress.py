@@ -55,6 +55,19 @@ class RunProgress:
         self.workflow_dir = Path(workflow_dir)
         self._lock = threading.Lock()
 
+    # The local Run button starts the workflow with multiprocessing, which
+    # pickles the workflow and with it this object under the "spawn" start
+    # method (Windows, macOS, and apps that choose it). A lock can not be
+    # pickled, so the child process gets a new one of its own.
+    def __getstate__(self) -> dict:
+        state = self.__dict__.copy()
+        state.pop("_lock", None)
+        return state
+
+    def __setstate__(self, state: dict) -> None:
+        self.__dict__.update(state)
+        self._lock = threading.Lock()
+
     def _load(self) -> dict:
         state = read_progress(self.workflow_dir)
         if not state:

@@ -47,6 +47,8 @@ else:
 if _original_pyopenms is None:
     sys.modules.pop("pyopenms", None)
 
+# Kept for the pickling tests: pickle finds a class through its module.
+_WORKFLOW_MODULES = {k: v for k, v in sys.modules.items() if k.startswith("src.workflow")}
 for _key in list(sys.modules.keys()):
     if _key.startswith("src.workflow"):
         sys.modules.pop(_key, None)
@@ -283,3 +285,29 @@ def test_missing_tool_in_parallel_fails_the_step(workflow):
     assert ok is False
     step = read_progress(wf_dir)["steps"][0]
     assert [f["status"] for f in step["files"]] == ["failed", "failed"]
+
+
+@pytest.fixture
+def workflow_modules(monkeypatch):
+    """Put the modules imported above back, so pickle can find the classes."""
+    for name, module in _WORKFLOW_MODULES.items():
+        monkeypatch.setitem(sys.modules, name, module)
+
+
+def test_progress_survives_pickling(tmp_path, workflow_modules):
+    """The local Run button pickles the workflow under the "spawn" start
+    method (Windows, macOS); its RunProgress must pickle and keep working."""
+    import pickle
+
+    progress = pickle.loads(pickle.dumps(RunProgress(tmp_path)))
+    assert progress.workflow_dir == tmp_path
+    with progress._lock:
+        pass
+
+
+def test_executor_survives_pickling(workflow, workflow_modules):
+    import pickle
+
+    _, executor = workflow
+    copy = pickle.loads(pickle.dumps(executor))
+    assert copy.progress.workflow_dir == executor.progress.workflow_dir
