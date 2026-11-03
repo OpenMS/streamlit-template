@@ -1,0 +1,77 @@
+# The StorageClass every app's workspace PVC claims (k8s/base/workspace-pvc.yaml).
+#
+# Cluster scoped and shared by all apps on the cluster. Its name has no app
+# prefix on purpose: each PVC that claims it gets a Manila share of its own,
+# so apps do not share data, only the class.
+#
+# k8s/ci-storage/ganesha-values.yaml publishes a class of the same name and
+# mount options for the kind jobs; assert_storage_class_contract in
+# .github/scripts/ci-assertions.sh fails CI if the two drift.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: openms-manila-nfs
+  annotations:
+    # Argo CD (docs/kubernetes-deployment.md, "GitOps with Argo CD"): never
+    # prune or cascade-delete this object; every app's workspace PVC names it.
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false
+  labels:
+    app.kubernetes.io/part-of: openms-streamlit
+# `nfs.` + the chart's driverName, which is how manila-csi names its
+# per-protocol drivers.
+provisioner: nfs.manila.csi.openstack.org
+# Deleting a PVC by mistake must not delete the Manila share with every
+# workspace on it. A released share is removed by hand in Horizon or with
+# `openstack share delete`.
+reclaimPolicy: Retain
+# Manila can grow a share in place; `kubectl edit pvc` raising the request
+# resizes it.
+allowVolumeExpansion: true
+volumeBindingMode: Immediate
+parameters:
+  # CLUSTER-SPECIFIC: the name of the NFS share type, as Horizon's Create
+  # Share dialog lists it. de.NBI Berlin (project WebApps1): `isilon-denbi`
+  # (`default` and `isilon-dmz` are the other two; dmz is for the project's
+  # DMZ network). No share network: the types do not handle share servers.
+  type: isilon-denbi
+  # CLUSTER-SPECIFIC: who may mount the share. manila-csi adds this as an IP
+  # access rule on every share it creates (the default would be 0.0.0.0/0,
+  # i.e. anyone who can reach the export). de.NBI Berlin: the nodes reach the
+  # Isilon through the router, so it sees the floating-IP range, not the
+  # node subnet 192.168.1.0/24 (that rule gave "access denied", 3 Nov 2026).
+  # The range is shared with other projects' floating IPs.
+  nfs-shareClient: 10.57.200.0/21
+  # Only for share types with driver_handles_share_servers=True, where Horizon
+  # asks for a Share Network when creating a share:
+  # shareNetworkID: <share network id>
+
+  # The OpenStack application credential manila-csi talks to the Manila API
+  # with. Created by hand, never committed: docs/kubernetes-deployment.md,
+  # "Storage".
+  csi.storage.k8s.io/provisioner-secret-name: manila-csi-credentials
+  csi.storage.k8s.io/provisioner-secret-namespace: kube-system
+  csi.storage.k8s.io/controller-expand-secret-name: manila-csi-credentials
+  csi.storage.k8s.io/controller-expand-secret-namespace: kube-system
+  csi.storage.k8s.io/node-stage-secret-name: manila-csi-credentials
+  csi.storage.k8s.io/node-stage-secret-namespace: kube-system
+  csi.storage.k8s.io/node-publish-secret-name: manila-csi-credentials
+  csi.storage.k8s.io/node-publish-secret-namespace: kube-system
+# Passed to the NFS mount on every node.
+#
+#   hard         a Manila NFS gateway failover blocks the client and resumes;
+#                `soft` would turn it into a truncated result file
+#   nfsvers=3    the de.NBI Isilon refuses NFSv4.x ("Protocol not
+#                supported", 3 Nov 2026). Locks go through NLM/statd, which
+#                the node plugin's mount.nfs starts; cross-node locking was
+#                checked on the cluster
+#   nconnect=4   the access pattern is metadata-heavy rather than
+#                bandwidth-bound
+#   default actimeo - close-to-open consistency already gives a fresh read on
+#                every open(); Logger closes per message and the UI reopens
+#                per second
+mountOptions:
+  - hard
+  - nfsvers=3
+  - nconnect=4
+  - retrans=2
+  - timeo=30

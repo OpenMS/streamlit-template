@@ -56,7 +56,7 @@ deploy:
   k8s:
     enabled: true
     hosts: [template.webapps.openms.de, template.webapps.openms.org]
-    storage: 400Gi
+    storage: 50Gi
     worker_tier: low
   docker_compose: true
   desktop: [windows]
@@ -79,3 +79,4 @@ sync:
     - example-data/*
     - assets/*
     - k8s/overlays/*
+    - k8s/argocd/*

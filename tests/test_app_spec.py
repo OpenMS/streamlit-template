@@ -38,17 +38,17 @@ def test_schema_rejects_unknown_result_role(spec):
     assert app_spec.schema_errors(bad)
 
 
-def _app_tree(tmp_path, slug="myapp", name="My App", prefix=None, storage_ns=None):
+def _app_tree(tmp_path, slug="myapp", name="My App", prefix=None, pvc_size="400Gi"):
     (tmp_path / "settings.json").write_text(
         json.dumps({"app-name": name, "online_deployment": False})
     )
     overlay = tmp_path / "k8s" / "overlays" / "prod"
     overlay.mkdir(parents=True)
     (overlay / "kustomization.yaml").write_text(f"namePrefix: {prefix or slug + '-'}\n")
-    storage = tmp_path / "k8s" / "storage"
-    storage.mkdir(parents=True)
-    (storage / "kustomization.yaml").write_text(
-        f"namespace: {storage_ns or slug + '-storage'}\n"
+    base = tmp_path / "k8s" / "base"
+    base.mkdir(parents=True)
+    (base / "workspace-pvc.yaml").write_text(
+        f"spec:\n  resources:\n    requests:\n      storage: {pvc_size}\n"
     )
     (tmp_path / "src" / "python-tools").mkdir(parents=True)
     return tmp_path
@@ -82,10 +82,12 @@ def test_slug_must_match_name_prefix(tmp_path):
     assert any("namePrefix" in e for e in errors)
 
 
-def test_slug_must_match_storage_namespace(tmp_path):
-    root = _app_tree(tmp_path, storage_ns="template-app-storage")
-    errors = app_spec.consistency_errors(_spec(), root)
-    assert any("storage tier" in e for e in errors)
+def test_storage_size_must_match_workspace_pvc(tmp_path):
+    root = _app_tree(tmp_path, pvc_size="100Gi")
+    s = _spec()
+    s["deploy"] = {"k8s": {"storage": "400Gi"}}
+    errors = app_spec.consistency_errors(s, root)
+    assert any("deploy.k8s.storage" in e for e in errors)
 
 
 def test_missing_python_tool_and_unknown_input(tmp_path):

@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 # Packages the staged electron/payload into this platform's installer, the one
 # step of the desktop build that differs between platforms:
-#   Windows  dist/<APP_NAME>-Setup.exe              per-user NSIS installer (no admin rights)
-#   macOS    dist/<APP_NAME>-macOS-arm64.dmg        signed and notarized when the secrets exist
-#   Linux    dist/<APP_NAME>-Linux-x86_64.AppImage
+#   Windows  dist/<INSTALLER_NAME>-Setup.exe              per-user NSIS installer (no admin rights)
+#   macOS    dist/<INSTALLER_NAME>-macOS-arm64.dmg        signed and notarized when the secrets exist
+#   Linux    dist/<INSTALLER_NAME>-Linux-x86_64.AppImage
 # Run from the repository root after `npm ci` in electron/:
-#   APP_NAME=MyApp [RELEASE_TAG=v1.2] electron/scripts/package.sh
+#   APP_NAME=MyApp [INSTALLER_NAME=MyApp-1.2] [RELEASE_TAG=v1.2] electron/scripts/package.sh [<electron-builder args>...]
+# APP_NAME is the app's name (install folder, menu entry, data folder),
+# INSTALLER_NAME the prefix of the installer files (default: APP_NAME).
+# Further arguments go to electron-builder as they are.
 # Writes installer=<path> to $GITHUB_OUTPUT when set.
 #
 # macOS signing reads MACOS_CERTIFICATE / MACOS_CERTIFICATE_PASSWORD, and
@@ -15,6 +18,7 @@ set -euo pipefail
 
 : "${APP_NAME:?APP_NAME must be set}"
 RELEASE_TAG="${RELEASE_TAG:-}"
+INSTALLER_NAME="${INSTALLER_NAME:-$APP_NAME}"
 
 # electron-builder needs a semver version; take the numeric part of the release tag.
 version=1.0.0
@@ -33,16 +37,16 @@ args=(
 
 case "$(uname -s)" in
   MINGW*|MSYS*|CYGWIN*)
-    installer="$APP_NAME-Setup.exe"
-    args+=(--win nsis --x64 "-c.nsis.artifactName=$APP_NAME-Setup.\${ext}")
+    installer="$INSTALLER_NAME-Setup.exe"
+    args+=(--win nsis --x64 "-c.nsis.artifactName=$INSTALLER_NAME-Setup.\${ext}")
     ;;
 
   Darwin)
-    installer="$APP_NAME-macOS-arm64.dmg"
+    installer="$INSTALLER_NAME-macOS-arm64.dmg"
     args+=("-c.extraMetadata.name=$id")
     # Notarization runs in our afterSign hook, which retries Apple's flaky
     # stapling service instead of failing the build.
-    args+=(--mac dmg --arm64 "-c.dmg.artifactName=$APP_NAME-macOS-arm64.\${ext}"
+    args+=(--mac dmg --arm64 "-c.dmg.artifactName=$INSTALLER_NAME-macOS-arm64.\${ext}"
       -c.mac.notarize=false -c.afterSign=scripts/notarize.js)
     # dmgbuild's own size estimate is too small for payloads with tens of
     # thousands of files (ditto runs out of space inside the volume);
@@ -82,15 +86,17 @@ case "$(uname -s)" in
     ;;
 
   Linux)
-    installer="$APP_NAME-Linux-x86_64.AppImage"
+    installer="$INSTALLER_NAME-Linux-x86_64.AppImage"
     args+=("-c.extraMetadata.name=$id")
     args+=(--linux AppImage --x64
       "-c.linux.executableName=$id"
-      "-c.appImage.artifactName=$APP_NAME-Linux-x86_64.\${ext}")
+      "-c.appImage.artifactName=$INSTALLER_NAME-Linux-x86_64.\${ext}")
     ;;
 
   *) echo "::error::unsupported platform $(uname -s)"; exit 1 ;;
 esac
+
+args+=(${@+"$@"})
 
 cd electron
 log="${RUNNER_TEMP:-/tmp}/electron-builder.log"

@@ -49,6 +49,11 @@ on:
       sha:
         description: Commit that was built (build source), else empty.
         value: ${{ jobs.resolve.outputs.sha }}
+      linux-runner:
+        description: >-
+          The Ubuntu runner whose system libraries the Linux OpenMS package
+          was built against; the app's Linux build runs there.
+        value: ${{ jobs.resolve.outputs.linux-runner }}
 
 permissions:
   contents: read
@@ -62,6 +67,7 @@ jobs:
       version: ${{ steps.resolve.outputs.version }}
       repository: ${{ steps.resolve.outputs.repository }}
       sha: ${{ steps.resolve.outputs.sha }}
+      linux-runner: ${{ steps.resolve.outputs.linux-runner }}
     steps:
     - name: Release or build?
       id: resolve
@@ -83,7 +89,12 @@ jobs:
           for tag in "v$version" "release/$version" "Release$version"; do
             if gh release view "$tag" -R "$repo" --json tagName >/dev/null 2>&1; then
               echo "OpenMS $version is released in $repo ($tag): nothing to build."
-              { echo "source=release"; echo "version=$version"; echo "repository=$repo"; echo "sha="; } >> "$GITHUB_OUTPUT"
+              # The .deb of OpenMS 3.6 and later is built on Ubuntu 24.04
+              # (libc6 >= 2.38, the t64 Qt packages); earlier ones on 22.04.
+              runner=ubuntu-22.04
+              IFS=. read -r major minor _ <<<"$version"
+              if (( major > 3 || (major == 3 && minor >= 6) )); then runner=ubuntu-24.04; fi
+              { echo "source=release"; echo "version=$version"; echo "repository=$repo"; echo "sha="; echo "linux-runner=$runner"; } >> "$GITHUB_OUTPUT"
               exit 0
             fi
           done
@@ -94,7 +105,25 @@ jobs:
         sha=$(gh api "repos/$repo/commits/$ref" --jq .sha) ||
           { echo "::error::$repo has no branch, tag or commit $ref"; exit 1; }
         echo "Building $repo@$ref ($sha)."
-        { echo "source=build"; echo "version="; echo "repository=$repo"; echo "sha=$sha"; } >> "$GITHUB_OUTPUT"
+        # The Linux build runs where that source's tools/ci/deps-ubuntu.sh
+        # works: OpenMS 3.6 and later install packages only Ubuntu 24.04 has
+        # (libsqlitecpp-dev, Arrow/Parquet), earlier ones build on 22.04,
+        # whose older glibc lets the app run on more systems.
+        cmake=
+        for attempt in 1 2 3; do
+          cmake=$(gh api -H "Accept: application/vnd.github.raw" "repos/$repo/contents/CMakeLists.txt?ref=$sha") && break
+          sleep $((attempt * 5))
+        done
+        major=$(sed -n 's/^set(OPENMS_PACKAGE_VERSION_MAJOR "\([0-9]*\)").*/\1/p' <<<"$cmake")
+        minor=$(sed -n 's/^set(OPENMS_PACKAGE_VERSION_MINOR "\([0-9]*\)").*/\1/p' <<<"$cmake")
+        if [[ -z "$major" || -z "$minor" ]]; then
+          echo "::error::could not read the OpenMS version from $repo@$sha's CMakeLists.txt, so the Linux runner is unknown"
+          exit 1
+        fi
+        echo "The source is OpenMS $major.$minor."
+        runner=ubuntu-22.04
+        if (( major > 3 || (major == 3 && minor >= 6) )); then runner=ubuntu-24.04; fi
+        { echo "source=build"; echo "version="; echo "repository=$repo"; echo "sha=$sha"; echo "linux-runner=$runner"; } >> "$GITHUB_OUTPUT"
         echo "OpenMS: \`$repo@$ref\` → \`$sha\`, built from source (cached per commit)" >> "$GITHUB_STEP_SUMMARY"
 
   build:
@@ -115,12 +144,12 @@ jobs:
             runs-on: macos-15
             thirdparty: MacOS/arm64
             package_type: pkg
-          # The oldest Ubuntu the app supports: the bundle needs glibc >= 2.35.
+          # The Ubuntu the resolve job picked for this source (linux-runner).
           - platform: Linux-x86_64
-            runs-on: ubuntu-22.04
+            runs-on: linux
             thirdparty: Linux/x86_64
             package_type: deb
-    runs-on: ${{ matrix.runs-on }}
+    runs-on: ${{ matrix.runs-on == 'linux' && needs.resolve.outputs.linux-runner || matrix.runs-on }}
     # A cold build compiles every dependency (vcpkg on Windows) and OpenMS;
     # 6 hours is the hosted runners' limit.
     timeout-minutes: 350
@@ -366,8 +395,13 @@ jobs:
       id: cibuild
       run: |
         mkdir -p bld
+        # Sources before OpenMS/OpenMS develop dropped the pin ask for one Arrow
+        # major (find_package(Arrow 23 CONFIG)), and Arrow's SameMajorVersion
+        # check then rejects the newer release that apt and Homebrew install.
+        # Do what develop did: find any version, then require the minimum.
+        perl -pi -e 's/^(\s*)find_package\((Arrow|Parquet) ([0-9.]+) CONFIG REQUIRED\)/$1find_package($2 CONFIG REQUIRED)\n$1if($2_VERSION VERSION_LESS $3)\n$1  message(FATAL_ERROR "Apache $2 >= $3 required (found \${$2_VERSION}).")\n$1endif()/' cmake/cmake_findExternalLibs.cmake
         if [[ $RUNNER_OS == Windows ]]; then
-          export CMAKE_PREFIX_PATH="$QT_ROOT_DIR/lib/cmake;$QT_ROOT_DIR"
+          export CMAKE_PREFIX_PATH="$QT_ROOT_DIR/lib/cmake;$QT_ROOT_DIR;C:\ProgramData\chocolatey\lib\eigen"
           export OPENMS_CONTRIB_LIBS="$GITHUB_WORKSPACE/contrib"
           export Eigen3_DIR='C:\ProgramData\chocolatey\lib\eigen\share\cmake'
           export USE_EXTERNAL_JSON=OFF BOOST_USE_STATIC=ON USE_STATIC_BOOST=On
@@ -379,6 +413,13 @@ jobs:
           export OPENMS_CONTRIB_LIBS="$GITHUB_WORKSPACE/contrib"
           export USE_EXTERNAL_JSON="$DEPS_JSON" BOOST_USE_STATIC=OFF
           export BUILD_FLAGS="-j$DEPS_JOBS"
+        fi
+        # Newer sources' cibuild.cmake no longer reads these variables from
+        # the environment: their CI seeds bld/CMakeCache.txt with
+        # capture-env.sh first (without it, a contrib build fails to find
+        # XercesC: "OPENMS_CONTRIB_LIBS not set").
+        if [[ -f tools/ci/capture-env.sh ]]; then
+          bash tools/ci/capture-env.sh -v "$GITHUB_WORKSPACE/bld/CMakeCache.txt"
         fi
         set +e
         ctest --output-on-failure -V -S "$GITHUB_WORKSPACE/tools/ci/cibuild.cmake"

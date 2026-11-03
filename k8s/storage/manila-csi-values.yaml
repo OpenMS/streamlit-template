@@ -1,0 +1,12 @@
+# Helm values for openstack-manila-csi 2.36.3 (manila-csi-plugin v1.36.0).
+
+# NFS only. CephFS shares would need the Ceph CSI node plugin and a network
+# path from every node to the Ceph monitors; NFS needs only the NFS client the
+# nodes already have.
+shareProtocols:
+  - protocolSelector: NFS
+    fsGroupPolicy: None
+    # The csi-driver-nfs node plugin's socket, from csi-driver-nfs-values.yaml.
+    fwdNodePluginEndpoint:
+      dir: /var/lib/kubelet/plugins/csi-nfsplugin
+      sockFile: csi.sock

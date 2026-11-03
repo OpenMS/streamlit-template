@@ -1,3 +1,9 @@
+> **Superseded.** Production storage is now OpenStack Manila (`k8s/storage/`,
+> see `docs/kubernetes-deployment.md` section 3b). The per-app Ganesha tier this
+> document describes survives only as CI's in-cluster stand-in in
+> `k8s/ci-storage/`. Kept for the reasoning, which still explains the client
+> mount options and the worker topology.
+
 > **What this is.** The defect register compiled while making this template run
 > across multiple nodes: verified defects in the workflow framework, the
 > Kubernetes manifests and the CI, each with the evidence that established it.

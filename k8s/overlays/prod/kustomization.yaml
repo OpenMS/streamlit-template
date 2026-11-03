@@ -3,6 +3,12 @@ kind: Kustomization
 
 resources:
   - ../../base
+  # The shared `openms` namespace. Every app on the cluster deploys into it,
+  # so exactly one Argo CD Application may manage it: this one, the
+  # template's own deployment. Apps generated from the template delete this
+  # line and namespace.yaml (see docs/kubernetes-deployment.md); if two apps
+  # carried it, each sync would take the namespace over from the other.
+  - namespace.yaml
 
 components:
   - ../../components/memory-tier-low
@@ -15,7 +21,7 @@ commonLabels:
 images:
   - name: openms-streamlit
     newName: ghcr.io/openms/streamlit-template
-    newTag: main-full
+    newTag: v2.0.0-full
 
 patches:
   - target:

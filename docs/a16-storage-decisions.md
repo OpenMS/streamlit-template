@@ -1,3 +1,9 @@
+> **Superseded.** Production storage is now OpenStack Manila (`k8s/storage/`,
+> see `docs/kubernetes-deployment.md` section 3b). The per-app Ganesha tier this
+> document describes survives only as CI's in-cluster stand-in in
+> `k8s/ci-storage/`. Kept for the reasoning, which still explains the client
+> mount options and the worker topology.
+
 > **What this is.** The decision record behind the NFS-Ganesha storage tier —
 > what was chosen, what was rejected, and why. Manifest comments in `k8s/storage/`
 > cite it by decision number when a value is deliberate rather than arbitrary.

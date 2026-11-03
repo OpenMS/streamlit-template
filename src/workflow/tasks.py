@@ -103,8 +103,16 @@ def execute_workflow(
         if mismatch:
             raise WorkerBuildMismatchError(mismatch)
 
-        # Load parameters from saved params.json
+        # Load parameters from saved params.json. A run of a multi-run
+        # workflow reads the copy taken when it was started (RunManager.new_run)
+        # instead, so a change saved on the configure page while the run is
+        # going does not leak into it and the run's params.json stays the
+        # record of what produced its results.
         params_file = workflow_path / "params.json"
+        if run_id:
+            runs = RunManager(workflow_path)
+            if runs.params_file(run_id).exists():
+                params_file = runs.params_file(run_id)
         if params_file.exists():
             # encoding="utf-8" explicitly, matching every other reader and
             # writer of params.json: the platform codepage here would decode a
@@ -117,12 +125,14 @@ def execute_workflow(
         # Initialize workflow components
         logger = Logger(workflow_path)
         if run_id:
-            runs = RunManager(workflow_path)
             results_dir = runs.results_dir(run_id)
         else:
             results_dir = workflow_path / "results"
         file_manager = FileManager(workflow_path, results_dir)
         parameter_manager = ParameterManager(workflow_path)
+        # run_topp / run_python read the parameters through the
+        # ParameterManager while the run goes on: the same file as above.
+        parameter_manager.params_file = params_file
         executor = CommandExecutor(workflow_path, logger, parameter_manager)
         executor.pid_dir.mkdir(parents=True, exist_ok=True)
 

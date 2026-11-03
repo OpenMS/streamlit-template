@@ -18,22 +18,19 @@
 #   assert_posix_contract            the mount really is NFS; absolute symlink,
 #                                    atomic rename, and flock that excludes a
 #                                    holder on the *other* node
-#   assert_survives_nfs_restart      a workflow running throughout a Ganesha
-#                                    restart completes, with no lost output
+#   assert_survives_nfs_restart      a workflow running throughout an NFS
+#                                    server restart completes, with no lost
+#                                    output (against the CI stand-in)
 #   assert_stable_identity_across_restart
-#                                    file handles survive a Ganesha restart
-#   assert_fsids_pinned              static; the storage root pins
+#                                    file handles survive an NFS server restart
+#   assert_fsids_pinned              static; the CI NFS server pins
 #                                    device-based-fsids off
-#   assert_netpol_string_matches_overlay
-#   assert_netpol_admits_every_node
-#   assert_storage_identity_values
-#                                    static; the storage NetworkPolicy admits
-#                                    exactly the overlay's commonLabels.app, in
-#                                    the overlay's namespace, on 2049 alone
-#   assert_storage_names_match_slug  static; every hand-written storage name
-#                                    carries the overlay's namePrefix, so two
-#                                    forks never share a namespace or a
-#                                    cluster-scoped StorageClass
+#   assert_storage_identity_values   static; the CI NFS server is one pod on a
+#                                    fixed backing claim, reclaiming Retain
+#   assert_storage_class_contract    static; the workspace PVC, the Manila
+#                                    StorageClass in k8s/storage/ and the CI
+#                                    stand-in in k8s/ci-storage/ agree on the
+#                                    class name, Retain and the mount options
 #   assert_no_node_pinning_anywhere  static; no nodeSelector, nodeName,
 #                                    nodeAffinity or memory tier
 #   assert_doc_links_resolve         static; every backticked *.md path in
@@ -56,11 +53,13 @@
 #   CI_ASSERT_IMAGE    image for throwaway pods       (default: the app image,
 #                      which is already on every kind node so nothing pulls)
 #   CI_ASSERT_TIMEOUT  seconds to wait for a pod      (default: 180)
-#   CI_ASSERT_STORAGE_NS    namespace of the NFS server
+#   CI_ASSERT_STORAGE_NS    namespace of the CI NFS server
 #                           (default: the top-level `namespace:` of
 #                           $CI_ASSERT_STORAGE_ROOT/kustomization.yaml, read
 #                           with yq; empty if it cannot be read)
-#   CI_ASSERT_STORAGE_ROOT  kustomize root serving it    (default: k8s/storage)
+#   CI_ASSERT_STORAGE_ROOT  kustomize root serving it    (default: k8s/ci-storage)
+#   CI_ASSERT_PROD_STORAGE_ROOT
+#                           the production storage root  (default: k8s/storage)
 
 CI_ASSERT_NS="${CI_ASSERT_NS:-openms}"
 CI_ASSERT_OVERLAY="${CI_ASSERT_OVERLAY:-k8s/overlays/prod}"
@@ -71,10 +70,10 @@ CI_ASSERT_CI_OVERLAY="${CI_ASSERT_CI_OVERLAY:-k8s/overlays/ci}"
 CI_ASSERT_MOUNT="${CI_ASSERT_MOUNT:-/workspaces-streamlit-template}"
 CI_ASSERT_TIMEOUT="${CI_ASSERT_TIMEOUT:-180}"
 CI_ASSERT_BASE="${CI_ASSERT_BASE:-k8s/base}"
-CI_ASSERT_STORAGE_ROOT="${CI_ASSERT_STORAGE_ROOT:-k8s/storage}"
-# Read, never assumed: a fork renames the storage namespace together with the
-# rest of its storage identity (see assert_storage_names_match_slug), and a
-# hardcoded default here pointed every runtime assertion at the template's.
+CI_ASSERT_STORAGE_ROOT="${CI_ASSERT_STORAGE_ROOT:-k8s/ci-storage}"
+CI_ASSERT_PROD_STORAGE_ROOT="${CI_ASSERT_PROD_STORAGE_ROOT:-k8s/storage}"
+# Read, never assumed, so a renamed CI storage namespace does not silently
+# point every runtime assertion at a namespace that no longer exists.
 # Parsed with yq so a quoted value is read correctly. Sourcing must not fail, so
 # an unreadable root leaves it empty, and every assertion that uses it then
 # fails naming the namespace it could not find instead of querying a guess.
@@ -235,14 +234,14 @@ _ci_pinning_files() {
     # The files assert_no_node_pinning_anywhere text-scans, one per line.
     #
     # git-tracked files PLUS untracked ones that are not gitignored. The
-    # ignored half is the part that matters: `kubectl kustomize --enable-helm
-    # k8s/storage/` makes kustomize vendor the Ganesha chart into
-    # k8s/storage/charts/, and that chart carries its own `nodeSelector: {}`
+    # ignored half is the part that matters: `kubectl kustomize --enable-helm`
+    # on k8s/ci-storage/ or k8s/storage/ makes kustomize vendor the charts into
+    # a `charts/` directory beside them, and those charts carry its own `nodeSelector: {}`
     # default plus the template and README lines that go with it. Scanning the
     # raw working tree therefore turns this assertion permanently red on any
     # checkout where the storage root has been rendered once - which, in the
-    # assert-invariants job, is guaranteed, because the NetworkPolicy step
-    # renders it first. k8s/storage/charts/ is .gitignored, so
+    # assert-invariants job, is guaranteed, because the storage steps render
+    # them first. Both `charts/` directories are .gitignored, so
     # `--exclude-standard` prunes it by construction.
     #
     # Tracked-only would have been simpler and was wrong: a new manifest is
@@ -760,11 +759,15 @@ assert_no_node_pinning_anywhere() {
     _ci_require kubectl helm || return 1
     _ci_rc=0
 
-    # THREE rendered roots, not one. The Ganesha StatefulSet is the pod whose
-    # placement mattered most in this work, and until now nothing inspected it:
-    # the rendered half only ever rendered the prod overlay, and the text half
-    # below asks git, which prunes the vendored chart under k8s/storage/charts/
-    # through .gitignore. k8s/overlays/ci/ was equally unseen, and it is what
+    # THREE rendered roots, not one: the prod overlay, the CI overlay and the CI
+    # NFS server in k8s/ci-storage/, whose vendored chart the text half below
+    # cannot see (git prunes it through .gitignore).
+    #
+    # The production storage root, k8s/storage/, is deliberately NOT among
+    # them. It holds two CSI node-plugin DaemonSets, which csi-driver-nfs
+    # restricts to `kubernetes.io/os: linux`. That selects an operating
+    # system, not a node, and a DaemonSet runs on every node it selects; it is
+    # not the pinning this check exists to keep out of the app's pods. k8s/overlays/ci/ was equally unseen, and it is what
     # the kind jobs actually apply - a nodeSelector reintroduced there would pin
     # every pod CI ever schedules while prod stayed clean.
     _ci_hits=""
@@ -883,7 +886,7 @@ assert_no_node_pinning_anywhere() {
         # Interpolating the variables meant an emptied one degraded the sentence
         # to "prod,  and k8s/storage", a double space being the only trace that
         # a third of the check had not run.
-        _ci_pass "no node pinning anywhere:${_ci_roots_scanned} all render none - the storage root is what covers the vendored Ganesha chart, which the text scan cannot see - and none of the $_ci_scanned files scanned under '$CI_ASSERT_PINNING_PATHS' references any (tracked + untracked; gitignored files are not scanned)"
+        _ci_pass "no node pinning anywhere:${_ci_roots_scanned} all render none - the CI storage root is what covers the vendored Ganesha chart, which the text scan cannot see - and none of the $_ci_scanned files scanned under '$CI_ASSERT_PINNING_PATHS' references any (tracked + untracked; gitignored files are not scanned)"
     fi
     return "$_ci_rc"
 }
@@ -1756,354 +1759,86 @@ CLEAN
     return 0
 }
 
-assert_storage_names_match_slug() {
-    # The storage root cannot take a namePrefix (kustomization.yaml explains
-    # why), so its names carry the app slug by hand. Several forks share one
-    # cluster: a fork that keeps the template's `template-app-` names applies
-    # its NFS server into the template's namespace and overwrites the
-    # cluster-scoped StorageClass, ClusterRole and provisioner of whichever
-    # fork applied first. Nothing failed on that before; every name was valid.
-    #
-    # The slug is the prod overlay's namePrefix without its trailing dash,
-    # which is what configure-k8s-deployment asks for first. Read from the
-    # source files rather than the rendered root: the comparison is between
-    # literals a human typed, and the render needs Helm for no gain here.
-    _ci_require yq || return 1
+assert_storage_class_contract() {
+    # Static. The workspace PVC in the base, the production StorageClass in
+    # k8s/storage/ (OpenStack Manila) and the CI stand-in in k8s/ci-storage/
+    # (Ganesha, for the kind jobs) are three files that must agree on one
+    # name, and the two classes on the mount the app gets. If the CI class
+    # drifted from the production one, every cross-node and restart assertion
+    # in the kind jobs would test a mount production never uses; if the PVC
+    # drifted from both, every app pod would sit Pending on a class nothing
+    # publishes.
+    _ci_require kubectl helm yq || return 1
     _ci_rc=0
 
-    _ci_prefix="$(yq '.namePrefix' "$CI_ASSERT_OVERLAY/kustomization.yaml" 2>/dev/null || true)"
-    if [ -z "$_ci_prefix" ] || [ "$_ci_prefix" = "null" ]; then
-        _ci_fail "$CI_ASSERT_OVERLAY/kustomization.yaml has no namePrefix - there is no slug to compare the storage names with"
+    _ci_want="$(yq 'select(.kind == "PersistentVolumeClaim") | .spec.storageClassName' \
+        "$CI_ASSERT_BASE/workspace-pvc.yaml" 2>/dev/null | grep -v '^---$' | grep -v '^null$' || true)"
+    _ci_modes="$(yq 'select(.kind == "PersistentVolumeClaim") | .spec.accessModes[]' \
+        "$CI_ASSERT_BASE/workspace-pvc.yaml" 2>/dev/null || true)"
+    if [ -z "$_ci_want" ]; then
+        _ci_fail "$CI_ASSERT_BASE/workspace-pvc.yaml names no storageClassName"
         return 1
     fi
-    _ci_slug="${_ci_prefix%-}"
-    _ci_root="$CI_ASSERT_STORAGE_ROOT"
-
-    # expected value | actual value | where it lives
-    _ci_checks="$(cat <<EOF_CHECKS
-${_ci_slug}-storage|$(yq '.namespace' "$_ci_root/kustomization.yaml")|namespace: in $_ci_root/kustomization.yaml
-${_ci_slug}-storage|$(yq '.helmCharts[0].namespace' "$_ci_root/kustomization.yaml")|helmCharts[0].namespace in $_ci_root/kustomization.yaml
-${_ci_slug}-storage|$(yq 'select(.kind == "Namespace") | .metadata.name' "$_ci_root/namespace.yaml")|metadata.name in $_ci_root/namespace.yaml
-${_ci_slug}-storage|$(yq 'select(.kind == "PersistentVolumeClaim") | .metadata.namespace' "$_ci_root/nfs-backing-pvc.yaml")|metadata.namespace in $_ci_root/nfs-backing-pvc.yaml
-${_ci_slug}-nfs-server|$(yq '.fullnameOverride' "$_ci_root/ganesha-values.yaml")|fullnameOverride in $_ci_root/ganesha-values.yaml
-cluster.local/${_ci_slug}-nfs-server|$(yq '.storageClass.provisionerName' "$_ci_root/ganesha-values.yaml")|storageClass.provisionerName in $_ci_root/ganesha-values.yaml
-${_ci_slug}-nfs|$(yq '.storageClass.name' "$_ci_root/ganesha-values.yaml")|storageClass.name in $_ci_root/ganesha-values.yaml
-${_ci_slug}-nfs|$(yq 'select(.kind == "PersistentVolumeClaim") | .spec.storageClassName' "$CI_ASSERT_BASE/workspace-pvc.yaml")|spec.storageClassName in $CI_ASSERT_BASE/workspace-pvc.yaml
-EOF_CHECKS
-)"
-    _ci_n=0
-    while IFS='|' read -r _ci_want _ci_got _ci_where; do
-        [ -n "$_ci_want" ] || continue
-        _ci_n=$((_ci_n + 1))
-        if [ "$_ci_got" != "$_ci_want" ]; then
-            _ci_fail "$_ci_where is '$_ci_got', expected '$_ci_want' (namePrefix '$_ci_prefix' in $CI_ASSERT_OVERLAY)"
-            _ci_rc=1
-        fi
-    done <<EOF_LOOP
-$_ci_checks
-EOF_LOOP
-
-    if [ "$_ci_n" -ne 8 ]; then
-        _ci_fail "compared $_ci_n storage names instead of 8 - the check itself is broken"
-        return 1
-    fi
-    if [ "$_ci_rc" -eq 0 ]; then
-        _ci_pass "all 8 storage names carry the slug '$_ci_slug' (namespace ${_ci_slug}-storage, StorageClass ${_ci_slug}-nfs, server ${_ci_slug}-nfs-server)"
-    fi
-    return "$_ci_rc"
-}
-
-assert_netpol_string_matches_overlay() {
-    # The storage root is deliberately prefix-free and cannot see the prod
-    # overlay's commonLabels, so the NetworkPolicy that opens 2049 has to
-    # hardcode both the `app` value and the namespace it admits. Drift shows up
-    # as a mount that hangs at 3am rather than as a lint error, so it is checked
-    # here, where it costs nothing.
-    #
-    # Comparing the `app` literal alone is not enough, and every gap below has
-    # been mutation-tested against this tree:
-    #
-    #   - splitting namespaceSelector and podSelector into two `from` elements
-    #     turns the AND into an OR, which admits every pod in `openms` (NuXL
-    #     included) and every pod anywhere carrying the label. Both selectors
-    #     therefore have to sit in ONE element.
-    #   - pointing namespaceSelector at another namespace breaks every real
-    #     mount while leaving the `app` string correct, so it is compared with
-    #     `namespace:` in k8s/base/kustomization.yaml.
-    #   - moving the port off 2049 silently closes the export, so the ports are
-    #     compared too - and a rule with no `ports` at all opens every port on
-    #     the server, which is worse than the drift being guarded against.
-    _ci_require kubectl helm jq yq || return 1
-    _ci_rc=0
-
-    _ci_expected="$(yq '.commonLabels.app' "$CI_ASSERT_OVERLAY/kustomization.yaml" 2>/dev/null || true)"
-    if [ -z "$_ci_expected" ] || [ "$_ci_expected" = "null" ]; then
-        _ci_fail "$CI_ASSERT_OVERLAY/kustomization.yaml has no commonLabels.app - there is nothing for the NetworkPolicy to match"
-        return 1
-    fi
-    _ci_expected_ns="$(yq '.namespace' "$CI_ASSERT_BASE/kustomization.yaml" 2>/dev/null || true)"
-    if [ -z "$_ci_expected_ns" ] || [ "$_ci_expected_ns" = "null" ]; then
-        _ci_fail "$CI_ASSERT_BASE/kustomization.yaml sets no namespace - there is nothing for the NetworkPolicy's namespaceSelector to match"
-        return 1
+    if [ "$_ci_modes" != "ReadWriteMany" ]; then
+        _ci_fail "$CI_ASSERT_BASE/workspace-pvc.yaml asks for '$(printf '%s' "$_ci_modes" | tr '\n' ' ')', not ReadWriteMany alone; its pods would be back to sharing one node"
+        _ci_rc=1
     fi
 
-    # stdout and stderr to separate files: helm and kustomize both warn on
-    # stderr, and a warning folded into the rendered stream would be parsed as
-    # part of the manifests.
-    _ci_rendered="$(mktemp)"
+    _ci_prod="$(mktemp)"
+    _ci_ci="$(mktemp)"
     _ci_err="$(mktemp)"
-    if ! _ci_kustomize_storage > "$_ci_rendered" 2>"$_ci_err"; then
+    if ! kubectl kustomize --enable-helm "$CI_ASSERT_PROD_STORAGE_ROOT" > "$_ci_prod" 2>"$_ci_err"; then
+        _ci_fail "kubectl kustomize --enable-helm $CI_ASSERT_PROD_STORAGE_ROOT failed"
+        cat "$_ci_err" >&2 || true
+        rm -f "$_ci_prod" "$_ci_ci" "$_ci_err"
+        return 1
+    fi
+    if ! _ci_kustomize_storage > "$_ci_ci" 2>"$_ci_err"; then
         _ci_fail "kubectl kustomize --enable-helm $CI_ASSERT_STORAGE_ROOT failed"
         cat "$_ci_err" >&2 || true
-        rm -f "$_ci_rendered" "$_ci_err"
+        rm -f "$_ci_prod" "$_ci_ci" "$_ci_err"
         return 1
     fi
     rm -f "$_ci_err"
-    if [ ! -s "$_ci_rendered" ]; then
-        _ci_fail "$CI_ASSERT_STORAGE_ROOT rendered nothing - the label check would pass vacuously"
-        rm -f "$_ci_rendered"
-        return 1
-    fi
 
-    if ! grep -q '^kind: NetworkPolicy' "$_ci_rendered"; then
-        _ci_fail "$CI_ASSERT_STORAGE_ROOT renders no NetworkPolicy at all, so the export is open to every pod in the cluster"
-        rm -f "$_ci_rendered"
-        return 1
-    fi
-
-    # One JSON document per line, then jq into tagged rows: RULE per ingress
-    # rule, FROM per peer, PORT per port. A peer is flattened to
-    # <namespace-or-dash> <app-or-dash> <cidr-or-dash>, which is what makes the
-    # AND/OR distinction visible - two peers show up as two FROM rows, each with
-    # half of the pair missing.
-    _ci_rows="$(yq -o=json -I=0 '.' "$_ci_rendered" 2>/dev/null | jq -r '
-        select(.kind == "NetworkPolicy")
-        | .metadata.name as $n
-        | (.spec.ingress // []) as $rules
-        | $rules[]
-        | . as $r
-        | "RULE\t\($n)\t\(($r.from // []) | length)\t\(($r.ports // []) | length)",
-          (($r.from // [])[]
-           | "FROM\t\($n)\t\(if has("namespaceSelector") then (.namespaceSelector.matchLabels["kubernetes.io/metadata.name"] // "<any>") else "-" end)\t\(if has("podSelector") then (.podSelector.matchLabels.app // "<any>") else "-" end)\t\(if has("ipBlock") then (.ipBlock.cidr // "<any>") else "-" end)"),
-          (($r.ports // [])[]
-           | "PORT\t\($n)\t\(.protocol // "TCP")\t\(.port)")
-    ' 2>/dev/null || true)"
-    rm -f "$_ci_rendered"
-
-    if [ -z "$_ci_rows" ]; then
-        _ci_fail "$CI_ASSERT_STORAGE_ROOT renders NetworkPolicies but not one ingress rule, so nothing can reach 2049 and every mount hangs"
-        return 1
-    fi
-    printf '%s\n' "$_ci_rows"
-
-    # Every rule has to name its ports. A rule with `from` but no `ports` opens
-    # the whole pod, not just NFS.
-    _ci_bad="$(printf '%s\n' "$_ci_rows" | awk -F'\t' '$1 == "RULE" && $3 > 0 && $4 == 0 { print $2 }')"
-    if [ -n "$_ci_bad" ]; then
-        _ci_fail "these NetworkPolicy rules admit traffic on every port, not just NFS: $(printf '%s' "$_ci_bad" | tr '\n' ' ')"
-        _ci_rc=1
-    fi
-
-    # Ports: TCP 2049 and nothing else.
-    _ci_bad="$(printf '%s\n' "$_ci_rows" | awk -F'\t' '$1 == "PORT" && !($3 == "TCP" && $4 == "2049") { printf "%s/%s ", $3, $4 }')"
-    if [ -n "$_ci_bad" ]; then
-        _ci_fail "the storage NetworkPolicy opens $_ci_bad; NFSv4.1 needs TCP 2049 and only 2049, and anything else is either a hole or a mount that cannot connect"
-        _ci_rc=1
-    fi
-
-    # Peers that carry a podSelector must carry a namespaceSelector in the SAME
-    # element, and vice versa. An element with only one of the two is an OR in
-    # disguise.
-    _ci_bad="$(printf '%s\n' "$_ci_rows" | awk -F'\t' '$1 == "FROM" && $5 == "-" && $3 == "-" && $4 != "-" { printf "app=%s ", $4 }')"
-    if [ -n "$_ci_bad" ]; then
-        _ci_fail "the storage NetworkPolicy admits $_ci_bad from ANY namespace - the namespaceSelector and podSelector have to share one 'from' element, or they are ORed"
-        _ci_rc=1
-    fi
-    _ci_bad="$(printf '%s\n' "$_ci_rows" | awk -F'\t' '$1 == "FROM" && $5 == "-" && $3 != "-" && $4 == "-" { printf "%s ", $3 }')"
-    if [ -n "$_ci_bad" ]; then
-        _ci_fail "the storage NetworkPolicy admits EVERY pod in namespace $_ci_bad, which on the de.NBI cluster includes app=nuxl-app and hands it root over every workspace"
-        _ci_rc=1
-    fi
-
-    # Values, for the peers that pair the two selectors up.
-    _ci_apps="$(printf '%s\n' "$_ci_rows" | awk -F'\t' '$1 == "FROM" && $4 != "-" { print $4 }' | sort -u)"
-    if [ -z "$_ci_apps" ]; then
-        _ci_fail "$CI_ASSERT_STORAGE_ROOT renders NetworkPolicies, but none of them admits clients by their 'app' label - nothing can be compared with $CI_ASSERT_OVERLAY"
-        _ci_rc=1
-    else
-        _ci_bad="$(printf '%s\n' "$_ci_apps" | grep -Fxv -- "$_ci_expected" || true)"
-        if [ -n "$_ci_bad" ]; then
-            _ci_fail "the storage NetworkPolicy admits app='$(printf '%s' "$_ci_bad" | tr '\n' ' ')' but $CI_ASSERT_OVERLAY labels its pods app='$_ci_expected', so those pods cannot reach 2049"
+    for _ci_pair in "$CI_ASSERT_PROD_STORAGE_ROOT|$_ci_prod" "$CI_ASSERT_STORAGE_ROOT|$_ci_ci"; do
+        _ci_root="${_ci_pair%%|*}"
+        _ci_file="${_ci_pair#*|}"
+        _ci_sc="select(.kind == \"StorageClass\" and .metadata.name == \"$_ci_want\")"
+        if [ -z "$(yq "$_ci_sc | .metadata.name" "$_ci_file" | grep -v '^---$' || true)" ]; then
+            _ci_fail "$_ci_root publishes no StorageClass '$_ci_want', which $CI_ASSERT_BASE/workspace-pvc.yaml claims (it has: $(yq 'select(.kind == "StorageClass") | .metadata.name' "$_ci_file" | grep -v '^---$' | tr '\n' ' '))"
+            _ci_rc=1
+            continue
+        fi
+        _ci_reclaim="$(yq "$_ci_sc | .reclaimPolicy" "$_ci_file" | grep -v '^---$' || true)"
+        if [ "$_ci_reclaim" != "Retain" ]; then
+            _ci_fail "$_ci_root: StorageClass '$_ci_want' reclaims with '${_ci_reclaim:-Delete}', not Retain; deleting the PVC would delete every workspace with it"
             _ci_rc=1
         fi
-    fi
-
-    _ci_found_ns="$(printf '%s\n' "$_ci_rows" | awk -F'\t' '$1 == "FROM" && $3 != "-" { print $3 }' | sort -u)"
-    if [ -n "$_ci_found_ns" ]; then
-        _ci_bad="$(printf '%s\n' "$_ci_found_ns" | grep -Fxv -- "$_ci_expected_ns" || true)"
-        if [ -n "$_ci_bad" ]; then
-            _ci_fail "the storage NetworkPolicy admits clients from namespace '$(printf '%s' "$_ci_bad" | tr '\n' ' ')' but $CI_ASSERT_BASE/kustomization.yaml deploys the app into '$_ci_expected_ns', so no real client matches"
-            _ci_rc=1
-        fi
-    fi
-
-    # The node rule is informational here: kubelet-side mounts come from a node
-    # address, so its CIDR is cluster-specific and cannot be derived from the
-    # manifests. Print it, and say so when it is still the shipped placeholder.
-    _ci_cidrs="$(printf '%s\n' "$_ci_rows" | awk -F'\t' '$1 == "FROM" && $5 != "-" { print $5 }' | sort -u)"
-    if [ -z "$_ci_cidrs" ]; then
-        _ci_fail "$CI_ASSERT_STORAGE_ROOT admits no ipBlock on 2049. The provisioner emits in-tree 'nfs:' PVs, which the kubelet mounts from the node's own address - that matches no podSelector, so on a policy-enforcing CNI every mount hangs"
-        _ci_rc=1
-    else
-        printf 'storage NetworkPolicy admits nodes in: %s\n' "$(printf '%s' "$_ci_cidrs" | tr '\n' ' ')"
-        if printf '%s\n' "$_ci_cidrs" | grep -q '^192\.0\.2\.'; then
-            printf 'NOTE: that is RFC 5737 TEST-NET-1, the shipped placeholder. Set it to the cluster node CIDR before deploying, or every mount will hang (k8s/storage/networkpolicy.yaml).\n'
-        fi
-
-        # Breadth. Until now the only failure here was an EMPTY set, so the most
-        # dangerous possible value passed: 0.0.0.0/0 kept this green AND removed
-        # the placeholder NOTE above, which only matches ^192\.0\.2\. - the worst
-        # setting produced a quieter log than the safe one.
-        #
-        # The export is no_root_squash, so a range wide enough to contain the pod
-        # network hands every pod in the cluster root over every workspace. That
-        # hazard is stated in k8s/storage/networkpolicy.yaml and was asserted by
-        # nothing.
-        #
-        # A prefix-length threshold, deliberately NOT an "warn on non-RFC1918"
-        # rule: pod networks ARE RFC1918 - kind defaults to 10.244.0.0/16 - so
-        # that rule would stay silent on 10.0.0.0/8, the most dangerous realistic
-        # value, while firing on the harmless TEST-NET-1 placeholder. It inverts
-        # the hazard. /12 is a judgement call; real node ranges are /16 or
-        # tighter and networkpolicy.yaml recommends one /32 per node.
-        #
-        # This bounds WIDTH, not overlap. A node rule set to exactly the pod
-        # CIDR (kind: 10.244.0.0/16) is /16 and passes here. Deciding overlap
-        # needs the cluster's actual pod and service networks, so it belongs in
-        # a kind-job assertion rather than this manifest-only one; what this
-        # catches is the realistic error, someone widening the range "to cover
-        # everything" - and 10.0.0.0/8 does contain the pod network.
-        _ci_broad=""
-        for _ci_cidr in $_ci_cidrs; do
-            case "$_ci_cidr" in
-                *:*) continue ;;   # IPv6: a threshold calibrated for IPv4 says
-                                   # nothing useful about a /48 or a /64.
-                */*) : ;;
-                *)   _ci_fail "the storage NetworkPolicy admits ipBlock '$_ci_cidr', which is not CIDR notation"
-                     _ci_rc=1
-                     continue ;;
+        _ci_opts="$(yq "$_ci_sc | .mountOptions[]" "$_ci_file" | grep -v '^---$' | sort | tr '\n' ' ')"
+        case " $_ci_opts " in
+            *" soft "*) _ci_fail "$_ci_root: '$_ci_want' mounts soft; a server restart would truncate in-flight writes"; _ci_rc=1 ;;
+        esac
+        for _ci_o in hard nfsvers=3 nconnect=4; do
+            case " $_ci_opts " in
+                *" $_ci_o "*) ;;
+                *) _ci_fail "$_ci_root: '$_ci_want' does not set mount option '$_ci_o' (has: $_ci_opts)"; _ci_rc=1 ;;
             esac
-            _ci_prefix="${_ci_cidr##*/}"
-            case "$_ci_prefix" in
-                ''|*[!0-9]*)
-                     _ci_fail "the storage NetworkPolicy admits ipBlock '$_ci_cidr', whose prefix length is not a number"
-                     _ci_rc=1
-                     continue ;;
-            esac
-            if [ "$_ci_prefix" -lt 12 ]; then
-                _ci_broad="$_ci_broad $_ci_cidr"
-            fi
         done
-        if [ -n "$_ci_broad" ]; then
-            _ci_fail "the storage NetworkPolicy admits$_ci_broad on 2049, which is wide enough to contain the pod network. The export is no_root_squash, so that gives every pod in the cluster root over every workspace - name the nodes' own addresses instead (one /32 per node is fine)"
-            _ci_rc=1
-        fi
-    fi
-
-    if [ "$_ci_rc" -eq 0 ]; then
-        # The node rule is named rather than left out. "admits exactly
-        # app=<slug>" was an over-claim: the same policy set also admits a raw
-        # ipBlock, which this function bounds but cannot verify against the real
-        # cluster - only assert_netpol_admits_every_node can do that.
-        _ci_pass "the storage NetworkPolicy admits app='$_ci_expected' in namespace '$_ci_expected_ns', ANDed in one peer, on TCP 2049 alone, plus ipBlock $(printf '%s' "$_ci_cidrs" | tr '\n' ' ') for kubelet mounts"
-    fi
-    return "$_ci_rc"
-}
-
-assert_netpol_admits_every_node() {
-    # The runtime companion to assert_netpol_string_matches_overlay, which can
-    # only note that the shipped node CIDR is a placeholder - it reads
-    # manifests, and a node address cannot be derived from a manifest.
-    #
-    # This one has a cluster, so it can answer the question that actually
-    # decides whether the storage tier works: is every node's kubelet allowed
-    # to reach 2049? The provisioner emits in-tree `nfs:` PVs, which the
-    # KUBELET mounts from the node's own address in the host network namespace.
-    # That matches no podSelector, so on a policy-enforcing CNI the only thing
-    # standing between a worker and an indefinitely hanging mount is an ipBlock
-    # covering its node - and the value shipped in networkpolicy.yaml is RFC
-    # 5737 TEST-NET-1, which covers nothing.
-    #
-    # Without this, the CI rewrite that patches that CIDR is an unverified sed:
-    # if its target string ever moves, the rewrite no-ops and the suite fails
-    # forty minutes later as a Deployment availability timeout that names
-    # nothing.
-    _ci_require kubectl jq python3 || return 1
-    _ci_rc=0
-
-    # Rules are filtered by PORT before their CIDRs are collected. Reading
-    # `.from[].ipBlock.cidr` without descending into the sibling `.ports` -
-    # and flattening across every policy in the namespace while doing it -
-    # produces a check whose PASS string claims 2049 without ever having
-    # looked at a port. It is accidentally right on today's single-rule
-    # policy; change `port: 2049` to 111, or add any unrelated policy with a
-    # broad ipBlock, and it still reports "admitted on 2049" while every
-    # cross-node mount hangs. That is exactly the forty-minute Deployment
-    # timeout this assertion exists to pre-empt.
-    #
-    # A rule with no `ports` at all means all ports, so it is kept. `endPort`
-    # ranges and named ports are dropped by the equality: fail-safe, since the
-    # result is a spurious red rather than a false green.
-    _ci_cidrs="$(kubectl get networkpolicy -n "$CI_ASSERT_STORAGE_NS" -o json 2>/dev/null \
-        | jq -r '[.items[].spec.ingress[]?
-                  | select((.ports // []) | length == 0
-                           or any(.[]?; (.port == 2049) and ((.protocol // "TCP") == "TCP")))
-                  | .from[]?.ipBlock.cidr // empty] | .[]' || true)"
-    # jq's stderr is deliberately NOT redirected to /dev/null. A syntax error in
-    # the filter above produces empty output, which lands in the branch below
-    # and blames the manifests - sending whoever reads it to networkpolicy.yaml
-    # when the defect is in this file. Nothing catches that earlier either:
-    # `bash -n` and `shellcheck` do not parse an embedded jq program.
-    if [ -z "$_ci_cidrs" ]; then
-        _ci_fail "the NetworkPolicies in $CI_ASSERT_STORAGE_NS admit no ipBlock on TCP 2049, so no kubelet can mount the share (if jq printed a parse error above, the fault is this filter, not the manifests)"
-        return 1
-    fi
-
-    _ci_nodes="$(kubectl get nodes \
-        -o jsonpath='{range .items[*]}{.status.addresses[?(@.type=="InternalIP")].address}{"\n"}{end}' \
-        2>/dev/null || true)"
-    if [ -z "$_ci_nodes" ]; then
-        _ci_fail "could not read any node InternalIP; cannot tell whether the storage NetworkPolicy admits them"
-        return 1
-    fi
-
-    # python3 rather than shell arithmetic: these are CIDRs, and a prefix-length
-    # comparison written in awk is exactly the kind of thing that silently
-    # passes on /16 and fails on /12.
-    _ci_missing=""
-    for _ci_n in $_ci_nodes; do
-        if ! CI_NODE_IP="$_ci_n" CI_CIDRS="$_ci_cidrs" python3 -c '
-import ipaddress, os, sys
-ip = ipaddress.ip_address(os.environ["CI_NODE_IP"])
-for c in os.environ["CI_CIDRS"].split():
-    try:
-        if ip in ipaddress.ip_network(c, strict=False):
-            sys.exit(0)
-    except ValueError:
-        continue
-sys.exit(1)
-' 2>/dev/null; then
-            _ci_missing="$_ci_missing $_ci_n"
+        if [ "$_ci_root" = "$CI_ASSERT_PROD_STORAGE_ROOT" ]; then
+            _ci_prod_opts="$_ci_opts"
+        else
+            _ci_ci_opts="$_ci_opts"
         fi
     done
+    rm -f "$_ci_prod" "$_ci_ci"
 
-    if [ -n "$_ci_missing" ]; then
-        _ci_fail "node InternalIP(s) not admitted on 2049 by the storage NetworkPolicy, so their kubelets cannot mount the workspace share:$_ci_missing (policy admits: $(printf '%s' "$_ci_cidrs" | tr '\n' ' '))"
+    if [ "$_ci_rc" -eq 0 ] && [ "${_ci_prod_opts:-}" != "${_ci_ci_opts:-}" ]; then
+        _ci_fail "the CI stand-in mounts with '${_ci_ci_opts:-}' but production with '${_ci_prod_opts:-}'; the kind jobs would test a mount production never uses"
         _ci_rc=1
     fi
-
     if [ "$_ci_rc" -eq 0 ]; then
-        _ci_pass "every node InternalIP is admitted on 2049 by the storage NetworkPolicy: $(printf '%s' "$_ci_cidrs" | tr '\n' ' ')"
+        _ci_pass "workspace PVC, $CI_ASSERT_PROD_STORAGE_ROOT and $CI_ASSERT_STORAGE_ROOT agree: ReadWriteMany on '$_ci_want', Retain, mount options ${_ci_prod_opts}"
     fi
     return "$_ci_rc"
 }

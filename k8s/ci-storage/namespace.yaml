@@ -1,0 +1,10 @@
+# Ganesha needs DAC_READ_SEARCH and SYS_RESOURCE, so its namespace runs at the
+# `privileged` Pod Security level. CI only; see kustomization.yaml.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ci-storage
+  labels:
+    app.kubernetes.io/part-of: openms-streamlit
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/enforce-version: v1.28

@@ -1,0 +1,68 @@
+# Helm values for the CI NFS server (nfs-server-provisioner 1.8.0, appVersion
+# 4.0.8). CI only; see kustomization.yaml.
+
+# `app: nfs-server` is the label the restart assertions in
+# .github/scripts/ci-assertions.sh address the server pod by.
+nameOverride: nfs-server
+fullnameOverride: ci-nfs-server
+
+# One pod over one ReadWriteOnce backing claim. The chart renders a
+# StatefulSet, so a restart terminates the old pod before the new one starts.
+replicaCount: 1
+
+image:
+  repository: registry.k8s.io/sig-storage/nfs-provisioner
+  # Digest-pinned. This Ganesha predates 9.11 and answers the directory
+  # delegation requests of Linux 6.19+ clients with EREMOTEIO, which is why the
+  # kind jobs switch `nfsv4 directory_delegations` off on the runner.
+  tag: v4.0.8
+  digest: sha256:c825f3d5e28bde099bd7a3daace28772d412c9157ad47fa752a9ad0baafc118d
+  pullPolicy: IfNotPresent
+
+# File handles from the export ids in vfs.conf on the backing volume, not from
+# the device minor, so clients do not ESTALE when the server pod restarts.
+# assert_stable_identity_across_restart depends on it.
+extraArgs:
+  device-based-fsids: "false"
+
+persistence:
+  enabled: true
+  existingClaim: nfs-server-data
+
+storageClass:
+  create: true
+  # The same name as the production class in k8s/storage/storageclass.yaml,
+  # so k8s/base/workspace-pvc.yaml binds unchanged in CI.
+  # assert_storage_class_contract checks the two agree.
+  name: openms-manila-nfs
+  defaultClass: false
+  provisionerName: cluster.local/ci-nfs-server
+  reclaimPolicy: Retain
+  allowVolumeExpansion: null
+  # The same client options as production, so the cross-node and restart
+  # assertions run against the mount the app really gets.
+  mountOptions:
+    - hard
+    - nfsvers=3
+    - nconnect=4
+    - retrans=2
+    - timeo=30
+
+rbac:
+  create: true
+
+securityContext:
+  capabilities:
+    add:
+      - DAC_READ_SEARCH
+      - SYS_RESOURCE
+
+# requests == limits, so the server is Guaranteed QoS and not the first pod the
+# kernel kills under node memory pressure.
+resources:
+  requests:
+    cpu: "1"
+    memory: 4Gi
+  limits:
+    cpu: "1"
+    memory: 4Gi

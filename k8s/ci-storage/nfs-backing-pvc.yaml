@@ -1,0 +1,21 @@
+# Backing volume of the CI NFS server, on kind's own `standard` class.
+#
+# nfs-provisioner statfs()es /export on every provision and refuses any claim
+# larger than the export's free space, so this has to stay above the 1Gi the
+# kind jobs shrink the workspace claim to, and below what a runner disk has
+# free.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nfs-server-data
+  namespace: ci-storage
+  labels:
+    app.kubernetes.io/part-of: openms-streamlit
+    app.kubernetes.io/component: nfs-server
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: standard
+  resources:
+    requests:
+      storage: 8Gi

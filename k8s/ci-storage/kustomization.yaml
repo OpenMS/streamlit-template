@@ -1,0 +1,36 @@
+# CI stand-in for the production storage tier. Applied by the kind jobs in
+# .github/workflows/build-and-test.yml only - never on a real cluster.
+#
+# Production gets ReadWriteMany from OpenStack Manila (k8s/storage/), which a
+# kind cluster on a GitHub runner cannot reach. This root gives the kind
+# cluster the same contract the app relies on - a StorageClass called
+# `openms-manila-nfs` that hands out NFSv3 ReadWriteMany volumes, mounted
+# `hard` - by running one NFS-Ganesha server inside the cluster. The workspace
+# PVC in k8s/base therefore binds unchanged in both places, and the cross-node
+# assertions in .github/scripts/ci-assertions.sh exercise real NFS mounts on
+# two nodes.
+#
+# Rendering needs Helm 3 on PATH, because of the `helmCharts` block:
+#
+#   kubectl kustomize --enable-helm k8s/ci-storage/ | kubectl apply -f -
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: ci-storage
+
+resources:
+  - namespace.yaml
+  - nfs-backing-pvc.yaml
+
+helmCharts:
+  # kubernetes-sigs/nfs-ganesha-server-and-external-provisioner, pinned: an
+  # unpinned chart re-resolves on every render, and the chart's `master`
+  # carries an appVersion whose image was never published.
+  - name: nfs-server-provisioner
+    repo: https://kubernetes-sigs.github.io/nfs-ganesha-server-and-external-provisioner/
+    version: 1.8.0
+    releaseName: nfs-server
+    # Also set here, not only in the transformer above: the chart renders
+    # `.Release.Namespace` into its RBAC subjects.
+    namespace: ci-storage
+    valuesFile: ganesha-values.yaml
