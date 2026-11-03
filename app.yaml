@@ -56,7 +56,7 @@ deploy:
   k8s:
     enabled: true
     hosts: [template.webapps.openms.de, template.webapps.openms.org]
-    storage: 500Gi
+    storage: 400Gi
     worker_tier: low
   docker_compose: true
   desktop: [windows]

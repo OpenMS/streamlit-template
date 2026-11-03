@@ -1,0 +1,86 @@
+# Storage tier: one Ganesha NFS server re-exporting a single ReadWriteOnce
+# Cinder volume as ReadWriteMany, so streamlit, the rq-workers and the nightly
+# cleanup CronJob can be placed on any node by the scheduler instead of all
+# being pinned to whichever node the Cinder volume happens to be attached to.
+#
+# This is a SEPARATE kustomize root, applied on its own. It is deliberately not
+# a component of k8s/base and is not referenced from k8s/overlays/prod:
+#
+#   - k8s/base sets `namespace: openms`. Components inherit their parent's
+#     transformers, and the namespace transformer runs *after* patches, so a
+#     per-object namespace set from inside the base tree gets clobbered - these
+#     objects would end up back in `openms`, which is exactly what the storage
+#     split exists to prevent (see k8s/storage/namespace.yaml).
+#   - No `namePrefix` here. `persistence.existingClaim` in the Ganesha values
+#     is an opaque string that kustomize does not rewrite, so a prefix
+#     transformer would rename the backing claim out from under the server and
+#     leave the pod Pending on a claim that does not exist.
+#
+# That does NOT mean the names are generic. Several forks of this template
+# share the de.NBI cluster, so the names below carry the app prefix by hand
+# instead of by transformer. FORKING THIS TEMPLATE: change `template-app-` to
+# your own slug in all of the following, together. docs/kubernetes-deployment.md
+# step 4c has the same list as a table.
+#
+#   1. `namespace:` below, twice (the transformer and the helmCharts entry)
+#   2. `metadata.name` in namespace.yaml, and `metadata.namespace` in
+#      nfs-backing-pvc.yaml
+#   3. `fullnameOverride` and `storageClass.provisionerName` in
+#      ganesha-values.yaml - these name the ClusterRole, the ClusterRoleBinding
+#      and the provisioner, all of which are cluster scoped
+#   4. `storageClass.name` in ganesha-values.yaml, which is cluster scoped too,
+#      and must keep matching `storageClassName` in k8s/base/workspace-pvc.yaml
+#
+# Also hand-synced, but from the prod overlay rather than from here: the
+# `app: template-app` literal in networkpolicy.yaml, which CI asserts against
+# `commonLabels.app`.
+#
+# Rendering this root needs Helm on PATH, because of the `helmCharts` block:
+#
+#   kubectl kustomize --enable-helm k8s/storage/
+#   kubectl kustomize --enable-helm k8s/storage/ | kubectl apply -f -
+#
+# `kubectl apply -k` accepts no --enable-helm flag, so the pipe above is the
+# way to apply this root - and it is what CI has to run, since a storage root
+# CI never applies strands every pod in `openms` on a claim nothing serves.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Applies to every object below, the Helm-inflated ones included. The Namespace
+# object itself is cluster scoped; its name already matches, so the transformer
+# is a no-op there rather than a rename.
+namespace: template-app-storage
+
+resources:
+  - namespace.yaml
+  - nfs-backing-pvc.yaml
+  - networkpolicy.yaml
+
+helmCharts:
+  # kubernetes-sigs/nfs-ganesha-server-and-external-provisioner. Chosen over a
+  # hand-rolled Deployment plus export ConfigMap for one specific reason: the
+  # chart's provisioner keeps its export ids in `vfs.conf` on the *backing
+  # volume*, so they survive the pod. That, with `device-based-fsids: false`
+  # in the values, is what keeps NFS file handles stable across a restart -
+  # without it clients ESTALE the first time the pod moves, typically weeks
+  # later and with no obvious link to the change that caused it.
+  #
+  # `version` is pinned: an unpinned chart re-resolves on every render, and a
+  # chart bump that changed the export layout would look like a redeploy.
+  #
+  # `releaseName` feeds the chart's object names and its `release:` label. The
+  # chart's default naming is `<releaseName>-nfs-server-provisioner` unless the
+  # values set `fullnameOverride`, which they do - nothing in this file can
+  # supply it. The storage runbook addresses the server by its
+  # `app: nfs-server`
+  # label rather than by object name, so it is unaffected by that override.
+  - name: nfs-server-provisioner
+    repo: https://kubernetes-sigs.github.io/nfs-ganesha-server-and-external-provisioner/
+    version: 1.8.0
+    releaseName: nfs-server
+    # Also set here, not only in the transformer above: the chart renders
+    # `.Release.Namespace` into its RBAC subjects, and a chart that resolved it
+    # to `default` would be repaired by the transformer only where kustomize
+    # knows to look.
+    namespace: template-app-storage
+    valuesFile: ganesha-values.yaml

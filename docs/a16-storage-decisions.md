@@ -1,8 +1,3 @@
-> **Historical.** The NFS-Ganesha storage tier this document describes (`k8s/storage/`)
-> was removed in November 2026. The template now uses one `ReadWriteOnce`
-> `cinder-csi` volume with every pod pinned to a memory-tier node, as the apps do
-> (see `docs/kubernetes-deployment.md`). Kept as the record of that work.
-
 > **What this is.** The decision record behind the NFS-Ganesha storage tier —
 > what was chosen, what was rejected, and why. Manifest comments in `k8s/storage/`
 > cite it by decision number when a value is deliberate rather than arbitrary.

@@ -76,7 +76,7 @@ spec:
       volumes:
         - name: workspaces
           persistentVolumeClaim:
-            claimName: workspaces-pvc
+            claimName: workspaces-nfs-pvc
         - name: config
           configMap:
             name: streamlit-config

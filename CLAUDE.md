@@ -43,8 +43,13 @@ pylint $(git ls-files '*.py') --disable=C0103,C0114,C0301,C0411,W0212,W0631,W060
 # Docker (full image: OpenMS + TOPP tools; Dockerfile_simple: pyOpenMS only)
 docker-compose up -d --build
 
-# Kubernetes
+# Kubernetes. TWO roots, and the storage one goes first: it publishes the
+# StorageClass workspace-pvc.yaml claims, so applying the overlay alone leaves
+# every pod Pending. `apply -k` has no --enable-helm flag, hence the pipe.
 kubectl kustomize k8s/overlays/prod/          # render + validate
+kubectl kustomize --enable-helm k8s/storage/  # render + validate (needs helm)
+
+kubectl kustomize --enable-helm k8s/storage/ | kubectl apply -f -
 kubectl apply -k k8s/overlays/prod/
 ```
 
@@ -75,7 +80,8 @@ src/
   view.py, fileupload.py  # pyOpenMS plotting + mzML upload for the simple pages
 utils/                    # Streamlit-free helpers (FASTA, digest) used by content/digest.py
 docs/                     # Markdown rendered in-app by content/documentation.py
-k8s/                      # Kustomize base + memory-tier components + prod overlay
+k8s/                      # Kustomize base + worker-size components + prod overlay
+k8s/storage/              # SEPARATE root: NFS-Ganesha serving the RWX workspace volume
 docker/entrypoint.sh      # THE container entrypoint (redis + rq workers + streamlit [+ nginx])
 ```
 
@@ -246,7 +252,7 @@ Downstream apps also use **OpenMS-Insight** (`Table`, `LinePlot`, `Heatmap`, `Vo
 - `test_gui.py::test_documentation` parametrizes over the exact selectbox labels in `documentation.py` — **renaming a doc chapter breaks CI** unless both are updated.
 - **Desktop apps** (`.github/workflows/build-desktop-app.yaml`): the `openms` job (reusable `.github/workflows/openms.yml`, input `openms:`) decides release or build — a released version (`3.5.0`, or a release tag) is just downloaded later; any other `[owner/repo@]ref` is built from source on all three platforms (Windows: vcpkg presets if present, else OpenMS/contrib; macOS/Linux: `tools/ci` scripts), cached per commit SHA and uploaded as `openms-<platform>`. Then one `build` job, a matrix over Windows / macOS (arm64) / Linux, runs the same bash steps everywhere (Git Bash on Windows): `electron/scripts/stage-openms.sh` (the release's Windows installer / `.pkg` / `.deb`, or the built package as `OPENMS_PACKAGE`), `stage-python.sh` (python-build-standalone on all three), copy the app, then `package.sh` — the only platform-specific step (NSIS / signed+notarized dmg / AppImage) — and `install-app.sh` + `smoke-payload.js` + `smoke-app.js` + `e2e.js` against the installed app. Artifacts are `OpenMS-App-<platform>`; the `release` job attaches them.
 - Four Dockerfiles: `Dockerfile` (full, builds OpenMS `release/3.5.0` + TOPP tools from source) and `Dockerfile_simple` (pyOpenMS via pip only), each with an `.arm` variant. All use `docker/entrypoint.sh`.
-- Kubernetes: `k8s/base` → `k8s/components/memory-tier-{low,high}` → `k8s/overlays/prod` (sets `namePrefix`, GHCR image, Traefik hosts, `REDIS_URL`). The workspaces are one `ReadWriteOnce` cinder volume (`workspace-pvc.yaml`, `workspaces-pvc`), so every pod that mounts it runs on one node: each `memory-tier-*` component puts `nodeSelector: openms.de/memory-tier: <tier>` on every Deployment and the cleanup CronJob and sizes the single rq-worker (rolled with `maxSurge: 0`, since a surge worker would not fit next to the old one). CI validates with kubeconform and runs kind integration tests against both nginx and Traefik ingress; the kind jobs apply `k8s/overlays/ci/`, which is `prod` with the worker shrunk to fit a runner.
+- Kubernetes: `k8s/base` → `k8s/components/memory-tier-{low,high}` → `k8s/overlays/prod` (sets `namePrefix`, GHCR image, Traefik hosts, `REDIS_URL`), plus the separate `k8s/storage/` root. The `memory-tier-*` components are **pod sizing only** — a tier is how big a worker is, not which node it runs on, and `requests == limits` there is what makes the worker Guaranteed QoS. **Nothing in `k8s/` pins a pod to a node**: no `nodeSelector`, no `nodeName`, no `nodeAffinity`, no `openms.de/memory-tier` labels. The scheduler places pods, and `rq-worker` runs a fixed replica count spread over `kubernetes.io/hostname` with `maxSkew: 1`. CI validates with kubeconform, asserts those invariants statically (`.github/scripts/ci-assertions.sh`), and runs kind integration tests against both nginx and Traefik ingress; the kind jobs apply `k8s/overlays/ci/`, which is `prod` with the worker shrunk to fit a runner.
 - Env/secrets: `WORKSPACES_DIR`, `REDIS_URL`, `STREAMLIT_SERVER_COUNT` (>1 puts nginx in front of N Streamlit instances), and `st.secrets["admin"]["password"]` from `.streamlit/secrets.toml` (mounted at `/app/admin-secrets/secrets.toml` in k8s) gating save-as-demo.
 
 ## Repo skills in `.claude/skills/`
@@ -259,7 +265,7 @@ Twenty-five loadable skills live here, each as `<name>/SKILL.md` with YAML front
 
 ### App spec and template sync
 
-`app.yaml` (schema `utils/app_spec.schema.json`) says what an app is: identity, inputs, workflows as TOPP/python steps, result views by Insight role, deploy targets, and `sync.app_owned`, the files the app owns. `python -m utils.app_spec` validates it and checks it against `settings.json` (`app-name`, `online_deployment`), the prod overlay's `namePrefix`; `tests/test_app_spec.py` runs that. In the template it describes the example app and is the starting point for a new one.
+`app.yaml` (schema `utils/app_spec.schema.json`) says what an app is: identity, inputs, workflows as TOPP/python steps, result views by Insight role, deploy targets, and `sync.app_owned`, the files the app owns. `python -m utils.app_spec` validates it and checks it against `settings.json` (`app-name`, `online_deployment`), the prod overlay's `namePrefix` and the storage namespace; `tests/test_app_spec.py` runs that. In the template it describes the example app and is the starting point for a new one.
 
 `.github/workflows/template-sync.yml` runs weekly in every app (never in the template itself): it merges `template.branch` of `template.repository` from `app.yaml`, keeps the app's side of conflicts in app-owned files, and opens or updates one `template-sync` PR; a conflict in a template-owned file, or no common history, opens an issue instead. Set a `TEMPLATE_SYNC_TOKEN` secret (fine-grained PAT or GitHub App token with contents, pull-requests, issues and workflows write): the default `GITHUB_TOKEN` cannot push a merge that changes `.github/workflows/`, and PRs it opens do not trigger CI.
 

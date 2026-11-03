@@ -5,12 +5,55 @@ metadata:
   labels:
     component: rq-worker
 spec:
-  # One worker: the workspace volume is ReadWriteOnce and every pod that mounts
-  # it is pinned to one memory-tier node (k8s/components/memory-tier-*).
-  replicas: 1
-  # maxSurge 0: the worker is sized to most of a memory-tier node, so a surge
-  # replica stays Pending next to the old one ("Insufficient cpu") and the
-  # rollout runs into its progress deadline. Stop the old worker first.
+  # Two workers, not one. RQ runs one job per worker process, so `replicas: 1`
+  # serialised every workflow in a deployment however much hardware sat
+  # underneath it - and on the de.NBI pair the second node could not have been
+  # used anyway, because the memory-tier component pinned every Deployment to
+  # one labelled node and the workspace claim was ReadWriteOnce on a Cinder
+  # volume that attaches to exactly one node. Both of those are gone. This is
+  # the line that actually spends the second node.
+  #
+  # Fixed rather than autoscaled: each worker is Guaranteed QoS at whichever
+  # size k8s/components/memory-tier-*/worker-resources.yaml gives it, so N
+  # replicas reserve N times that size for as long as they run. The count is a
+  # capacity decision against real nodes - see the worker-size and
+  # worker-replica questions in .claude/skills/configure-k8s-deployment.md.
+  #
+  # 2 is one per node on the production pair, which is the point at which the
+  # spread constraint below has anything to do. A higher count is legal
+  # (maxSkew 1 permits 2/1 across two nodes) but only pays off where a node can
+  # hold two workers of this size at once. It is also the first configuration
+  # in which two workflow runs are genuinely concurrent: everything they share
+  # goes through the workspace volume, so a fork that adds shared mutable state
+  # outside it has no serialisation left to hide behind.
+  replicas: 2
+  # Explicit, because the default is wrong here in a way that only shows up
+  # once replicas > 1. RollingUpdate defaults to 25%/25%, which against 2
+  # replicas rounds to maxSurge 1 and maxUnavailable **0** (maxUnavailable
+  # rounds down, and the 0/0 fallback does not apply because surge is 1). A
+  # Deployment's Available condition needs `replicas - maxUnavailable` ready,
+  # so with 0 the whole Deployment goes non-Available the moment either worker
+  # is Pending or NotReady - and both of those are routine here rather than
+  # exceptional:
+  #   - whenUnsatisfiable: DoNotSchedule below parks a replica in Pending
+  #     during any node drain, since a cordoned node still counts as a domain
+  #     under the default nodeTaintsPolicy;
+  #   - the readinessProbe below fails every worker whose mount is blocked
+  #     during a routine Ganesha restart.
+  # Either would then hang `kubectl rollout status deployment/<slug>-rq-worker`
+  # and fail CI's `kubectl wait --for=condition=available`, turning a
+  # degradation that the design calls survivable into a blocked rollout.
+  #
+  # maxUnavailable 1: one worker down is a queue running at half rate, which is
+  # what "visible and recoverable" has to mean if it is to mean anything. That
+  # the OTHER replica is up is not weakened by this - it is asserted directly,
+  # against .spec.replicas, by assert_workers_spread_across_nodes.
+  #
+  # maxSurge 0: a surge replica needs a whole extra worker's worth of memory
+  # free somewhere, and these are Guaranteed pods sized to most of a node
+  # (180Gi in the high tier). Surging first would leave the new pod Pending on
+  # a cluster that has exactly enough room for the steady-state count, which is
+  # the normal case. Terminate-then-replace instead.
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -24,6 +67,50 @@ spec:
       labels:
         component: rq-worker
     spec:
+      # Spread the workers over nodes: one each until every node has one.
+      #
+      # maxSkew is measured over ELIGIBLE domains, which is why this had to
+      # wait for the nodeSelector deletion rather than shipping alongside it.
+      # With a selector matching exactly one node there is one eligible domain,
+      # every distribution has skew 0, and a constraint written here would have
+      # passed while changing nothing at all.
+      #
+      # DoNotSchedule, not ScheduleAnyway: soft spreading is a scoring
+      # preference the scheduler can trade away against other priorities, and a
+      # worker that usually spreads is a second node that is used right up
+      # until the day it matters.
+      #
+      # The cost is a Pending replica during node maintenance: with the default
+      # nodeTaintsPolicy a cordoned node still counts as a domain, so a drain
+      # parks the evicted worker in Pending rather than doubling it up on the
+      # survivor. That is visible in `kubectl get pods` and it clears when the
+      # node comes back - but only because `strategy.maxUnavailable` above is
+      # 1. At the default of 0 for this replica count the same Pending replica
+      # would take the Deployment out of Available and hang every subsequent
+      # `kubectl rollout status`, which is a blocked rollout, not a
+      # degradation. The two settings are a pair; changing one without the
+      # other is what makes this bite. Add `nodeTaintsPolicy: Honor` here
+      # (Kubernetes >= 1.27) if node maintenance becomes routine enough that
+      # even the Pending replica is unwelcome.
+      #
+      # The selector names `component` alone. The overlay's
+      # `commonLabels: {app: <slug>}` is copied into it by kustomize, whose
+      # commonLabels field specs reach
+      # topologySpreadConstraints/labelSelector/matchLabels with create: false
+      # (verified against the kustomize 5.7.1 built into kubectl). That scoping
+      # is load-bearing: every fork of this template deploys into the same
+      # `openms` namespace and topology spread counts pods per namespace, so
+      # without the app label one fork's workers would be counted against
+      # another's skew. A fork that drops commonLabels from its overlay loses
+      # that scoping, and the constraint starts balancing every rq-worker in
+      # the namespace as though they were all its own.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              component: rq-worker
       containers:
         - name: rq-worker
           image: openms-streamlit
@@ -81,7 +168,7 @@ spec:
           # activate` costs a few hundred ms of shell hooks on every probe, and
           # this is the same env the container command activates one screen up.
           #
-          # Timing, against the ~90s NFSv4 grace period an NFS server restart
+          # Timing, against the ~90s NFSv4 grace period a Ganesha restart
           # imposes - all I/O blocks until it ends, so the numbers have to
           # outlast it or every routine restart flaps the worker:
           #   inner timeout 15s  - a cold interpreter plus `import redis` is
@@ -137,7 +224,7 @@ spec:
       volumes:
         - name: workspaces
           persistentVolumeClaim:
-            claimName: workspaces-pvc
+            claimName: workspaces-nfs-pvc
         - name: config
           configMap:
             name: streamlit-config
