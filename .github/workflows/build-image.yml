@@ -52,11 +52,18 @@ on:
       free_disk_space:
         description: >-
           Reclaim runner disk before checkout. True for arm64, whose runner image
-          is tighter out of the box than the amd64 one; false for amd64, which is
-          how these two jobs behaved before they were merged into this file.
+          is tighter out of the box, and for the full amd64 image, whose export
+          no longer fits on a stock amd64 runner.
         required: false
         default: false
         type: boolean
+      openms_branch:
+        description: >-
+          OpenMS branch or tag the full image builds (OPENMS_BRANCH build arg),
+          e.g. v3.6.0 or develop. Empty keeps the Dockerfile's default.
+        required: false
+        default: ''
+        type: string
 
 env:
   # Restated, not inherited: a reusable workflow does not see the caller's `env`
@@ -118,7 +125,10 @@ jobs:
           file: ${{ inputs.dockerfile }}
           platforms: ${{ inputs.platform }}
           load: true
-          push: ${{ github.event_name != 'pull_request' }}
+          # A build of another OpenMS (openms_branch) is tested from the
+          # artifact below but never pushed, so it cannot replace the
+          # <ref>/<sha>/latest tags of the default build.
+          push: ${{ github.event_name != 'pull_request' && inputs.openms_branch == '' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           # provenance/attestations turn the pushed tag into a manifest list,
@@ -127,9 +137,16 @@ jobs:
           # image manifest.
           provenance: false
           cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME_LC }}/cache:${{ inputs.variant }}-${{ inputs.arch }}
-          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref={0}/{1}/cache:{2}-{3},mode=max', env.REGISTRY, env.IMAGE_NAME_LC, inputs.variant, inputs.arch) || '' }}
+          # A build of another OpenMS reads the cache but never writes it, so it
+          # cannot replace the default build's layers.
+          cache-to: ${{ github.event_name != 'pull_request' && inputs.openms_branch == '' && format('type=registry,ref={0}/{1}/cache:{2}-{3},mode=max', env.REGISTRY, env.IMAGE_NAME_LC, inputs.variant, inputs.arch) || '' }}
+          # The token reaches the Dockerfile as a BuildKit secret, never as a
+          # build argument, so it is not recorded in the image or the cache.
+          secrets: |
+            github_token=${{ secrets.GITHUB_TOKEN }}
           build-args: |
-            GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}
+            INSTALLER_REFRESH=${{ github.run_id }}
+            ${{ inputs.openms_branch != '' && format('OPENMS_BRANCH={0}', inputs.openms_branch) || '' }}
 
       - name: Retag for kind (image name the kustomize overlay points at)
         run: |
