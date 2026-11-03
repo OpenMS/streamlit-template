@@ -29,14 +29,18 @@ reclaimPolicy: Retain
 allowVolumeExpansion: true
 volumeBindingMode: Immediate
 parameters:
-  # CLUSTER-SPECIFIC: the name of the NFS share type, as Horizon lists it under
-  # Project > Share > Share Types (or `openstack share type list`).
-  type: default
+  # CLUSTER-SPECIFIC: the name of the NFS share type, as Horizon's Create
+  # Share dialog lists it. de.NBI Berlin (project WebApps1): `isilon-denbi`
+  # (`default` and `isilon-dmz` are the other two; dmz is for the project's
+  # DMZ network). No share network: the types do not handle share servers.
+  type: isilon-denbi
   # CLUSTER-SPECIFIC: who may mount the share. manila-csi adds this as an IP
-  # access rule on every share it creates. Set it to the subnet of the
-  # cluster's nodes; the default would be 0.0.0.0/0, i.e. anyone who can reach
-  # the export.
-  nfs-shareClient: 192.0.2.0/24
+  # access rule on every share it creates (the default would be 0.0.0.0/0,
+  # i.e. anyone who can reach the export). de.NBI Berlin: the Kubermatic
+  # node subnet. If the Isilon sees the nodes' floating IPs instead (mounts
+  # fail with "access denied"), use 10.57.200.0/21 - that range is shared with
+  # other projects' floating IPs, so prefer the node subnet when it works.
+  nfs-shareClient: 192.168.1.0/24
   # Only for share types with driver_handles_share_servers=True, where Horizon
   # asks for a Share Network when creating a share:
   # shareNetworkID: <share network id>
