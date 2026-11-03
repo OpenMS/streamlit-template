@@ -18,7 +18,7 @@
 
 FROM ubuntu:24.04 AS setup-build-system
 ARG OPENMS_REPO=https://github.com/OpenMS/OpenMS.git
-ARG OPENMS_BRANCH=release/3.5.0
+ARG OPENMS_BRANCH=v3.6.0
 ARG PORT=8501
 # Streamlit app GitHub user name (to download artifact from).
 ARG GITHUB_USER=OpenMS
