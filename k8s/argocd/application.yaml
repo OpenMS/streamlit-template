@@ -38,3 +38,12 @@ spec:
       selfHeal: true
     syncOptions:
       - RespectIgnoreDifferences=true
+    # Argo CD makes one automatic sync attempt per commit (or image change).
+    # Without retry, a failed attempt - a webhook timeout, a pod that briefly
+    # does not fit - leaves the app OutOfSync until the next change.
+    retry:
+      limit: 5
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 5m
