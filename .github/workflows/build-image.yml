@@ -140,8 +140,12 @@ jobs:
           # A build of another OpenMS reads the cache but never writes it, so it
           # cannot replace the default build's layers.
           cache-to: ${{ github.event_name != 'pull_request' && inputs.openms_branch == '' && format('type=registry,ref={0}/{1}/cache:{2}-{3},mode=max', env.REGISTRY, env.IMAGE_NAME_LC, inputs.variant, inputs.arch) || '' }}
+          # The token reaches the Dockerfile as a BuildKit secret, never as a
+          # build argument, so it is not recorded in the image or the cache.
+          secrets: |
+            github_token=${{ secrets.GITHUB_TOKEN }}
           build-args: |
-            GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}
+            INSTALLER_REFRESH=${{ github.run_id }}
             ${{ inputs.openms_branch != '' && format('OPENMS_BRANCH={0}', inputs.openms_branch) || '' }}
 
       - name: Retag for kind (image name the kustomize overlay points at)

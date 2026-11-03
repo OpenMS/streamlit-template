@@ -1,7 +1,7 @@
 # This Dockerfile builds OpenMS, the TOPP tools, pyOpenMS and thidparty tools.
 # It also adds a basic streamlit server that serves a pyOpenMS-based app.
 # hints:
-# build image and give it a name (here: streamlitapp) with: docker build --no-cache -t streamlitapp:latest --build-arg GITHUB_TOKEN=<your-github-token> . 2>&1 | tee build.log
+# build image and give it a name (here: streamlitapp) with: docker build --no-cache -t streamlitapp:latest --secret id=github_token,env=GITHUB_TOKEN . 2>&1 | tee build.log
 # check if image was build: docker image ls
 # run container: docker run -p 8501:8501 streamlitappsimple:latest
 # debug container after build (comment out ENTRYPOINT) and run container with interactive /bin/bash shell
@@ -290,14 +290,17 @@ RUN jq '.online_deployment = true' settings.json > tmp.json && mv tmp.json setti
 RUN jq '.local_data_dir = "/mounted-data"' settings.json > tmp.json && mv tmp.json settings.json
 
 # Download the Windows installer of the latest release, if it has one.
-# ARG declared here (not at the top) — otherwise the per-run token busts the cache.
-ARG GITHUB_TOKEN
-RUN if [ -n "$GITHUB_TOKEN" ]; then \
-        echo "GITHUB_TOKEN is set, proceeding to download the release asset..."; \
-        gh release download -R ${GITHUB_USER}/${GITHUB_REPO} -p "*-Setup.exe" -O /app/OpenMS-App-Setup.exe \
+# The token arrives as a BuildKit secret (`--secret id=github_token,env=GITHUB_TOKEN`),
+# so it is never written to the image or its build cache. INSTALLER_REFRESH
+# (CI passes the run id) re-runs this step on every build, as the token used to.
+ARG INSTALLER_REFRESH
+RUN --mount=type=secret,id=github_token \
+    if [ -s /run/secrets/github_token ]; then \
+        echo "GitHub token secret is set, proceeding to download the release asset..."; \
+        GH_TOKEN="$(cat /run/secrets/github_token)" gh release download -R ${GITHUB_USER}/${GITHUB_REPO} -p "*-Setup.exe" -O /app/OpenMS-App-Setup.exe \
             || echo "The latest release has no Windows installer, skipping."; \
     else \
-        echo "GITHUB_TOKEN is not set, skipping the release asset download."; \
+        echo "No github_token secret, skipping the release asset download."; \
     fi
 
 
