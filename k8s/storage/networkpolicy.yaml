@@ -83,7 +83,7 @@ spec:
         - namespaceSelector:
             matchLabels:
               # Set automatically by the API server on every namespace since
-              # 1.21, so it needs no cooperation from k8s/base/namespace.yaml.
+              # 1.21, so it needs no cooperation from k8s/overlays/prod/namespace.yaml.
               # Hand-synced with `namespace: openms` in
               # k8s/base/kustomization.yaml - a fork that renames the
               # application namespace has to change this line too, and CI

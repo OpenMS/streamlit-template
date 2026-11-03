@@ -5,7 +5,8 @@ metadata:
   annotations:
     # Argo CD (docs/kubernetes-deployment.md, "GitOps with Argo CD"): never
     # prune or cascade-delete this object. Every app on the cluster shares it,
-    # so deleting one app's Application must not take the namespace with it.
+    # so deleting the template's Application must not take the namespace with
+    # it. Only the template's prod overlay includes this file.
     argocd.argoproj.io/sync-options: Prune=false,Delete=false
   labels:
     app.kubernetes.io/part-of: openms-streamlit

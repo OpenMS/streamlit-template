@@ -110,8 +110,8 @@ Both Traefik and nginx attach a per-host `stroute` sticky cookie to bind a user 
 
 ## 3. Manifest reference (`k8s/base/`)
 
-### `namespace.yaml`
-Creates the `openms` namespace. All resources deploy into it.
+### Namespace
+All resources deploy into the shared `openms` namespace (`namespace: openms` in `k8s/base/kustomization.yaml`). The Namespace object itself is defined only in `k8s/overlays/prod/namespace.yaml` of the streamlit-template, so on a cluster with Argo CD exactly one Application (the template's) manages it. If several apps carried it, every sync would take it over from the previous app (labels and Argo CD tracking), and with self-heal on they would overwrite each other continuously. An app generated from the template deletes `namespace.yaml` and its line in `k8s/overlays/prod/kustomization.yaml`; on a cluster without the template, create the namespace once with `kubectl create namespace openms`.
 
 ### `configmap.yaml`
 `streamlit-config` ConfigMap holding `settings-overrides.json`, merged into the app's `settings.json` at pod startup. Currently sets `online_deployment: true`.

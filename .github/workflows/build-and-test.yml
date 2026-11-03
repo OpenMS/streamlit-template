@@ -1048,6 +1048,9 @@ jobs:
           # k8s/storage/, and the storage step above rewrites that one - loudly
           # if the string ever disappears. A sed kept here would match nothing
           # and quietly imply the storage path was still being exercised.
+          # The shared namespace is defined only in the template's own prod
+          # overlay; an app's manifests leave it out, so create it here.
+          kubectl create namespace openms --dry-run=client -o yaml | kubectl apply -f -
           kubectl kustomize k8s/overlays/ci/ | \
             yq 'select(.kind != "IngressRoute")' | \
             sed -E 's|imagePullPolicy: (IfNotPresent\|Always)|imagePullPolicy: Never|g' > /tmp/manifests.yaml
@@ -1780,6 +1783,9 @@ jobs:
           # k8s/storage/, and the storage step above rewrites that one - loudly
           # if the string ever disappears. A sed kept here would match nothing
           # and quietly imply the storage path was still being exercised.
+          # The shared namespace is defined only in the template's own prod
+          # overlay; an app's manifests leave it out, so create it here.
+          kubectl create namespace openms --dry-run=client -o yaml | kubectl apply -f -
           kubectl kustomize k8s/overlays/ci/ | \
             sed -E 's|imagePullPolicy: (IfNotPresent\|Always)|imagePullPolicy: Never|g' > /tmp/manifests.yaml
           # Size the workspaces claim for the runner's disk. nfs-provisioner

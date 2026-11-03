@@ -99,7 +99,7 @@ The user confirms or overrides each one. Do not omit the "what this controls" li
 
 ## Step 3 — Apply the answers to `k8s/overlays/prod/kustomization.yaml`
 
-Edit the file in place. The full templated shape is:
+Edit the file in place. First delete `k8s/overlays/prod/namespace.yaml` and its `- namespace.yaml` entry under `resources:`: the shared `openms` namespace is managed only by the template's own deployment, and two Argo CD Applications carrying it would keep taking it over from each other. The full templated shape is:
 
 ```yaml
 apiVersion: kustomize.config.k8s.io/v1beta1
@@ -238,7 +238,7 @@ After committing the edits, tell the user the next steps belong to a human opera
 
 1. Open a PR with the overlay edits and have it reviewed.
 2. Merge to `main`. CI (`build-and-test.yml`) rebuilds and pushes the image to GHCR with the tag from Q3. The kind integration jobs (`test-nginx`, `test-traefik`) auto-discover slug and Traefik hostnames from the overlay output, so no workflow edits are needed for fork-specific values.
-3. Cluster operator applies the fork's storage tier first (`kubectl kustomize --enable-helm k8s/storage/ | kubectl apply -f -`), then `kubectl apply -k k8s/overlays/prod/`. That order matters — the overlay's PVC names a StorageClass the storage tier publishes.
+3. On a cluster where the template's deployment does not run (so nothing has created the shared namespace yet), the operator first runs `kubectl create namespace openms --dry-run=client -o yaml | kubectl apply -f -`; it is a no-op where the namespace exists. Then the cluster operator applies the fork's storage tier first (`kubectl kustomize --enable-helm k8s/storage/ | kubectl apply -f -`), then `kubectl apply -k k8s/overlays/prod/`. That order matters — the overlay's PVC names a StorageClass the storage tier publishes.
 4. Operator verifies with `kubectl -n openms rollout status deployment/<slug>-streamlit` and a browser check on `https://<sub>.webapps.openms.de`, then `kubectl -n openms get pods -o wide -l component=rq-worker` to confirm the workers came up on **different** nodes, each with `.status.qosClass` of `Guaranteed`.
 
 ## Reference files
@@ -254,6 +254,7 @@ After committing the edits, tell the user the next steps belong to a human opera
 
 - [ ] Step 1 recon done; fork's `k8s/` layout matches expectations (or the user was asked because it didn't)
 - [ ] Interview completed; defaults shown to the user and confirmed/overridden
+- [ ] `k8s/overlays/prod/namespace.yaml` and its `resources:` entry deleted (only the template's deployment manages the `openms` namespace)
 - [ ] `namePrefix`, `commonLabels.app`, `images[0].newName`, `images[0].newTag` written in the overlay
 - [ ] IngressRoute patch written: both `.de` and `.org` hostnames, plus the `<slug>-streamlit` service reference
 - [ ] Redis URL written in both Deployment patches (`streamlit` and `rq-worker`)
