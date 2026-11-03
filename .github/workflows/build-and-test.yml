@@ -364,7 +364,7 @@ jobs:
     # on pull. PRs don't push per-arch tags, so there's nothing to merge.
     #
     # The kind jobs are dependencies, not just the builds. This is what
-    # publishes `latest` and the multi-arch tags the de.NBI cluster pulls, and
+    # publishes `latest` and the multi-arch tags production clusters pull, and
     # until now nothing in the graph named test-nginx or test-traefik at all -
     # so a merge published an image whose multi-node storage tier had never been
     # exercised on a cluster. `main` carries no branch protection either, so the
@@ -886,8 +886,9 @@ jobs:
         # kind nodes are containers on the runner, so the kubelet's NFS mounts
         # run in the runner's kernel and the switch is set here, on the host.
         # Per request, so it holds for mounts made later. Older kernels have no
-        # such parameter and nothing to switch off. Production nodes need the
-        # same until Ganesha is >= 9.11: docs/a16-storage-runbook.md section 0.
+        # such parameter and nothing to switch off. Any cluster whose NFS
+        # server is Ganesha < 9.11 needs the same on its nodes:
+        # docs/kubernetes-deployment.md, "NFS client on Linux 6.19 and newer".
         run: |
           sudo modprobe nfsv4 || true
           p=/sys/module/nfsv4/parameters/directory_delegations
@@ -975,7 +976,7 @@ jobs:
       - name: Deploy with Kustomize
         run: |
           # k8s/overlays/ci/, not prod: prod's rq-worker is 16Gi / 4 cpu with
-          # requests == limits, which is right on the de.NBI nodes and
+          # requests == limits, which is right on production-sized nodes and
           # impossible here. This runner has 4 vCPU and ~15.6Gi in total, every
           # kind node is a container on that one host advertising the whole of
           # it, and kube-system already holds ~1 cpu in requests - so a single
@@ -1094,7 +1095,7 @@ jobs:
               ;;
           esac
           echo "${OPTS}" | grep -qE '(^| )(nfs)?vers=3( |$)' || {
-            echo "::error::'${CLASS}' does not pin NFSv3, the only version the production Manila backend (de.NBI Isilon) serves"
+            echo "::error::'${CLASS}' does not pin NFSv3, the version k8s/storage/storageclass.yaml mounts (some Manila backends serve no NFSv4)"
             exit 1
           }
           echo "${OPTS}" | grep -qE '(^| )nconnect=4( |$)' || {
@@ -1564,8 +1565,9 @@ jobs:
         # kind nodes are containers on the runner, so the kubelet's NFS mounts
         # run in the runner's kernel and the switch is set here, on the host.
         # Per request, so it holds for mounts made later. Older kernels have no
-        # such parameter and nothing to switch off. Production nodes need the
-        # same until Ganesha is >= 9.11: docs/a16-storage-runbook.md section 0.
+        # such parameter and nothing to switch off. Any cluster whose NFS
+        # server is Ganesha < 9.11 needs the same on its nodes:
+        # docs/kubernetes-deployment.md, "NFS client on Linux 6.19 and newer".
         run: |
           sudo modprobe nfsv4 || true
           p=/sys/module/nfsv4/parameters/directory_delegations
@@ -1780,7 +1782,7 @@ jobs:
               ;;
           esac
           echo "${OPTS}" | grep -qE '(^| )(nfs)?vers=3( |$)' || {
-            echo "::error::'${CLASS}' does not pin NFSv3, the only version the production Manila backend (de.NBI Isilon) serves"
+            echo "::error::'${CLASS}' does not pin NFSv3, the version k8s/storage/storageclass.yaml mounts (some Manila backends serve no NFSv4)"
             exit 1
           }
           echo "${OPTS}" | grep -qE '(^| )nconnect=4( |$)' || {

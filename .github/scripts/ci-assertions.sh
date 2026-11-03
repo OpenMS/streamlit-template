@@ -932,7 +932,7 @@ assert_doc_links_resolve() {
 
     # Resolved against the repository root first, then against docs/, because
     # both forms are in use: k8s/base/workspace-pvc.yaml writes the full
-    # `docs/a16-storage-runbook.md`, while a sibling reference inside docs/
+    # `docs/kubernetes-deployment.md`, while a sibling reference inside docs/
     # may reasonably write just `build_app.md`.
     _ci_dangling=""
     _ci_checked=0

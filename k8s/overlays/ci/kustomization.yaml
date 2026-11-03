@@ -7,8 +7,8 @@ kind: Kustomization
 # static assertion still use k8s/overlays/prod.
 #
 # k8s/components/memory-tier-low sizes a worker at 16Gi / 4 cpu with
-# requests == limits, which is right on the de.NBI nodes and impossible in
-# kind. An ubuntu-latest runner has 4 vCPU and ~15.6Gi of RAM in total; every
+# requests == limits, which is right on production-sized nodes and impossible
+# in kind. An ubuntu-latest runner has 4 vCPU and ~15.6Gi of RAM in total; every
 # kind node is a container on that one host advertising the whole of it, and
 # kube-system already holds ~1 cpu of that in requests. Both worker replicas
 # would sit Pending for ever and take the whole kind suite down with them -
