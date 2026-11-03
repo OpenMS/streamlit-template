@@ -338,7 +338,7 @@ kubectl -n openms get pvc     # <slug>-workspaces-manila-pvc Bound, RWX; the sha
 
 The first needs Helm on `PATH`. Both applies are idempotent, and on an upgrade the storage one is usually a no-op.
 
-**Coming from the Ganesha storage tier** (`<slug>-storage` namespace, `<slug>-nfs` class): apply the new storage root, then the overlay. The overlay's claim has a new name, so it binds a fresh Manila share and the pods move to it; the old claim, the Ganesha StatefulSet and its Cinder volume keep running untouched until you remove them (`kubectl delete namespace <slug>-storage`, then the released PV and the old claim) once the new deployment has been stable for a week.
+**Coming from the single Cinder volume** (`<slug>-workspaces-pvc`, `ReadWriteOnce` on `cinder-csi`, pods pinned to an `openms.de/memory-tier` node): install the storage tier first and check that a claim on `openms-manila-nfs` binds. Only then let the new overlay reach the cluster. Under Argo CD with automatic sync that is the moment the template sync merges into the app's deployed branch, so the storage tier must already be in place. The overlay's claim has a new name, so it binds a fresh Manila share and the pods move to it, unpinned. The old claim carries `Prune=false`, so Argo CD leaves it and its Cinder volume alone. Delete it by hand once the new deployment has been stable for a week. Running workspaces do not move with it (they expire after 7 days anyway), and demos are reseeded from the image.
 
 ### Step 7 — Verify
 
