@@ -578,6 +578,33 @@ jobs:
           name: openms-streamlit-${{ matrix.variant }}-amd64-image
           path: /tmp
 
+      - name: Check the image archive
+        # actions/download-artifact has been seen to end a multi-GB download
+        # early without failing: the step is green, the tar is cut short, and
+        # only `kind load` or `apptainer build` notices, as "unexpected EOF".
+        # Read the archive through once; a cut one is downloaded again.
+        id: archive
+        run: |
+          if tar -tf /tmp/image.tar >/dev/null; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            ls -l /tmp/image.tar || true
+            echo "::warning::/tmp/image.tar is incomplete; downloading it again"
+            rm -f /tmp/image.tar
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download image artifact again
+        if: steps.archive.outputs.ok == 'false'
+        uses: actions/download-artifact@v4
+        with:
+          name: openms-streamlit-${{ matrix.variant }}-amd64-image
+          path: /tmp
+
+      - name: Check the image archive again
+        if: steps.archive.outputs.ok == 'false'
+        run: tar -tf /tmp/image.tar >/dev/null
+
       - name: Install apptainer
         uses: eWaterCycle/setup-apptainer@v2
         with:
@@ -865,6 +892,33 @@ jobs:
         with:
           name: openms-streamlit-${{ matrix.variant }}-${{ matrix.arch }}-image
           path: /tmp
+
+      - name: Check the image archive
+        # actions/download-artifact has been seen to end a multi-GB download
+        # early without failing: the step is green, the tar is cut short, and
+        # only `kind load` or `apptainer build` notices, as "unexpected EOF".
+        # Read the archive through once; a cut one is downloaded again.
+        id: archive
+        run: |
+          if tar -tf /tmp/image.tar >/dev/null; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            ls -l /tmp/image.tar || true
+            echo "::warning::/tmp/image.tar is incomplete; downloading it again"
+            rm -f /tmp/image.tar
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download image artifact again
+        if: steps.archive.outputs.ok == 'false'
+        uses: actions/download-artifact@v4
+        with:
+          name: openms-streamlit-${{ matrix.variant }}-${{ matrix.arch }}-image
+          path: /tmp
+
+      - name: Check the image archive again
+        if: steps.archive.outputs.ok == 'false'
+        run: tar -tf /tmp/image.tar >/dev/null
 
       - name: Explain a missing image
         # This job runs under `if: always() && <the simple builds succeeded>`,
@@ -1569,6 +1623,33 @@ jobs:
         with:
           name: openms-streamlit-${{ matrix.variant }}-${{ matrix.arch }}-image
           path: /tmp
+
+      - name: Check the image archive
+        # actions/download-artifact has been seen to end a multi-GB download
+        # early without failing: the step is green, the tar is cut short, and
+        # only `kind load` or `apptainer build` notices, as "unexpected EOF".
+        # Read the archive through once; a cut one is downloaded again.
+        id: archive
+        run: |
+          if tar -tf /tmp/image.tar >/dev/null; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            ls -l /tmp/image.tar || true
+            echo "::warning::/tmp/image.tar is incomplete; downloading it again"
+            rm -f /tmp/image.tar
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download image artifact again
+        if: steps.archive.outputs.ok == 'false'
+        uses: actions/download-artifact@v4
+        with:
+          name: openms-streamlit-${{ matrix.variant }}-${{ matrix.arch }}-image
+          path: /tmp
+
+      - name: Check the image archive again
+        if: steps.archive.outputs.ok == 'false'
+        run: tar -tf /tmp/image.tar >/dev/null
 
       - name: Explain a missing image
         # This job runs under `if: always() && <the simple builds succeeded>`,
