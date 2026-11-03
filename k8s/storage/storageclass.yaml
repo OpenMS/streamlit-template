@@ -30,17 +30,18 @@ allowVolumeExpansion: true
 volumeBindingMode: Immediate
 parameters:
   # CLUSTER-SPECIFIC: the name of the NFS share type, as Horizon's Create
-  # Share dialog lists it. de.NBI Berlin (project WebApps1): `isilon-denbi`
-  # (`default` and `isilon-dmz` are the other two; dmz is for the project's
-  # DMZ network). No share network: the types do not handle share servers.
-  type: isilon-denbi
-  # CLUSTER-SPECIFIC: who may mount the share. manila-csi adds this as an IP
-  # access rule on every share it creates (the default would be 0.0.0.0/0,
-  # i.e. anyone who can reach the export). de.NBI Berlin: the nodes reach the
-  # Isilon through the router, so it sees the floating-IP range, not the
-  # node subnet 192.168.1.0/24 (that rule gave "access denied", 3 Nov 2026).
-  # The range is shared with other projects' floating IPs.
-  nfs-shareClient: 10.57.200.0/21
+  # Share dialog lists it (`openstack share type list`). Pick one with
+  # driver_handles_share_servers=False unless you also set shareNetworkID
+  # below. The placeholder makes provisioning fail loudly until it is set.
+  type: CHANGE-ME-nfs-share-type
+  # CLUSTER-SPECIFIC: who may mount the share, as a CIDR. manila-csi adds this
+  # as an IP access rule on every share it creates (the default would be
+  # 0.0.0.0/0, i.e. anyone who can reach the export). Use the source address
+  # range the NFS backend actually sees from the nodes: the node subnet when
+  # the nodes reach the storage network directly, or the floating-IP / egress
+  # range when traffic is NATed through a router. A rule for the wrong range
+  # shows up as "access denied" when the node mounts the share.
+  nfs-shareClient: CHANGE-ME-client-cidr
   # Only for share types with driver_handles_share_servers=True, where Horizon
   # asks for a Share Network when creating a share:
   # shareNetworkID: <share network id>
@@ -60,10 +61,13 @@ parameters:
 #
 #   hard         a Manila NFS gateway failover blocks the client and resumes;
 #                `soft` would turn it into a truncated result file
-#   nfsvers=3    the de.NBI Isilon refuses NFSv4.x ("Protocol not
-#                supported", 3 Nov 2026). Locks go through NLM/statd, which
-#                the node plugin's mount.nfs starts; cross-node locking was
-#                checked on the cluster
+#   nfsvers=3    the lowest common denominator: some Manila backends (Isilon
+#                among them) serve no NFSv4.x and refuse it with "Protocol
+#                not supported". Locks go through NLM/statd, which the node
+#                plugin's mount.nfs starts. If your backend serves 4.1, it
+#                can be used instead; keep k8s/ci-storage/ganesha-values.yaml,
+#                assert_storage_class_contract and the nfsvers=3 checks in
+#                the nginx and Traefik jobs of build-and-test.yml in step
 #   nconnect=4   the access pattern is metadata-heavy rather than
 #                bandwidth-bound
 #   default actimeo - close-to-open consistency already gives a fresh read on

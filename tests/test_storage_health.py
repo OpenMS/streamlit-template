@@ -6,8 +6,7 @@ not an error, and nothing in the app detected one: ``health.py`` inspected only
 Redis and RQ, ``/_stcore/health`` is filesystem-blind, and RQ's parent process
 keeps heartbeating while its work horse is blocked in an NFS syscall.
 
-The design (docs/a16-storage-decisions.md section 8) inverts the check rather than adding one
-to the UI::
+The design inverts the check rather than adding one to the UI::
 
     rq-worker readiness probe                            sidebar
       SET storage:node:<node>  (a worker lives here)  --> reads Redis only

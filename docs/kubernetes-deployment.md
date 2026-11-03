@@ -4,7 +4,7 @@ This guide covers deploying an OpenMS streamlit app to a Kubernetes cluster usin
 
 ## 1. Overview
 
-The template ships a full Kubernetes deployment stack designed for the de.NBI cluster (OpenStack, Manila shares for storage, Traefik ingress). The stack includes:
+The template ships a full Kubernetes deployment stack for an OpenStack-based cluster (Manila shares for storage, Traefik ingress); the storage tier is the only OpenStack-specific part. The stack includes:
 
 - A Streamlit Deployment serving the web UI
 - A Redis Deployment as the job-queue backing store
@@ -123,7 +123,7 @@ Redis 7 Deployment (1 replica) + ClusterIP Service on port 6379. Backs the RQ jo
 PersistentVolumeClaim `workspaces-manila-pvc`:
 - `accessModes: [ReadWriteMany]`
 - `storageClassName: openms-manila-nfs` — published once per cluster by `k8s/storage/`; the same for every app
-- `resources.requests.storage: 50Gi` — the size of this app's Manila share, counted against the project's share quota (1000 GiB in total on de.NBI Berlin, shared by every app). Start near the space the app really uses. Manila grows a share in place, so raising the number and re-applying is enough. Shrinking is not possible: Kubernetes rejects a request below the claim's current capacity, and Argo CD does not retry a sync that failed, so the app stays OutOfSync. To make a share smaller, delete the claim and the pods that use it, delete its PV (`kubectl get pv | grep <slug>-workspaces-manila-pvc`), and delete the share in Horizon. The class uses `Retain`, so deleting the PV leaves the share and its quota in place. Then sync again: under Argo CD, run `kubectl -n argocd patch application <app> --type merge -p '{"operation":{"initiatedBy":{"username":"<you>"},"sync":{}}}'`. The new claim starts with an empty share.
+- `resources.requests.storage: 50Gi` — the size of this app's Manila share, counted against the OpenStack project's share quota, which every app on the cluster shares. Start near the space the app really uses. Manila grows a share in place, so raising the number and re-applying is enough. Shrinking is not possible: Kubernetes rejects a request below the claim's current capacity, and Argo CD does not retry a sync that failed, so the app stays OutOfSync. To make a share smaller, delete the claim and the pods that use it, delete its PV (`kubectl get pv | grep <slug>-workspaces-manila-pvc`), and delete the share in Horizon. The class uses `Retain`, so deleting the PV leaves the share and its quota in place. Then sync again: under Argo CD, run `kubectl -n argocd patch application <app> --type merge -p '{"operation":{"initiatedBy":{"username":"<you>"},"sync":{}}}'`. The new claim starts with an empty share.
 
 This is a **different object** from the claims earlier releases used (`workspaces-pvc`, `ReadWriteOnce` on `cinder-csi`, and then `workspaces-nfs-pvc` on a per-app Ganesha server). A bound PVC's spec is immutable apart from `resources.requests`, so the class cannot be changed in place. The old claim is left alone, which is also what makes rollback a single re-apply of the previous manifests. Delete it by hand once the cutover has been stable for a week. Workspaces expire after 7 days, so nothing is migrated.
 
@@ -192,12 +192,22 @@ Ships with an empty admin password by default and is included in `k8s/base/kusto
 
 | File | Purpose |
 |------|---------|
-| `storageclass.yaml` | `openms-manila-nfs`: provisioner `nfs.manila.csi.openstack.org`, `reclaimPolicy: Retain`, volume expansion on, mount options `hard`, `nfsvers=3` (the de.NBI Isilon serves no NFSv4), `nconnect=4`. Two values are **cluster-specific**: `type` (the NFS share type, `isilon-denbi` on de.NBI Berlin) and `nfs-shareClient` (the addresses that get the share's access rule: on de.NBI Berlin the floating-IP range `10.57.200.0/21`, because the nodes reach the Isilon through the router). Both are parameters of the StorageClass and cannot be changed in place: to change one, delete and re-apply the class while no PVC uses it. |
+| `storageclass.yaml` | `openms-manila-nfs`: provisioner `nfs.manila.csi.openstack.org`, `reclaimPolicy: Retain`, volume expansion on, mount options `hard`, `nfsvers=3` (works with backends that serve no NFSv4), `nconnect=4`. Two values are **cluster-specific** and ship as `CHANGE-ME-…` placeholders: `type` (the name of an NFS share type, from `openstack share type list` or Horizon's *Create Share* dialog) and `nfs-shareClient` (the CIDR that gets the share's IP access rule: the source range the NFS backend sees from the nodes, i.e. the node subnet, or the floating-IP / egress range when the nodes reach the storage through a NAT router). Both are parameters of the StorageClass and cannot be changed in place: to change one, delete and re-apply the class while no PVC uses it. |
 | `manila-csi-values.yaml` | Helm values for `openstack-manila-csi` 2.36.3: NFS only, forwarding mounts to the csi-driver-nfs node plugin. |
 | `csi-driver-nfs-values.yaml` | Helm values for `csi-driver-nfs` 4.11.0, used only as the node plugin that does the mount. Its own controller is scaled to zero. |
 | `kustomization.yaml` | Inflates both charts into `kube-system` and adds the StorageClass. |
 
 How a volume comes about: the workspace PVC asks for `openms-manila-nfs`; the manila-csi controller creates an NFS share of that size through the Manila API and adds an IP access rule for `nfs-shareClient`; on every node that runs a pod using it, the csi-driver-nfs node plugin mounts the share's export.
+
+**Cluster-specific values.** Before the first apply, replace the two `CHANGE-ME-…` placeholders in `k8s/storage/storageclass.yaml`:
+
+```bash
+openstack share type list    # type: an NFS share type
+openstack subnet list        # nfs-shareClient: the node subnet (direct route)
+openstack floating ip list   # ... or the floating-IP range (NAT router)
+```
+
+Use a share type with `driver_handles_share_servers=False`, or also set `shareNetworkID`. Keep the edited file in your own checkout or fork of the operator repository; the template ships only the placeholders, so a class applied unchanged fails at the first PVC (`share type not found`) instead of granting access to the wrong addresses. A rule for the wrong range shows up later as `access denied` when a node mounts the share: check which source address the backend sees, not which address the node has.
 
 **Credentials.** manila-csi talks to the Manila API with an OpenStack *application credential*, kept in the Secret `manila-csi-credentials` in `kube-system`. It is never committed. Create the credential in Horizon (*Identity → Application Credentials*, role `member`) and then:
 
@@ -217,6 +227,19 @@ kubectl kustomize --enable-helm k8s/storage/ | kubectl apply -f -
 ```
 
 Rendering also writes the vendored charts into `k8s/storage/charts/`. That directory is gitignored and must never be committed.
+
+### NFS client on Linux 6.19 and newer
+
+The NFSv4.1 client in Linux 6.19+ asks for a delegation on a directory (`GET_DIR_DELEGATION`, op 46) in the GETATTR that follows a create, remove or rename. NFS-Ganesha before 9.11 answers op 46 as an illegal operation, and the client fails the call with `EREMOTEIO`: every stat of a newly created directory (`mkdir -p`, the `seed-demos` init container) reads `Remote I/O error` while plain files keep working. It appears the day a node's kernel is upgraded, with no change to the manifests. The Manila class above mounts NFSv3 and is not affected; a cluster whose workspace volume is served by Ganesha over NFSv4.x is. Check a node with
+
+```bash
+kubectl debug node/<node> -it --image=busybox -- \
+  chroot /host sh -c 'modprobe nfsv4; uname -r; cat /sys/module/nfsv4/parameters/directory_delegations'
+```
+
+The module is loaded first because the parameter file exists only while `nfsv4` is loaded; with the module loaded (or built in), no such file means the kernel predates the feature. `Y` means the node has to be switched to `N` (`echo N > /sys/module/nfsv4/parameters/directory_delegations`) before it mounts the volume, and kept there across reboots: `options nfsv4 directory_delegations=N` in `/etc/modprobe.d/` when `nfsv4` is a module, or `nfsv4.directory_delegations=N` on the kernel command line when it is built in (`CONFIG_NFS_V4=y`). On managed node pools that replace nodes on upgrade, this belongs in the node image or the machine provisioning. The CI kind jobs set it on the runner in the step "Stop the NFS client requesting directory delegations".
+
+### CI stand-in
 
 `k8s/ci-storage/` is **not** for real clusters. It is what the kind jobs in CI apply instead: one NFS-Ganesha server inside the cluster, publishing a StorageClass with the same name and mount options, because a GitHub runner cannot reach Manila. `assert_storage_class_contract` keeps the two classes in step.
 

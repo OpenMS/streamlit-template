@@ -12,13 +12,13 @@ metadata:
     app.kubernetes.io/part-of: openms-streamlit
     # Pod Security: `warn` and `audit`, deliberately NOT `enforce`.
     #
-    # This namespace is shared. On the de.NBI cluster `openms` also holds
-    # `app=nuxl-app`, and an `enforce` label is a namespace-wide admission rule, so
-    # stamping one from this repo's overlay would police every pod of every
-    # co-tenant. A NuXL pod using hostPath, a privileged container or an added
-    # capability would start failing admission on its next rollout, with
-    # nothing in NuXL's own manifests having changed - and the failure would
-    # look like a NuXL problem.
+    # This namespace is shared. `openms` can also hold other apps' pods that
+    # are not deployed from this template, and an `enforce` label is a
+    # namespace-wide admission rule, so stamping one from this repo's overlay
+    # would police every pod of every co-tenant. A co-tenant pod using hostPath,
+    # a privileged container or an added capability would start failing
+    # admission on its next rollout, with nothing in its own manifests having
+    # changed - and the failure would look like that app's problem.
     #
     # `warn` returns the same verdict to whoever runs `kubectl apply`, and
     # `audit` records it in the API server audit log, without blocking anyone.
