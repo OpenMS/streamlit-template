@@ -81,3 +81,4 @@ sync:
     - k8s/overlays/*
     - k8s/argocd/*
     - CLAUDE.app.md
+    - conda-requirements.txt
