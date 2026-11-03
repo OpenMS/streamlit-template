@@ -1287,10 +1287,11 @@ class StreamlitUI:
             name_col.markdown(f"**{tool_instance_name}**")
         n_changed = sum(not r["is_default"] for r in all_rows)
         if all_col.button(
-            f"Search all {len(all_rows)} parameters"
+            f"All {len(all_rows)} parameters"
             + (f" ({n_changed} changed)" if n_changed else ""),
             key=f"all-params-{tool_instance_name}",
-            icon=":material/search:",
+            icon=":material/tune:",
+            type="tertiary",
             help="The page shows the common parameters. Search every parameter "
             "of this tool here, including advanced ones, change them, and reset "
             "single parameters to the default or the applied preset.",
@@ -2108,7 +2109,7 @@ class StreamlitUI:
             data_import_ui.link_import_section(self.workflow_dir, self.upload_targets)
 
     def parameter_section(self, custom_parameter_function) -> None:
-        # No "Show advanced parameters" toggle: each TOPP tool's "Search all
+        # No "Show advanced parameters" toggle: each TOPP tool's "All N
         # parameters" dialog reaches the advanced ones, and a python tool's
         # sit in an expander. An app can still set this to True itself.
         st.session_state.setdefault("advanced", False)

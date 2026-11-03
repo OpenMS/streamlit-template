@@ -85,7 +85,7 @@ Fallback files(s) can be specified, which will be used if the user doesn't uploa
         """
 ## Parameter Input
 
-The parameter page is already pre-defined as a form with buttons to **save parameters** and **load defaults**. It shows the common parameters of each TOPP tool; the advanced ones are found with the tool's **Search all N parameters** button, and a python tool's advanced parameters are in an expander below its others.
+The parameter page is already pre-defined as a form with buttons to **save parameters** and **load defaults**. It shows the common parameters of each TOPP tool; the advanced ones are found with the tool's **All N parameters** button, and a python tool's advanced parameters are in an expander below its others.
 
 Generating parameter input widgets is done with the `self.ui.input` method for any parameter and the `self.ui.input_TOPP` method for TOPP tools.
 
@@ -99,7 +99,7 @@ Make sure to match the **key** of the upload widget when calling `self.ui.input_
 
 It takes the obligatory **topp_tool_name** parameter and generates input widgets for each parameter present in the **ini** file (automatically created) except for input and output file parameters. For all input file parameters a widget needs to be created with `self.ui.select_input_file` with an appropriate **key**. For TOPP tool parameters only non-default values are stored.
 
-Next to the tool name, a button **Search all N parameters** opens a dialog listing every parameter of the tool, including the advanced ones the page does not show but not the ones in `exclude_parameters`. You can filter it by name or description, or show only the changed parameters, and set each value there. A changed parameter can be returned to its default, and when a preset was applied, a parameter that differs from it can be returned to the preset's value.
+Next to the tool name, a button **All N parameters** opens a dialog listing every parameter of the tool, including the advanced ones the page does not show but not the ones in `exclude_parameters`. You can filter it by name or description, or show only the changed parameters, and set each value there. A changed parameter can be returned to its default, and when a preset was applied, a parameter that differs from it can be returned to the preset's value.
 
 **3. Choose `self.ui.input_python` to automatically generate complete input sections for a custom Python tool:**
 
