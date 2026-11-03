@@ -52,11 +52,22 @@ from src.workflow.ParameterManager import (
 )
 
 
-def _matches_topp_parameter(pattern: str, key: bytes) -> bool:
+def _txt(value) -> str:
+    """Text from pyOpenMS: bytes up to pyOpenMS 3.5, str from 3.6 (nanobind)."""
+    return value.decode() if isinstance(value, bytes) else str(value)
+
+
+def _tags(param, key) -> list[str]:
+    """A parameter's tags as str, whichever pyOpenMS gave them."""
+    return [_txt(t) for t in param.getTags(key)]
+
+
+def _matches_topp_parameter(pattern: str, key) -> bool:
     """
     Match an include/exclude pattern against a TOPP parameter key.
 
-    Key format: b"ToolName:1:section:subsection:param_name"
+    Key format: "ToolName:1:section:subsection:param_name" (bytes before
+    pyOpenMS 3.6)
 
     A pattern matches the end of the parameter path, bounded by ':' or the
     start of the path ("tol" matches "FD:tol"). A pattern ending in ':' names
@@ -64,7 +75,7 @@ def _matches_topp_parameter(pattern: str, key: bytes) -> bool:
     parameter under "fd:", but not "FD:" or "algorithm:fd:").
     """
     pattern = pattern.lstrip(":")  # Strip legacy leading colon
-    key_str = key.decode()
+    key_str = _txt(key)
 
     # Extract param path after "ToolName:1:"
     parts = key_str.split(":")
@@ -1192,8 +1203,8 @@ class StreamlitUI:
             key
             for key in param.keys()
             if not (
-                b"input file" in param.getTags(key)
-                or b"output file" in param.getTags(key)
+                "input file" in _tags(param, key)
+                or "output file" in _tags(param, key)
                 or any([_matches_topp_parameter(k, key) for k in excluded_keys])
             )
         ]
@@ -1210,35 +1221,35 @@ class StreamlitUI:
         for key in valid_keys:
             entry = param.getEntry(key)
             p = {
-                "name": entry.name.decode(),
+                "name": _txt(entry.name),
                 "key": key,
                 "value": entry.value,
                 "original_is_list": isinstance(entry.value, list),
-                "valid_strings": [v.decode() for v in entry.valid_strings],
-                "description": entry.description.decode(),
-                "advanced": (b"advanced" in param.getTags(key)),
+                "valid_strings": [_txt(v) for v in entry.valid_strings],
+                "description": _txt(entry.description),
+                "advanced": ("advanced" in _tags(param, key)),
                 "non_included": key not in included_keys,
                 "section_description": param.getSectionDescription(
-                    ":".join(key.decode().split(":")[:-1])
+                    ":".join(_txt(key).split(":")[:-1])
                 ),
             }
             # Parameter sections and subsections as string (e.g. "section:subsection")
             if display_subsections:
                 p["sections"] = ":".join(
-                    p["key"].decode().split(":1:")[1].split(":")[:-1]
+                    _txt(p["key"]).split(":1:")[1].split(":")[:-1]
                 )
             params.append(p)
 
         # Build ini_params dict for three-layer merge
         ini_params = {}
         for p in params:
-            name = p["key"].decode().split(":1:")[1]
+            name = _txt(p["key"]).split(":1:")[1]
             ini_params[name] = p["value"]
 
         # Resolve effective values: ini < _defaults < user overrides
         merged = self.parameter_manager.get_merged_params(tool_instance_name, ini_params=ini_params)
         for p in params:
-            name = p["key"].decode().split(":1:")[1]
+            name = _txt(p["key"]).split(":1:")[1]
             if name in merged:
                 p["value"] = merged[name]
             # Ensure list parameters stay as lists after loading from JSON
@@ -1323,7 +1334,7 @@ class StreamlitUI:
             i = 0
             for p in params:
                 # get key and name – use tool_instance_name in session state key
-                key_str = p['key'].decode()
+                key_str = _txt(p['key'])
                 if tool_instance_name != topp_tool_name:
                     key_str = key_str.replace(f"{topp_tool_name}:1:", f"{tool_instance_name}:1:", 1)
                 key = f"{self.parameter_manager.topp_param_prefix}{key_str}"
@@ -1468,7 +1479,7 @@ class StreamlitUI:
         custom = stored.get("_defaults", {}).get(tool_instance_name, {})
         rows = []
         for p in params:
-            name = p["key"].decode().split(":1:")[1]
+            name = _txt(p["key"]).split(":1:")[1]
             value = p["value"]
             if isinstance(value, list):
                 value = [v.decode() if isinstance(v, bytes) else v for v in value]
@@ -1514,13 +1525,13 @@ class StreamlitUI:
         ] + list(exclude_parameters)
         rows = []
         for key in param.keys():
-            tags = param.getTags(key)
-            if b"input file" in tags or b"output file" in tags:
+            tags = _tags(param, key)
+            if "input file" in tags or "output file" in tags:
                 continue
             if any(_matches_topp_parameter(k, key) for k in excluded):
                 continue
             entry = param.getEntry(key)
-            name = key.decode().split(":1:")[1]
+            name = _txt(key).split(":1:")[1]
             default = defaults.get(name, entry.value)
             value = user.get(name, default)
             if isinstance(entry.value, list):
@@ -1530,13 +1541,13 @@ class StreamlitUI:
             rows.append(
                 {
                     "name": name,
-                    "label": entry.name.decode(),
+                    "label": _txt(entry.name),
                     "section": ":".join(name.split(":")[:-1]),
-                    "description": entry.description.decode(),
+                    "description": _txt(entry.description),
                     "value": value,
                     "default": default,
-                    "valid_strings": [v.decode() for v in entry.valid_strings],
-                    "advanced": b"advanced" in tags,
+                    "valid_strings": [_txt(v) for v in entry.valid_strings],
+                    "advanced": "advanced" in tags,
                     "is_list": isinstance(entry.value, list),
                 }
             )
