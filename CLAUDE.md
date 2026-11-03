@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+It is template-owned: every app gets this file unchanged through the template sync. What is specific to one app (its purpose, its own modules, its commands and gotchas) goes in the app-owned `CLAUDE.app.md`, imported here:
+
+@CLAUDE.app.md
+
 ## What This Is
 
 **The standard framework for building web applications for mass spectrometry (MS) data analysis**, used across the OpenMS ecosystem for proteomics and metabolomics research. It wraps **OpenMS/pyOpenMS** (the leading open-source C++/Python library for computational MS) and its **TOPP tools** (~200 command-line tools for MS pipelines) into interactive Streamlit apps.

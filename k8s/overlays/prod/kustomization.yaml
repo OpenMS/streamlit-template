@@ -24,6 +24,18 @@ images:
     newTag: v2.0.0-full
 
 patches:
+  # This app's values belong here, not in k8s/base or k8s/components: those
+  # are template-owned and reach every app through the template sync. The
+  # workspace share size is one such value (deploy.k8s.storage in app.yaml
+  # must match it; `python -m utils.app_spec` compares them). Worker sizes
+  # and counts are patched the same way, see docs/kubernetes-deployment.md.
+  - target:
+      kind: PersistentVolumeClaim
+      name: workspaces-manila-pvc
+    patch: |
+      - op: replace
+        path: /spec/resources/requests/storage
+        value: 50Gi
   - target:
       kind: IngressRoute
       name: streamlit-traefik
