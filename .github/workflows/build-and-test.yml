@@ -308,8 +308,49 @@ jobs:
   # suite with it. build-image.yml's header records what that cost. Consumers
   # below now name exactly the variants they actually download.
 
+  # Which image variants this app builds: `deploy.images` in app.yaml
+  # (default both). An app without TOPP tools, such as a dashboard, lists only
+  # `simple`; it then skips the two full OpenMS builds (the slowest jobs, and
+  # the ones that compile OpenMS from source on a cold cache) and everything
+  # downstream tests and publishes the simple variant alone.
+  images:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      full: ${{ steps.read.outputs.full }}
+      variants: ${{ steps.read.outputs.variants }}
+      kind: ${{ steps.read.outputs.kind }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: read
+        # yq (preinstalled on GitHub's runners) reads the YAML; the rest is
+        # stdlib Python, so no package install is needed.
+        run: |
+          set -euo pipefail
+          raw='["full","simple"]'
+          if [ -f app.yaml ]; then
+            raw="$(yq -o=json -I=0 '.deploy.images // ["full","simple"]' app.yaml)"
+          fi
+          RAW="$raw" python3 - <<'PY'
+          import json, os
+          variants = json.loads(os.environ["RAW"]) or ["full", "simple"]
+          bad = sorted(set(variants) - {"full", "simple"})
+          if bad or "simple" not in variants:
+              raise SystemExit(f"app.yaml deploy.images must list simple and may add full, got {variants}")
+          variants = [v for v in ("full", "simple") if v in variants]
+          runners = {"amd64": "ubuntu-latest", "arm64": "ubuntu-24.04-arm"}
+          kind = [{"variant": v, "arch": a, "runner": r} for v in variants for a, r in runners.items()]
+          with open(os.environ["GITHUB_OUTPUT"], "a") as out:
+              out.write(f"full={'true' if 'full' in variants else 'false'}\n")
+              out.write(f"variants={json.dumps(variants)}\n")
+              out.write(f"kind={json.dumps(kind)}\n")
+          print("image variants:", variants)
+          PY
+
   build-full-amd64:
-    needs: lint-manifests
+    needs: [lint-manifests, images]
+    if: needs.images.outputs.full == 'true'
     permissions:
       contents: read
       packages: write
@@ -343,7 +384,8 @@ jobs:
   build-full-arm64:
     # Native ARM64 runner, no QEMU. `Dockerfile.arm` swaps the miniforge
     # installer to aarch64 and guards the THIRDPARTY/Linux/aarch64 copy.
-    needs: lint-manifests
+    needs: [lint-manifests, images]
+    if: needs.images.outputs.full == 'true'
     permissions:
       contents: read
       packages: write
@@ -390,10 +432,16 @@ jobs:
     # Accepted cost: every push to main now waits on a ~40 minute kind matrix,
     # and a teardown failure blocks publishing for a reason unrelated to the
     # image. That is the trade; the alternative was publishing untested.
-    needs: [build-full-amd64, build-simple-amd64, build-full-arm64, build-simple-arm64, test-nginx, test-traefik]
+    needs: [images, build-full-amd64, build-simple-amd64, build-full-arm64, build-simple-arm64, test-nginx, test-traefik]
     # A dispatch with openms_branch builds and tests another OpenMS; it pushes
-    # no per-arch tags, so there is nothing to stitch or publish.
-    if: github.event_name != 'pull_request' && (inputs.openms_branch || '') == ''
+    # no per-arch tags, so there is nothing to stitch or publish. The full
+    # builds are skipped, not failed, for a simple-only app (deploy.images),
+    # hence always() with every need either passed or skipped.
+    if: >-
+      always() && !cancelled()
+      && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled')
+      && needs.build-simple-amd64.result == 'success' && needs.build-simple-arm64.result == 'success'
+      && github.event_name != 'pull_request' && (inputs.openms_branch || '') == ''
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -401,7 +449,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        variant: [full, simple]
+        variant: ${{ fromJSON(needs.images.outputs.variants) }}
     steps:
       - name: Compute lowercase image name
         run: echo "IMAGE_NAME_LC=${IMAGE_NAME,,}" >> "$GITHUB_ENV"
@@ -473,7 +521,13 @@ jobs:
     # accepted. Apptainer is a side deployment - the cluster runs the docker
     # image - so the coverage worth rescuing from a one-variant break is the
     # kind suite, not this. Add the same override here if that ever changes.
-    needs: [build-full-amd64, build-simple-amd64]
+    needs: [images, build-full-amd64, build-simple-amd64]
+    # always() only so a simple-only app (full builds skipped) still runs it;
+    # with full images listed, a failed full build still skips this job.
+    if: >-
+      always() && !cancelled()
+      && needs.build-simple-amd64.result == 'success'
+      && (needs.images.outputs.full != 'true' || needs.build-full-amd64.result == 'success')
     # Pinned to 24.04, not ubuntu-latest: the apptainer .deb depends on
     # libfuse3-3, which Ubuntu 26.04 (ubuntu-latest since November 2026) no
     # longer ships, so setup-apptainer's `apt-get install` fails there with
@@ -482,7 +536,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        variant: [full, simple]
+        variant: ${{ fromJSON(needs.images.outputs.variants) }}
     steps:
       - uses: actions/checkout@v4
 
@@ -647,7 +701,7 @@ jobs:
     # Keeping it separate from the docker image package keeps tag lists clean
     # and lets HPC users `apptainer pull oras://...` without the 5-15 min
     # on-the-fly OCI->SIF conversion the docker:// path requires.
-    needs: test-apptainer
+    needs: [images, test-apptainer]
     # Not for a dispatch with openms_branch: its SIF would take the default
     # build's <ref>/<sha> tags.
     if: github.event_name != 'pull_request' && (inputs.openms_branch || '') == ''
@@ -659,7 +713,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        variant: [full, simple]
+        variant: ${{ fromJSON(needs.images.outputs.variants) }}
     steps:
       - name: Download validated SIF artifact
         uses: actions/download-artifact@v4
@@ -731,7 +785,7 @@ jobs:
     # No staleness risk: download-artifact@v4 is scoped to the current run, so a
     # leaf either gets THIS run's image or fails. It cannot silently test the
     # previous one.
-    needs: [build-full-amd64, build-simple-amd64, build-full-arm64, build-simple-arm64]
+    needs: [images, build-full-amd64, build-simple-amd64, build-full-arm64, build-simple-arm64]
     if: always() && !cancelled()
         && needs.build-simple-amd64.result == 'success'
         && needs.build-simple-arm64.result == 'success'
@@ -739,19 +793,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - variant: full
-            arch: amd64
-            runner: ubuntu-latest
-          - variant: full
-            arch: arm64
-            runner: ubuntu-24.04-arm
-          - variant: simple
-            arch: amd64
-            runner: ubuntu-latest
-          - variant: simple
-            arch: arm64
-            runner: ubuntu-24.04-arm
+        # {full, simple} x {amd64 on ubuntu-latest, arm64 on ubuntu-24.04-arm},
+        # without full for a simple-only app (the `images` job).
+        include: ${{ fromJSON(needs.images.outputs.kind) }}
     steps:
       - uses: actions/checkout@v4
 
@@ -1432,7 +1476,7 @@ jobs:
     # No staleness risk: download-artifact@v4 is scoped to the current run, so a
     # leaf either gets THIS run's image or fails. It cannot silently test the
     # previous one.
-    needs: [build-full-amd64, build-simple-amd64, build-full-arm64, build-simple-arm64]
+    needs: [images, build-full-amd64, build-simple-amd64, build-full-arm64, build-simple-arm64]
     if: always() && !cancelled()
         && needs.build-simple-amd64.result == 'success'
         && needs.build-simple-arm64.result == 'success'
@@ -1440,19 +1484,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - variant: full
-            arch: amd64
-            runner: ubuntu-latest
-          - variant: full
-            arch: arm64
-            runner: ubuntu-24.04-arm
-          - variant: simple
-            arch: amd64
-            runner: ubuntu-latest
-          - variant: simple
-            arch: arm64
-            runner: ubuntu-24.04-arm
+        # {full, simple} x {amd64 on ubuntu-latest, arm64 on ubuntu-24.04-arm},
+        # without full for a simple-only app (the `images` job).
+        include: ${{ fromJSON(needs.images.outputs.kind) }}
     steps:
       - uses: actions/checkout@v4
 
