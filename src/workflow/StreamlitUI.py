@@ -640,6 +640,16 @@ class StreamlitUI:
                 st.success(f"Added {added} file(s) from `{cwd}`.")
                 st.rerun(scope="fragment")
 
+    def uniprot_proteome_download(self, key: str, name: str = "") -> None:
+        """Search UniProt proteomes by organism name or taxonomy ID and download
+        the chosen one (reviewed entries only, or all of them) as FASTA into the
+        folder of ``upload_widget(key)``, as the selected file of
+        ``select_input_file(key)``. Call it below that ``upload_widget``.
+        """
+        from src.workflow.uniprot_ui import proteome_download
+
+        proteome_download(self, key, name)
+
     def select_input_file(
         self,
         key: str,
