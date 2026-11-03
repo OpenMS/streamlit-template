@@ -20,10 +20,11 @@ FROM ubuntu:24.04 AS setup-build-system
 ARG OPENMS_REPO=https://github.com/OpenMS/OpenMS.git
 ARG OPENMS_BRANCH=release/3.5.0
 ARG PORT=8501
-# Streamlit app GitHub user name (to download artifact from).
-ARG GITHUB_USER=OpenMS
-# Streamlit app GitHub repository name (to download artifact from).
-ARG GITHUB_REPO=streamlit-template
+# GitHub repository whose latest release supplies the bundled Windows
+# installer. Empty: `github-user` and `repository-name` from settings.json,
+# so every app downloads its own installer without editing this file.
+ARG GITHUB_USER=
+ARG GITHUB_REPO=
 # Python of the app's environment. pyOpenMS 3.6 needs 3.11 or newer.
 ARG PYTHON_VERSION=3.11
 # Apache Arrow/Parquet major version. OpenMS 3.6 needs 23 or newer; it is pinned
@@ -225,6 +226,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends mono-complete \
     && rm -rf /var/lib/apt/lists/* \
     && mono --version
 
+# Command line tools an app installs from conda-forge (SIRIUS, for example),
+# one package spec per line in its optional conda-requirements.txt. Python
+# packages stay in requirements.txt. The glob lets the file be absent; this
+# step comes after the OpenMS build, so changing the list never rebuilds it.
+COPY requirements.txt conda-requirements.tx[t] /tmp/app-env/
+# A line ending in `# [x86_64]` or `# [aarch64]` is installed only on that
+# machine (`uname -m`), for tools conda-forge builds for one architecture.
+RUN touch /tmp/app-env/conda-requirements.txt \
+    && awk -v arch="$(uname -m)" ' \
+        /#[[:space:]]*\[[a-z0-9_]+\][[:space:]]*$/ { tag = $0; sub(/.*\[/, "", tag); sub(/\].*/, "", tag); if (tag != arch) next } \
+        { sub(/#.*/, ""); if ($0 ~ /[^[:space:]]/) print }' \
+        /tmp/app-env/conda-requirements.txt > /tmp/app-env/conda-specs.txt \
+    && if [ -s /tmp/app-env/conda-specs.txt ]; then \
+        mamba install -y -n streamlit-env -c conda-forge --file /tmp/app-env/conda-specs.txt; \
+    fi && rm -rf /tmp/app-env
+
 # Create Redis data directory. Default 0755 root-owned is enough: the docker
 # entrypoint runs as root (can write regardless of mode), and the apptainer
 # entrypoint relocates Redis state to /tmp/openms-runtime-* so this dir is
@@ -300,10 +317,14 @@ RUN jq '.local_data_dir = "/mounted-data"' settings.json > tmp.json && mv tmp.js
 # so it is never written to the image or its build cache. INSTALLER_REFRESH
 # (CI passes the run id) re-runs this step on every build, as the token used to.
 ARG INSTALLER_REFRESH
+# Declared again: a build argument does not reach a later stage on its own.
+ARG GITHUB_USER
+ARG GITHUB_REPO
 RUN --mount=type=secret,id=github_token \
+    repo="${GITHUB_USER:-$(jq -r '."github-user"' settings.json)}/${GITHUB_REPO:-$(jq -r '."repository-name"' settings.json)}"; \
     if [ -s /run/secrets/github_token ]; then \
         echo "GitHub token secret is set, proceeding to download the release asset..."; \
-        GH_TOKEN="$(cat /run/secrets/github_token)" gh release download -R ${GITHUB_USER}/${GITHUB_REPO} -p "*-Setup.exe" -O /app/OpenMS-App-Setup.exe \
+        GH_TOKEN="$(cat /run/secrets/github_token)" gh release download -R "$repo" -p "*-Setup.exe" -O /app/OpenMS-App-Setup.exe \
             || echo "The latest release has no Windows installer, skipping."; \
     else \
         echo "No github_token secret, skipping the release asset download."; \
