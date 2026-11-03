@@ -1806,6 +1806,7 @@ class StreamlitUI:
 
     def _python_widget_grid(self, entries: list, num_cols: int) -> None:
         """input_widget for each (key, value, DEFAULTS entry), num_cols per row."""
+        cols = []
         for i, (key, value, entry) in enumerate(entries):
             if i % num_cols == 0:
                 cols = st.columns(num_cols)
