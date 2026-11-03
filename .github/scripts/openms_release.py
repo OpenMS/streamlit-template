@@ -22,6 +22,7 @@ Edits, each only where the old release is written:
                                   and any pin below what that pyOpenMS requires
   .github/workflows/build-desktop-app.yaml
                                   the default `openms` release ('3.5.0')
+  Dockerfile*                     conda python=<x.y> below pyOpenMS's Requires-Python
   .github/workflows/*.yml         python-version below pyOpenMS's Requires-Python
 
 Writes `key=value` lines to $GITHUB_OUTPUT (or stdout): status (no-release,
@@ -200,6 +201,21 @@ def main() -> int:
                 req.write_text(text)
             else:
                 notes.append(f"requirements.txt: pyopenms {fmt(newest)} is not on PyPI yet, pin left at {pin.group(1)}")
+
+    # Python of the conda env in the Dockerfiles (the simple images install
+    # requirements.txt into it).
+    if min_python:
+        env_py = re.compile(r"(\bpython=)(\d+)\.(\d+)\b")
+        want = f"{min_python[0]}.{min_python[1]}"
+        for f in sorted(root.glob("Dockerfile*")):
+            text = f.read_text()
+            new_text = env_py.sub(
+                lambda mm: mm.group(1) + want
+                if (int(mm.group(2)), int(mm.group(3))) < min_python else mm.group(0),
+                text)
+            if new_text != text:
+                f.write_text(new_text)
+                notes.append(f"{f.name}: Python raised to {want} (pyOpenMS {fmt(newest)} requires it)")
 
     wf = root / ".github" / "workflows"
     if args.workflows and wf.is_dir():
