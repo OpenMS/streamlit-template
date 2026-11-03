@@ -51,11 +51,17 @@ RUN apt-get install -y --no-install-recommends --no-install-suggests qt6-base-de
 
 # Apache Arrow/Parquet from Apache's apt repository, as OpenMS's own image does.
 # Appending Apache's KEYS keeps the repository usable across key rotations.
+# downloads.apache.org sometimes does not answer GitHub's arm64 runners (wget
+# hung until it gave up, exit code 4), so wget gets a timeout and retries and
+# falls back to dist.apache.org, the release tree it mirrors.
 RUN . /etc/os-release \
     && wget -q https://packages.apache.org/artifactory/arrow/ubuntu/apache-arrow-apt-source-latest-${VERSION_CODENAME}.deb \
     && apt-get install -y --no-install-recommends ./apache-arrow-apt-source-latest-${VERSION_CODENAME}.deb \
     && rm apache-arrow-apt-source-latest-${VERSION_CODENAME}.deb \
-    && wget -qO- https://downloads.apache.org/arrow/KEYS >> /usr/share/keyrings/apache-arrow-apt-source.asc \
+    && (wget -q --timeout=30 --tries=3 -O /tmp/arrow-KEYS https://downloads.apache.org/arrow/KEYS \
+        || wget -q --timeout=30 --tries=3 -O /tmp/arrow-KEYS https://dist.apache.org/repos/dist/release/arrow/KEYS) \
+    && cat /tmp/arrow-KEYS >> /usr/share/keyrings/apache-arrow-apt-source.asc \
+    && rm /tmp/arrow-KEYS \
     && printf 'Package: libarrow* libparquet*\nPin: version %s.*\nPin-Priority: 999\n' "${ARROW_VERSION}" > /etc/apt/preferences.d/arrow \
     && apt-get update \
     && apt-get install -y --no-install-recommends --no-install-suggests libarrow-dev libparquet-dev
