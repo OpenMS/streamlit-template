@@ -39,6 +39,7 @@ In the OpenMS web application, workspaces are designed to keep your analysis org
   - a file over HTTP(S), including presigned S3 links and Swift TempURLs to private objects;
   - a tar, tar.gz or zip archive (e.g. `https://a3s.fi/swift/v1/<bucket>/<name>.tar` on CSC Allas);
   - a public S3 or Swift folder (a link ending in `/`);
+  - a PRIDE Archive dataset, to reanalyse it: its accession (`PXD000001`), its PRIDE or ProteomeXchange page, or its DOI. The mzML, Thermo RAW and FASTA files go to the matching upload; when a run is there both as mzML and as a RAW file, only the mzML is ticked at first. A workflow that takes RAW files converts them to mzML when it runs;
   - a Zenodo record or Figshare article (page link or DOI);
   - a OneDrive or SharePoint link shared with "Anyone with the link": files and folders from personal OneDrive, single files from SharePoint / OneDrive for Business (their folders can only be read with a sign-in).
 

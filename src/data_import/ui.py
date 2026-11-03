@@ -85,7 +85,7 @@ def _selection(listing: dict, targets: Dict[str, dict], job_dir: Path, settings_
         return names.get(item["target"], SKIP)
 
     table = pd.DataFrame({
-        "Import": [goes_to(i) != SKIP for i in items],
+        "Import": [goes_to(i) != SKIP and i.get("preselect", True) for i in items],
         "File": [i["path"] for i in items],
         "Size": [_format_size(i["size"]) for i in items],
         "Goes to": [goes_to(i) for i in items],
@@ -187,11 +187,12 @@ def link_import_section(workflow_dir, targets: Dict[str, dict]) -> None:
     job_dir = Path(workflow_dir, "link-import")
     state_key = f"{LISTING_KEY}-{Path(workflow_dir).name}"
     st.markdown("---")
-    st.markdown("**🔗 Import from a link**")
+    st.markdown("**🔗 Import from a link or PRIDE**")
     st.caption(
-        "Paste a link to a file, an archive (.tar, .zip, .tar.gz), a public S3 or Swift folder "
-        "(e.g. CSC Allas), a OneDrive or SharePoint sharing link, a Zenodo record or a Figshare article. Presigned links to private "
-        "objects work too. Files are added to the matching upload above."
+        "Enter a PRIDE accession (e.g. PXD000001) to reanalyse a public dataset, or paste a link "
+        "to a file, an archive (.tar, .zip, .tar.gz), a public S3 or Swift folder (e.g. CSC Allas), "
+        "a OneDrive or SharePoint sharing link, a Zenodo record or a Figshare article. Presigned "
+        "links to private objects work too. Files are added to the matching upload above."
     )
     status = job.read_status(job_dir)
     if job.is_running(status):
@@ -206,7 +207,7 @@ def link_import_section(workflow_dir, targets: Dict[str, dict]) -> None:
 
     with st.form(f"{LISTING_KEY}-form", border=False):
         c1, c2 = st.columns([4, 1])
-        link = c1.text_input("Link", placeholder="https://a3s.fi/swift/v1/<bucket>/data.tar",
+        link = c1.text_input("Link", placeholder="PXD000001 or https://a3s.fi/swift/v1/<bucket>/data.tar",
                              label_visibility="collapsed")
         looked_up = c2.form_submit_button("Look up", use_container_width=True)
     if looked_up:

@@ -557,3 +557,68 @@ def test_onedrive_page_that_needs_sign_in_is_explained(monkeypatch):
         name="x", size=None, ranges=False, etag="", content_type="text/html"))
     with pytest.raises(LookupError, match="Anyone with the link"):
         sources.resolve(plain(), "https://onedrive.live.com/?id=ABC&cid=DEF")
+
+
+@pytest.mark.parametrize("link, accession", [
+    ("PXD000001", "PXD000001"),
+    ("pxd000001", "PXD000001"),
+    ("https://www.ebi.ac.uk/pride/archive/projects/PXD000001", "PXD000001"),
+    ("https://proteomecentral.proteomexchange.org/cgi/GetDataset?ID=PXD000001", "PXD000001"),
+    ("https://ftp.pride.ebi.ac.uk/pride/data/archive/2012/03/PXD000001/", "PXD000001"),
+    ("https://ftp.pride.ebi.ac.uk/pride/data/archive/2012/03/PXD000001/run1.raw", ""),
+    ("https://doi.org/10.6019/PXD000001", "PXD000001"),
+    ("https://example.org/PXD000001/", ""),
+])
+def test_pride_accession(link, accession):
+    assert sources.pride_accession(sources.normalize(link)) == accession
+
+
+def test_pride_dataset(monkeypatch):
+    pages = {
+        "https://www.ebi.ac.uk/pride/ws/archive/v3/projects/PXD000001": {
+            "title": "Top-down test", "projectDescription": "Two runs.",
+            "organisms": [{"name": "Escherichia coli"}], "instruments": [{"name": "Orbitrap Eclipse"}]},
+        "https://www.ebi.ac.uk/pride/ws/archive/v3/projects/PXD000001/files": [
+            {"fileName": name, "fileSizeBytes": 10, "checksum": "",
+             "publicFileLocations": [
+                 {"value": "prd_ascp@fasp.ebi.ac.uk:pride/data/archive/2012/03/PXD000001/" + name},
+                 {"value": "ftp://ftp.pride.ebi.ac.uk/pride/data/archive/2012/03/PXD000001/" + name}]}
+            for name in ("run1.raw", "run1.mzML.gz", "run2.raw", "ecoli.fasta")],
+    }
+    monkeypatch.setattr(sources, "_json", lambda session, url, **kw: pages[url])
+    monkeypatch.setattr(sources, "_open_archives", lambda session, listing: None)
+    for link in ("PXD000001", "10.6019/PXD000001"):
+        listing = sources.resolve(plain(), link)
+        assert listing.title == "PRIDE PXD000001: Top-down test"
+        assert listing.url == "https://www.ebi.ac.uk/pride/archive/projects/PXD000001"
+        assert "Organisms: Escherichia coli; Instruments: Orbitrap Eclipse" in listing.notes
+        assert [(f.path, f.preselect) for f in listing.files] == [
+            ("run1.raw", False), ("run1.mzML.gz", True), ("run2.raw", True), ("ecoli.fasta", True)]
+        assert listing.files[0].url == \
+            "https://ftp.pride.ebi.ac.uk/pride/data/archive/2012/03/PXD000001/run1.raw"
+    targets = {"ms": {"name": "MS data", "file_types": ["mzML", "raw"], "dir": "x", "fallback": []},
+               "db": {"name": "Database", "file_types": ["fasta"], "dir": "y", "fallback": []}}
+    items = job.build_items(listing.files, targets)
+    assert [(i["target"], i["preselect"]) for i in items] == [
+        ("ms", False), ("ms", True), ("ms", True), ("db", True)]
+
+
+def test_unknown_pride_dataset_is_explained(monkeypatch):
+    def missing(session, url, **kw):
+        raise LookupError("404")
+    monkeypatch.setattr(sources, "_json", missing)
+    with pytest.raises(LookupError, match="PXD999999 was not found in PRIDE"):
+        sources.resolve(plain(), "PXD999999")
+
+
+def test_large_pride_dataset_starts_unticked(monkeypatch):
+    base = "https://www.ebi.ac.uk/pride/ws/archive/v3/projects/PXD000002"
+    pages = {base: {"title": "Big"}, base + "/files": [
+        {"fileName": f"run{i}.raw", "fileSizeBytes": 2 * 10**9,
+         "publicFileLocations": [{"value": f"ftp://ftp.pride.ebi.ac.uk/x/run{i}.raw"}]}
+        for i in range(30)]}
+    monkeypatch.setattr(sources, "_json", lambda session, url, **kw: pages[url])
+    monkeypatch.setattr(sources, "_open_archives", lambda session, listing: None)
+    listing = sources.resolve(plain(), "PXD000002")
+    assert not any(f.preselect for f in listing.files)
+    assert "60 GB" in listing.notes[0]

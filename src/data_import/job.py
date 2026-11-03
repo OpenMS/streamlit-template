@@ -91,6 +91,7 @@ def build_items(files: List[RemoteFile], targets: Dict[str, dict]) -> List[dict]
             "name": parts[-1], "path": f.path, "kind": kind, "size": f.size,
             "files": [asdict(f)],
             "target": "*" if kind == "archive" else target_for(parts[-1], targets),
+            "preselect": f.preselect,
         })
     return items
 
