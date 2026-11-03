@@ -8,6 +8,8 @@ from .Logger import Logger
 from .ParameterManager import ParameterManager, bool_param_paths_from_param_xml_ini
 from .settings_io import load_settings, detect_cpu_quota
 from .vendor_files import vendor_format
+from .progress import RunProgress, read_progress, failure_context, OUTPUT_TAIL
+from collections import deque
 import sys
 import importlib.util
 import json
@@ -29,6 +31,8 @@ class CommandExecutor:
         self.parameter_manager = parameter_manager
         # Memoised thread budget, resolved lazily by _get_max_threads().
         self._max_threads = None
+        # Per-file progress of run_topp() calls, read by the Run page
+        self.progress = RunProgress(Path(workflow_dir))
 
     def _get_max_threads(self) -> int:
         """
@@ -96,7 +100,7 @@ class CommandExecutor:
         return self._max_threads
 
     def run_multiple_commands(
-        self, commands: list[str]
+        self, commands: list[str], step: int = None
     ) -> bool:
         """
         Executes multiple shell commands concurrently in separate threads.
@@ -109,6 +113,8 @@ class CommandExecutor:
         Args:
             commands (list[str]): A list where each element is a list representing
                                         a command and its arguments.
+            step (int, optional): The progress step these commands belong to
+                (from RunProgress.start_step()); command i is its file i.
 
         Returns:
             bool: True if all commands succeeded, False if any failed.
@@ -126,9 +132,18 @@ class CommandExecutor:
         lock = threading.Lock()
         semaphore = threading.Semaphore(parallel_commands)
 
-        def run_and_track(cmd):
+        def run_and_track(i, cmd):
             with semaphore:
-                success = self.run_command(cmd)
+                try:
+                    if step is None:
+                        success = self.run_command(cmd)
+                    else:
+                        success = self.run_command(cmd, task=(step, i))
+                except Exception as e:
+                    # e.g. the tool is not installed. A thread that dies here
+                    # would add no result, and the step would count as passed.
+                    self.logger.log(f"ERROR: {cmd[0]}: {e}", 0)
+                    success = False
                 with lock:
                     results.append(success)
 
@@ -136,8 +151,8 @@ class CommandExecutor:
         threads = []
 
         # Start a new thread for each command
-        for cmd in commands:
-            thread = threading.Thread(target=run_and_track, args=(cmd,))
+        for i, cmd in enumerate(commands):
+            thread = threading.Thread(target=run_and_track, args=(i, cmd))
             thread.start()
             threads.append(thread)
 
@@ -151,12 +166,16 @@ class CommandExecutor:
 
         return all(results)
 
-    def run_command(self, command: list[str]) -> bool:
+    def run_command(self, command: list[str], task: tuple = None) -> bool:
         """
         Executes a specified shell command and logs its execution details.
 
         Args:
             command (list[str]): The shell command to execute, provided as a list of strings.
+            task (tuple, optional): (step, index) of this command in the run
+                progress (see run_topp()). Its start, end and, on failure, exit
+                code and output are recorded there, and a failure is logged
+                with its context ("While running X on file 2 of 3 (a.mzML)").
 
         Raises:
             Exception: If the command execution results in any errors.
@@ -167,16 +186,25 @@ class CommandExecutor:
         # Log the execution start
         self.logger.log(f"Running command:\n"+' '.join(command)+"\nWaiting for command to finish...", 1)   
         start_time = time.time()
-        
+        if task is not None:
+            self.progress.file_started(*task)
+
         # Execute the command with real-time output capture
-        process = subprocess.Popen(
-            command,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            bufsize=1,  # Line buffered
-            universal_newlines=True
-        )
+        try:
+            process = subprocess.Popen(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                bufsize=1,  # Line buffered
+                universal_newlines=True
+            )
+        except OSError as e:
+            # e.g. the tool is not installed: record it, then fail as before
+            if task is not None:
+                self.progress.file_finished(*task, ok=False, returncode=-1, output=[str(e)])
+                self._log_failure_context(task, -1)
+            raise
         child_pid = process.pid
         
         # Record the PID to keep track of running processes associated with this workspace/workflow
@@ -186,9 +214,11 @@ class CommandExecutor:
 
         # Buffer for stderr - will only be written to minimal log if process fails
         stderr_buffer: list[str] = []
+        # Last lines of stdout, kept for the run progress of a failed file
+        stdout_tail: deque = deque(maxlen=OUTPUT_TAIL)
 
         # Real-time output capture
-        self._stream_output(process, stderr_buffer)
+        self._stream_output(process, stderr_buffer, stdout_tail)
 
         # Wait for process completion
         process.wait()
@@ -202,16 +232,70 @@ class CommandExecutor:
         # Log completion
         self.logger.log(f"Process finished:\n"+' '.join(command)+f"\nTotal time to run command: {execution_time:.2f} seconds", 1)
 
+        ok = process.returncode == 0
+        if task is not None:
+            self.progress.file_finished(
+                *task,
+                ok=ok,
+                returncode=process.returncode,
+                output=list(stdout_tail) + stderr_buffer,
+            )
+
         # Check for errors
-        if process.returncode != 0:
+        if not ok:
             # Write buffered stderr to minimal log only on failure
             for line in stderr_buffer:
                 self.logger.log(f"STDERR: {line}", 0)
             self.logger.log(f"ERROR: Command failed with exit code {process.returncode}: {command[0]}", 0)
+            if task is not None:
+                self._log_failure_context(task, process.returncode)
             return False
         return True
 
-    def _stream_output(self, process: subprocess.Popen, stderr_buffer: list[str]) -> None:
+    def _log_failure_context(self, task: tuple, returncode: int) -> None:
+        """Log which tool failed on which file, e.g. 'While running X on file 2 of 3 (a.mzML)'."""
+        if task[0] < 0:  # the step could not be recorded
+            return
+        state = read_progress(self.progress.workflow_dir)
+        try:
+            step = state["steps"][task[0]]
+        except (TypeError, KeyError, IndexError):
+            return
+        self.logger.log(f"ERROR: {failure_context(step, task[1])} (exit code {returncode})", 0)
+
+    @staticmethod
+    def _command_labels(input_output: dict, n_processes: int) -> list[str]:
+        """A name per command for the run progress: its input file, as a rule.
+
+        Taken from the first input-like key ("in", "in_...") whose list holds
+        one entry per command, else the first such list; a collected list of
+        files becomes "<n> files".
+        """
+        keys = list(input_output.keys())
+        candidates = [k for k in keys if k.lower().startswith("in")] + keys
+        key = next(
+            (k for k in candidates if len(input_output[k]) == n_processes),
+            candidates[0] if candidates else None,
+        )
+        labels = []
+        for i in range(n_processes):
+            if key is None:
+                labels.append("")
+                continue
+            values = input_output[key]
+            value = values[i] if len(values) > i else values[0]
+            if isinstance(value, list):
+                labels.append(Path(value[0]).name if len(value) == 1 else f"{len(value)} files")
+            else:
+                labels.append(Path(str(value)).name)
+        return labels
+
+    def _stream_output(
+        self,
+        process: subprocess.Popen,
+        stderr_buffer: list[str],
+        stdout_tail: deque = None,
+    ) -> None:
         """
         Streams stdout and stderr from a running process in real-time to the logger.
         This method runs in the workflow process, not the GUI thread, so it's safe to block.
@@ -229,6 +313,8 @@ class CommandExecutor:
                 for line in iter(process.stdout.readline, ''):
                     if line:
                         self.logger.log(line.rstrip(), 2)
+                        if stdout_tail is not None:
+                            stdout_tail.append(line.rstrip())
                     if process.poll() is not None:
                         break
             except Exception as e:
@@ -316,6 +402,23 @@ class CommandExecutor:
         # Load merged parameters (_defaults + user overrides) for this tool instance
         merged_params = self.parameter_manager.get_merged_params(params_key)
 
+        # A stored parameter the installed tool does not have (saved before an
+        # upgrade that removed or renamed it) makes the tool refuse the whole
+        # run: "Parameters passed to '<tool>' are invalid", exit code 6. Leave
+        # it out and say so. Only when the tool's .ini is there to tell.
+        known_params = self.parameter_manager.known_topp_params(tool)
+        if isinstance(known_params, set):
+            unknown = sorted(k for k in merged_params if k not in known_params)
+            for k in unknown:
+                del merged_params[k]
+            if unknown:
+                self.logger.log(
+                    f"WARNING: {tool} has no parameter {', '.join(unknown)}; "
+                    "the stored value is not passed on. Check the parameters "
+                    "of this tool on the configuration page.",
+                    0,
+                )
+
         # Load flag parameter names: params.json takes priority (survives session restart),
         # session_state is the live fallback during the current session.
         flag_map = self.parameter_manager.get_parameters_from_json().get("_flag_params", {})
@@ -384,13 +487,22 @@ class CommandExecutor:
             command += ["-threads", str(threads_per_command)]
             commands.append(command)
 
-        # Run command(s)
-        if len(commands) == 1:
-            return self.run_command(commands[0])
-        elif len(commands) > 1:
-            return self.run_multiple_commands(commands)
-        else:
+        if not commands:
             raise Exception("No commands to execute.")
+
+        # Record the call for the Run page: one entry per command (input file)
+        step = self.progress.start_step(
+            tool if params_key == tool else f"{tool} ({params_key})",
+            self._command_labels(input_output, len(commands)),
+            threads=threads_per_command,
+            parallel=parallel_commands,
+        )
+        try:
+            if len(commands) == 1:
+                return self.run_command(commands[0], task=(step, 0))
+            return self.run_multiple_commands(commands, step=step)
+        finally:
+            self.progress.end_step(step)
 
     def stop(self) -> None:
         """

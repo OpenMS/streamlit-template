@@ -1,6 +1,16 @@
 name: continuous-integration
 
-on: [push, pull_request]
+# Branch pushes are covered by their PR; running on every push ran each PR twice.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A newer push to a PR cancels its running checks. Pushes to main queue, and
+# GitHub keeps only the newest waiting run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   test:
@@ -8,7 +18,8 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest]
-        # Match the python version used in the committed Dockerfile (release/3.5.0)
+        # The oldest Python the app supports. The full Docker images use 3.11
+        # (pyOpenMS 3.6 needs it), the desktop apps 3.11 too.
         python-version: ["3.10"]
     steps:
     - uses: actions/checkout@v4

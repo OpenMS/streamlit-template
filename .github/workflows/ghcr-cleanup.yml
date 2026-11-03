@@ -22,7 +22,7 @@ jobs:
           account: ${{ github.repository_owner }}
           token: ${{ secrets.GITHUB_TOKEN }}
           image-names: ${{ github.event.repository.name }}
-          image-tags: "!v*-full !v*-simple !main-full !main-simple !latest"
+          image-tags: "!v*-full !v*-simple !*.*-full !*.*-simple !main-full !main-simple !latest"
           tag-selection: tagged
           cut-off: 30d
           dry-run: ${{ github.event.inputs.dry-run || 'false' }}
@@ -63,7 +63,7 @@ jobs:
           account: ${{ github.repository_owner }}
           token: ${{ secrets.GITHUB_TOKEN }}
           image-names: ${{ github.event.repository.name }}/sif
-          image-tags: "!v*-full !v*-simple !main-full !main-simple !latest"
+          image-tags: "!v*-full !v*-simple !*.*-full !*.*-simple !main-full !main-simple !latest"
           tag-selection: tagged
           cut-off: 30d
           dry-run: ${{ github.event.inputs.dry-run || 'false' }}

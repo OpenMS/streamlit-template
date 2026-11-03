@@ -23,7 +23,9 @@ cluster is updated by changing the image tag the prod overlay pulls.
    git log --first-parent --format='%s' $(git describe --tags --abbrev=0)..HEAD   # merge, squash and rebase merges alike
    ```
 3. **PR, merge** to the default branch.
-4. **Tag and release** on the merge commit: `v<version>`. Creating the GitHub
+4. **Tag and release** on the merge commit: `v<version>`, or
+   `<AppName>-<version>` (e.g. `OpenDDA-1.3`) for an app that names its tags
+   that way; `build-and-test.yml` builds both forms. Creating the GitHub
    release (not only the tag) is what triggers the installer build
    (`release: created`) and attaches the installers; the tag push triggers
    `build-and-test.yml`, which publishes `<tag>-full`, `<tag>-simple` and the
@@ -31,9 +33,12 @@ cluster is updated by changing the image tag the prod overlay pulls.
 5. **Wait for both workflows** to finish green before announcing. A release
    without its installer asset is not done.
 6. **Deploy**: set `images[0].newTag` in `k8s/overlays/prod/kustomization.yaml`
-   to `v<version>-full` in a PR; after merge the operator (or the GitOps
+   to `<tag>-full` (e.g. `v1.3-full` or `OpenDDA-1.3-full`) in a PR; after merge the operator (or the GitOps
    controller, if the cluster has one) applies it. Pinning a tag instead of
    `latest` is what makes a rollback a one-line revert.
+   With Argo CD Image Updater (`k8s/argocd/image-updater.yaml`) the cluster
+   moves to the new release image by itself; pin `newTag` anyway, so a
+   re-created Application starts from the current release.
 
 Tagging, publishing and deploying are visible to users and cannot be taken
 back cleanly; do them only when the user asked for the release.
@@ -42,6 +47,6 @@ back cleanly; do them only when the user asked for the release.
 
 - [ ] Version chosen by the change type and bumped in settings.json
 - [ ] User-facing notes written
-- [ ] GitHub release `v<version>` created on the merge commit
+- [ ] GitHub release `<tag>` (`v<version>` or `<AppName>-<version>`) created on the merge commit
 - [ ] Images, SIF and installers published; both workflows green
 - [ ] Overlay pins the new tag

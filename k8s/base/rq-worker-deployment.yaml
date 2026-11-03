@@ -7,8 +7,8 @@ metadata:
 spec:
   # Two workers, not one. RQ runs one job per worker process, so `replicas: 1`
   # serialised every workflow in a deployment however much hardware sat
-  # underneath it - and on the de.NBI pair the second node could not have been
-  # used anyway, because the memory-tier component pinned every Deployment to
+  # underneath it - and on a two-node cluster the second node could not have
+  # been used anyway, because the memory-tier component pinned every Deployment to
   # one labelled node and the workspace claim was ReadWriteOnce on a Cinder
   # volume that attaches to exactly one node. Both of those are gone. This is
   # the line that actually spends the second node.
@@ -19,7 +19,7 @@ spec:
   # capacity decision against real nodes - see the worker-size and
   # worker-replica questions in .claude/skills/configure-k8s-deployment.md.
   #
-  # 2 is one per node on the production pair, which is the point at which the
+  # 2 is one per node on a two-node cluster, which is the point at which the
   # spread constraint below has anything to do. A higher count is legal
   # (maxSkew 1 permits 2/1 across two nodes) but only pays off where a node can
   # hold two workers of this size at once. It is also the first configuration
@@ -39,7 +39,7 @@ spec:
   #     during any node drain, since a cordoned node still counts as a domain
   #     under the default nodeTaintsPolicy;
   #   - the readinessProbe below fails every worker whose mount is blocked
-  #     during a routine Ganesha restart.
+  #     during a routine NFS server restart or failover.
   # Either would then hang `kubectl rollout status deployment/<slug>-rq-worker`
   # and fail CI's `kubectl wait --for=condition=available`, turning a
   # degradation that the design calls survivable into a blocked rollout.
@@ -168,7 +168,7 @@ spec:
           # activate` costs a few hundred ms of shell hooks on every probe, and
           # this is the same env the container command activates one screen up.
           #
-          # Timing, against the ~90s NFSv4 grace period a Ganesha restart
+          # Timing, against the ~90s NFSv4 grace period an NFS server restart
           # imposes - all I/O blocks until it ends, so the numbers have to
           # outlast it or every routine restart flaps the worker:
           #   inner timeout 15s  - a cold interpreter plus `import redis` is
@@ -224,7 +224,7 @@ spec:
       volumes:
         - name: workspaces
           persistentVolumeClaim:
-            claimName: workspaces-nfs-pvc
+            claimName: workspaces-manila-pvc
         - name: config
           configMap:
             name: streamlit-config

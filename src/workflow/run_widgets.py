@@ -19,6 +19,7 @@ from src.workflow.RunManager import (
     FINISHED,
     MAX_NAME_LENGTH,
     RUNNING,
+    RunImportError,
     RunManager,
     format_time,
 )
@@ -126,7 +127,7 @@ def select_run(
         label, options, key=widget, format_func=lambda r: labels[r],
         on_change=store_one,
         help=help or "Every run of the workflow is kept. Pick the one to show; "
-        "rename, download or delete runs on the Download page.",
+        "rename, download, delete or import runs on the Download page.",
     )
     set_selected_run(runs, st.session_state[widget])
     return st.session_state[widget]
@@ -146,6 +147,7 @@ def run_manager_section(
         workflow_running: True while a run executes; its row cannot be deleted.
         exclude: Names left out of the ZIP downloads (e.g. caches).
     """
+    run_import(runs)
     all_runs = runs.list_runs()
     if not all_runs:
         st.info("No runs yet. Start the workflow on the **Run** page.")
@@ -212,6 +214,70 @@ def run_manager_section(
                 runs.delete(run_id)
                 st.session_state.pop(prepared, None)
                 st.rerun()
+
+
+def show_import_notice(runs: RunManager) -> None:
+    """
+    The message left by run_import() for the rerun after an import. Shown
+    once: run_import() and the results pages both call this, whichever runs
+    first takes it.
+    """
+    done = st.session_state.pop(f"_runs-{_slug(runs)}-imported", None)
+    if not done:
+        return
+    if isinstance(done, dict):
+        name, shown = done.get("name", ""), done.get("shown", False)
+    else:
+        name, shown = done, True
+    if shown:
+        st.success(f"Imported **{name}**. It is shown on the results pages.")
+    else:
+        st.warning(
+            f"Imported **{name}**. Its run did not finish, so the results "
+            "pages do not show it; it is listed on the Download page."
+        )
+
+
+def run_import(runs: RunManager, expanded: bool = False) -> None:
+    """
+    Upload a run's ZIP (as the download button of run_manager_section() makes
+    it) and add it as a run: its results, parameters and logs, under its name.
+    The imported run is shown on the results pages.
+    """
+    slug = _slug(runs)
+    counter = f"_runs-{slug}-import-n"
+    n = st.session_state.get(counter, 0)
+    show_import_notice(runs)
+    with st.expander("📥 Open a run from a ZIP", expanded=expanded):
+        st.caption(
+            "A run downloaded from this page, here or in another workspace or "
+            "installation: results, parameters and logs are added as a new run. "
+            f"Up to {st.get_option('server.maxUploadSize')} MB "
+            "(`server.maxUploadSize` in `.streamlit/config.toml`)."
+        )
+        upload = st.file_uploader(
+            "Run ZIP", type=["zip"], key=f"runs-{slug}-import-{n}",
+            label_visibility="collapsed",
+        )
+        if upload is not None and st.button(
+            "Import run", key=f"runs-{slug}-import-go-{n}", type="primary",
+        ):
+            try:
+                with st.spinner("Unpacking..."):
+                    run_id = runs.import_zip(upload)
+            except RunImportError as e:
+                st.error(f"**{upload.name}** was not imported. {e}")
+                return
+            run = runs.get(run_id)
+            shown = run.get("status") == FINISHED
+            if shown:
+                set_selected_run(runs, run_id)
+            # A fresh uploader, and the message after the rerun
+            st.session_state[counter] = n + 1
+            st.session_state[f"_runs-{slug}-imported"] = {
+                "name": run.get("name", run_id), "shown": shown,
+            }
+            st.rerun()
 
 
 def run_name_key(runs: RunManager) -> str:

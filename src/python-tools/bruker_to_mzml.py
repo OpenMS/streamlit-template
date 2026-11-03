@@ -89,7 +89,10 @@ def _ms2_spectrum(spectrum, oms):
     precursor.setIsolationWindowUpperOffset(half_width)
     if spectrum.collision_energy:
         precursor.setActivationEnergy(spectrum.collision_energy)
-    precursor.setActivationMethods({oms.Precursor.ActivationMethod.CID})
+    # The enum moved into Precursor in pyOpenMS 3.5; earlier releases have it
+    # at module level.
+    activation = getattr(oms.Precursor, "ActivationMethod", None) or oms.ActivationMethod
+    precursor.setActivationMethods({activation.CID})
     p = spectrum.precursor
     if p is not None:
         out.setRT(p.rt)

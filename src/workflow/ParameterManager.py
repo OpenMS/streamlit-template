@@ -20,6 +20,23 @@ def bool_param_paths_from_param_xml_ini(ini_path: Path, tool_stem: str) -> set[s
 
     Paths match the suffix after ``Tool:1:`` in pyOpenMS (e.g. ``algorithm:epd:masstrace_snr_filtering``).
     """
+    return param_paths_from_param_xml_ini(ini_path, tool_stem, bool_only=True)
+
+
+def param_paths_from_param_xml_ini(
+    ini_path: Path, tool_stem: str, bool_only: bool = False
+) -> set[str]:
+    """
+    Return short parameter paths for the ``<ITEM>`` / ``<ITEMLIST>`` entries of a ParamXML .ini file.
+
+    Paths match the suffix after ``Tool:1:`` in pyOpenMS (e.g. ``algorithm:epd:masstrace_snr_filtering``).
+    An unreadable file gives an empty set.
+
+    Args:
+        ini_path: The .ini file.
+        tool_stem: The tool name, the root NODE of the file.
+        bool_only: Only ``<ITEM type="bool">`` entries.
+    """
     try:
         root = ET.parse(ini_path).getroot()
     except (ET.ParseError, OSError):
@@ -37,7 +54,10 @@ def bool_param_paths_from_param_xml_ini(ini_path: Path, tool_stem: str) -> set[s
             if lt == "NODE":
                 nm = ch.get("name") or ""
                 walk(ch, parts + (nm,))
-            elif lt == "ITEM" and (ch.get("type") or "").lower() == "bool":
+            elif lt in ("ITEM", "ITEMLIST") and (
+                not bool_only
+                or (lt == "ITEM" and (ch.get("type") or "").lower() == "bool")
+            ):
                 nm = ch.get("name") or ""
                 segs = [p for p in parts if p]
                 if nm:
@@ -290,9 +310,30 @@ class ParameterManager:
             # No Streamlit session (e.g. plain `python` import)
             pass
 
+    @staticmethod
+    def _ini_is_stale(tool: str, ini_path: Path) -> bool:
+        """
+        True when the tool's executable is newer than its cached .ini.
+
+        Workspaces outlive the image they were created with: after an upgrade
+        the cached .ini still describes the old tool, so the page would show
+        parameters the new tool no longer has (and hide the ones it added).
+        An executable that cannot be found or stat'ed keeps the cached file.
+        """
+        exe = shutil.which(tool)
+        if not exe:
+            return False
+        try:
+            return Path(exe).stat().st_mtime > ini_path.stat().st_mtime
+        except OSError:
+            return False
+
     def create_ini(self, tool: str) -> bool:
         """
-        Create an ini file for a TOPP tool if it doesn't exist.
+        Create an ini file for a TOPP tool if it doesn't exist or is older than the tool.
+
+        The file is written next to the target and then moved into place, so a
+        failed ``-write_ini`` leaves the previous file as it was.
 
         Args:
             tool: Name of the TOPP tool (e.g., "CometAdapter")
@@ -301,16 +342,48 @@ class ParameterManager:
             True if ini file exists (created or already existed), False if creation failed
         """
         ini_path = Path(self.ini_dir, tool + ".ini")
-        if ini_path.exists():
+        if ini_path.exists() and not self._ini_is_stale(tool, ini_path):
             self._merge_bool_params_from_ini(tool)
             return True
+        if ini_path.exists():
+            logger.info("Regenerating %s: %s is newer than it", ini_path, tool)
+        tmp_path = Path(self.ini_dir, f".{tool}.{uuid.uuid4().hex}.ini")
         try:
-            subprocess.call([tool, "-write_ini", str(ini_path)])
+            subprocess.call([tool, "-write_ini", str(tmp_path)])
         except FileNotFoundError:
             return False
+        finally:
+            if tmp_path.exists():
+                try:
+                    os.replace(tmp_path, ini_path)
+                except OSError:
+                    tmp_path.unlink(missing_ok=True)
         if ini_path.exists():
             self._merge_bool_params_from_ini(tool)
         return ini_path.exists()
+
+    def known_topp_params(self, tool: str) -> set[str] | None:
+        """
+        The parameters the installed ``tool`` accepts, from its .ini.
+
+        Only an .ini that already exists is consulted (refreshed first when the
+        tool is newer than it); without one the answer is None, so a caller
+        cannot tell and must not filter.
+
+        Args:
+            tool: Name of the TOPP tool executable.
+
+        Returns:
+            set[str] | None: Short parameter paths (``algorithm:section:param``),
+                or None when there is no .ini to read.
+        """
+        ini_path = Path(self.ini_dir, f"{tool}.ini")
+        if not ini_path.exists():
+            return None
+        if self._ini_is_stale(tool, ini_path):
+            self.create_ini(tool)
+        known = param_paths_from_param_xml_ini(ini_path, tool)
+        return known or None
 
     def save_parameters(self) -> bool:
         """
@@ -862,6 +935,107 @@ class ParameterManager:
                 if any(param not in saved for param in values):
                     return name, True
         return name, False
+
+    def get_topp_defaults(self, tool: str, tool_instance_name: str = None) -> dict:
+        """
+        Effective defaults of a TOPP tool: the ini values with the workflow's
+        ``custom_defaults`` (``_defaults``) on top. User values are left out.
+
+        Returns:
+            dict: Short parameter name -> default value (empty without an ini file).
+        """
+        instance_name = tool_instance_name or tool
+        ini_path = Path(self.ini_dir, f"{tool}.ini")
+        if not ini_path.exists():
+            return {}
+        param = poms.Param()
+        poms.ParamXMLFile().load(str(ini_path), param)
+        prefix = f"{tool}:1:"
+        defaults = {}
+        for key in param.keys():
+            key_str = key.decode() if isinstance(key, bytes) else str(key)
+            if prefix in key_str:
+                defaults[key_str.split(prefix, 1)[1]] = param.getValue(key)
+        stored = self.get_parameters_from_json().get("_defaults", {})
+        defaults.update(stored.get(instance_name, {}))
+        return defaults
+
+    def _topp_session_keys(self, tool_instance_name: str, name: str) -> list:
+        key = f"{self.topp_param_prefix}{tool_instance_name}:1:{name}"
+        return [key, f"{key}_display"]
+
+    def set_topp_parameter(
+        self, tool_instance_name: str, name: str, value, default=None
+    ) -> bool:
+        """
+        Store one TOPP parameter in params.json, outside its input_TOPP() widget.
+
+        A value equal to ``default`` is removed instead, so the parameter
+        follows the default again. The widget's session keys are deleted so it
+        shows the new value on the next rerun (as apply_preset() does).
+
+        Returns:
+            bool: False when params.json could not be read; nothing is written then.
+        """
+        try:
+            params = self.read_parameters_strict()
+        except InvalidParameterFileError as e:
+            self._report_unreadable_parameter_file(
+                e, "The parameter was not changed, the existing file is left unchanged."
+            )
+            return False
+        values = params.get(tool_instance_name)
+        if not isinstance(values, dict):
+            values = {}
+        if default is not None and self._same_value(value, default):
+            values.pop(name, None)
+        else:
+            values[name] = value
+        params[tool_instance_name] = values
+        _write_parameter_file(self.params_file, params)
+        for key in self._topp_session_keys(tool_instance_name, name):
+            if key in st.session_state:
+                del st.session_state[key]
+        return True
+
+    def reset_topp_parameter(self, tool_instance_name: str, name: str) -> bool:
+        """Return one TOPP parameter to its default (see set_topp_parameter())."""
+        try:
+            params = self.read_parameters_strict()
+        except InvalidParameterFileError as e:
+            self._report_unreadable_parameter_file(
+                e, "The parameter was not reset, the existing file is left unchanged."
+            )
+            return False
+        values = params.get(tool_instance_name)
+        if isinstance(values, dict) and name in values:
+            del values[name]
+            _write_parameter_file(self.params_file, params)
+        for key in self._topp_session_keys(tool_instance_name, name):
+            if key in st.session_state:
+                del st.session_state[key]
+        return True
+
+    def applied_preset_values(self, tool_instance_name: str) -> tuple[str | None, dict, bool]:
+        """
+        What the applied preset sets for one TOPP tool.
+
+        Returns:
+            tuple: (preset name or None, {parameter: value}, complete). A user
+                preset is a complete snapshot: a parameter it does not list is
+                at its default there. A built-in preset only sets the values it
+                names, so ``complete`` is False and other parameters have no
+                preset value.
+        """
+        name = self._read_user_preset_state().get("applied")
+        if not name:
+            return None, {}, False
+        builtin = self.load_presets().get(name)
+        preset = builtin or self.load_user_presets().get(name)
+        if not preset:
+            return None, {}, False
+        values = preset.get(tool_instance_name, {})
+        return name, dict(values) if isinstance(values, dict) else {}, builtin is None
 
     def forget_applied_preset(self) -> None:
         """Clear the applied preset, e.g. after resetting to the default parameters."""

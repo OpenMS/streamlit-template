@@ -3,8 +3,11 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      args:
-        GITHUB_TOKEN: $GITHUB_TOKEN
+      # Optional: GITHUB_TOKEN in the environment lets the build bundle the
+      # latest release's Windows installer. It is passed as a build secret,
+      # so it is not stored in the image.
+      secrets:
+        - github_token
     image: openms_streamlit_template
     container_name: openms-streamlit-template
     restart: always
@@ -47,5 +50,9 @@ services:
       - REDIS_URL=redis://localhost:6379/0
     volumes:
       - workspaces-streamlit-template:/workspaces-streamlit-template
+secrets:
+  github_token:
+    environment: GITHUB_TOKEN
+
 volumes:
   workspaces-streamlit-template:

@@ -1,0 +1,534 @@
+# Reusable workflow: the OpenMS TOPP tools for the desktop apps, on Windows,
+# macOS and Linux alike.
+#
+#   openms: "3.5.0"                          an OpenMS release: nothing is built,
+#                                            electron/scripts/stage-openms.sh downloads
+#                                            the release's installer, .pkg and .deb
+#   openms: "OpenMS/OpenMS@develop"          anything else (branch, tag, commit,
+#   openms: "t0mdavid-m/OpenMS@FDmerge"      in OpenMS/OpenMS or a fork) is built
+#   openms: "develop"                        from source on all three platforms,
+#                                            once per commit: the packages are cached
+#                                            by commit SHA, so a later run of the
+#                                            same commit only restores them
+#
+# A ref that names a release tag (v3.6.0, release/3.5.0, Release3.0.0) counts
+# as that release. Built packages are uploaded as openms-<platform>
+# (Windows-x86_64: openms-package.zip, macOS-arm64: .pkg, Linux-x86_64: .deb),
+# which stage-openms.sh takes as OPENMS_PACKAGE.
+#
+# Windows builds with the vcpkg CMake presets when the source has them
+# (OpenMS 3.6+), otherwise with a prebuilt OpenMS/contrib release. macOS and
+# Linux build with OpenMS's tools/ci scripts (deps-macos.sh, deps-ubuntu.sh,
+# cibuild.cmake, cipackage.cmake).
+
+name: OpenMS
+
+on:
+  workflow_call:
+    inputs:
+      openms:
+        description: 'An OpenMS release ("3.5.0") or "[owner/repo@]ref" to build.'
+        type: string
+        required: true
+      windows-contrib:
+        description: >-
+          OpenMS/contrib release tag for a Windows build without vcpkg presets.
+          Empty takes the latest release.
+        type: string
+        default: ""
+    outputs:
+      source:
+        description: '"release" (download it) or "build" (artifacts openms-<platform>).'
+        value: ${{ jobs.resolve.outputs.source }}
+      version:
+        description: The release version (release source), else empty.
+        value: ${{ jobs.resolve.outputs.version }}
+      repository:
+        description: Repository of the release or the build.
+        value: ${{ jobs.resolve.outputs.repository }}
+      sha:
+        description: Commit that was built (build source), else empty.
+        value: ${{ jobs.resolve.outputs.sha }}
+      linux-runner:
+        description: >-
+          The Ubuntu runner whose system libraries the Linux OpenMS package
+          was built against; the app's Linux build runs there.
+        value: ${{ jobs.resolve.outputs.linux-runner }}
+
+permissions:
+  contents: read
+
+jobs:
+  resolve:
+    name: OpenMS (resolve)
+    runs-on: ubuntu-latest
+    outputs:
+      source: ${{ steps.resolve.outputs.source }}
+      version: ${{ steps.resolve.outputs.version }}
+      repository: ${{ steps.resolve.outputs.repository }}
+      sha: ${{ steps.resolve.outputs.sha }}
+      linux-runner: ${{ steps.resolve.outputs.linux-runner }}
+    steps:
+    - name: Release or build?
+      id: resolve
+      env:
+        GH_TOKEN: ${{ github.token }}
+        SPEC: ${{ inputs.openms }}
+      run: |
+        set -euo pipefail
+        spec="${SPEC//[[:space:]]/}"
+        [[ -n "$spec" ]] || { echo "::error::the openms input is empty"; exit 1; }
+        if [[ $spec == *@* ]]; then repo="${spec%@*}"; ref="${spec#*@}"; else repo=OpenMS/OpenMS; ref="$spec"; fi
+
+        # A version, or a tag in one of OpenMS's release tag schemes.
+        version=""
+        if [[ $ref =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then version="$ref"
+        elif [[ $ref =~ ^(v|release/|Release)([0-9]+\.[0-9]+(\.[0-9]+)?)$ ]]; then version="${BASH_REMATCH[2]}"
+        fi
+        if [[ -n "$version" ]]; then
+          for tag in "v$version" "release/$version" "Release$version"; do
+            if gh release view "$tag" -R "$repo" --json tagName >/dev/null 2>&1; then
+              echo "OpenMS $version is released in $repo ($tag): nothing to build."
+              # The .deb of OpenMS 3.6 and later is built on Ubuntu 24.04
+              # (libc6 >= 2.38, the t64 Qt packages); earlier ones on 22.04.
+              runner=ubuntu-22.04
+              IFS=. read -r major minor _ <<<"$version"
+              if (( major > 3 || (major == 3 && minor >= 6) )); then runner=ubuntu-24.04; fi
+              { echo "source=release"; echo "version=$version"; echo "repository=$repo"; echo "sha="; echo "linux-runner=$runner"; } >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          done
+          [[ $ref =~ ^[0-9.]+$ ]] && ref="release/$version"
+          echo "No release for $version in $repo; building $ref."
+        fi
+
+        sha=$(gh api "repos/$repo/commits/$ref" --jq .sha) ||
+          { echo "::error::$repo has no branch, tag or commit $ref"; exit 1; }
+        echo "Building $repo@$ref ($sha)."
+        # The Linux build runs where that source's tools/ci/deps-ubuntu.sh
+        # works: OpenMS 3.6 and later install packages only Ubuntu 24.04 has
+        # (libsqlitecpp-dev, Arrow/Parquet), earlier ones build on 22.04,
+        # whose older glibc lets the app run on more systems.
+        cmake=
+        for attempt in 1 2 3; do
+          cmake=$(gh api -H "Accept: application/vnd.github.raw" "repos/$repo/contents/CMakeLists.txt?ref=$sha") && break
+          sleep $((attempt * 5))
+        done
+        major=$(sed -n 's/^set(OPENMS_PACKAGE_VERSION_MAJOR "\([0-9]*\)").*/\1/p' <<<"$cmake")
+        minor=$(sed -n 's/^set(OPENMS_PACKAGE_VERSION_MINOR "\([0-9]*\)").*/\1/p' <<<"$cmake")
+        if [[ -z "$major" || -z "$minor" ]]; then
+          echo "::error::could not read the OpenMS version from $repo@$sha's CMakeLists.txt, so the Linux runner is unknown"
+          exit 1
+        fi
+        echo "The source is OpenMS $major.$minor."
+        runner=ubuntu-22.04
+        if (( major > 3 || (major == 3 && minor >= 6) )); then runner=ubuntu-24.04; fi
+        { echo "source=build"; echo "version="; echo "repository=$repo"; echo "sha=$sha"; echo "linux-runner=$runner"; } >> "$GITHUB_OUTPUT"
+        echo "OpenMS: \`$repo@$ref\` → \`$sha\`, built from source (cached per commit)" >> "$GITHUB_STEP_SUMMARY"
+
+  build:
+    name: OpenMS ${{ matrix.platform }}
+    needs: resolve
+    if: needs.resolve.outputs.source == 'build'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The latest OpenMS/contrib Windows release is built with Visual Studio
+          # 2026; linking it with an older MSVC fails on missing STL symbols.
+          - platform: Windows-x86_64
+            runs-on: windows-2025
+            thirdparty: Windows/x86_64
+          # Apple Silicon only, like the app.
+          - platform: macOS-arm64
+            runs-on: macos-15
+            thirdparty: MacOS/arm64
+            package_type: pkg
+          # The Ubuntu the resolve job picked for this source (linux-runner).
+          - platform: Linux-x86_64
+            runs-on: linux
+            thirdparty: Linux/x86_64
+            package_type: deb
+    runs-on: ${{ matrix.runs-on == 'linux' && needs.resolve.outputs.linux-runner || matrix.runs-on }}
+    # A cold build compiles every dependency (vcpkg on Windows) and OpenMS;
+    # 6 hours is the hosted runners' limit.
+    timeout-minutes: 350
+    defaults:
+      run:
+        shell: bash
+    env:
+      REPO: ${{ needs.resolve.outputs.repository }}
+      SHA: ${{ needs.resolve.outputs.sha }}
+
+    steps:
+    # Bump v1 when the build or packaging below changes what a package holds.
+    - name: Restore a package of this commit
+      id: package
+      uses: actions/cache/restore@v4
+      with:
+        path: openms-out
+        key: openms-package-v1-${{ matrix.platform }}-${{ needs.resolve.outputs.repository }}-${{ needs.resolve.outputs.sha }}
+
+    # Everything up to "Save the package" runs only when no package of this
+    # commit exists yet.
+    - name: Checkout OpenMS
+      # At the workspace root, as OpenMS's own CI does: vcpkg's build trees are
+      # deep, and Windows paths are limited to 260 characters.
+      if: steps.package.outputs.cache-hit != 'true'
+      uses: actions/checkout@v4
+      with:
+        repository: ${{ needs.resolve.outputs.repository }}
+        ref: ${{ needs.resolve.outputs.sha }}
+        persist-credentials: false
+
+    - name: Pick the build route
+      if: steps.package.outputs.cache-hit != 'true'
+      id: route
+      run: |
+        set -euo pipefail
+        if [[ $RUNNER_OS == Windows ]]; then
+          if grep -q '"windows-x64-release"' CMakePresets.json 2>/dev/null && [[ -f vcpkg.json ]]; then
+            route=vcpkg
+          else
+            route=contrib
+          fi
+        else
+          route=cibuild
+          script=tools/ci/deps-$([[ $RUNNER_OS == macOS ]] && echo macos || echo ubuntu).sh
+          [[ -f $script ]] || { echo "::error::$REPO@$SHA has no $script; rebase it onto a newer OpenMS develop"; exit 1; }
+        fi
+        echo "route=$route" >> "$GITHUB_OUTPUT"
+        echo "Build route: $route"
+
+        git submodule update --init --depth 1 THIRDPARTY
+        # Flat folder of this platform's third-party tools; the package ships it
+        # in share/OpenMS/THIRDPARTY (ThermoRawFileParser for FileConverter, ...).
+        mkdir -p _thirdparty
+        cp -R "THIRDPARTY/${{ matrix.thirdparty }}"/* _thirdparty/
+        cp -R THIRDPARTY/All/* _thirdparty/
+        ls _thirdparty
+
+    - name: Restore the ccache cache
+      if: steps.package.outputs.cache-hit != 'true'
+      id: ccache
+      uses: actions/cache/restore@v4
+      with:
+        path: .ccache
+        key: openms-ccache-${{ matrix.platform }}-${{ needs.resolve.outputs.repository }}-${{ needs.resolve.outputs.sha }}
+        restore-keys: |
+          openms-ccache-${{ matrix.platform }}-${{ needs.resolve.outputs.repository }}-
+          openms-ccache-${{ matrix.platform }}-
+
+    ##########################################################################
+    # Windows: build tools (both routes)
+    ##########################################################################
+    - name: Set up a Visual Studio shell
+      if: steps.package.outputs.cache-hit != 'true' && runner.os == 'Windows'
+      uses: egor-tensin/vs-shell@v2
+      with:
+        arch: x64
+
+    - name: Install Windows build tools
+      if: steps.package.outputs.cache-hit != 'true' && runner.os == 'Windows'
+      run: |
+        choco install -y --no-progress ninja ccache
+        if [[ "${{ steps.route.outputs.route }}" == contrib ]]; then
+          choco install cmake --version=3.31.1 -y --no-progress --force
+          # Newer sources no longer find Eigen in contrib; OpenMS's CI takes it from choco.
+          choco install eigen -y --no-progress
+        fi
+        mkdir -p .ccache
+        {
+          echo "CCACHE_DIR=$GITHUB_WORKSPACE/.ccache"
+          echo "CCACHE_BASEDIR=$GITHUB_WORKSPACE"
+          echo "CCACHE_COMPRESS=true"
+          echo "CCACHE_MAXSIZE=2G"
+        } >> "$GITHUB_ENV"
+
+    ##########################################################################
+    # Windows, vcpkg route (OpenMS 3.6+)
+    ##########################################################################
+    - name: Fetch vcpkg
+      if: steps.package.outputs.cache-hit != 'true' && steps.route.outputs.route == 'vcpkg'
+      id: vcpkg
+      run: |
+        # vcpkg resolves its baseline from the submodule's git history, so no --depth.
+        git submodule update --init vcpkg
+        echo "rev=$(git rev-parse HEAD:vcpkg)" >> "$GITHUB_OUTPUT"
+
+    - name: Restore the vcpkg binary cache
+      if: steps.package.outputs.cache-hit != 'true' && steps.route.outputs.route == 'vcpkg'
+      id: vcpkg-cache
+      uses: actions/cache/restore@v4
+      with:
+        path: .vcpkg-cache
+        key: openms-win-vcpkg-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'vcpkg-overlays/**') }}-${{ steps.vcpkg.outputs.rev }}
+        # The files provider keys every package by its ABI hash, so an older
+        # cache is safe to start from: whatever still matches is reused.
+        restore-keys: |
+          openms-win-vcpkg-
+
+    - name: Configure (vcpkg)
+      if: steps.package.outputs.cache-hit != 'true' && steps.route.outputs.route == 'vcpkg'
+      id: vcpkg-configure
+      run: |
+        set -euxo pipefail
+        mkdir -p .vcpkg-cache
+        export VCPKG_BINARY_SOURCES="clear;files,$GITHUB_WORKSPACE/.vcpkg-cache,readwrite"
+        echo "VCPKG_BINARY_SOURCES=$VCPKG_BINARY_SOURCES" >> "$GITHUB_ENV"
+        ./vcpkg/bootstrap-vcpkg.bat -disableMetrics
+        # A TOPP-only build. The optional dependencies match OpenMS's windows-x64-ci
+        # preset, i.e. what the official installer ships, minus GUI, docs and tests.
+        cmake --preset windows-x64-release \
+          -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+          -DWITH_GUI=OFF \
+          -DENABLE_DOCS=OFF \
+          -DENABLE_TUTORIALS=OFF \
+          -DHAS_XSERVER=OFF \
+          -DPYOPENMS=OFF \
+          -DWITH_HDF5=OFF \
+          -DWITH_ONNX=OFF \
+          -DWITH_WNETALIGN=OFF \
+          -DWITH_THERMO_RAW=ON \
+          -DWITH_OPENTIMS=ON \
+          -DUSE_EXTERNAL_JSON=ON \
+          -DUSE_EXTERNAL_SQLITECPP=ON \
+          -DUSE_EXTERNAL_SIMDE=ON \
+          -DUSE_EXTERNAL_ISOSPEC=ON \
+          -DUSE_EXTERNAL_EOLBSPLINE=ON \
+          "-DVCPKG_MANIFEST_FEATURES=isospec;eol-bspline;simde;nlohmann-json;sqlitecpp;openms-thermo-bridge;opentims" \
+          -DENABLE_CLASS_TESTING=OFF \
+          -DENABLE_TOPP_TESTING=OFF \
+          -DENABLE_PIPELINE_TESTING=OFF
+
+    # As soon as configure (which runs `vcpkg install`) succeeded, so a failing
+    # compile does not throw away hours of dependency builds.
+    - name: Save the vcpkg binary cache
+      if: always() && steps.vcpkg-configure.outcome == 'success' && steps.vcpkg-cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: .vcpkg-cache
+        key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
+
+    - name: Build and package (vcpkg)
+      if: steps.package.outputs.cache-hit != 'true' && steps.route.outputs.route == 'vcpkg'
+      id: vcpkg-build
+      env:
+        # Names the zip and its top-level folder (cmake/package_nsis.cmake).
+        CPACK_PACKAGE_FILE_NAME: openms-package
+      run: |
+        set -euxo pipefail
+        ccache --zero-stats
+        # Two jobs keep the MSVC compiler within the hosted runner's memory.
+        cmake --build --preset windows-x64-release --parallel 2
+        ccache --show-stats || true
+        # Stage in a short directory: CPack's default under the build tree can
+        # exceed MAX_PATH (see OpenMS's release.yml).
+        rm -rf /c/cpk && mkdir -p /c/cpk
+        cmake -S . -B build/windows-x64-release -DPACKAGE_TYPE=zip \
+          "-DSEARCH_ENGINES_DIRECTORY=$GITHUB_WORKSPACE/_thirdparty" -DCPACK_PACKAGE_DIRECTORY=C:/cpk
+        cmake --build build/windows-x64-release --target dist
+        mkdir -p openms-out && cp /c/cpk/openms-package.zip openms-out/
+
+    ##########################################################################
+    # Windows, contrib route (sources without vcpkg presets)
+    ##########################################################################
+    - name: Install Qt
+      if: steps.package.outputs.cache-hit != 'true' && steps.route.outputs.route == 'contrib'
+      uses: jurplel/install-qt-action@v4
+      with:
+        version: '6.8.3'    # built with win64_msvc2022_64, which must match the compiler
+        arch: 'win64_msvc2022_64'
+        cache: 'false'
+        archives: 'qtsvg qtimageformats qtbase'
+
+    - name: Download contrib
+      if: steps.package.outputs.cache-hit != 'true' && steps.route.outputs.route == 'contrib'
+      env:
+        GH_TOKEN: ${{ github.token }}
+        CONTRIB: ${{ inputs.windows-contrib }}
+      run: |
+        set -euo pipefail
+        mkdir -p contrib && cd contrib
+        gh release download ${CONTRIB:+"$CONTRIB"} -R OpenMS/contrib --pattern 'contrib_build-Windows.tar.gz'
+        tar -xzf contrib_build-Windows.tar.gz && rm contrib_build-Windows.tar.gz
+        # contrib's DLLs must be found while the build runs the fresh tools.
+        echo "$GITHUB_WORKSPACE/contrib/lib" >> "$GITHUB_PATH"
+
+    ##########################################################################
+    # macOS and Linux: build dependencies
+    ##########################################################################
+    - name: Install build dependencies
+      if: steps.package.outputs.cache-hit != 'true' && steps.route.outputs.route == 'cibuild'
+      id: deps
+      env:
+        HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: 1
+      run: |
+        set -euo pipefail
+        if [[ $RUNNER_OS == macOS ]]; then
+          bash tools/ci/deps-macos.sh
+          # Homebrew's eigen is 5.x; OpenMS asks for Eigen 3.4. Eigen is
+          # header-only, so install 3.4.0's headers and CMake config aside.
+          eigen3="$RUNNER_TEMP/eigen3"
+          curl -fsSL https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.tar.gz | tar -xz -C "$RUNNER_TEMP"
+          cmake -S "$RUNNER_TEMP/eigen-3.4.0" -B "$RUNNER_TEMP/eigen-build" -DCMAKE_INSTALL_PREFIX="$eigen3" -DBUILD_TESTING=OFF -DEIGEN_BUILD_DOC=OFF >/dev/null
+          cmake --install "$RUNNER_TEMP/eigen-build" >/dev/null
+          echo "cmake_prefix=$eigen3;$(brew --prefix qt)/lib/cmake;$(brew --prefix qt);$(brew --prefix libomp)" >> "$GITHUB_OUTPUT"
+          echo "eigen3_dir=$eigen3/share/eigen3/cmake" >> "$GITHUB_OUTPUT"
+          # AppleClang has no OpenMP of its own; FindOpenMP looks in OpenMP_ROOT.
+          echo "OpenMP_ROOT=$(brew --prefix libomp)" >> "$GITHUB_ENV"
+          echo "external_json=OFF" >> "$GITHUB_OUTPUT"
+        else
+          bash tools/ci/deps-ubuntu.sh
+          echo "cmake_prefix=" >> "$GITHUB_OUTPUT"
+          # Ubuntu's Arrow packages bring their own nlohmann_json (see OpenMS's CI).
+          echo "external_json=ON" >> "$GITHUB_OUTPUT"
+        fi
+        echo "jobs=$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu)" >> "$GITHUB_OUTPUT"
+
+    ##########################################################################
+    # Windows contrib route, macOS, Linux: OpenMS's cibuild.cmake + cipackage.cmake
+    ##########################################################################
+    - name: Build OpenMS (cibuild)
+      if: steps.package.outputs.cache-hit != 'true' && steps.route.outputs.route != 'vcpkg'
+      id: cibuild
+      run: |
+        mkdir -p bld
+        # Sources before OpenMS/OpenMS develop dropped the pin ask for one Arrow
+        # major (find_package(Arrow 23 CONFIG)), and Arrow's SameMajorVersion
+        # check then rejects the newer release that apt and Homebrew install.
+        # Do what develop did: find any version, then require the minimum.
+        perl -pi -e 's/^(\s*)find_package\((Arrow|Parquet) ([0-9.]+) CONFIG REQUIRED\)/$1find_package($2 CONFIG REQUIRED)\n$1if($2_VERSION VERSION_LESS $3)\n$1  message(FATAL_ERROR "Apache $2 >= $3 required (found \${$2_VERSION}).")\n$1endif()/' cmake/cmake_findExternalLibs.cmake
+        if [[ $RUNNER_OS == Windows ]]; then
+          export CMAKE_PREFIX_PATH="$QT_ROOT_DIR/lib/cmake;$QT_ROOT_DIR;C:\ProgramData\chocolatey\lib\eigen"
+          export OPENMS_CONTRIB_LIBS="$GITHUB_WORKSPACE/contrib"
+          export Eigen3_DIR='C:\ProgramData\chocolatey\lib\eigen\share\cmake'
+          export USE_EXTERNAL_JSON=OFF BOOST_USE_STATIC=ON USE_STATIC_BOOST=On
+          # Ninja would otherwise use every core, more than the runner's memory allows.
+          export BUILD_FLAGS=-j4
+          for tool in "$GITHUB_WORKSPACE"/_thirdparty/*; do PATH="$PATH:$tool"; done
+        else
+          export CMAKE_PREFIX_PATH="$DEPS_PREFIX" Eigen3_DIR="$DEPS_EIGEN3"
+          export OPENMS_CONTRIB_LIBS="$GITHUB_WORKSPACE/contrib"
+          export USE_EXTERNAL_JSON="$DEPS_JSON" BOOST_USE_STATIC=OFF
+          export BUILD_FLAGS="-j$DEPS_JOBS"
+        fi
+        # Newer sources' cibuild.cmake no longer reads these variables from
+        # the environment: their CI seeds bld/CMakeCache.txt with
+        # capture-env.sh first (without it, a contrib build fails to find
+        # XercesC: "OPENMS_CONTRIB_LIBS not set").
+        if [[ -f tools/ci/capture-env.sh ]]; then
+          bash tools/ci/capture-env.sh -v "$GITHUB_WORKSPACE/bld/CMakeCache.txt"
+        fi
+        set +e
+        ctest --output-on-failure -V -S "$GITHUB_WORKSPACE/tools/ci/cibuild.cmake"
+        retVal=$?
+        if [ $retVal -ne 0 ]; then
+          # The errors otherwise only reach CDash.
+          echo "::group::Configure log"
+          find bld/Testing -name "LastConfigure*" -type f -exec tail -n 150 {} \;
+          echo "::endgroup::"
+          echo "::group::Compiler errors"
+          find bld/Testing -name "LastBuild*" -type f -exec grep -n -B2 -A12 -E "error:|error C[0-9]+|error LNK|fatal error|FAILED:" {} \; | head -n 600
+          echo "::endgroup::"
+        fi
+        exit $retVal
+      env:
+        DEPS_PREFIX: ${{ steps.deps.outputs.cmake_prefix }}
+        DEPS_EIGEN3: ${{ steps.deps.outputs.eigen3_dir }}
+        DEPS_JSON: ${{ steps.deps.outputs.external_json }}
+        DEPS_JOBS: ${{ steps.deps.outputs.jobs }}
+        CI_PROVIDER: "GitHub-Actions"
+        CMAKE_GENERATOR: "Ninja"
+        SOURCE_DIRECTORY: ${{ github.workspace }}
+        BUILD_NAME: "app-${{ matrix.platform }}-topp-${{ github.run_number }}"
+        ENABLE_STYLE_TESTING: "OFF"
+        # Only the TOPP tools are packaged; building the tests would double the build time.
+        ENABLE_TOPP_TESTING: "OFF"
+        ENABLE_CLASS_TESTING: "OFF"
+        WITH_GUI: "OFF"
+        # The parameter docs run the freshly built tools during the build and are not shipped.
+        ENABLE_DOCS: "OFF"
+        WITH_PARQUET: "OFF"
+        SEARCH_ENGINES_DIRECTORY: "${{ github.workspace }}/_thirdparty"
+        ADDRESS_SANITIZER: "Off"
+        BUILD_TYPE: "Release"
+        CMAKE_BUILD_TYPE: "Release"
+        OPENMP: "ON"
+        MT_ENABLE_OPENMP: "ON"
+        CMAKE_CCACHE_EXE: "ccache"
+        CCACHE_BASEDIR: ${{ github.workspace }}
+        CCACHE_DIR: ${{ github.workspace }}/.ccache
+        CCACHE_COMPRESS: true
+        CCACHE_COMPRESSLEVEL: 12
+        CCACHE_MAXSIZE: 500M
+        CCACHE_SLOPPINESS: time_macros,include_file_ctime,include_file_mtime
+        CCACHE_COMPILERCHECK: content
+
+    - name: Package OpenMS (cipackage)
+      if: steps.package.outputs.cache-hit != 'true' && steps.route.outputs.route != 'vcpkg'
+      run: |
+        set -euo pipefail
+        if [[ $RUNNER_OS == macOS ]]; then
+          # Without the GUI there are no Qt plugins, and fix_dependencies.rb
+          # aborts on the missing plugin folder before it fixes the TOPP tools'
+          # library paths. Skip the plugin folder when it does not exist.
+          sed -i '' 's|\$plugin_dir = Pathname.new(arg).realpath$|$plugin_dir = Pathname.new(arg).realpath if File.directory?(arg)|' cmake/MacOSX/fix_dependencies.rb
+        fi
+        # Names the Windows zip and its top-level folder (cmake/package_nsis.cmake).
+        if [[ $RUNNER_OS == Windows ]]; then export CPACK_PACKAGE_FILE_NAME=openms-package; fi
+        set +e
+        ctest --output-on-failure -V -S "$GITHUB_WORKSPACE/tools/ci/cipackage.cmake"
+        retVal=$?
+        set -e
+        if [ $retVal -ne 0 ]; then
+          find bld/Testing -name "LastBuild*" -type f -exec tail -n 200 {} \;
+          exit $retVal
+        fi
+        mkdir -p openms-out
+        cp bld/*.$PACKAGE_TYPE openms-out/
+      env:
+        SOURCE_DIRECTORY: ${{ github.workspace }}
+        PACKAGE_TYPE: ${{ matrix.package_type || 'zip' }}
+        SEARCH_ENGINES_DIRECTORY: "${{ github.workspace }}/_thirdparty"
+        CI_PROVIDER: "GitHub-Actions"
+        BUILD_NAME: "app-${{ matrix.platform }}-topp-${{ github.run_number }}"
+        # Ad-hoc signature only: electron-builder signs every binary in the app
+        # again with the Developer ID certificate.
+        SIGNING_IDENTITY: "-"
+
+    - name: Add the MSVC runtime the tools were built with
+      # Shipped next to the TOPP tools, so they do not depend on an older VC++
+      # redistributable on the user's machine (or on the app build's runner).
+      if: steps.package.outputs.cache-hit != 'true' && runner.os == 'Windows'
+      run: |
+        set -euo pipefail
+        redist=$(cygpath -u "$VCToolsRedistDir")
+        rm -rf "$RUNNER_TEMP/vc" && mkdir -p "$RUNNER_TEMP/vc/openms-package/bin"
+        cp -v "$redist"/x64/Microsoft.VC*.CRT/*.dll "$redist"/x64/Microsoft.VC*.OpenMP/*.dll "$RUNNER_TEMP/vc/openms-package/bin/"
+        zip=$(cygpath -w "$PWD/openms-out/openms-package.zip")
+        (cd "$RUNNER_TEMP/vc" && 7z a "$zip" openms-package >/dev/null)
+
+    - name: Save the ccache cache
+      # Also after a failed build, so the next attempt does not start cold.
+      if: always() && steps.package.outputs.cache-hit != 'true' && (steps.cibuild.outcome != 'skipped' || steps.vcpkg-build.outcome != 'skipped')
+      uses: actions/cache/save@v4
+      with:
+        path: .ccache
+        key: ${{ steps.ccache.outputs.cache-primary-key }}-${{ github.run_id }}-${{ github.run_attempt }}
+
+    - name: Save the package
+      if: steps.package.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: openms-out
+        key: ${{ steps.package.outputs.cache-primary-key }}
+
+    - name: Upload the package
+      uses: actions/upload-artifact@v4
+      with:
+        name: openms-${{ matrix.platform }}
+        path: openms-out/*
+        compression-level: 0
+        if-no-files-found: error

@@ -29,7 +29,7 @@
         "slug": {
           "type": "string",
           "pattern": "^[a-z][a-z0-9-]*[a-z0-9]$",
-          "description": "Lowercase identifier. The k8s namePrefix is '<slug>-', the storage tier is '<slug>-storage' / '<slug>-nfs'."
+          "description": "Lowercase identifier. The k8s namePrefix is '<slug>-'."
         },
         "name": {
           "type": "string",

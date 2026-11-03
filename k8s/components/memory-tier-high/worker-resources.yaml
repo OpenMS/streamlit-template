@@ -6,9 +6,9 @@ spec:
   # The replica count travels with the size, and only this tier overrides it.
   # k8s/base/rq-worker-deployment.yaml says 2, which is one per node on a pair
   # of equally-sized nodes - true of the low tier, false here. A 180Gi
-  # Guaranteed request fits on a high-memory node and nowhere else, and the
-  # de.NBI pair has one of those, so an inherited `replicas: 2` puts the second
-  # worker in Pending permanently: `whenUnsatisfiable: DoNotSchedule` forbids
+  # Guaranteed request fits on a high-memory node and nowhere else, and a
+  # cluster with a single such node then has an inherited `replicas: 2` put the
+  # second worker in Pending permanently: `whenUnsatisfiable: DoNotSchedule` forbids
   # doubling it up on the node that could hold it, and no other node can.
   #
   # Nothing in kustomize couples a resource patch to a replica count, so the
@@ -34,8 +34,8 @@ spec:
           # request it stops being a borrow and becomes a reservation the
           # scheduler holds whether a workflow is running or not, i.e. most of
           # a high-memory node. Fixed workers statically partition capacity;
-          # that is the accepted trade at this cluster size (decision 10 in
-          # docs/a16-storage-decisions.md), but a fork sharing its
+          # that is the accepted trade on a small cluster (Step 4b in
+          # docs/kubernetes-deployment.md), but a fork sharing its
           # node pool with another heavy app should size the worker to its own
           # slice and lower BOTH blocks together rather than reopening a gap
           # between them.

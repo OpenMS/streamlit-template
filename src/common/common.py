@@ -74,6 +74,70 @@ def get_legal_links() -> dict[str, str]:
     return {**DEFAULT_LEGAL_LINKS, **{k: v for k, v in overrides.items() if v}}
 
 
+# The OpenMS logo is used for every branding image a settings.json does not set.
+DEFAULT_LOGO = "assets/openms_transparent_bg_logo.svg"
+
+
+def get_branding(theme: str | None = None) -> dict[str, str]:
+    """
+    Return the images that brand the app for the active light or dark theme.
+
+    The optional "branding" object in settings.json sets them:
+
+      * "page_icon": the browser tab icon (one image; the tab ignores the theme),
+      * "logo": the image at the top of the sidebar,
+      * "logo_icon": the smaller image shown when the sidebar is collapsed,
+      * "app_icon": an icon for the app's own pages to use, e.g. next to a
+        title (the template shows it nowhere itself; it is also the default
+        "logo_icon"),
+      * "logo_size": "small", "medium" (default) or "large"; a wide logo with
+        the app name in it reads better at "large".
+
+    Each of "logo", "logo_icon" and "app_icon" is either one path or an object
+    {"light": path, "dark": path}. Anything not set, or set to an empty value,
+    falls back to the OpenMS logo. A "logo_icon" that is not set follows
+    "app_icon", then "logo".
+
+    Args:
+        theme (str | None): "light" or "dark". None reads the active theme
+            from st.context, which is unknown before the first rerun; the light
+            images are used then.
+
+    Returns:
+        dict[str, str]: The paths for "page_icon", "logo", "logo_icon" and
+            "app_icon", and the "logo_size".
+    """
+    if theme is None:
+        try:
+            theme = st.context.theme.type
+        except Exception:
+            theme = None
+    theme = "dark" if theme == "dark" else "light"
+    branding = (
+        st.session_state.settings.get("branding", {})
+        if "settings" in st.session_state
+        else {}
+    ) or {}
+
+    def pick(key: str) -> str:
+        value = branding.get(key)
+        if isinstance(value, dict):
+            value = value.get(theme) or value.get("light") or value.get("dark")
+        return value or ""
+
+    logo = pick("logo") or DEFAULT_LOGO
+    app_icon = pick("app_icon") or logo
+    return {
+        "page_icon": pick("page_icon") or DEFAULT_LOGO,
+        "logo": logo,
+        "logo_icon": pick("logo_icon") or app_icon,
+        "app_icon": app_icon,
+        "logo_size": branding.get("logo_size")
+        if branding.get("logo_size") in ("small", "medium", "large")
+        else "medium",
+    }
+
+
 def is_safe_workspace_name(name: str) -> bool:
     """
     Check if a workspace name is safe (no path traversal characters).
@@ -520,7 +584,7 @@ def page_setup(page: str = "") -> dict[str, Any]:
     # Set Streamlit page configurations
     st.set_page_config(
         page_title=st.session_state.settings["app-name"],
-        page_icon="assets/openms_transparent_bg_logo.svg",
+        page_icon=get_branding()["page_icon"],
         layout="wide",
         initial_sidebar_state="auto",
         menu_items=None,
@@ -540,7 +604,12 @@ def page_setup(page: str = "") -> dict[str, Any]:
         unsafe_allow_html=True,
     )
 
-    st.logo("assets/openms_transparent_bg_logo.svg")
+    branding = get_branding()
+    st.logo(
+        branding["logo"],
+        size=branding["logo_size"],
+        icon_image=branding["logo_icon"],
+    )
 
     # Create google analytics if consent was given
     if (

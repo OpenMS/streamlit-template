@@ -125,19 +125,20 @@ The 4 pages call these methods respectively:
 - `self.file_manager.get_files("name.ext", set_results_dir="dir")` — single result file
 
 ### Execution
-- `self.executor.run_topp("ToolName", input_output={"in": [...], "out": [...]})` — run a TOPP tool; returns `False` if any command failed
+- `self.executor.run_topp("ToolName", input_output={"in": [...], "out": [...]})` — run a TOPP tool; returns `False` if any command failed. Each call shows on the Run page as a step with "file n of N" and elapsed times, and a failure is reported as "While running ToolName on file 2 of 3 (x.mzML)" with the tool output (`src/workflow/progress.py`)
 - `self.executor.run_python("script_name", {"in": [...]})` — run a Python tool from `src/python-tools/`; returns `False` if the script is missing or exited non-zero
 - **`execution()` must be annotated `-> bool` and return `True` only when every step
-  succeeded**, `False` on bad input or a failed tool. `workflow_process()` logs the
-  `WORKFLOW FINISHED` marker only for a truthy return, and a missing marker is classified
-  as an error — so an `execution()` that returns nothing renders "Errors occurred, check
-  log file." after a perfectly good run. Gate every `run_topp` / `run_python` call on its
+  succeeded**, `False` on bad input or a failed tool. `tasks.execute_workflow()` (local and
+  queue mode) logs the `WORKFLOW FINISHED` marker for `True`, and also for `None` (an
+  `execution()` that returns nothing), after a deprecation warning in the log; a future
+  release treats `None` as a failure. `False` or an exception leaves the marker out, and a
+  missing marker is classified as an error. Gate every `run_topp` / `run_python` call on its
   return value too, or a tool that fails halfway is still reported as a success.
 
 ### UI widgets
 - `self.ui.upload_widget(key, name, file_types, fallback)` — file upload with example data fallback
 - `self.ui.select_input_file(key, multiple)` — select from uploaded files
-- `self.ui.input_TOPP("ToolName", custom_defaults={})` — auto-generated TOPP parameter UI
+- `self.ui.input_TOPP("ToolName", custom_defaults={})` — auto-generated TOPP parameter UI, with an "All N parameters" dialog (filter, per-parameter reset to the default or the applied preset)
 - `self.ui.input_python("script_name")` — auto-generated Python tool parameter UI
 - `self.ui.input_widget(key, default, label)` — single custom widget
 - `select_input_file`, `input_TOPP` and `input_widget` accept `reactive=True` to rerun `configure()` when the widget changes (for conditional UI — see below)
@@ -183,6 +184,7 @@ def configure(self) -> None:
 
 - [ ] Workflow class in `src/` subclassing `WorkflowManager`
 - [ ] `__init__` calls `super().__init__("Name", st.session_state["workspace"])`
+- [ ] `execution()` uses no attribute set in your own `__init__`: the workflow process builds the object without calling it, so use a class attribute instead
 - [ ] `upload()`, `configure()`, `execution()`, `results()` implemented
 - [ ] `execution()` annotated `-> bool`, returning `True` on success and `False` on any failure
 - [ ] `@st.fragment` on `configure()` and `results()`

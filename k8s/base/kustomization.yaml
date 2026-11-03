@@ -4,7 +4,6 @@ kind: Kustomization
 namespace: openms
 
 resources:
-  - namespace.yaml
   - configmap.yaml
   - redis.yaml
   - workspace-pvc.yaml

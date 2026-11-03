@@ -3,8 +3,8 @@
 The spec says what an app built from this template is: identity, inputs,
 workflows, result views, deployment targets and which files the app owns.
 Generators (the ``new-app-from-spec`` skill), the template-sync job and CI read
-it, so the names that used to be repeated across settings.json, the k8s overlay
-and the storage tier have one source.
+it, so the names that used to be repeated across settings.json and the k8s
+overlay have one source.
 
 Streamlit-free on purpose: CI and the sync job import it.
 
@@ -90,6 +90,46 @@ def _field(doc, *keys):
     return doc
 
 
+def _overlay_storage(overlay_doc):
+    """The workspace claim size an overlay patches in, or None."""
+    if not isinstance(overlay_doc, dict):
+        return None
+    for patch in overlay_doc.get("patches") or []:
+        target = patch.get("target") or {}
+        if target.get("kind") != "PersistentVolumeClaim":
+            continue
+        try:
+            ops = yaml.safe_load(patch.get("patch") or "") or []
+        except yaml.YAMLError:
+            continue
+        for op in ops if isinstance(ops, list) else []:
+            if (isinstance(op, dict) and op.get("op") in ("replace", "add")
+                    and op.get("path") == "/spec/resources/requests/storage"):
+                return op.get("value")
+    return None
+
+
+# Paths the template keeps current for every app. An app that lists one of
+# them in sync.app_owned keeps its own copy at every conflict and stops
+# receiving the template's fixes there; app values belong in the overlay,
+# CLAUDE.app.md or app.yaml instead.
+TEMPLATE_INFRA = (
+    "k8s/base/workspace-pvc.yaml",
+    "k8s/base/rq-worker-deployment.yaml",
+    "k8s/components/memory-tier-low/worker-resources.yaml",
+    "CLAUDE.md",
+    ".github/workflows/ci.yml",
+    ".github/workflows/template-sync.yml",
+    ".github/workflows/openms-release.yml",
+    "src/workflow/WorkflowManager.py",
+)
+
+
+def owned_template_files(spec: dict) -> list[str]:
+    """Template-maintained paths that sync.app_owned claims for the app."""
+    return [f for f in TEMPLATE_INFRA if is_app_owned(spec, f)]
+
+
 def consistency_errors(spec: dict, root: Path | str = ".") -> list[str]:
     """Check the spec against the files it is the source for.
 
@@ -144,19 +184,24 @@ def consistency_errors(spec: dict, root: Path | str = ".") -> list[str]:
                     f"Host(`{host}`) route"
                 )
 
-    storage = root / "k8s" / "storage" / "kustomization.yaml"
-    storage_doc = _yaml_doc(storage)
-    if storage_doc is _MISSING:
-        errors.append(f"{storage.relative_to(root)} is not valid YAML")
-    elif storage_doc is not None:
-        ns = _field(storage_doc, "namespace")
-        if not ns:
-            errors.append(f"{storage.relative_to(root)} sets no namespace")
-        elif slug and ns != f"{slug}-storage":
+    # The storage tier (k8s/storage/) is shared by every app on a cluster and
+    # carries no app name; what is per app is the size of its workspace share.
+    # The size is an app value, so it lives in the prod overlay as a patch on
+    # the claim; the base value is only the default for an overlay without one.
+    want_size = spec.get("deploy", {}).get("k8s", {}).get("storage")
+    pvc = root / "k8s" / "base" / "workspace-pvc.yaml"
+    pvc_doc = _yaml_doc(pvc)
+    if pvc_doc is _MISSING:
+        errors.append(f"{pvc.relative_to(root)} is not valid YAML")
+    elif pvc_doc is not None and want_size:
+        size = _field(pvc_doc, "spec", "resources", "requests", "storage")
+        where = pvc.relative_to(root)
+        patched = _overlay_storage(overlay_doc)
+        if patched is not None:
+            size, where = patched, rel
+        if size != want_size:
             errors.append(
-                f"app.slug is {slug!r} but {storage.relative_to(root)} puts the "
-                f"storage tier in {ns!r} (expected {slug + '-storage'!r}); see "
-                "the configure-k8s-deployment skill, Step 4"
+                f"deploy.k8s.storage is {want_size!r} but {where} requests {size!r}"
             )
 
     input_keys = set(spec.get("inputs", {}))
@@ -207,6 +252,13 @@ def main(argv: list[str]) -> int:
         print(f"{path}: {e}", file=sys.stderr)
     if not errors:
         print(f"{path}: ok")
+        spec = load_spec(path)
+        for f in owned_template_files(spec):
+            print(
+                f"{path}: note: sync.app_owned covers {f}, so template syncs "
+                "keep this app's copy and drop the template's changes there",
+                file=sys.stderr,
+            )
     return 1 if errors else 0
 
 

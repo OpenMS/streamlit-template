@@ -9,8 +9,23 @@ from .RunManager import RunManager, FINISHED, FAILED, CANCELLED, RUNNING
 import multiprocessing
 import streamlit as st
 import shutil
+import subprocess
+import sys
 import time
 import traceback
+
+# The app folder, which holds src/. Put first on sys.path in the workflow
+# process (see _start_workflow_local).
+_APP_ROOT = str(Path(__file__).resolve().parents[2])
+
+# Runs one workflow in its own interpreter: argv is the app folder, then the
+# arguments of execute_workflow, the function the queue worker runs.
+_RUN_WORKFLOW = (
+    "import sys\n"
+    "sys.path.insert(0, sys.argv[1])\n"
+    "from src.workflow.tasks import execute_workflow\n"
+    "execute_workflow(*sys.argv[2:])\n"
+)
 
 class WorkflowManager:
     # Keep every run as its own named result set in <workflow_dir>/runs/<id>/
@@ -64,10 +79,10 @@ class WorkflowManager:
         Starts the workflow process.
 
         Online mode: Submits to Redis queue
-        Local mode: Spawns multiprocessing.Process (existing behavior)
+        Local mode: Runs the workflow in a separate Python process
         """
         # Flush the latest session state to params.json so the worker
-        # (queued) or the forked child (local) sees the values the user
+        # (queued) or the workflow process (local) sees the values the user
         # just selected, not stale disk state from a previous fragment run.
         self.parameter_manager.save_parameters()
         if self.multi_run:
@@ -121,12 +136,30 @@ class WorkflowManager:
             self._start_workflow_local()
 
     def _start_workflow_local(self) -> None:
-        """Start workflow as local process (existing behavior for local mode)"""
+        """Start the workflow in a separate Python process (local mode)."""
         # Delete the log file if it already exists
         shutil.rmtree(Path(self.workflow_dir, "logs"), ignore_errors=True)
-        # Start workflow process
-        workflow_process = multiprocessing.Process(target=self.workflow_process)
-        workflow_process.start()
+        # Run the workflow in a fresh interpreter, with the same function the
+        # queue worker runs. A child forked from the server (multiprocessing's
+        # default on Linux) inherits the thread pools the server has already
+        # used, such as the OpenMP pool of pyOpenMS or polars' pool, without
+        # their threads, and blocks forever the first time it needs one (an
+        # mzML load, a polars query), so the run never finished.
+        # multiprocessing's "spawn" does not help, it re-runs the page script
+        # (Streamlit's __main__) in the child.
+        if getattr(sys, "frozen", False):
+            # A PyInstaller executable cannot run "-c". It is built for
+            # Windows only, where multiprocessing starts a fresh interpreter.
+            workflow_process = multiprocessing.Process(target=self.workflow_process)
+            workflow_process.start()
+        else:
+            args = [str(self.workflow_dir), self.__class__.__name__, self.__class__.__module__]
+            if self.multi_run:
+                args.append(self.run_id)
+            workflow_process = subprocess.Popen(
+                [sys.executable, "-c", _RUN_WORKFLOW, _APP_ROOT, *args],
+                stdin=subprocess.DEVNULL,
+            )
         # Add workflow process id to pid dir
         self.executor.pid_dir.mkdir(exist_ok=True)
         try:
@@ -134,7 +167,16 @@ class WorkflowManager:
         except FileNotFoundError:
             # The workflow already ended (e.g. no input files) and removed the
             # pid dir; there is nothing left to track.
-            pass
+            return
+        ended = (
+            workflow_process.poll() is not None
+            if isinstance(workflow_process, subprocess.Popen)
+            else not workflow_process.is_alive()
+        )
+        if ended:
+            # It ended before its pid was written: the pid dir made above
+            # would otherwise show the workflow as running forever.
+            shutil.rmtree(self.executor.pid_dir, ignore_errors=True)
 
     def workflow_process(self) -> None:
         """
@@ -339,8 +381,18 @@ class WorkflowManager:
         A multi-run workflow first shows a run picker and points
         self.results_dir at the chosen run.
         """
+        if self.multi_run:
+            from .run_widgets import show_import_notice
+
+            show_import_notice(self.runs)
         if self.multi_run and not self.select_run():
-            st.info("No finished runs yet. Start the workflow on the **Run** page.")
+            from .run_widgets import run_import
+
+            st.info(
+                "No finished runs yet. Start the workflow on the **Run** page, "
+                "or open a run someone shared as a ZIP."
+            )
+            run_import(self.runs)
             return
         self.ui.results_section(self.results)
 

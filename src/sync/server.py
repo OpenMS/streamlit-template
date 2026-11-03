@@ -188,10 +188,11 @@ class _Upload:
         A client whose PATCH timed out sends it again, maybe to another
         replica, while the first may still be writing. Both would pass the
         offset check and append to the same partial file. The lock is a POSIX
-        record lock on ``<id>.lock``: NFS 4.1 grants it across replicas, it
-        is held for as long as the request keeps the file open, and the
-        kernel (or the NFS lease, for a pod that died) releases it, so no
-        writer can lose it while still writing and none needs breaking.
+        record lock on ``<id>.lock``: the NFS server grants it across
+        replicas (through NLM on the NFSv3 mount), it is held for as long as
+        the request keeps the file open, and the kernel releases it when the
+        process exits, so no writer can lose it while still writing and none
+        needs breaking.
         Record locks are per process, hence ``_HELD`` for the requests of
         this one. The file is never unlinked while the upload exists:
         unlinking would let two writers lock two different files.
@@ -410,6 +411,10 @@ class UploadHandler(SyncHandler):
             )
         self.set_header("Upload-Offset", str(offset))
         self.set_status(204)
+        # Release before the response goes out, not in on_finish: a client
+        # that has its 204 may send the next PATCH at once, and on_finish can
+        # still be pending then, which answered that PATCH with 423.
+        self._unlock()
 
     def delete(self, upload_id):
         self._upload.remove()

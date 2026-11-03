@@ -99,6 +99,8 @@ Make sure to match the **key** of the upload widget when calling `self.ui.input_
 
 It takes the obligatory **topp_tool_name** parameter and generates input widgets for each parameter present in the **ini** file (automatically created) except for input and output file parameters. For all input file parameters a widget needs to be created with `self.ui.select_input_file` with an appropriate **key**. For TOPP tool parameters only non-default values are stored.
 
+Next to the tool name, a button **All N parameters** opens a dialog listing every parameter of the tool, including advanced ones but not the ones in `exclude_parameters`. You can filter it by name or description, or show only the changed parameters, and set each value there. A changed parameter can be returned to its default, and when a preset was applied, a parameter that differs from it can be returned to the preset's value.
+
 **3. Choose `self.ui.input_python` to automatically generate complete input sections for a custom Python tool:**
 
 Takes the obligatory **script_file** argument. The default location for the Python script files is in `src/python-tools` (in this case the `.py` file extension is optional in the **script_file** argument), however, any other path can be specified as well. Parameters need to be specified in the Python script in the **DEFAULTS** variable with the mandatory **key** and **value** parameters.
@@ -287,6 +289,8 @@ The `self.executor.run_multiple_commands` method takes a list of commands as inp
 The `self.executor.run_topp` method takes a TOPP tool name as input and a dictionary of input and output files as input. The **keys** need to match the actual input and output parameter names of the TOPP tool. The **values** should be of type `FileManager`. All other **non-default parameters (from input widgets)** will be passed to the TOPP tool automatically.
 
 Depending on the number of input files, the TOPP tool will be run either in parallel or in a single run (using **`FileManager.collect`**).
+
+While it runs, the Run page shows the tool, which file it is on ("file 2 of 3"), elapsed times and the threads used. If a file fails, the page names the tool and the file ("While running FeatureFinderMetabo on file 2 of 3 (x.mzML)"), shows the tool's error line, and puts its raw output in a collapsed section. The progress is written to `logs/progress.json` by `src/workflow/progress.py`, which also works in queue mode.
 """
     )
 

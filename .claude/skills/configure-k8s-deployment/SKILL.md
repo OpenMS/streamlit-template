@@ -21,8 +21,8 @@ These are facts about the target cluster, not steps for you to execute. Mention 
 
 - Traefik ingress controller installed in the cluster (handles `IngressRoute` CRDs).
 - Cluster has read access to GHCR for pulling the app image.
-- A storage class that provisions `ReadWriteOnce` volumes (de.NBI: `cinder-csi`). That is the **backing** volume for the storage tier, not the claim the app mounts. For live grows of it, the class needs `allowVolumeExpansion: true`.
-- The fork's storage tier (`k8s/storage/`) already applied, publishing the `ReadWriteMany` StorageClass the workspaces PVC names, and `mount.nfs` present on every node. Applied in the other order, every pod sits `Pending` on a class that does not exist yet.
+- OpenStack Manila with an NFS share type and enough share quota for one more share of the Q7 size.
+- The cluster's storage tier (`k8s/storage/`, once per cluster, shared by every app) already applied, publishing the `ReadWriteMany` StorageClass `openms-manila-nfs` the workspaces PVC names. If no app on the cluster has applied it yet, the operator replaces its two `CHANGE-ME-…` placeholders (NFS share type, client CIDR for the access rule), creates the `manila-csi-credentials` Secret and applies it first (`docs/kubernetes-deployment.md` section 3b). Applied in the other order, every pod sits `Pending` on a class that does not exist yet.
 - **No node labels, of any kind.** Nothing under `k8s/` selects a node any more: the scheduler places pods and the manifests only declare how big a worker is. The `openms.de/memory-tier` labels the older components matched are gone, and CI fails any manifest that reintroduces a `nodeSelector`, `nodeName` or `nodeAffinity` (`assert_no_node_pinning_anywhere`).
 - Room for `<replicas> x <worker size>` (Q5 and Q6) across the cluster's nodes. A worker is Guaranteed QoS, so its request is reserved for as long as the pod runs, queue empty or not.
 - DNS for `*.webapps.openms.de` and `*.webapps.openms.org` pointing at the cluster's Traefik load balancer.
@@ -34,11 +34,11 @@ Before asking the user anything, read a small known set of files directly (do no
 1. `git remote get-url origin` and the repo name → seeds the slug and GHCR ref defaults.
 2. `k8s/overlays/prod/kustomization.yaml` — if anything has already been edited away from the template stub, treat those values as the user's prior choices to confirm rather than overwrite blindly.
 3. `k8s/base/kustomization.yaml`, `k8s/base/streamlit-deployment.yaml`, `k8s/base/rq-worker-deployment.yaml`, `k8s/base/workspace-pvc.yaml` — confirm the layout still matches the template:
-   - PVC `metadata.name` is `workspaces-nfs-pvc`, `ReadWriteMany`, on a `storageClassName` this fork's `k8s/storage/` publishes.
+   - PVC `metadata.name` is `workspaces-manila-pvc`, `ReadWriteMany`, on `storageClassName: openms-manila-nfs`.
    - Deployments reference `image: openms-streamlit` (the placeholder Kustomize swaps).
-   - `streamlit-deployment.yaml` and `rq-worker-deployment.yaml` both carry `claimName: workspaces-nfs-pvc`. Being RWX, that claim constrains placement not at all: the workspace-using pods are placed independently by the scheduler, not co-located, and there is no pod-affinity rule pulling them together either.
+   - `streamlit-deployment.yaml` and `rq-worker-deployment.yaml` both carry `claimName: workspaces-manila-pvc`. Being RWX, that claim constrains placement not at all: the workspace-using pods are placed independently by the scheduler, not co-located, and there is no pod-affinity rule pulling them together either.
    - `rq-worker-deployment.yaml` has a fixed `replicas` and a `topologySpreadConstraints` block over `kubernetes.io/hostname` with `maxSkew: 1`. Read the replica count from here — it is the default you propose in Q6.
-4. `k8s/storage/kustomization.yaml`, `namespace.yaml`, `nfs-backing-pvc.yaml`, `ganesha-values.yaml`, `networkpolicy.yaml` — note whether the storage names still carry `template-app-` or already carry this fork's slug (Step 4).
+4. `k8s/storage/` — confirm it is the Manila root (`storageclass.yaml`, `manila-csi-values.yaml`, `csi-driver-nfs-values.yaml`). If it still holds `ganesha-values.yaml` and `networkpolicy.yaml`, the fork predates the Manila storage tier: tell the user it needs a template sync first (`sync-from-template`) and stop.
 5. `.github/workflows/build-and-test.yml` — confirm which tags CI publishes (the OpenMS template publishes `<branch>-full`, `<branch>-simple`, `<tag>-full`, `<tag>-simple`, plus `latest` on `main`-full pushes).
 
 If any of those files are missing, renamed, or significantly restructured, stop and ask the user how to proceed. Do not pattern-match the standard answers onto an unknown layout.
@@ -57,7 +57,7 @@ The user confirms or overrides each one. Do not omit the "what this controls" li
 
 ### Q1. App slug
 
-- *What this controls:* every Kubernetes resource for this app gets prefixed with `<slug>-` (Pods, Services, PVCs, ConfigMaps), so the slug is what cluster operators see in `kubectl get pods/svc/pvc -n openms`. It also becomes the DNS name worker pods use to reach Redis (`<slug>-redis`), and the prefix of the storage tier's namespace (`<slug>-storage`), StorageClass (`<slug>-nfs`) and NFS server (`<slug>-nfs-server`), which Step 4 writes by hand.
+- *What this controls:* every Kubernetes resource for this app gets prefixed with `<slug>-` (Pods, Services, PVCs, ConfigMaps), so the slug is what cluster operators see in `kubectl get pods/svc/pvc -n openms`. It also becomes the DNS name worker pods use to reach Redis (`<slug>-redis`), and the name of its workspace claim (`<slug>-workspaces-manila-pvc`).
 - *Default:* repo name lowercased, with `streamlit-` / `-template` prefixes/suffixes stripped. Examples: `OpenDIAKiosk` → `opendiakiosk`; `umetaflow-gui` → `umetaflow-gui`; `streamlit-template` → `template-app`.
 - *Format:* single lowercase token, no spaces.
 
@@ -94,12 +94,12 @@ The user confirms or overrides each one. Do not omit the "what this controls" li
 ### Q7. Workspace storage size
 
 - *What this controls:* the persistent disk allocated for Streamlit session workspaces, uploaded files, intermediate analysis outputs, and any reference data the app seeds at startup. Too small → users hit "no space left" mid-analysis; too large → wasted cluster storage budget.
-- *Default:* **400 Gi** (matches the stock base, so the default needs zero file edits).
-- *Note on naming (do not ask the user):* the PVC base name stays `workspaces-nfs-pvc` for every fork. Kustomize's `namePrefix: <slug>-` automatically scopes it to `<slug>-workspaces-nfs-pvc` in the cluster, so cross-fork name collisions are impossible. Override the size only — never rename the PVC.
+- *Default:* **50 Gi** (matches the stock base, so the default needs zero file edits).
+- *Note on naming (do not ask the user):* the PVC base name stays `workspaces-manila-pvc` for every fork. Kustomize's `namePrefix: <slug>-` automatically scopes it to `<slug>-workspaces-manila-pvc` in the cluster, so cross-fork name collisions are impossible. Override the size only — never rename the PVC.
 
 ## Step 3 — Apply the answers to `k8s/overlays/prod/kustomization.yaml`
 
-Edit the file in place. The full templated shape is:
+Edit the file in place. First delete `k8s/overlays/prod/namespace.yaml` and its `- namespace.yaml` entry under `resources:`: the shared `openms` namespace is managed only by the template's own deployment, and two Argo CD Applications carrying it would keep taking it over from each other. The full templated shape is:
 
 ```yaml
 apiVersion: kustomize.config.k8s.io/v1beta1
@@ -174,63 +174,33 @@ About `images[0].name: openms-streamlit` — **this is the match key, not a valu
 
 About the `||` in the IngressRoute match — both TLDs always go in. The OpenMS infra publishes apps on both `.de` and `.org` so users land on the same app no matter which they remember. One IngressRoute, two `Host(...)` matchers OR-ed together is the right shape; do not split into two IngressRoute objects.
 
-## Step 4 — Storage tier identity (always)
+## Step 4 — Storage tier (nothing to edit)
 
-`k8s/storage/` is a separate kustomize root and cannot take a `namePrefix` (its `kustomization.yaml` explains why), so its names carry the slug **by hand**. The template ships them as `template-app-*`. Leaving them is not harmless: every fork on the cluster would apply its NFS server into the same `template-app-storage` namespace and overwrite the same cluster-scoped StorageClass, ClusterRole and provisioner, so the second fork to deploy takes over the first one's storage.
-
-Replace `template-app` with `<slug>` (Q1) in all of these, together:
-
-| File | Field | Value |
-|---|---|---|
-| `k8s/storage/kustomization.yaml` | top-level `namespace:` | `<slug>-storage` |
-| `k8s/storage/kustomization.yaml` | `helmCharts[0].namespace` | `<slug>-storage` |
-| `k8s/storage/namespace.yaml` | `metadata.name` | `<slug>-storage` |
-| `k8s/storage/nfs-backing-pvc.yaml` | `metadata.namespace` | `<slug>-storage` |
-| `k8s/storage/ganesha-values.yaml` | `fullnameOverride` | `<slug>-nfs-server` |
-| `k8s/storage/ganesha-values.yaml` | `storageClass.provisionerName` | `cluster.local/<slug>-nfs-server` |
-| `k8s/storage/ganesha-values.yaml` | `storageClass.name` | `<slug>-nfs` |
-| `k8s/base/workspace-pvc.yaml` | `spec.storageClassName` | `<slug>-nfs` |
-| `k8s/storage/networkpolicy.yaml` | `podSelector.matchLabels.app` | `<slug>` (= `commonLabels.app`) |
-
-Edit the YAML fields, not every occurrence: the comments in those files also say `template-app-` as the example, and a blind `sed` over them is harmless but makes the diff hard to review. A field-level replace that keeps comments:
-
-```bash
-for f in k8s/storage/kustomization.yaml k8s/storage/namespace.yaml k8s/storage/nfs-backing-pvc.yaml \
-         k8s/storage/ganesha-values.yaml k8s/storage/networkpolicy.yaml k8s/base/workspace-pvc.yaml; do
-  sed -i -E '/^[[:space:]]*#/! s/template-app(-storage|-nfs-server|-nfs\b|$)/<slug>\1/g' "$f"
-done
-grep -rn 'template-app' k8s/storage k8s/base/workspace-pvc.yaml | grep -v '^[^:]*:[0-9]*:[[:space:]]*#'   # must print nothing
-```
-
-CI checks all eight names against the overlay's `namePrefix` (`assert_storage_names_match_slug`) and the NetworkPolicy label against `commonLabels.app` (`assert_netpol_string_matches_overlay`), and the kind jobs read the storage namespace from `k8s/storage/kustomization.yaml`, so no workflow edit is needed.
-
-**A fork that is already deployed** under the template names is a migration, not a rename: the new names create a new namespace, a new backing volume and a new StorageClass, and the workspaces PVC cannot change its `storageClassName` in place. Do not change the names of a live deployment in this skill. Tell the user that this needs a data migration planned with the operator (`docs/kubernetes-deployment.md` step 4c); no runbook covers it yet. A fork adopting `k8s/storage/` for the first time renames before its first apply and has nothing to migrate.
+`k8s/storage/` is shared by every app on the cluster and carries no app name: one Manila CSI driver, one StorageClass `openms-manila-nfs`. Each fork's workspace PVC gets the overlay's `namePrefix` and, with it, a Manila share of its own. Do not rename anything in `k8s/storage/` and do not edit its two cluster-specific values (`type`, `nfs-shareClient` in `storageclass.yaml`) here: they describe the cluster, and the operator sets them once for all apps.
 
 ## Step 5 — Optional storage resize
 
-Skip this step if the user accepted the 400 Gi default.
+Skip this step if the user accepted the 50 Gi default.
 
-Otherwise **two** claims move together, because the app no longer mounts a volume directly — it claims space out of the one the NFS server exports:
+Otherwise change one number, the size of this app's Manila share, in the claim patch of the prod overlay (never in `k8s/base/`, which is template-owned):
 
 ```yaml
-# 1. k8s/storage/nfs-backing-pvc.yaml — the Cinder volume Ganesha exports
-spec:
-  resources:
-    requests:
-      storage: <backing size>
-
-# 2. k8s/base/workspace-pvc.yaml — what the app claims out of it
-spec:
-  resources:
-    requests:
-      storage: <size>     # Q7: e.g. 100Gi, 1Ti, 3Ti
+# k8s/overlays/prod/kustomization.yaml
+patches:
+  - target:
+      kind: PersistentVolumeClaim
+      name: workspaces-manila-pvc
+    patch: |
+      - op: replace
+        path: /spec/resources/requests/storage
+        value: <size>     # Q7: e.g. 100Gi, 1Ti, 3Ti
 ```
 
-The app's claim must stay **materially below** the backing volume, and the backing volume grows first. nfs-provisioner `statfs()`es the export on every provision and refuses outright any claim larger than the *free* space it finds there — unconditionally, not gated on quotas — and a fresh filesystem never reports its full nominal size. The stock pair is 400Gi against 500Gi; keep a comparable margin, or the claim never binds and every pod stays `Pending` behind it.
+and `deploy.k8s.storage` in `app.yaml` to the same value (`python -m utils.app_spec` compares them). The share counts against the project's Manila share quota; mention that in the handoff.
 
-Do **not** rename either PVC, the base `kustomization.yaml` resource list, or the `claimName` in `streamlit-deployment.yaml` / `rq-worker-deployment.yaml`. Kustomize's `namePrefix` already gives the in-cluster workspaces PVC a unique per-fork name; renaming the base creates a multi-file cascade for no benefit.
+Do **not** rename the PVC, the base `kustomization.yaml` resource list, or the `claimName`s. Kustomize's `namePrefix` already gives the in-cluster workspaces PVC a unique per-fork name.
 
-Operator caveat (mention in handoff, not your job to verify): in-place expansion of an *already-deployed* PVC requires the StorageClass to have `allowVolumeExpansion: true`, and that applies to the backing `cinder-csi` claim. If the class does not allow expansion, growing a live volume requires recreation, not a manifest edit. Sizing on first deploy is unaffected.
+The StorageClass allows volume expansion, so growing an already-deployed share later is the same edit plus a re-apply. Shrinking a deployed share is not possible in place (Kubernetes rejects it and Argo CD then stops syncing that commit): the claim, its PV and the share in Horizon have to be deleted and the claim created again, empty. The steps are in `docs/kubernetes-deployment.md`, section on the workspace PVC.
 
 ## Step 6 — Handoff
 
@@ -238,7 +208,7 @@ After committing the edits, tell the user the next steps belong to a human opera
 
 1. Open a PR with the overlay edits and have it reviewed.
 2. Merge to `main`. CI (`build-and-test.yml`) rebuilds and pushes the image to GHCR with the tag from Q3. The kind integration jobs (`test-nginx`, `test-traefik`) auto-discover slug and Traefik hostnames from the overlay output, so no workflow edits are needed for fork-specific values.
-3. Cluster operator applies the fork's storage tier first (`kubectl kustomize --enable-helm k8s/storage/ | kubectl apply -f -`), then `kubectl apply -k k8s/overlays/prod/`. That order matters — the overlay's PVC names a StorageClass the storage tier publishes.
+3. On a cluster where the template's deployment does not run (so nothing has created the shared namespace yet), the operator first runs `kubectl create namespace openms --dry-run=client -o yaml | kubectl apply -f -`; it is a no-op where the namespace exists. If the cluster has no storage tier yet, the operator applies it next (`kubectl kustomize --enable-helm k8s/storage/ | kubectl apply -f -`, once per cluster), then `kubectl apply -k k8s/overlays/prod/` (or hands the app to Argo CD). That order matters — the overlay's PVC names a StorageClass the storage tier publishes.
 4. Operator verifies with `kubectl -n openms rollout status deployment/<slug>-streamlit` and a browser check on `https://<sub>.webapps.openms.de`, then `kubectl -n openms get pods -o wide -l component=rq-worker` to confirm the workers came up on **different** nodes, each with `.status.qosClass` of `Guaranteed`.
 
 ## Reference files
@@ -246,7 +216,7 @@ After committing the edits, tell the user the next steps belong to a human opera
 - Overlay: `k8s/overlays/prod/kustomization.yaml`
 - Worker/Streamlit sizing components: `k8s/components/memory-tier-{low,high}/` — `worker-resources.yaml` + `streamlit-resources.yaml`, pod sizes only, no node selection
 - Base manifests: `k8s/base/*.yaml`
-- Storage tier: `k8s/storage/` — NFS-Ganesha serving the RWX workspace volume
+- Storage tier: `k8s/storage/` — OpenStack Manila CSI and the shared `openms-manila-nfs` StorageClass (once per cluster); `k8s/ci-storage/` is CI's in-cluster stand-in
 - CI workflow: `.github/workflows/build-and-test.yml` (build + lint + kind integration)
 - In-app reference: the "Developers Guide: Kubernetes Deployment" Documentation page in the running Streamlit app.
 
@@ -254,13 +224,14 @@ After committing the edits, tell the user the next steps belong to a human opera
 
 - [ ] Step 1 recon done; fork's `k8s/` layout matches expectations (or the user was asked because it didn't)
 - [ ] Interview completed; defaults shown to the user and confirmed/overridden
+- [ ] `k8s/overlays/prod/namespace.yaml` and its `resources:` entry deleted (only the template's deployment manages the `openms` namespace)
 - [ ] `namePrefix`, `commonLabels.app`, `images[0].newName`, `images[0].newTag` written in the overlay
 - [ ] IngressRoute patch written: both `.de` and `.org` hostnames, plus the `<slug>-streamlit` service reference
 - [ ] Redis URL written in both Deployment patches (`streamlit` and `rq-worker`)
 - [ ] Worker size component selected (Q5)
 - [ ] Worker replica count (Q6) patched into the overlay only if it differs from the base default; the base Deployment left untouched
 - [ ] No `nodeSelector`, `nodeName`, `nodeAffinity` or `openms.de/memory-tier` anywhere in the overlay or the components — `assert_no_node_pinning_anywhere` fails the PR on any of them
-- [ ] Storage names carry the slug in all nine places of Step 4 (or the user was told that a live deployment needs a migration instead)
-- [ ] Storage sizes in `k8s/storage/nfs-backing-pvc.yaml` and `k8s/base/workspace-pvc.yaml` changed together, backing volume materially larger, and only if the user picked a non-default size; PVC names and `claimName`s untouched
+- [ ] `k8s/storage/` untouched
+- [ ] Workspace size changed in `k8s/base/workspace-pvc.yaml` and `app.yaml` together, only if the user picked a non-default size; PVC names and `claimName`s untouched
 - [ ] `.github/workflows/build-and-test.yml` uses dynamic overlay discovery (no `template-app` / `template.webapps.openms.*` literals); patched in if the fork's workflow was on the old hardcoded shape
 - [ ] Changes committed on a feature branch (no PR opened unless the user asked for one)

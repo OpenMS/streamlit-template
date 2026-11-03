@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Stages a relocatable CPython (python-build-standalone, the builds uv uses)
-# with the app's requirements for the macOS or Linux Electron app:
-#   <out>/python-<version>/bin/python3
-# The Windows build uses python.org's embeddable zip instead; there is no such
-# distribution for macOS and Linux.
+# with the app's requirements for the Electron app, the same way on all three
+# platforms:
+#   <out>/python-<version>/python.exe     (Windows)
+#   <out>/python-<version>/bin/python3    (macOS, Linux)
+# The interpreter has its development headers, so pip builds any native
+# extension in place, and it ships tkinter (the local file dialog).
 #
 #   stage-python.sh <python minor version, e.g. 3.11> <out dir> <requirements.txt>
 # Needs gh (GH_TOKEN). PBS_RELEASE pins a python-build-standalone release tag
@@ -18,6 +20,7 @@ repo=astral-sh/python-build-standalone
 case "$(uname -s)-$(uname -m)" in
   Darwin-arm64) triple=aarch64-apple-darwin ;;
   Linux-x86_64) triple=x86_64-unknown-linux-gnu ;;
+  MINGW*-x86_64|MSYS*-x86_64|CYGWIN*-x86_64) triple=x86_64-pc-windows-msvc ;;
   *) echo "::error::unsupported platform $(uname -s)-$(uname -m)"; exit 1 ;;
 esac
 
@@ -33,7 +36,7 @@ tar -xzf "$dl/$asset" -C "$dl"
 dest="$out/python-${version}"
 rm -rf "$dest"
 mv "$dl/python" "$dest"
-py="$dest/bin/python3"
+if [[ $triple == *windows* ]]; then py="$dest/python.exe"; else py="$dest/bin/python3"; fi
 echo "Staged $asset as $dest"
 
 "$py" -m pip install --upgrade --no-warn-script-location --disable-pip-version-check -r "$requirements"
@@ -49,14 +52,21 @@ if [[ $triple == *apple-darwin ]]; then
   [[ -z "$left" ]] || { echo "::error::DuckDB extensions would fail macOS signing: $left"; exit 1; }
 fi
 
-# Same clean-up as the Windows build, then compile the bytecode now: the shell
-# runs Python with PYTHONDONTWRITEBYTECODE because the signed macOS bundle and
-# the AppImage cannot be written to. unchecked-hash .pyc files stay valid
-# whatever timestamps packaging gives the sources.
+# Drop caches and test suites the app never runs.
 site=$("$py" -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')
+command -v cygpath >/dev/null && site=$(cygpath -u "$site")
 find "$site" -type d -name __pycache__ -prune -exec rm -rf {} +
 find "$site" -type d \( -name tests -o -name test \) -prune -exec rm -rf {} +
-"$py" -m compileall -q -j 0 --invalidation-mode unchecked-hash "$dest/lib" >/dev/null || true
+
+# Compile the bytecode now on macOS and Linux: the shell runs Python with
+# PYTHONDONTWRITEBYTECODE there, because the signed macOS bundle and the
+# AppImage cannot be written to. unchecked-hash .pyc files stay valid whatever
+# timestamps packaging gives the sources. The Windows install directory is
+# writable and Python writes its bytecode on first use, which keeps the NSIS
+# installer (limited to 2 GB) smaller.
+if [[ $triple != *windows* ]]; then
+  "$py" -m compileall -q -j 0 --invalidation-mode unchecked-hash "$dest/lib" >/dev/null || true
+fi
 
 # pyOpenMS and scikit-learn each bundle libomp.dylib. Two copies in one process
 # abort it ("OMP: Error #15", or #179 when duplicates are allowed), so every

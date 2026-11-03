@@ -1,0 +1,132 @@
+# Move to a new OpenMS release when one comes out, and open (or update) one PR.
+#
+# Runs weekly in the template and in every app made from it. It upgrades only a
+# repository that follows the releases: one whose full Dockerfile builds the
+# release just before the newest (ARG OPENMS_BRANCH=release/3.5.0 when 3.6.0
+# comes out). A repository on an older release, on develop or on a branch of a
+# fork has chosen its OpenMS, and nothing happens there. To opt out while on
+# the latest release, pin OPENMS_BRANCH to a commit or a branch.
+#
+#   not following / up to date   nothing happens
+#   new release                  branch `openms-release` gets one commit made by
+#                                .github/scripts/openms_release.py (Dockerfiles,
+#                                the pyopenms pin, the desktop default, Python in
+#                                CI) and one PR is opened or updated; its CI
+#                                builds and tests the new OpenMS
+#
+# While the upgrade PR is open the repository keeps following, so a release
+# that comes out meanwhile updates the same PR. Closing the PR unmerged
+# declines: the next release is offered only if the repository is then on the
+# release before it. Commits a human pushed onto `openms-release` are never
+# overwritten: the run leaves the branch alone and warns.
+#
+# An app whose Dockerfile the template owns usually gets the same change from
+# template sync as well; whichever PR is merged first, the other becomes empty.
+#
+# Token: the repository secret TEMPLATE_SYNC_TOKEN (contents, pull-requests and
+# workflows write), as for template-sync.yml. With the default GITHUB_TOKEN the
+# PR leaves .github/workflows/ alone (desktop default, CI Python; listed in the
+# PR) and its CI does not start by itself: push an empty commit or close and
+# reopen it. The organization must allow GitHub Actions to create pull requests.
+name: OpenMS release
+
+on:
+  schedule:
+    - cron: "37 4 * * 2"   # Tuesdays 04:37 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: openms-release
+  cancel-in-progress: false
+
+env:
+  BRANCH: openms-release
+  BOT_NAME: github-actions[bot]
+  BOT_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+
+jobs:
+  upgrade:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.TEMPLATE_SYNC_TOKEN || github.token }}
+      HAS_TOKEN: ${{ secrets.TEMPLATE_SYNC_TOKEN != '' }}
+      DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+          token: ${{ secrets.TEMPLATE_SYNC_TOKEN || github.token }}
+
+      - name: Look at the upgrade branch
+        id: branch
+        run: |
+          set -euo pipefail
+          # An open upgrade PR keeps this repository following, even if another
+          # release came out meanwhile. A closed one does not: closing it is
+          # how a repository declines.
+          PR=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
+          [ -z "$PR" ] || echo "open_pr=true" >> "$GITHUB_OUTPUT"
+          if git fetch --no-tags origin "$BRANCH" 2>/dev/null; then
+            REMOTE_SHA=$(git rev-parse FETCH_HEAD)
+            echo "remote_sha=$REMOTE_SHA" >> "$GITHUB_OUTPUT"
+            HUMAN=$(git log --format='%ae' "$REMOTE_SHA" "^origin/$DEFAULT_BRANCH" | grep -vxF "$BOT_EMAIL" || true)
+            [ -z "$HUMAN" ] || echo "human=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upgrade OpenMS
+        id: upgrade
+        if: steps.branch.outputs.human != 'true'
+        run: |
+          set -euo pipefail
+          git checkout -B "$BRANCH"
+          args=()
+          [ "${{ steps.branch.outputs.open_pr }}" = true ] && args+=(--continue)
+          [ "$HAS_TOKEN" = true ] && args+=(--workflows)
+          python3 .github/scripts/openms_release.py "${args[@]}"
+
+      - name: Push and open the PR
+        if: steps.upgrade.outputs.status == 'upgraded'
+        env:
+          OLD: ${{ steps.upgrade.outputs.old }}
+          NEW: ${{ steps.upgrade.outputs.new }}
+          REF: ${{ steps.upgrade.outputs.ref }}
+          NOTES: ${{ steps.upgrade.outputs.notes }}
+          REMOTE_SHA: ${{ steps.branch.outputs.remote_sha }}
+        run: |
+          set -euo pipefail
+          git config user.name  "$BOT_NAME"
+          git config user.email "$BOT_EMAIL"
+          git commit -am "Move to OpenMS ${NEW}"
+          # Lease against the branch as seen above: a human push in between
+          # makes this push fail instead of being replaced.
+          git push --force-with-lease="$BRANCH:${REMOTE_SHA}" origin "$BRANCH"
+
+          {
+            echo "OpenMS ${NEW} is out, and this repository followed the releases (it built \`${OLD}\`)."
+            echo
+            echo "Changes:"
+            echo
+            printf '%s\n' "$NOTES" | tr '|' '\n' | sed 's/^ *//; s/^/- /'
+            echo
+            echo "The CI of this PR builds the full Docker images on \`${REF}\` and runs the deployment tests on them."
+            echo "Review the release notes of OpenMS ${NEW} for changed tool parameters before merging."
+            echo
+            echo "_Opened by \`.github/workflows/openms-release.yml\`._"
+          } > /tmp/body.md
+
+          PR=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
+          if [ -n "$PR" ]; then
+            gh pr edit "$PR" --title "Move to OpenMS ${NEW}" --body-file /tmp/body.md
+          else
+            gh pr create --base "$DEFAULT_BRANCH" --head "$BRANCH" \
+              --title "Move to OpenMS ${NEW}" --body-file /tmp/body.md
+          fi
+
+      - name: Leave a human's commits alone
+        if: steps.branch.outputs.human == 'true'
+        run: echo "::warning::$BRANCH has commits not made by this workflow, so it was left as it is."
