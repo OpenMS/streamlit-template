@@ -62,6 +62,14 @@ def _tags(param, key) -> list[str]:
     return [_txt(t) for t in param.getTags(key)]
 
 
+def _valid_strings(entry) -> list[str]:
+    """A parameter's allowed strings. pyOpenMS 3.6 raises TypeError when asked
+    for those of a boolean parameter, which is a checkbox and has none."""
+    if isinstance(entry.value, bool):
+        return []
+    return [_txt(v) for v in entry.valid_strings]
+
+
 def _matches_topp_parameter(pattern: str, key) -> bool:
     """
     Match an include/exclude pattern against a TOPP parameter key.
@@ -1225,7 +1233,7 @@ class StreamlitUI:
                 "key": key,
                 "value": entry.value,
                 "original_is_list": isinstance(entry.value, list),
-                "valid_strings": [_txt(v) for v in entry.valid_strings],
+                "valid_strings": _valid_strings(entry),
                 "description": _txt(entry.description),
                 "advanced": ("advanced" in _tags(param, key)),
                 "non_included": key not in included_keys,
@@ -1546,7 +1554,7 @@ class StreamlitUI:
                     "description": _txt(entry.description),
                     "value": value,
                     "default": default,
-                    "valid_strings": [_txt(v) for v in entry.valid_strings],
+                    "valid_strings": _valid_strings(entry),
                     "advanced": "advanced" in tags,
                     "is_list": isinstance(entry.value, list),
                 }

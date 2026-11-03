@@ -30,7 +30,7 @@ if _originals["pyopenms"] is None:
 if _originals["src.common.common"] is None:
     sys.modules["src.common.common"] = MagicMock()
 
-from src.workflow.StreamlitUI import _matches_topp_parameter, _tags, _txt
+from src.workflow.StreamlitUI import _matches_topp_parameter, _tags, _txt, _valid_strings
 
 for name, module in _originals.items():
     if module is not None:
@@ -79,3 +79,20 @@ def test_tags_and_text_from_either_pyopenms():
     param.getTags.return_value = [b"input file", "advanced"]
     assert _tags(param, "Tool:1:in") == ["input file", "advanced"]
     assert _txt(b"name") == "name" and _txt("name") == "name"
+
+
+def test_valid_strings_of_a_boolean_parameter():
+    """pyOpenMS 3.6 raises TypeError for valid_strings of a boolean entry."""
+    class BoolEntry:
+        value = True
+
+        @property
+        def valid_strings(self):
+            raise TypeError("boolean parameter has no string restrictions")
+
+    class StrEntry:
+        value = "a"
+        valid_strings = [b"a", "b"]
+
+    assert _valid_strings(BoolEntry()) == []
+    assert _valid_strings(StrEntry()) == ["a", "b"]
