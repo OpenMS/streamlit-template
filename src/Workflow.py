@@ -30,6 +30,8 @@ class Workflow(WorkflowManager):
                 name="MS data",
                 file_types=["mzML", "raw", "d"],
                 fallback=[str(f) for f in Path("example-data", "mzML").glob("*.mzML")],
+                # Offer folders for the groups the file names suggest
+                suggest_folders=True,
             )
 
     @st.fragment
@@ -67,7 +69,7 @@ class Workflow(WorkflowManager):
             # OpenMS design.tsv in the workflow directory. Pass that file to a
             # TOPP tool's -design (e.g. ProteomicsLFQ), or read it in
             # execution() with src.workflow.ExperimentalDesign.load_design().
-            self.ui.experimental_design("mzML-files")
+            self.ui.experimental_design("mzML-files", suggest=True)
 
     def execution(self) -> bool:
         # Return True only if every step succeeded. The caller

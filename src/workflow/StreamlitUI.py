@@ -34,6 +34,15 @@ from src.workflow.progress import (
     format_duration,
     read_progress,
 )
+from src.workflow.InputFolders import (
+    design_rows,
+    folder_counts,
+    load_folders,
+    natural_key,
+    rename_folder,
+    save_folders,
+    suggest_groups,
+)
 from src.workflow.ExperimentalDesign import (
     align_design,
     check_design,
@@ -160,6 +169,7 @@ class StreamlitUI:
         file_types: Union[str, List[str]],
         name: str = "",
         fallback: Union[List, str] = None,
+        suggest_folders: bool = False,
     ) -> None:
         """
         Handles file uploads through the Streamlit interface, supporting both direct
@@ -174,6 +184,11 @@ class StreamlitUI:
                 ``CommandExecutor.convert_to_mzml()``.
             name (str, optional): Display name for the upload component. Defaults to the key if not provided.
             fallback (Union[List, str], optional): Default files to use if no files are uploaded.
+            suggest_folders (bool, optional): Offer to sort the files into folders
+                by the groups their names suggest (``ctrl_R1``, ``ctrl_R2``,
+                ``treated_R1`` ...). Folders are labels kept in
+                ``input-folders.json``; ``experimental_design()`` takes them
+                as conditions.
         """
         files_dir = Path(self.workflow_dir, "input-files", key)
 
@@ -450,13 +465,15 @@ class StreamlitUI:
 
         c1, _ = st.columns(2)
         if current_files:
-            c1.info(f"Current **{name}** files:\n\n" + "\n\n".join(current_files))
+            self._input_folders(key, name, current_files, suggest_folders)
+            c1, _ = st.columns(2)
             if c1.button(
                 f"🗑️ Clear **{name}** files.",
                 use_container_width=True,
                 key=f"remove-files-{key}",
             ):
                 shutil.rmtree(files_dir)
+                save_folders(self.workflow_dir, key, {})
                 if key in self.params:
                     del self.params[key]
                 with open(
@@ -466,6 +483,129 @@ class StreamlitUI:
                 st.rerun()
         elif not fallback:
             st.warning(f"No **{name}** files!")
+
+    def _input_folders(
+        self, key: str, name: str, current_files: List[str], suggest: bool
+    ) -> None:
+        """The current files of upload ``key``, browsed and organized by folder.
+
+        A folder is a label (``InputFolders``); the files do not move. With
+        ``suggest``, groups read from the file names are offered as folders.
+        """
+        # "(local) name" marks a referenced file; folders are kept by file name
+        names = sorted(
+            {f.removeprefix("(local) ") for f in current_files}, key=natural_key
+        )
+        local = {f.removeprefix("(local) ") for f in current_files if f.startswith("(local) ")}
+        folders = {
+            f: d for f, d in load_folders(self.workflow_dir, key).items() if f in names
+        }
+        counts = folder_counts(folders, names)
+        unfiled = [n for n in names if n not in folders]
+        version_key = f"_folders-{Path(self.workflow_dir).name}-{key}"
+        st.session_state.setdefault(version_key, 0)
+
+        def changed():
+            st.session_state[version_key] += 1
+            st.rerun(scope="fragment")
+
+        st.markdown(f"**Current {name} files** ({len(names)})")
+        if suggest and unfiled:
+            proposal = {
+                s.file: s.group for s in suggest_groups(names) if s.file in unfiled
+            }
+            if proposal:
+                groups = folder_counts(proposal, list(proposal))
+                text = ", ".join(f"**{g}** ({n})" for g, n in groups.items())
+                c1, c2 = st.columns([3, 1], vertical_alignment="center")
+                c1.info(
+                    f"The file names suggest {len(groups)} groups: {text}.",
+                    icon="💡",
+                )
+                if c2.button(
+                    "Sort into these folders",
+                    key=f"{version_key}-suggest",
+                    use_container_width=True,
+                    help="Put each file in the folder of its group. "
+                    "Files already in a folder stay where they are.",
+                ):
+                    save_folders(self.workflow_dir, key, {**folders, **proposal})
+                    changed()
+
+        all_label = f"All files ({len(names)})"
+        views = {all_label: None}
+        views.update({f"📁 {d} ({n})": d for d, n in counts.items()})
+        if counts and unfiled:
+            views[f"Not in a folder ({len(unfiled)})"] = ""
+        view_key = f"{version_key}-view"
+        # A renamed folder changes its label: fall back to all files
+        if st.session_state.get(view_key) not in views:
+            st.session_state[view_key] = all_label
+        if len(views) > 1:
+            label = st.pills(
+                "Folder",
+                list(views),
+                key=view_key,
+                label_visibility="collapsed",
+            )
+            view = views.get(label) if label else None
+        else:
+            view = None
+        shown = [
+            n for n in names
+            if view is None or folders.get(n, "") == view
+        ]
+        table = pd.DataFrame({
+            "file": [f"{n} (referenced)" if n in local else n for n in shown],
+            "folder": [folders.get(n, "") for n in shown],
+        })
+        edited = st.data_editor(
+            table,
+            key=f"{version_key}-{st.session_state[version_key]}-{view}",
+            hide_index=True,
+            num_rows="fixed",
+            disabled=["file"],
+            use_container_width=True,
+            column_config={
+                "file": st.column_config.TextColumn("File"),
+                "folder": st.column_config.TextColumn(
+                    "Folder",
+                    help="Type a folder name to put the file in it (a new "
+                    "name makes a new folder); clear it to take the file out.",
+                ),
+            },
+        )
+        new = {
+            n: str(d).strip() if isinstance(d, str) else ""
+            for n, d in zip(shown, edited["folder"])
+        }
+        if any(new[n] != folders.get(n, "") for n in shown):
+            save_folders(self.workflow_dir, key, {**folders, **new})
+            changed()
+
+        if counts:
+            with st.popover("Rename or remove a folder"):
+                old = st.selectbox("Folder", list(counts), key=f"{version_key}-old")
+                new_name = st.text_input(
+                    "New name", value=old, key=f"{version_key}-new-{old}"
+                ).strip()
+                c1, c2 = st.columns(2)
+                if c1.button(
+                    "Rename",
+                    key=f"{version_key}-rename",
+                    disabled=not new_name or new_name == old,
+                    use_container_width=True,
+                ):
+                    rename_folder(self.workflow_dir, key, old, new_name)
+                    changed()
+                if c2.button(
+                    "Remove folder",
+                    key=f"{version_key}-remove",
+                    help="The files stay; they are just no longer in a folder.",
+                    use_container_width=True,
+                ):
+                    rename_folder(self.workflow_dir, key, old, "")
+                    changed()
 
     def _resolve_browser_cwd(self, key: str, mount_root: Path) -> Path:
         """Read cwd for this widget from session state, confine it to mount_root."""
@@ -697,6 +837,8 @@ class StreamlitUI:
             self.params[key] = [f for f in self.params[key] if f in options]
 
         widget_type = "multiselect" if multiple else "selectbox"
+        if multiple:
+            self._select_by_folder(key, options)
         self.input_widget(
             key,
             name=name,
@@ -704,6 +846,37 @@ class StreamlitUI:
             options=options,
             display_file_path=display_file_path,
             reactive=reactive,
+        )
+
+    def _select_by_folder(self, key: str, options: List[str]) -> None:
+        """Buttons that select the files of one folder (see ``upload_widget``)."""
+        folders = load_folders(self.workflow_dir, key)
+        counts = folder_counts(folders, options)
+        if not counts:
+            return
+        widget = f"{self.parameter_manager.param_prefix}{key}"
+        pill_key = f"_select-folder-{Path(self.workflow_dir).name}-{key}"
+        all_label = f"All files ({len(options)})"
+        labels = {all_label: None}
+        labels.update({f"📁 {d} ({n})": d for d, n in counts.items()})
+
+        def select():
+            label = st.session_state.get(pill_key)
+            if label not in labels:
+                return
+            folder = labels[label]
+            st.session_state[widget] = [
+                f for f in options
+                if folder is None or folders.get(Path(f).name) == folder
+            ]
+            st.session_state[pill_key] = None
+
+        st.pills(
+            "Select a folder",
+            list(labels),
+            key=pill_key,
+            on_change=select,
+            help="Selects the files of that folder, replacing the current selection.",
         )
 
     def input_widget(
@@ -1832,7 +2005,9 @@ class StreamlitUI:
                     step_size=step_size,
                 )
 
-    def experimental_design(self, key: str, name: str = "Experimental design") -> None:
+    def experimental_design(
+        self, key: str, name: str = "Experimental design", suggest: bool = False
+    ) -> None:
         """
         Table assigning each selected input file a condition, biological replicate and fraction.
 
@@ -1848,6 +2023,11 @@ class StreamlitUI:
                 (the key passed to ``select_input_file``). Pass ``reactive=True``
                 to that ``select_input_file`` so the table follows the selection.
             name (str, optional): The heading shown above the table.
+            suggest (bool, optional): Also fill the condition and replicate of
+                files in no folder from the groups their names suggest
+                (``ctrl_R1``, ``ctrl_R2``, ``treated_R1`` ...). Files in a
+                folder (see ``upload_widget``) always take the folder as
+                their condition when they have none yet.
         """
         files = st.session_state.get(
             f"{self.parameter_manager.param_prefix}{key}", self.params.get(key, [])
@@ -1864,6 +2044,45 @@ class StreamlitUI:
         version_key = f"_design-{Path(self.workflow_dir).name}-{key}"
         st.session_state.setdefault(version_key, 0)
         stored = load_design(self.workflow_dir, files)
+        folders = load_folders(self.workflow_dir, key)
+        rows = design_rows(files, folders, suggest=suggest)
+
+        def from_names(design, only_empty):
+            """Conditions, replicates and fractions from folders and names."""
+            design = design.copy()
+            for i, f in enumerate(design["file"]):
+                row = rows.get(f)
+                if row is None or (only_empty and design.at[i, "condition"]):
+                    continue
+                design.at[i, "condition"] = row.group
+                design.at[i, "replicate"] = row.replicate
+                design.at[i, "fraction"] = row.fraction
+            return design
+
+        prefilled = from_names(stored, only_empty=True)
+        if not prefilled.equals(stored):
+            stored = prefilled
+            save_design(self.workflow_dir, stored, files)
+            st.session_state[version_key] += 1
+        if rows:
+            st.caption(
+                "Conditions are taken from the files' folders"
+                + (" or, outside a folder, from their names" if suggest else "")
+                + " until you change them."
+            )
+        differs = [
+            f for f in stored["file"]
+            if f in rows and stored.loc[stored["file"] == f, "condition"].iat[0] != rows[f].group
+        ]
+        if differs and st.button(
+            f"Take conditions from {'folders and names' if suggest else 'folders'} again",
+            key=f"{version_key}-refill",
+            help=f"{len(differs)} file(s) have a condition other than their folder"
+            + (" or name" if suggest else "") + " suggests.",
+        ):
+            stored = from_names(stored, only_empty=False)
+            save_design(self.workflow_dir, stored, files)
+            st.session_state[version_key] += 1
 
         uploaded = st.file_uploader(
             "Import design.tsv or SDRF",
