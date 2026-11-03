@@ -166,7 +166,7 @@ class CommandExecutor:
 
         return all(results)
 
-    def run_command(self, command: list[str], task: tuple = None) -> bool:
+    def run_command(self, command: list[str], task: tuple = None, cwd=None) -> bool:
         """
         Executes a specified shell command and logs its execution details.
 
@@ -176,6 +176,9 @@ class CommandExecutor:
                 progress (see run_topp()). Its start, end and, on failure, exit
                 code and output are recorded there, and a failure is logged
                 with its context ("While running X on file 2 of 3 (a.mzML)").
+            cwd (str | Path, optional): Working directory of the command, for
+                programs that read files next to their executable. Defaults to
+                the app's working directory.
 
         Raises:
             Exception: If the command execution results in any errors.
@@ -184,6 +187,8 @@ class CommandExecutor:
         command = [str(c) for c in command]
 
         # Log the execution start
+        if cwd is not None:
+            self.logger.log(f"Working directory: {cwd}", 1)
         self.logger.log(f"Running command:\n"+' '.join(command)+"\nWaiting for command to finish...", 1)   
         start_time = time.time()
         if task is not None:
@@ -197,7 +202,8 @@ class CommandExecutor:
                 stderr=subprocess.PIPE,
                 text=True,
                 bufsize=1,  # Line buffered
-                universal_newlines=True
+                universal_newlines=True,
+                cwd=cwd,
             )
         except OSError as e:
             # e.g. the tool is not installed: record it, then fail as before
