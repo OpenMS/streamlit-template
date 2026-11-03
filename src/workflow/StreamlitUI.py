@@ -507,7 +507,10 @@ class StreamlitUI:
 
         def changed():
             st.session_state[version_key] += 1
-            st.rerun(scope="fragment")
+            try:  # upload_widget() is a fragment; a full app run cannot rerun it alone
+                st.rerun(scope="fragment")
+            except st.errors.StreamlitAPIException:
+                st.rerun()
 
         st.markdown(f"**Current {name} files** ({len(names)})")
         if suggest and unfiled:
