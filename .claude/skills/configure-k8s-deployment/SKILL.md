@@ -99,7 +99,7 @@ The user confirms or overrides each one. Do not omit the "what this controls" li
 
 ## Step 3 — Apply the answers to `k8s/overlays/prod/kustomization.yaml`
 
-Edit the file in place. The full templated shape is:
+Edit the file in place. First delete `k8s/overlays/prod/namespace.yaml` and its `- namespace.yaml` entry under `resources:`: the shared `openms` namespace is managed only by the template's own deployment, and two Argo CD Applications carrying it would keep taking it over from each other. The full templated shape is:
 
 ```yaml
 apiVersion: kustomize.config.k8s.io/v1beta1
@@ -254,6 +254,7 @@ After committing the edits, tell the user the next steps belong to a human opera
 
 - [ ] Step 1 recon done; fork's `k8s/` layout matches expectations (or the user was asked because it didn't)
 - [ ] Interview completed; defaults shown to the user and confirmed/overridden
+- [ ] `k8s/overlays/prod/namespace.yaml` and its `resources:` entry deleted (only the template's deployment manages the `openms` namespace)
 - [ ] `namePrefix`, `commonLabels.app`, `images[0].newName`, `images[0].newTag` written in the overlay
 - [ ] IngressRoute patch written: both `.de` and `.org` hostnames, plus the `<slug>-streamlit` service reference
 - [ ] Redis URL written in both Deployment patches (`streamlit` and `rq-worker`)
