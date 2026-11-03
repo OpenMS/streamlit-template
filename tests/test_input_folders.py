@@ -57,9 +57,13 @@ def test_fractions_of_one_sample_share_its_replicate():
 
 
 def test_replicates_are_counted_when_names_do_not_number_them():
-    got = _groups(["ctrl_a.mzML", "ctrl_b.mzML", "drug_a.mzML", "drug_b.mzML", "drug_c.mzML"])
-    # "a"/"b" vary, so the group is the whole varying part: no grouping
-    assert got == [] or all(r >= 1 for _, _, r, _ in got)
+    got = _groups([
+        "ctrl_sample_20240101.mzML", "ctrl_sample_20240102.mzML",
+        "drug_sample_20240103.mzML", "drug_sample_20240104.mzML", "drug_sample_20240105.mzML",
+    ])
+    assert [(g, r) for _, g, r, _ in got] == [
+        ("ctrl", 1), ("ctrl", 2), ("drug", 1), ("drug", 2), ("drug", 3),
+    ]
 
 
 @pytest.mark.parametrize(

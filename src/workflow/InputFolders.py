@@ -14,12 +14,18 @@ suggestions) into rows of the experimental design.
 This module has no Streamlit dependency.
 """
 import json
+import os
 import re
+import tempfile
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Union
 
 FOLDERS_FILE = "input-folders.json"
+# Sessions are threads of one server process: one save at a time, so two
+# sessions on one workspace do not drop each other's folders
+_LOCK = threading.Lock()
 
 _COMPRESSION = re.compile(r"\.(gz|bz2|xz|zip)$", re.IGNORECASE)
 _EXTENSION = re.compile(r"\.[A-Za-z][A-Za-z0-9]{0,5}$")
@@ -63,22 +69,31 @@ def load_folders(workflow_dir: Union[str, Path], key: str) -> Dict[str, str]:
 
 def save_folders(workflow_dir: Union[str, Path], key: str, folders: Dict[str, str]) -> None:
     """Store the folders of upload ``key``; an empty folder name takes the file out."""
-    data = _load_all(workflow_dir)
     clean = {
         _name(f): str(d).strip()
         for f, d in folders.items()
         if d is not None and str(d).strip()
     }
-    if clean:
-        data[key] = dict(sorted(clean.items()))
-    else:
-        data.pop(key, None)
     path = folders_path(workflow_dir)
-    if data:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(data, indent=2), encoding="utf-8")
-    elif path.exists():
-        path.unlink()
+    with _LOCK:
+        data = _load_all(workflow_dir)
+        if clean:
+            data[key] = dict(sorted(clean.items()))
+        else:
+            data.pop(key, None)
+        if data:
+            # Written whole, then moved in place: a reader never sees half a file
+            path.parent.mkdir(parents=True, exist_ok=True)
+            fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                    json.dump(data, handle, indent=2)
+                os.replace(tmp, path)
+            except BaseException:
+                Path(tmp).unlink(missing_ok=True)
+                raise
+        elif path.exists():
+            path.unlink()
 
 
 def rename_folder(workflow_dir, key: str, old: str, new: str) -> None:

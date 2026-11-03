@@ -2241,15 +2241,25 @@ class StreamlitUI:
                 + (" or, outside a folder, from their names" if suggest else "")
                 + " until you change them."
             )
+        def number(value):
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return None
+
         differs = [
-            f for f in stored["file"]
-            if f in rows and stored.loc[stored["file"] == f, "condition"].iat[0] != rows[f].group
+            r["file"] for _, r in stored.iterrows()
+            if r["file"] in rows and (
+                r["condition"] != rows[r["file"]].group
+                or number(r["replicate"]) != rows[r["file"]].replicate
+                or number(r["fraction"]) != rows[r["file"]].fraction
+            )
         ]
         if differs and st.button(
             f"Take conditions from {'folders and names' if suggest else 'folders'} again",
             key=f"{version_key}-refill",
-            help=f"{len(differs)} file(s) have a condition other than their folder"
-            + (" or name" if suggest else "") + " suggests.",
+            help=f"{len(differs)} file(s) have a condition, replicate or fraction other than "
+            f"their folder{' or name' if suggest else ''} suggests. This sets all three again.",
         ):
             stored = from_names(stored, only_empty=False)
             save_design(self.workflow_dir, stored, files)
