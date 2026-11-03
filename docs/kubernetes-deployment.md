@@ -234,10 +234,10 @@ The NFSv4.1 client in Linux 6.19+ asks for a delegation on a directory (`GET_DIR
 
 ```bash
 kubectl debug node/<node> -it --image=busybox -- \
-  sh -c 'uname -r; cat /host/sys/module/nfsv4/parameters/directory_delegations 2>&1'
+  chroot /host sh -c 'modprobe nfsv4; uname -r; cat /sys/module/nfsv4/parameters/directory_delegations'
 ```
 
-No such file means the kernel predates the feature. `Y` means the node has to be switched to `N` (`echo N > /sys/module/nfsv4/parameters/directory_delegations`, and `options nfsv4 directory_delegations=N` in `/etc/modprobe.d/` for reboots) before it mounts the volume. On managed node pools that replace nodes on upgrade, this belongs in the node image or the machine provisioning. The CI kind jobs set it on the runner in the step "Stop the NFS client requesting directory delegations".
+The module is loaded first because the parameter file exists only while `nfsv4` is loaded; with the module loaded (or built in), no such file means the kernel predates the feature. `Y` means the node has to be switched to `N` (`echo N > /sys/module/nfsv4/parameters/directory_delegations`) before it mounts the volume, and kept there across reboots: `options nfsv4 directory_delegations=N` in `/etc/modprobe.d/` when `nfsv4` is a module, or `nfsv4.directory_delegations=N` on the kernel command line when it is built in (`CONFIG_NFS_V4=y`). On managed node pools that replace nodes on upgrade, this belongs in the node image or the machine provisioning. The CI kind jobs set it on the runner in the step "Stop the NFS client requesting directory delegations".
 
 ### CI stand-in
 

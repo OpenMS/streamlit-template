@@ -65,8 +65,9 @@ parameters:
 #                among them) serve no NFSv4.x and refuse it with "Protocol
 #                not supported". Locks go through NLM/statd, which the node
 #                plugin's mount.nfs starts. If your backend serves 4.1, it
-#                can be used instead; keep k8s/ci-storage/ganesha-values.yaml
-#                and assert_storage_class_contract in step
+#                can be used instead; keep k8s/ci-storage/ganesha-values.yaml,
+#                assert_storage_class_contract and the nfsvers=3 checks in
+#                the nginx and Traefik jobs of build-and-test.yml in step
 #   nconnect=4   the access pattern is metadata-heavy rather than
 #                bandwidth-bound
 #   default actimeo - close-to-open consistency already gives a fresh read on
