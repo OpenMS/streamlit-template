@@ -5,6 +5,7 @@ from streamlit.source_util import page_icon_and_name
 from captcha.image import ImageCaptcha
 from pathlib import Path
 
+import base64
 import hashlib
 import random
 import string
@@ -180,6 +181,22 @@ def add_page(main_script_path_str: str, page_name: str) -> None:
     set_pages(pages)
 
 
+def captcha_image_html(text: str) -> str:
+    """Return the captcha image for ``text`` as an inline ``<img>`` tag.
+
+    ``st.image`` serves its bytes from the memory of the server process that ran
+    the script (``/media/<hash>``). Behind a load balancer that request can reach
+    another replica and get a 404, which leaves only the alt text on the page.
+    A data URI travels with the page itself, so it shows on any replica.
+    """
+    data = ImageCaptcha(width=width, height=height).generate(text).getvalue()
+    encoded = base64.b64encode(data).decode("ascii")
+    return (
+        f'<img src="data:image/png;base64,{encoded}" width="{width}" '
+        f'height="{height}" alt="Captcha" style="max-width: 100%; height: auto;">'
+    )
+
+
 length_captcha = 5
 width = 400
 height = 180
@@ -247,9 +264,10 @@ def captcha_control(privacy_policy_url: str = ""):
             st.info(
                 "Please enter the captcha as text. Note: If your captcha is not accepted, you might need to disable your ad blocker."
             )
-            image = ImageCaptcha(width=width, height=height)
-            data = image.generate(st.session_state["Captcha"])
-            st.image(data)
+            st.markdown(
+                captcha_image_html(st.session_state["Captcha"]),
+                unsafe_allow_html=True,
+            )
             c1, c2 = st.columns([70, 30])
             capta2_text = st.empty()
             capta2_text = c1.text_input("Enter captcha text", max_chars=5, key="captcha_input")

@@ -67,18 +67,27 @@ spec:
             - name: admin-secrets
               mountPath: /app/admin-secrets
               readOnly: true
+          # A pod that fails readiness leaves the Service while its users'
+          # websockets stay open on it; their next HTTP requests (media files,
+          # component assets, downloads) then reach another replica and 404.
+          # A busy Python process can take longer than the 1 s default to
+          # answer, so give the probes room before a pod is taken out.
           readinessProbe:
             httpGet:
               path: /_stcore/health
               port: 8501
             initialDelaySeconds: 10
             periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
           livenessProbe:
             httpGet:
               path: /_stcore/health
               port: 8501
             initialDelaySeconds: 30
             periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
       volumes:
         - name: workspaces
           persistentVolumeClaim:
