@@ -57,7 +57,7 @@ kubectl kustomize --enable-helm k8s/storage/ | kubectl apply -f -
 kubectl apply -k k8s/overlays/prod/
 ```
 
-CI uses **Python 3.10** for all Linux test/lint jobs. Windows packaging uses 3.11; `requirements.txt` was compiled against 3.12.
+CI uses **Python 3.11** for all Linux test/lint jobs, the same as the Docker images and the desktop apps (tornado 6.6 needs it); `requirements.txt` was compiled against 3.12.
 
 ### Test suite shape
 
