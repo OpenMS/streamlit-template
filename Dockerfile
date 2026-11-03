@@ -225,8 +225,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends mono-complete \
 # packages stay in requirements.txt. The glob lets the file be absent; this
 # step comes after the OpenMS build, so changing the list never rebuilds it.
 COPY requirements.txt conda-requirements.tx[t] /tmp/app-env/
-RUN if [ -s /tmp/app-env/conda-requirements.txt ]; then \
-        mamba install -y -n streamlit-env -c conda-forge --file /tmp/app-env/conda-requirements.txt; \
+# A line ending in `# [x86_64]` or `# [aarch64]` is installed only on that
+# machine (`uname -m`), for tools conda-forge builds for one architecture.
+RUN touch /tmp/app-env/conda-requirements.txt \
+    && awk -v arch="$(uname -m)" ' \
+        /#[[:space:]]*\[[a-z0-9_]+\][[:space:]]*$/ { tag = $0; sub(/.*\[/, "", tag); sub(/\].*/, "", tag); if (tag != arch) next } \
+        { sub(/#.*/, ""); if ($0 ~ /[^[:space:]]/) print }' \
+        /tmp/app-env/conda-requirements.txt > /tmp/app-env/conda-specs.txt \
+    && if [ -s /tmp/app-env/conda-specs.txt ]; then \
+        mamba install -y -n streamlit-env -c conda-forge --file /tmp/app-env/conda-specs.txt; \
     fi && rm -rf /tmp/app-env
 
 # Create Redis data directory. Default 0755 root-owned is enough: the docker
