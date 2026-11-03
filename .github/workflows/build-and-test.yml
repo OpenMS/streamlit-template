@@ -556,8 +556,19 @@ jobs:
         # the arm64 callers enable via free_disk_space.
         run: |
           # Keep /opt/hostedtoolcache: helm/kind-action and setup-kubectl
-          # cache binaries there and fail if the directory is missing.
+          # cache binaries there and fail if the directory is missing. Its
+          # CodeQL bundle is not used by these jobs.
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc || true
+          # Some ubuntu-latest machines have a 72 GB disk with ~30 GB free
+          # after the line above, others 145 GB. An app image of 8-10 GB is
+          # held twice per kind node (content store and unpacked snapshot)
+          # plus the tar, which does not fit in 30 GB, so take the rest of
+          # the preinstalled toolchains and the runner's cached docker images
+          # too. kind pulls its node image after this step.
+          sudo rm -rf /opt/hostedtoolcache/CodeQL /usr/local/.ghcup /usr/share/swift \
+            /usr/local/share/powershell /usr/local/share/chromium /usr/local/share/boost \
+            /opt/az /opt/microsoft /opt/google /usr/lib/jvm || true
+          docker system prune -af >/dev/null 2>&1 || true
           sudo apt-get clean
           df -h
 
@@ -832,8 +843,19 @@ jobs:
         # the arm64 callers enable via free_disk_space.
         run: |
           # Keep /opt/hostedtoolcache: helm/kind-action and setup-kubectl
-          # cache binaries there and fail if the directory is missing.
+          # cache binaries there and fail if the directory is missing. Its
+          # CodeQL bundle is not used by these jobs.
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc || true
+          # Some ubuntu-latest machines have a 72 GB disk with ~30 GB free
+          # after the line above, others 145 GB. An app image of 8-10 GB is
+          # held twice per kind node (content store and unpacked snapshot)
+          # plus the tar, which does not fit in 30 GB, so take the rest of
+          # the preinstalled toolchains and the runner's cached docker images
+          # too. kind pulls its node image after this step.
+          sudo rm -rf /opt/hostedtoolcache/CodeQL /usr/local/.ghcup /usr/share/swift \
+            /usr/local/share/powershell /usr/local/share/chromium /usr/local/share/boost \
+            /opt/az /opt/microsoft /opt/google /usr/lib/jvm || true
+          docker system prune -af >/dev/null 2>&1 || true
           sudo apt-get clean
           df -h
 
@@ -1525,8 +1547,19 @@ jobs:
         # the arm64 callers enable via free_disk_space.
         run: |
           # Keep /opt/hostedtoolcache: helm/kind-action and setup-kubectl
-          # cache binaries there and fail if the directory is missing.
+          # cache binaries there and fail if the directory is missing. Its
+          # CodeQL bundle is not used by these jobs.
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc || true
+          # Some ubuntu-latest machines have a 72 GB disk with ~30 GB free
+          # after the line above, others 145 GB. An app image of 8-10 GB is
+          # held twice per kind node (content store and unpacked snapshot)
+          # plus the tar, which does not fit in 30 GB, so take the rest of
+          # the preinstalled toolchains and the runner's cached docker images
+          # too. kind pulls its node image after this step.
+          sudo rm -rf /opt/hostedtoolcache/CodeQL /usr/local/.ghcup /usr/share/swift \
+            /usr/local/share/powershell /usr/local/share/chromium /usr/local/share/boost \
+            /opt/az /opt/microsoft /opt/google /usr/lib/jvm || true
+          docker system prune -af >/dev/null 2>&1 || true
           sudo apt-get clean
           df -h
 
