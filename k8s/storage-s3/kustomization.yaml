@@ -1,0 +1,54 @@
+# OPTIONAL storage tier: ReadWriteMany workspace volumes on S3 object storage.
+#
+# The alternative to k8s/storage/ (OpenStack Manila) for clusters that offer
+# S3 instead of file shares. Nothing uses it until an app overlay enables the
+# component k8s/components/storage-s3/, so it can be installed ahead of time
+# and switched to app by app.
+#
+# The apps cannot read and write S3 directly: TOPP tools and pyOpenMS open
+# files by path, several pods on different nodes share one workspace
+# directory, and uploads and logs rely on file locks and atomic renames.
+# JuiceFS provides exactly that on top of a bucket:
+#
+#   juicefs-csi-driver   mounts the file system on every node (one mount pod
+#                        per volume and node) and creates one directory per
+#                        app claim, named after the claim's `app` label
+#   juicefs-meta         PostgreSQL holding the directory tree and locks (MB,
+#                        not GB); file data goes to the bucket as chunks.
+#                        JuiceFS backs the metadata up into the bucket every
+#                        hour (meta/ prefix)
+#   juicefs-s3-gateway   the same file system over the S3 API, one bucket per
+#                        app directory, one object per file. This is what
+#                        polars (`scan_parquet("s3://...")`) and presigned
+#                        download links use; src/common/storage.py builds the
+#                        URIs
+#
+# ONE PER CLUSTER, NOT ONE PER APP, like k8s/storage/. Apply it once:
+#
+#   1. Create the two Secrets by hand (never committed):
+#      docs/kubernetes-deployment.md, "S3 storage (optional)".
+#   2. kubectl kustomize --enable-helm k8s/storage-s3/ | kubectl apply -f -
+#   3. Run the two-node test claim from the same section.
+#   4. Enable k8s/components/storage-s3 in an app overlay.
+#
+# Rendering needs Helm 3 on PATH, because of the `helmCharts` block.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: openms-storage
+
+resources:
+  - namespace.yaml
+  - metadata-db.yaml
+  - s3-gateway.yaml
+  - storageclass.yaml
+
+helmCharts:
+  # juicedata/charts, chart juicefs-csi-driver (driver v0.32.x). Pinned: an
+  # unpinned chart re-resolves on every render.
+  - name: juicefs-csi-driver
+    repo: https://juicedata.github.io/charts/
+    version: 0.32.4
+    releaseName: juicefs-csi
+    namespace: openms-storage
+    valuesFile: juicefs-csi-values.yaml
