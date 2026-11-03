@@ -27,8 +27,7 @@ Confirm them with the user in one question.
 | Value | File | Field |
 |---|---|---|
 | name | `settings.json` | `app-name` |
-| repository | `settings.json` | `github-user`, `repository-name` |
-| repository | `Dockerfile`, `Dockerfile.arm`, `Dockerfile_simple*` | `ARG GITHUB_USER`, `ARG GITHUB_REPO` |
+| repository | `settings.json` | `github-user`, `repository-name` (the Dockerfiles read them too, to bundle the app's own Windows installer) |
 | slug | `k8s/overlays/prod/kustomization.yaml` | `namePrefix: <slug>-`, `commonLabels.app` |
 | image | `k8s/overlays/prod/kustomization.yaml` | `images[0].newName` |
 | hosts | `k8s/overlays/prod/kustomization.yaml` | IngressRoute `Host(...)` patch |

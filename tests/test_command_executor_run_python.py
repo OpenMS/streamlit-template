@@ -182,3 +182,20 @@ def test_defaults_of_the_wrong_shape_is_not_reported_as_success(tmp_path):
 
     assert executor.run_python(str(script)) is False
     executor.run_command.assert_not_called()
+
+
+def test_run_command_runs_in_the_given_working_directory(tmp_path):
+    """`cwd` starts the program there, for tools that read files next to
+    their executable; without it the app's working directory is kept."""
+    executor = CommandExecutor(tmp_path, MagicMock(), ParameterManager(tmp_path))
+    executor.pid_dir.mkdir(parents=True, exist_ok=True)
+    there = tmp_path / "tool-folder"
+    there.mkdir()
+    out = tmp_path / "cwd.txt"
+    script = f"import os, pathlib; pathlib.Path({str(out)!r}).write_text(os.getcwd())"
+
+    assert executor.run_command([sys.executable, "-c", script], cwd=there)
+    assert Path(out.read_text()).resolve() == there.resolve()
+
+    assert executor.run_command([sys.executable, "-c", script])
+    assert Path(out.read_text()).resolve() == Path.cwd().resolve()

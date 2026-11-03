@@ -33,13 +33,12 @@ Set up app-level configuration (settings, Dockerfile, README) for a new or forke
 3. **Choose and update Dockerfile**:
 
    - **`Dockerfile`** (full): builds OpenMS from source with TOPP tools. Use when the app runs TOPP tools via `executor.run_topp()`. Update:
-     - `GITHUB_USER` and `GITHUB_REPO` environment variables
-     - Python dependencies in `environment.yml`
+     - nothing for the app's identity: the bundled Windows installer comes from `github-user`/`repository-name` in `settings.json`
+     - Python dependencies in `requirements.txt`; command line tools from conda-forge (SIRIUS, for example) one per line in `conda-requirements.txt` (a trailing `# [x86_64]` or `# [aarch64]` limits a line to that architecture, for tools without an ARM build)
      - Entrypoint if main file is not `app.py`
 
    - **`Dockerfile_simple`** (lightweight): installs pyOpenMS via pip only. Use when the app only uses pyOpenMS Python API. Update:
-     - `GITHUB_USER` and `GITHUB_REPO` environment variables
-     - Python dependencies in `requirements.txt`
+     - Python dependencies in `requirements.txt` (and `conda-requirements.txt`, as above)
 
 4. **Update `README.md`** with the new app name, description, and instructions.
 
@@ -66,7 +65,7 @@ Set up app-level configuration (settings, Dockerfile, README) for a new or forke
 ## Checklist
 
 - [ ] `settings.json` updated with app name, GitHub user/repo, version
-- [ ] Correct Dockerfile chosen and configured (`GITHUB_USER`, `GITHUB_REPO`)
+- [ ] Correct Dockerfile chosen; extra tools in `conda-requirements.txt`, not in the Dockerfile
 - [ ] `requirements.txt` or `environment.yml` updated with dependencies
 - [ ] `README.md` updated
 
