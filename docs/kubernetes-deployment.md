@@ -192,7 +192,7 @@ Ships with an empty admin password by default and is included in `k8s/base/kusto
 
 | File | Purpose |
 |------|---------|
-| `storageclass.yaml` | `openms-manila-nfs`: provisioner `nfs.manila.csi.openstack.org`, `reclaimPolicy: Retain`, volume expansion on, mount options `hard`, `nfsvers=4.1`, `nconnect=4`. Two values are **cluster-specific**: `type` (the NFS share type, `isilon-denbi` on de.NBI Berlin) and `nfs-shareClient` (the node subnet that gets the share's access rule, `192.168.1.0/24`). Both are parameters of the StorageClass and cannot be changed in place: to change one, delete and re-apply the class while no PVC uses it. |
+| `storageclass.yaml` | `openms-manila-nfs`: provisioner `nfs.manila.csi.openstack.org`, `reclaimPolicy: Retain`, volume expansion on, mount options `hard`, `nfsvers=3` (the de.NBI Isilon serves no NFSv4), `nconnect=4`. Two values are **cluster-specific**: `type` (the NFS share type, `isilon-denbi` on de.NBI Berlin) and `nfs-shareClient` (the addresses that get the share's access rule: on de.NBI Berlin the floating-IP range `10.57.200.0/21`, because the nodes reach the Isilon through the router). Both are parameters of the StorageClass and cannot be changed in place: to change one, delete and re-apply the class while no PVC uses it. |
 | `manila-csi-values.yaml` | Helm values for `openstack-manila-csi` 2.36.3: NFS only, forwarding mounts to the csi-driver-nfs node plugin. |
 | `csi-driver-nfs-values.yaml` | Helm values for `csi-driver-nfs` 4.11.0, used only as the node plugin that does the mount. Its own controller is scaled to zero. |
 | `kustomization.yaml` | Inflates both charts into `kube-system` and adds the StorageClass. |
