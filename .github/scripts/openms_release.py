@@ -24,7 +24,8 @@ Edits, each only where the old release is written:
                                   the default `openms` release ('3.5.0')
   Dockerfile*                     conda python=<x.y> / ARG PYTHON_VERSION below
                                   pyOpenMS's Requires-Python
-  .github/workflows/*.yml         python-version below pyOpenMS's Requires-Python
+  .github/workflows/*.yml         python-version (and the desktop PYTHON_VERSION)
+                                  below pyOpenMS's Requires-Python
 
 Writes `key=value` lines to $GITHUB_OUTPUT (or stdout): status (no-release,
 up-to-date, not-following, upgraded), old, new, ref, notes.
@@ -228,7 +229,7 @@ def main() -> int:
                 desktop.write_text(new_text)
                 notes.append(f"build-desktop-app.yaml: desktop OpenMS {fmt(old)} -> {fmt(newest)}")
         if min_python:
-            low = re.compile(r'(python-version:\s*\[?\s*")(\d+)\.(\d+)(")')
+            low = re.compile(r'((?:python-version|PYTHON_VERSION):\s*\[?\s*")(\d+)\.(\d+)(")')
             want = f"{min_python[0]}.{min_python[1]}"
             for f in sorted(list(wf.glob("*.yml")) + list(wf.glob("*.yaml"))):
                 text = f.read_text()

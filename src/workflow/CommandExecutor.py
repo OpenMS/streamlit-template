@@ -470,6 +470,9 @@ class CommandExecutor:
                     command += v.split("\n")
                 elif isinstance(v, list):
                     command += [str(x) for x in v]
+                elif isinstance(v, bool):
+                    # OpenMS reads a boolean as "true"/"false", not "True"
+                    command += [str(v).lower()]
                 else:
                     command += [str(v)]
             # Add custom parameters
@@ -487,6 +490,8 @@ class CommandExecutor:
                 command += [f"-{k}"]
                 if isinstance(v, list):
                     command += [str(x) for x in v]
+                elif isinstance(v, bool):
+                    command += [str(v).lower()]
                 else:
                     command += [str(v)]
             # Add threads parameter for TOPP tools
