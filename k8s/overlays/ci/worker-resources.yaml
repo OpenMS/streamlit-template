@@ -7,17 +7,9 @@ spec:
     spec:
       containers:
         - name: rq-worker
-          # requests == limits, exactly as in k8s/components/memory-tier-*/ -
-          # only the numbers change. assert_worker_qos_guaranteed reads
-          # .status.qosClass off the running pod, so a CI-shrunk worker that
-          # went Burstable would report a QoS regression that exists nowhere
-          # but here.
-          #
-          # 1Gi / 500m is what the low tier used to REQUEST before requests
-          # and limits converged, so it is a size a worker has always been
-          # started at; two replicas of it leave the runner room for the
-          # Streamlit pods, Ganesha, the ingress controller and kube-system on
-          # one physical 4-cpu host.
+          # The low tier's requests, used as the limit too: small enough to
+          # leave the runner room for the Streamlit pods, the ingress
+          # controller and kube-system on one physical 4-cpu host.
           resources:
             requests:
               memory: "1Gi"
