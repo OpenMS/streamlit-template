@@ -36,11 +36,11 @@ parameters:
   type: isilon-denbi
   # CLUSTER-SPECIFIC: who may mount the share. manila-csi adds this as an IP
   # access rule on every share it creates (the default would be 0.0.0.0/0,
-  # i.e. anyone who can reach the export). de.NBI Berlin: the Kubermatic
-  # node subnet. If the Isilon sees the nodes' floating IPs instead (mounts
-  # fail with "access denied"), use 10.57.200.0/21 - that range is shared with
-  # other projects' floating IPs, so prefer the node subnet when it works.
-  nfs-shareClient: 192.168.1.0/24
+  # i.e. anyone who can reach the export). de.NBI Berlin: the nodes reach the
+  # Isilon through the router, so it sees the floating-IP range, not the
+  # node subnet 192.168.1.0/24 (that rule gave "access denied", 3 Nov 2026).
+  # The range is shared with other projects' floating IPs.
+  nfs-shareClient: 10.57.200.0/21
   # Only for share types with driver_handles_share_servers=True, where Horizon
   # asks for a Share Network when creating a share:
   # shareNetworkID: <share network id>
@@ -60,7 +60,10 @@ parameters:
 #
 #   hard         a Manila NFS gateway failover blocks the client and resumes;
 #                `soft` would turn it into a truncated result file
-#   nfsvers=4.1  integrated locking on one port, no side-band NLM/statd
+#   nfsvers=3    the de.NBI Isilon refuses NFSv4.x ("Protocol not
+#                supported", 3 Nov 2026). Locks go through NLM/statd, which
+#                the node plugin's mount.nfs starts; cross-node locking was
+#                checked on the cluster
 #   nconnect=4   the access pattern is metadata-heavy rather than
 #                bandwidth-bound
 #   default actimeo - close-to-open consistency already gives a fresh read on
@@ -68,7 +71,7 @@ parameters:
 #                per second
 mountOptions:
   - hard
-  - nfsvers=4.1
+  - nfsvers=3
   - nconnect=4
   - retrans=2
   - timeo=30

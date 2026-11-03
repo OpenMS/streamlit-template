@@ -1819,7 +1819,7 @@ assert_storage_class_contract() {
         case " $_ci_opts " in
             *" soft "*) _ci_fail "$_ci_root: '$_ci_want' mounts soft; a server restart would truncate in-flight writes"; _ci_rc=1 ;;
         esac
-        for _ci_o in hard nfsvers=4.1 nconnect=4; do
+        for _ci_o in hard nfsvers=3 nconnect=4; do
             case " $_ci_opts " in
                 *" $_ci_o "*) ;;
                 *) _ci_fail "$_ci_root: '$_ci_want' does not set mount option '$_ci_o' (has: $_ci_opts)"; _ci_rc=1 ;;

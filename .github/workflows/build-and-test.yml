@@ -1093,8 +1093,8 @@ jobs:
               exit 1
               ;;
           esac
-          echo "${OPTS}" | grep -qE '(^| )(nfs)?vers=4\.1( |$)' || {
-            echo "::error::'${CLASS}' does not pin NFSv4.1, which is what supplies integrated locking on one port"
+          echo "${OPTS}" | grep -qE '(^| )(nfs)?vers=3( |$)' || {
+            echo "::error::'${CLASS}' does not pin NFSv3, the only version the production Manila backend (de.NBI Isilon) serves"
             exit 1
           }
           echo "${OPTS}" | grep -qE '(^| )nconnect=4( |$)' || {
@@ -1779,8 +1779,8 @@ jobs:
               exit 1
               ;;
           esac
-          echo "${OPTS}" | grep -qE '(^| )(nfs)?vers=4\.1( |$)' || {
-            echo "::error::'${CLASS}' does not pin NFSv4.1, which is what supplies integrated locking on one port"
+          echo "${OPTS}" | grep -qE '(^| )(nfs)?vers=3( |$)' || {
+            echo "::error::'${CLASS}' does not pin NFSv3, the only version the production Manila backend (de.NBI Isilon) serves"
             exit 1
           }
           echo "${OPTS}" | grep -qE '(^| )nconnect=4( |$)' || {

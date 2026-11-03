@@ -43,7 +43,7 @@ storageClass:
   # assertions run against the mount the app really gets.
   mountOptions:
     - hard
-    - nfsvers=4.1
+    - nfsvers=3
     - nconnect=4
     - retrans=2
     - timeo=30

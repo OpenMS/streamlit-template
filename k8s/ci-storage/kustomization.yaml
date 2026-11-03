@@ -4,7 +4,7 @@
 # Production gets ReadWriteMany from OpenStack Manila (k8s/storage/), which a
 # kind cluster on a GitHub runner cannot reach. This root gives the kind
 # cluster the same contract the app relies on - a StorageClass called
-# `openms-manila-nfs` that hands out NFSv4.1 ReadWriteMany volumes, mounted
+# `openms-manila-nfs` that hands out NFSv3 ReadWriteMany volumes, mounted
 # `hard` - by running one NFS-Ganesha server inside the cluster. The workspace
 # PVC in k8s/base therefore binds unchanged in both places, and the cross-node
 # assertions in .github/scripts/ci-assertions.sh exercise real NFS mounts on
