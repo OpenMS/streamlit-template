@@ -411,6 +411,10 @@ class UploadHandler(SyncHandler):
             )
         self.set_header("Upload-Offset", str(offset))
         self.set_status(204)
+        # Release before the response goes out, not in on_finish: a client
+        # that has its 204 may send the next PATCH at once, and on_finish can
+        # still be pending then, which answered that PATCH with 423.
+        self._unlock()
 
     def delete(self, upload_id):
         self._upload.remove()
