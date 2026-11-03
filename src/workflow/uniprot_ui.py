@@ -1,20 +1,25 @@
 """Widget: find a proteome on UniProt and add its FASTA to an upload folder.
 
 Drawn by ``StreamlitUI.uniprot_proteome_download(key)`` below the
-``upload_widget`` of a protein database. The file lands in that widget's
-folder (``<workflow_dir>/input-files/<key>/``) and becomes the selected file of
-``select_input_file(key)``. The UniProt calls are in ``uniprot.py``.
+``upload_widget`` of a protein database, or as one of the two sources of
+``StreamlitUI.select_protein_database(key)`` on a configure page. The file
+lands in the upload folder (``<workflow_dir>/input-files/<key>/``) and becomes
+the selected file of ``select_input_file(key)``. The UniProt calls are in
+``uniprot.py``.
 """
 
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import streamlit as st
 
 from src.workflow import uniprot
 
+YOUR_FILE = "Your file"
+FROM_UNIPROT = "UniProt proteome"
 REVIEWED = "Reviewed proteins only (Swiss-Prot)"
 ALL = "All proteins of the proteome (Swiss-Prot and TrEMBL)"
 
@@ -53,18 +58,42 @@ def _select(ui, key: str, path: Path, target: dict) -> None:
     st.session_state.pop(f"{ui.parameter_manager.param_prefix}{key}", None)
 
 
-def proteome_download(ui, key: str, name: str = "") -> None:
+def is_uniprot_file(path) -> bool:
+    """Whether a file was downloaded by this widget (named after its proteome)."""
+    return bool(path) and isinstance(path, str) and re.match(r"UP\d{9,}_", Path(path).name) is not None
+
+
+def database_choice(ui, key: str, name: str = "Protein database", reactive: bool = False) -> None:
+    """Choose the database: one of the uploaded files, or a UniProt proteome."""
+    state = f"uniprot-{key}"
+    current = ui.params.get(key)
+    if f"{state}-source" not in st.session_state:
+        st.session_state[f"{state}-source"] = FROM_UNIPROT if is_uniprot_file(current) else YOUR_FILE
+    source = st.radio(
+        name, [YOUR_FILE, FROM_UNIPROT], key=f"{state}-source", horizontal=True,
+        help="Use a FASTA file you uploaded, or download the proteome of your organism from UniProt.",
+    )
+    if source == YOUR_FILE:
+        ui.select_input_file(key, name="Uploaded file", multiple=False, reactive=reactive)
+        return
+    if is_uniprot_file(current) and Path(current).exists():
+        st.caption(f"Using `{Path(current).name}`. Search again to use another proteome.")
+    proteome_download(ui, key, name, heading=False, button="⬇️ Download and use this proteome")
+
+
+def proteome_download(ui, key: str, name: str = "", heading: bool = True, button: str = "") -> None:
     """Search UniProt proteomes by organism or taxon and download one as FASTA."""
     files_dir = Path(ui.workflow_dir, "input-files", key)
     target = ui.upload_targets.get(key, {})
     name = name or target.get("name") or key.replace("-", " ")
     state = f"uniprot-{key}"
 
-    st.markdown("**🔎 Get a proteome from UniProt**")
-    st.caption(
-        f"Search the proteomes of [UniProt](https://www.uniprot.org/proteomes) by organism "
-        f"name or NCBI taxonomy ID and add one as FASTA to the **{name}** files."
-    )
+    if heading:
+        st.markdown("**🔎 Get a proteome from UniProt**")
+        st.caption(
+            f"Search the proteomes of [UniProt](https://www.uniprot.org/proteomes) by organism "
+            f"name or NCBI taxonomy ID and add one as FASTA to the **{name}** files."
+        )
     with st.form(f"{state}-form", border=False):
         c1, c2 = st.columns([4, 1])
         text = c1.text_input(
@@ -120,7 +149,7 @@ def proteome_download(ui, key: str, name: str = "") -> None:
     if count is not None:
         st.caption(f"{count:,} proteins{' plus isoforms' if isoforms else ''} as `{filename}`.")
 
-    if st.button(f"⬇️ Add to **{name}** files", type="primary", key=f"{state}-download"):
+    if st.button(button or f"⬇️ Add to **{name}** files", type="primary", key=f"{state}-download"):
         files_dir.mkdir(parents=True, exist_ok=True)
         dest = Path(files_dir, filename)
         bar = st.progress(0.0, text="Asking UniProt for the proteins…")

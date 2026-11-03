@@ -182,3 +182,46 @@ def test_widget_downloads_and_selects(server, tmp_path):
     assert "with 7 proteins" in at.success[0].value
     params = json.loads((wf / "params.json").read_text())
     assert params["fasta-file"] == str(wf / "input-files" / "fasta-file" / name)
+
+
+def _choice_app(workflow_dir, base_url, selected):
+    def app(workflow_dir, base_url, selected):
+        from pathlib import Path
+        from types import SimpleNamespace
+
+        import streamlit as st
+
+        from src.workflow import uniprot
+        from src.workflow.uniprot_ui import database_choice
+
+        uniprot.BASE_URL = base_url
+        ui = SimpleNamespace(
+            workflow_dir=Path(workflow_dir), params={"fasta-file": selected} if selected else {},
+            upload_targets={},
+            parameter_manager=SimpleNamespace(params_file=Path(workflow_dir, "params.json"),
+                                              param_prefix="wf-param-"),
+            select_input_file=lambda key, **kw: st.write(f"file picker for {key}"),
+        )
+        database_choice(ui, "fasta-file")
+
+    return AppTest.from_function(app, args=(str(workflow_dir), base_url, selected))
+
+
+def test_database_choice(server, tmp_path):
+    at = _choice_app(tmp_path, server.url, None).run()
+    assert at.radio[0].value == "Your file"
+    assert at.markdown[0].value == "file picker for fasta-file"
+
+    at.radio[0].set_value("UniProt proteome").run()
+    assert not at.markdown
+    at.text_input(key="uniprot-fasta-file-text").input("Escherichia coli")
+    at.button[0].click().run()
+    at.button(key="uniprot-fasta-file-download").click().run()
+    assert not at.exception
+    downloaded = tmp_path / "input-files" / "fasta-file" / "UP000000625_Escherichia_coli_strain_K12_swissprot.fasta"
+    assert downloaded.is_file()
+
+    # A workspace whose database came from UniProt opens on that source
+    at = _choice_app(tmp_path, server.url, str(downloaded)).run()
+    assert at.radio[0].value == "UniProt proteome"
+    assert "Using `UP000000625_Escherichia_coli_strain_K12_swissprot.fasta`" in at.caption[0].value
