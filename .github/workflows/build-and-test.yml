@@ -27,6 +27,48 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  images:
+    # Which of the four images this app builds: `deploy.images` in app.yaml,
+    # all four when it is not set. An app whose dependencies have no build for
+    # one platform (no wheel for linux/aarch64, say) leaves that image out
+    # here instead of editing this template-owned file. Every job below takes
+    # its build list and matrices from these outputs, and treats an image the
+    # app does not build as neither missing nor failed.
+    runs-on: ubuntu-latest
+    outputs:
+      list: ${{ steps.images.outputs.list }}
+      kind: ${{ steps.images.outputs.kind }}
+      manifest: ${{ steps.images.outputs.manifest }}
+      apptainer: ${{ steps.images.outputs.apptainer }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read deploy.images from app.yaml
+        id: images
+        run: |
+          set -euo pipefail
+          all='["full-amd64","simple-amd64","full-arm64","simple-arm64"]'
+          list="$all"
+          if [ -f app.yaml ]; then
+            list=$(yq -o=json -I=0 ".deploy.images // $all" app.yaml)
+          fi
+          bad=$(jq -r --argjson all "$all" '.[] | select(. as $i | $all | index($i) | not)' <<< "$list")
+          if [ -n "$bad" ]; then
+            echo "::error file=app.yaml::deploy.images lists unknown images: $bad (known: full-amd64, simple-amd64, full-arm64, simple-arm64)"
+            exit 1
+          fi
+          if [ "$(jq length <<< "$list")" -eq 0 ]; then
+            echo "::error file=app.yaml::deploy.images is empty, so nothing would be built"
+            exit 1
+          fi
+          echo "Images built: $list"
+          {
+            echo "list=$list"
+            echo "kind=$(jq -c 'map(split("-") | {variant: .[0], arch: .[1], runner: (if .[1] == "arm64" then "ubuntu-24.04-arm" else "ubuntu-latest" end)})' <<< "$list")"
+            echo "manifest=$(jq -c '[["full", "simple"][] as $v | {variant: $v, arches: ([.[] | split("-") | select(.[0] == $v) | .[1]] | join(" "))} | select(.arches != "")]' <<< "$list")"
+            echo "apptainer=$(jq -c '[.[] | split("-") | select(.[1] == "amd64") | .[0]]' <<< "$list")"
+          } >> "$GITHUB_OUTPUT"
+
   lint-manifests:
     runs-on: ubuntu-latest
     steps:
@@ -309,7 +351,8 @@ jobs:
   # below now name exactly the variants they actually download.
 
   build-full-amd64:
-    needs: lint-manifests
+    needs: [lint-manifests, images]
+    if: contains(fromJSON(needs.images.outputs.list), 'full-amd64')
     permissions:
       contents: read
       packages: write
@@ -327,7 +370,8 @@ jobs:
     secrets: inherit
 
   build-simple-amd64:
-    needs: lint-manifests
+    needs: [lint-manifests, images]
+    if: contains(fromJSON(needs.images.outputs.list), 'simple-amd64')
     permissions:
       contents: read
       packages: write
@@ -343,7 +387,8 @@ jobs:
   build-full-arm64:
     # Native ARM64 runner, no QEMU. `Dockerfile.arm` swaps the miniforge
     # installer to aarch64 and guards the THIRDPARTY/Linux/aarch64 copy.
-    needs: lint-manifests
+    needs: [lint-manifests, images]
+    if: contains(fromJSON(needs.images.outputs.list), 'full-arm64')
     permissions:
       contents: read
       packages: write
@@ -359,7 +404,8 @@ jobs:
     secrets: inherit
 
   build-simple-arm64:
-    needs: lint-manifests
+    needs: [lint-manifests, images]
+    if: contains(fromJSON(needs.images.outputs.list), 'simple-arm64')
     permissions:
       contents: read
       packages: write
@@ -390,10 +436,21 @@ jobs:
     # Accepted cost: every push to main now waits on a ~40 minute kind matrix,
     # and a teardown failure blocks publishing for a reason unrelated to the
     # image. That is the trade; the alternative was publishing untested.
-    needs: [build-full-amd64, build-simple-amd64, build-full-arm64, build-simple-arm64, test-nginx, test-traefik]
+    needs: [images, build-full-amd64, build-simple-amd64, build-full-arm64, build-simple-arm64, test-nginx, test-traefik]
     # A dispatch with openms_branch builds and tests another OpenMS; it pushes
-    # no per-arch tags, so there is nothing to stitch or publish.
-    if: github.event_name != 'pull_request' && (inputs.openms_branch || '') == ''
+    # no per-arch tags, so there is nothing to stitch or publish. `always()`
+    # only so that an image the app does not build (a skipped job) does not
+    # skip this one; every image it does build must have succeeded.
+    if: >-
+      always() && !cancelled()
+      && github.event_name != 'pull_request' && (inputs.openms_branch || '') == ''
+      && needs.images.result == 'success'
+      && (needs.build-full-amd64.result == 'success' || !contains(fromJSON(needs.images.outputs.list), 'full-amd64'))
+      && (needs.build-simple-amd64.result == 'success' || !contains(fromJSON(needs.images.outputs.list), 'simple-amd64'))
+      && (needs.build-full-arm64.result == 'success' || !contains(fromJSON(needs.images.outputs.list), 'full-arm64'))
+      && (needs.build-simple-arm64.result == 'success' || !contains(fromJSON(needs.images.outputs.list), 'simple-arm64'))
+      && needs.test-nginx.result == 'success'
+      && needs.test-traefik.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -401,7 +458,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        variant: [full, simple]
+        include: ${{ fromJSON(needs.images.outputs.manifest) }}
     steps:
       - name: Compute lowercase image name
         run: echo "IMAGE_NAME_LC=${IMAGE_NAME,,}" >> "$GITHUB_ENV"
@@ -429,7 +486,8 @@ jobs:
 
       - name: Create and push multi-arch manifests
         # Iterate over manifest tags (newline-separated from metadata-action)
-        # and merge the matching `-amd64` / `-arm64` per-arch tags into each.
+        # and merge the per-arch tags this app builds (`-amd64`, `-arm64`)
+        # into each.
         # `--amend` makes the step idempotent across workflow_dispatch reruns.
         # `docker manifest push` accepts only one ref per invocation, hence
         # the loop.
@@ -437,14 +495,13 @@ jobs:
           set -euo pipefail
           while IFS= read -r manifest_tag; do
             [ -z "$manifest_tag" ] && continue
-            amd_tag="${manifest_tag}-amd64"
-            arm_tag="${manifest_tag}-arm64"
+            amends=()
             echo "Creating manifest ${manifest_tag} from:"
-            echo "  amd: ${amd_tag}"
-            echo "  arm: ${arm_tag}"
-            docker manifest create "$manifest_tag" \
-              --amend "$amd_tag" \
-              --amend "$arm_tag"
+            for arch in ${{ matrix.arches }}; do
+              echo "  ${manifest_tag}-${arch}"
+              amends+=(--amend "${manifest_tag}-${arch}")
+            done
+            docker manifest create "$manifest_tag" "${amends[@]}"
             docker manifest push "$manifest_tag"
           done <<< "${{ steps.meta.outputs.tags }}"
 
@@ -473,12 +530,21 @@ jobs:
     # accepted. Apptainer is a side deployment - the cluster runs the docker
     # image - so the coverage worth rescuing from a one-variant break is the
     # kind suite, not this. Add the same override here if that ever changes.
-    needs: [build-full-amd64, build-simple-amd64]
+    #
+    # `always()` only so that an amd64 image the app does not build (a skipped
+    # job) does not skip this one; every amd64 image it builds must succeed.
+    needs: [images, build-full-amd64, build-simple-amd64]
+    if: >-
+      always() && !cancelled()
+      && needs.images.result == 'success'
+      && needs.images.outputs.apptainer != '[]'
+      && (needs.build-full-amd64.result == 'success' || !contains(fromJSON(needs.images.outputs.list), 'full-amd64'))
+      && (needs.build-simple-amd64.result == 'success' || !contains(fromJSON(needs.images.outputs.list), 'simple-amd64'))
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        variant: [full, simple]
+        variant: ${{ fromJSON(needs.images.outputs.apptainer) }}
     steps:
       - uses: actions/checkout@v4
 
@@ -643,7 +709,7 @@ jobs:
     # Keeping it separate from the docker image package keeps tag lists clean
     # and lets HPC users `apptainer pull oras://...` without the 5-15 min
     # on-the-fly OCI->SIF conversion the docker:// path requires.
-    needs: test-apptainer
+    needs: [images, test-apptainer]
     # Not for a dispatch with openms_branch: its SIF would take the default
     # build's <ref>/<sha> tags.
     if: github.event_name != 'pull_request' && (inputs.openms_branch || '') == ''
@@ -654,7 +720,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        variant: [full, simple]
+        variant: ${{ fromJSON(needs.images.outputs.apptainer) }}
     steps:
       - name: Download validated SIF artifact
         uses: actions/download-artifact@v4
@@ -726,27 +792,19 @@ jobs:
     # No staleness risk: download-artifact@v4 is scoped to the current run, so a
     # leaf either gets THIS run's image or fails. It cannot silently test the
     # previous one.
-    needs: [build-full-amd64, build-simple-amd64, build-full-arm64, build-simple-arm64]
+    #
+    # A `simple` image the app does not build (`deploy.images` in app.yaml)
+    # counts as present; its leaves are left out of the matrix.
+    needs: [images, build-full-amd64, build-simple-amd64, build-full-arm64, build-simple-arm64]
     if: always() && !cancelled()
-        && needs.build-simple-amd64.result == 'success'
-        && needs.build-simple-arm64.result == 'success'
+        && needs.images.result == 'success'
+        && (needs.build-simple-amd64.result == 'success' || !contains(fromJSON(needs.images.outputs.list), 'simple-amd64'))
+        && (needs.build-simple-arm64.result == 'success' || !contains(fromJSON(needs.images.outputs.list), 'simple-arm64'))
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - variant: full
-            arch: amd64
-            runner: ubuntu-latest
-          - variant: full
-            arch: arm64
-            runner: ubuntu-24.04-arm
-          - variant: simple
-            arch: amd64
-            runner: ubuntu-latest
-          - variant: simple
-            arch: arm64
-            runner: ubuntu-24.04-arm
+        include: ${{ fromJSON(needs.images.outputs.kind) }}
     steps:
       - uses: actions/checkout@v4
 
@@ -1427,27 +1485,19 @@ jobs:
     # No staleness risk: download-artifact@v4 is scoped to the current run, so a
     # leaf either gets THIS run's image or fails. It cannot silently test the
     # previous one.
-    needs: [build-full-amd64, build-simple-amd64, build-full-arm64, build-simple-arm64]
+    #
+    # A `simple` image the app does not build (`deploy.images` in app.yaml)
+    # counts as present; its leaves are left out of the matrix.
+    needs: [images, build-full-amd64, build-simple-amd64, build-full-arm64, build-simple-arm64]
     if: always() && !cancelled()
-        && needs.build-simple-amd64.result == 'success'
-        && needs.build-simple-arm64.result == 'success'
+        && needs.images.result == 'success'
+        && (needs.build-simple-amd64.result == 'success' || !contains(fromJSON(needs.images.outputs.list), 'simple-amd64'))
+        && (needs.build-simple-arm64.result == 'success' || !contains(fromJSON(needs.images.outputs.list), 'simple-arm64'))
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - variant: full
-            arch: amd64
-            runner: ubuntu-latest
-          - variant: full
-            arch: arm64
-            runner: ubuntu-24.04-arm
-          - variant: simple
-            arch: amd64
-            runner: ubuntu-latest
-          - variant: simple
-            arch: arm64
-            runner: ubuntu-24.04-arm
+        include: ${{ fromJSON(needs.images.outputs.kind) }}
     steps:
       - uses: actions/checkout@v4
 

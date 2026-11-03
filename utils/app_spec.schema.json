@@ -173,6 +173,13 @@
           }
         },
         "docker_compose": {"type": "boolean"},
+        "images": {
+          "type": "array",
+          "items": {"enum": ["full-amd64", "simple-amd64", "full-arm64", "simple-arm64"]},
+          "uniqueItems": true,
+          "minItems": 1,
+          "description": "Container images build-and-test.yml builds and publishes. Default: all four. Leave one out when the app's dependencies have no build for that platform."
+        },
         "desktop": {
           "type": "array",
           "items": {"enum": ["windows", "macos", "linux"]},

@@ -181,3 +181,13 @@ def test_sync_auto_merge_is_a_boolean(spec):
     bad = copy.deepcopy(spec)
     bad.setdefault("sync", {})["auto_merge"] = "yes"
     assert any("sync/auto_merge" in e for e in app_spec.schema_errors(bad))
+
+
+def test_deploy_images_lists_known_images_only(spec):
+    ok = copy.deepcopy(spec)
+    ok["deploy"]["images"] = ["full-amd64", "simple-amd64", "full-arm64"]
+    assert app_spec.schema_errors(ok) == []
+    for images in (["simple-riscv64"], [], ["full-amd64", "full-amd64"]):
+        bad = copy.deepcopy(spec)
+        bad["deploy"]["images"] = images
+        assert any("deploy/images" in e for e in app_spec.schema_errors(bad)), images
