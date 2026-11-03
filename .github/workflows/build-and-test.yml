@@ -1111,8 +1111,15 @@ jobs:
           kubectl wait -n openms --for=condition=ready pod -l app=${SLUG},component=redis --timeout=60s
 
       - name: Verify Redis Service is reachable
+        # A Ready pod can still refuse the first connection for a few seconds
+        # while its Service endpoint propagates, so retry before failing.
         run: |
-          kubectl run redis-test -n openms --image=redis:7-alpine --rm -i --restart=Never -- redis-cli -h ${SLUG}-redis.openms.svc.cluster.local ping
+          kubectl run redis-test -n openms --image=redis:7-alpine --restart=Never --command -- \
+            sh -c 'for i in $(seq 1 15); do redis-cli -h '"${SLUG}"'-redis.openms.svc.cluster.local ping | grep -q PONG && echo PONG && exit 0; sleep 2; done; exit 1'
+          kubectl wait -n openms --for=jsonpath='{.status.phase}'=Succeeded pod/redis-test --timeout=90s \
+            || { kubectl logs -n openms redis-test || true; kubectl delete pod -n openms redis-test --wait=false; exit 1; }
+          kubectl logs -n openms redis-test
+          kubectl delete pod -n openms redis-test --wait=false
 
       - name: Verify all deployments are available
         # No `|| true`: a Pending, CrashLooping or unschedulable Deployment has to
