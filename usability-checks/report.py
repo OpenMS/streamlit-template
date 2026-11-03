@@ -24,6 +24,9 @@ for res_file in sorted(out.glob("*/results.json")):
     if r.get("setupError"):
         summary.append(f"- **{name}**: could not start ({r['setupError']})")
         continue
+    if r.get("loginRequired"):
+        summary.append(f"- **{name}**: reachable, asks for a login; not checked (no credentials in {r.get('detail')})")
+        continue
     if r.get("unreachable"):
         summary.append(f"- **{name}**: not reachable ({r.get('url')}): {r.get('detail') or 'no response'}")
         continue

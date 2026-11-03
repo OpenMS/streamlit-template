@@ -31,6 +31,13 @@ the captcha with `captcha/solve.py`, a small Keras model trained by
 up). A wrong answer just draws a new captcha, so it retries up to 8 times.
 Without a model the live check covers loading and navigation only.
 
+An app can set `env` (variables for the local app; a relative path is taken
+inside the clone, e.g. the dashboard's `DASHBOARD_DATA` fixture) and
+`liveAuth`, a file whose first line is `user:password` for a deployment behind
+HTTP basic auth. Without that file a deployment that answers 401 is reported as
+reachable but not checked. Keep the file out of git; the default location is
+`/mnt/project-files/usability-checks/credentials/`.
+
 The check environment has pyOpenMS but no TOPP binaries, so pages that need a
 TOPP tool report it as a note, not a failure.
 

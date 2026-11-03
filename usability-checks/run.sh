@@ -36,6 +36,10 @@ fi
 port=8601
 for app in "${APPS[@]}"; do
   repo="$(cfg "$app" repo)"; demo="$(cfg "$app" demo)"; live="$(cfg "$app" live)"; exwf="$(cfg "$app" exampleWorkflow)"
+  liveauth="$(cfg "$app" liveAuth)"
+  # Extra environment for the local app, paths relative to the clone (for
+  # example the dashboard's DASHBOARD_DATA fixture).
+  mapfile -t appenv < <(python3 -c "import json;[print(f'{k}={v}') for k,v in (json.load(open('$HERE/apps.json'))['$app'].get('env') or {}).items()]")
   appout="$OUT/$app"; mkdir -p "$appout"
   log="$appout/setup.log"
   echo "=== $app"
@@ -69,7 +73,11 @@ for app in "${APPS[@]}"; do
       wsargs+=(--workspace "ux-demo-$app")
     fi
 
-    (cd "$src" && exec "$venv/bin/streamlit" run app.py --server.headless true --server.port "$port" \
+    envargs=(); for kv in "${appenv[@]}"; do
+      v="${kv#*=}"; [ "${v#/}" = "$v" ] && [ -e "$src/$v" ] && v="$src/$v"
+      envargs+=("${kv%%=*}=$v")
+    done
+    (cd "$src" && exec env "${envargs[@]}" "$venv/bin/streamlit" run app.py --server.headless true --server.port "$port" \
       --browser.gatherUsageStats false >"$appout/streamlit.log" 2>&1) &
     spid=$!
     up=""
@@ -90,12 +98,19 @@ for app in "${APPS[@]}"; do
 
   if [ -n "$live" ] && [ -z "${SKIP_LIVE:-}" ]; then
     liveout="$OUT/$app-live"; mkdir -p "$liveout"
-    code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 "$live/")"
-    if [ "$code" = "000" ]; then
+    # A deployment behind a password: liveAuth names a file holding user:password.
+    authargs=(); curlauth=()
+    if [ -n "$liveauth" ] && [ -s "$liveauth" ]; then
+      authargs=(--auth-file "$liveauth"); curlauth=(-u "$(head -1 "$liveauth")")
+    fi
+    code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 "${curlauth[@]}" "$live/")"
+    if [ "$code" = "401" ]; then
+      echo '{"app":"'"$app"' (live)","url":"'"$live"'","loginRequired":true,"detail":"'"${liveauth:-no liveAuth}"'","pages":[],"scenarios":[],"failed":0}' >"$liveout/results.json"
+    elif [ "$code" = "000" ]; then
       detail="$(curl -sS -o /dev/null --max-time 30 "$live/" 2>&1 | head -1 | tr -d '"\\')"
       echo '{"app":"'"$app"' (live)","url":"'"$live"'","unreachable":true,"detail":"'"$detail"'","pages":[],"scenarios":[],"failed":0}' >"$liveout/results.json"
     else
-      node "$HERE/check.mjs" --app "$app (live)" --url "$live" --out "$liveout" --live
+      node "$HERE/check.mjs" --app "$app (live)" --url "$live" --out "$liveout" --live "${authargs[@]}"
     fi
   fi
 done

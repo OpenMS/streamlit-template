@@ -6,7 +6,10 @@
 // Every page gets a full-page screenshot.
 //
 // usage: node check.mjs --app NAME --url http://localhost:8601 --out DIR
-//          [--workspace NAME]... [--example-workflow] [--live]
+//          [--workspace NAME]... [--example-workflow] [--live] [--auth-file FILE]
+//
+// --auth-file: a file whose first line is user:password, sent as HTTP basic
+// auth (deployments behind a Traefik basicAuth middleware).
 import { createRequire } from "node:module";
 import { execSync, spawn } from "node:child_process";
 import crypto from "node:crypto";
@@ -30,6 +33,12 @@ for (let i = 2; i < process.argv.length; i++) {
   else args[a] = process.argv[++i];
 }
 if (!args.workspace.length) args.workspace.push(null);
+let httpCredentials;
+if (args["auth-file"]) {
+  const line = fs.readFileSync(args["auth-file"], "utf8").split("\n")[0].trim();
+  const i = line.indexOf(":");
+  httpCredentials = { username: line.slice(0, i), password: line.slice(i + 1), send: "always" };
+}
 
 const EXPECTED_ERRORS = /TOPP tool '[^']+' not found|could not be found on the system PATH|No results to show yet/i;
 const RUN_TIMEOUT = Number(process.env.PAGE_TIMEOUT_MS || 120000);
@@ -188,7 +197,7 @@ function slug(s) {
 }
 
 async function newPage() {
-  const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, httpCredentials });
   const page = await context.newPage();
   const browserErrors = [];
   page.on("pageerror", (e) => browserErrors.push(`pageerror: ${e.message}`));

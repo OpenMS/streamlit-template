@@ -29,5 +29,15 @@
     "dir": "umetaflow",
     "demo": null,
     "live": null
+  },
+  "webapps-dashboard": {
+    "repo": "t0mdavid-m/webapps-dashboard",
+    "dir": "webapps-dashboard",
+    "demo": null,
+    "env": {
+      "DASHBOARD_DATA": "tests/data/dashboard"
+    },
+    "live": "https://dashboard.webapps.openms.de",
+    "liveAuth": "/mnt/project-files/usability-checks/credentials/webapps-dashboard"
   }
 }
