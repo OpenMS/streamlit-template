@@ -1,18 +1,46 @@
+# The shared workspace volume: one Manila NFS share, mounted ReadWriteMany by
+# every workspace-using pod of this app (streamlit, rq-worker, sync, cleanup),
+# so the scheduler is free to place them on any node.
+#
+# The class `openms-manila-nfs` is published once per cluster by k8s/storage/
+# (openstack-manila-csi + csi-driver-nfs); the kind jobs publish a stand-in of
+# the same name from k8s/ci-storage/. Each app's claim gets its own share, so
+# apps share the class, never the data.
+#
+# ---------------------------------------------------------------------------
+# A NEW claim name, not an edit of the old one.
+# ---------------------------------------------------------------------------
+# Earlier releases used `workspaces-pvc` (ReadWriteOnce on `cinder-csi`) and
+# then `workspaces-nfs-pvc` (ReadWriteMany on the per-app Ganesha server). A
+# bound PVC's spec is immutable apart from `resources.requests`, so changing
+# `storageClassName` in place is rejected by the API server and
+# `kubectl apply -k` would stop half way. A new name sidesteps that; the old
+# claim stays Bound and untouched as the rollback until it is deleted by hand
+# (docs/kubernetes-deployment.md, "Storage"). Workspaces are deleted after 7
+# days anyway, so nothing is migrated.
+#
+# The mount path does not move. Every consumer reaches this volume through
+# `claimName` plus `/workspaces-streamlit-template`, so nothing in `src/`
+# changes.
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: workspaces-pvc
+  name: workspaces-manila-pvc
   annotations:
-    # Argo CD: never prune or cascade-delete. On cinder-csi, deleting the claim
-    # deletes the volume.
+    # Argo CD (docs/kubernetes-deployment.md, "GitOps with Argo CD"): never
+    # prune or cascade-delete this object. It is the workspace volume; a rename in
+    # git must never delete the live claim.
     argocd.argoproj.io/sync-options: Prune=false,Delete=false
 spec:
-  # One cinder volume, attached to one node. Every pod that mounts it is pinned
-  # to the same memory-tier node by k8s/components/memory-tier-*, the layout
-  # FLASHApp, quantms-web and OpenDIAKiosk use.
   accessModes:
-    - ReadWriteOnce
-  storageClassName: cinder-csi
+    - ReadWriteMany
+  # Must equal metadata.name in k8s/storage/storageclass.yaml and
+  # storageClass.name in k8s/ci-storage/ganesha-values.yaml;
+  # assert_storage_class_contract checks all three.
+  storageClassName: openms-manila-nfs
   resources:
     requests:
-      storage: 500Gi
+      # The size of this app's Manila share, counted against the project's
+      # share quota (Horizon, Project > Share). Manila can grow it later: raise
+      # this number and re-apply. The kind jobs shrink it to 1Gi.
+      storage: 400Gi

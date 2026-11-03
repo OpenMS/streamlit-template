@@ -1,0 +1,60 @@
+# Storage tier: ReadWriteMany workspace volumes from OpenStack Manila.
+#
+# The workspace PVC in k8s/base asks for `ReadWriteMany` on the StorageClass
+# `openms-manila-nfs`. This root publishes that class and the two CSI drivers
+# behind it, so the scheduler can place streamlit, the rq-workers, the sync
+# service and the cleanup CronJob on any node:
+#
+#   openstack-manila-csi  the controller creates one Manila NFS share per PVC
+#                         (through the Manila API, with the credentials in the
+#                         `manila-csi-credentials` Secret) and adds an access
+#                         rule for the node subnet
+#   csi-driver-nfs        the node plugin manila-csi hands every NFS mount to;
+#                         its socket is the `fwdNodePluginEndpoint` in
+#                         manila-csi-values.yaml
+#
+# The share lives in Manila, not in a pod: there is no NFS server to run,
+# restart or size in this cluster, and a node failure costs only the pods on
+# that node.
+#
+# ONE PER CLUSTER, NOT ONE PER APP. Everything here is either cluster scoped
+# (CSIDriver, StorageClass, ClusterRoles) or lives in kube-system, so every
+# app on the cluster shares it. Apply it once, before the first app overlay;
+# applying it again from another fork's checkout is a no-op as long as the
+# versions match. Each app still gets its own share, because each app's
+# workspace PVC is its own claim.
+#
+# Before the first apply, create the credentials Secret (never committed):
+# docs/kubernetes-deployment.md, "Storage". Then set the two values marked
+# CLUSTER-SPECIFIC in storageclass.yaml.
+#
+# Rendering needs Helm 3 on PATH, because of the `helmCharts` block:
+#
+#   kubectl kustomize --enable-helm k8s/storage/ | kubectl apply -f -
+#
+# `kubectl apply -k` accepts no --enable-helm flag, hence the pipe.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: kube-system
+
+resources:
+  - storageclass.yaml
+
+helmCharts:
+  # kubernetes-csi/csi-driver-nfs. Only its node plugin is used here (Manila
+  # provisions, csi-driver-nfs mounts); its controller is scaled to zero in the
+  # values. Pinned: an unpinned chart re-resolves on every render.
+  - name: csi-driver-nfs
+    repo: https://raw.githubusercontent.com/kubernetes-csi/csi-driver-nfs/master/charts
+    version: 4.11.0
+    releaseName: csi-driver-nfs
+    namespace: kube-system
+    valuesFile: csi-driver-nfs-values.yaml
+  # kubernetes/cloud-provider-openstack, chart openstack-manila-csi.
+  - name: openstack-manila-csi
+    repo: https://kubernetes.github.io/cloud-provider-openstack
+    version: 2.36.3
+    releaseName: manila-csi
+    namespace: kube-system
+    valuesFile: manila-csi-values.yaml

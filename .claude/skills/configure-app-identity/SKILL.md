@@ -44,8 +44,8 @@ Use `configure-app-settings` for the remaining settings.json keys and
 
 ## Renaming a deployed app
 
-The k8s names are a **migration** for a deployed app (a new
-PVC under the new prefix), and `APP_NAME` changes the install location of the
+The k8s names are a **migration** for a deployed app (new
+PVC, new share), and `APP_NAME` changes the install location of the
 desktop app, so existing users get a second install. List both to the user and
 change them only on explicit approval; the display name, hosts and image can
 change freely.

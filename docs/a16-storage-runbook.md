@@ -1,7 +1,8 @@
-> **Historical.** The NFS-Ganesha storage tier this document describes (`k8s/storage/`)
-> was removed in November 2026. The template now uses one `ReadWriteOnce`
-> `cinder-csi` volume with every pod pinned to a memory-tier node, as the apps do
-> (see `docs/kubernetes-deployment.md`). Kept as the record of that work.
+> **Superseded.** Production storage is now OpenStack Manila (`k8s/storage/`,
+> see `docs/kubernetes-deployment.md` section 3b). The per-app Ganesha tier this
+> document describes survives only as CI's in-cluster stand-in in
+> `k8s/ci-storage/`. Kept for the reasoning, which still explains the client
+> mount options and the worker topology.
 
 > **What this is.** The operational runbook for the NFS-Ganesha storage tier
 > that makes the workspace volume ReadWriteMany, so the app can run on more than

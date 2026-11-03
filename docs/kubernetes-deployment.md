@@ -4,13 +4,14 @@ This guide covers deploying an OpenMS streamlit app to a Kubernetes cluster usin
 
 ## 1. Overview
 
-The template ships a full Kubernetes deployment stack designed for the de.NBI cluster (OpenStack + `cinder-csi` storage + Traefik ingress). The stack includes:
+The template ships a full Kubernetes deployment stack designed for the de.NBI cluster (OpenStack, Manila shares for storage, Traefik ingress). The stack includes:
 
 - A Streamlit Deployment serving the web UI
 - A Redis Deployment as the job-queue backing store
 - An RQ worker Deployment running background workflows
 - A nightly cleanup CronJob for stale workspaces
-- One `ReadWriteOnce` PersistentVolumeClaim on `cinder-csi` holding per-user workspace data, shared by all pods because they all run on one node
+- A shared `ReadWriteMany` PersistentVolumeClaim holding per-user workspace data
+- A cluster-wide storage tier (`k8s/storage/`): the OpenStack Manila CSI driver and a `ReadWriteMany` StorageClass, so each app's workspace volume is a Manila NFS share and the pods above can be placed on any node
 - A Traefik IngressRoute routing external traffic to the Streamlit service (with session affinity)
 
 Every production OpenMS webapp (quantms-web, umetaflow, FLASHApp) deploys via this stack.
@@ -35,8 +36,8 @@ Every production OpenMS webapp (quantms-web, umetaflow, FLASHApp) deploys via th
                 │        Streamlit Deployment             │
                 │        (N replicas, default 2)          │
                 │                                         │
-                │   [nodeSelector openms.de/memory-tier,  │
-                │    same node as every other pod]        │
+                │   [placed by the scheduler; the RWX     │
+                │    volume constrains nothing]           │
                 └────────┬────────────────────────┬───────┘
                          │ REDIS_URL              │
                          │                        │ /workspaces-...
@@ -46,19 +47,19 @@ Every production OpenMS webapp (quantms-web, umetaflow, FLASHApp) deploys via th
             │      (1 replica)       │            ▼
             └────────────────────────┘   ┌────────────────────────┐
                          ▲               │    Workspace PVC       │
-                         │               │  ReadWriteOnce 500Gi   │
-                         │ REDIS_URL     │     (cinder-csi)       │
-                         │               │                        │
+                         │               │   ReadWriteMany 400Gi  │
+                         │ REDIS_URL     │ (openms-manila-nfs: a  │
+                         │               │  Manila NFS share)     │
                          │               └────────────────────────┘
                          │                        ▲
                          │                        │
                 ┌────────┴───────────────────────┴────────┐
                 │          RQ Worker Deployment           │
-                │              (1 replica)                │
+                │              (2 replicas)               │
                 │       rq worker openms-workflows        │
                 │                                         │
-                │   [nodeSelector openms.de/memory-tier,  │
-                │    maxSurge 0 on rollout]               │
+                │   [spread one per node, maxSkew 1       │
+                │    over kubernetes.io/hostname]         │
                 └─────────────────────────────────────────┘
 
                 ┌─────────────────────────────────────────┐
@@ -74,7 +75,7 @@ Every production OpenMS webapp (quantms-web, umetaflow, FLASHApp) deploys via th
 |-----------|---------|----------|-------------|
 | Streamlit Deployment | Serves the web UI | N (default 2) | Yes |
 | Redis Deployment | Job-queue backing store | 1 | No |
-| RQ Worker Deployment | Runs background workflows from the Redis queue | 1 | Yes |
+| RQ Worker Deployment | Runs background workflows from the Redis queue | N (default 2) | Yes |
 | Cleanup CronJob | Removes stale workspaces nightly at 03:00 UTC | — | Yes |
 | Workspace PVC | Shared `/workspaces-*` directory for session data | — | — |
 | Traefik IngressRoute | External HTTP entrypoint with sticky sessions | — | — |
@@ -82,13 +83,22 @@ Every production OpenMS webapp (quantms-web, umetaflow, FLASHApp) deploys via th
 
 ### Pod placement and the shared workspace volume
 
-All workspace-using pods (Streamlit, RQ worker, sync, Cleanup) of a given app mount the same `<slug>-workspaces-pvc`, which is `ReadWriteOnce` on `cinder-csi`. A Cinder volume attaches to exactly one node, so every pod that mounts it has to run on that node.
+All workspace-using pods (Streamlit, RQ worker, sync, Cleanup) of a given fork mount the same `<slug>-workspaces-manila-pvc`, which is `ReadWriteMany` on the `openms-manila-nfs` StorageClass published by the storage tier in `k8s/storage/`. Because it is RWX it imposes **no** placement constraint: any number of pods on any number of nodes can hold it at once, and the scheduler alone decides where they land.
 
-The memory-tier component makes that explicit: `memory-tier-low` and `memory-tier-high` put `nodeSelector: openms.de/memory-tier: <tier>` on every Deployment and on the cleanup CronJob, so all of an app's pods land on the node carrying that label. The cluster's nodes must carry the labels (`openms.de/memory-tier=low` and `=high`).
+That is what the storage tier is for. A Cinder volume (`cinder-csi`, `ReadWriteOnce`) attaches to exactly one node, so with it every workspace-using pod ended up on that node whether it fitted there or not. A Manila share is an NFS export served by OpenStack itself: there is no NFS server pod in the cluster, and losing a node costs only the pods on that node.
 
-`rq-worker` runs one replica and rolls out with `maxSurge: 0`, `maxUnavailable: 1`. The worker is sized to most of its node, so a surge replica would stay `Pending` next to the old one and the rollout would run into its progress deadline; stopping the old worker first avoids that.
+Nothing else constrains placement either. The `memory-tier-*` components are pure resource patches: they set the Streamlit and worker `requests`/`limits`, and a tier is now a **pod size**, not a set of nodes. No manifest in `k8s/` carries a `nodeSelector`, a `nodeName`, a `nodeAffinity` or an `openms.de/memory-tier` label, and CI fails the build if one reappears (`assert_no_node_pinning_anywhere`). Placement is the scheduler's decision alone; the manifests only tell it how big a worker is. See Step 4b below.
 
-Apps are isolated from each other: each has its own claim under its own `namePrefix`.
+The workers go one step further and are actively spread. `rq-worker` runs a fixed replica count (2 by default) with a `topologySpreadConstraints` of `maxSkew: 1` over `kubernetes.io/hostname`, so the replicas land on different nodes before any node takes a second one. Two details make that work rather than merely look right:
+
+- `maxSkew` is measured over **eligible** domains. While the `nodeSelector` was there, exactly one node was eligible, every distribution had skew 0, and a spread constraint written then would have passed while changing nothing. Deleting the selector is what gave the constraint something to measure.
+- The constraint's `labelSelector` names `component: rq-worker` in the base, and kustomize copies the overlay's `commonLabels.app` into it. Topology spread counts pods per namespace and every fork deploys into `openms`, so without that label one fork's workers would be counted against another's skew.
+
+`whenUnsatisfiable: DoNotSchedule`, so a replica with nowhere to go stays `Pending` instead of quietly doubling up — including during a node drain, where the cordoned node still counts as a domain. That is visible in `kubectl get pods` and recoverable; a soft constraint that silently stops spreading is neither.
+
+Recoverable is not free, though, and it is `strategy` that buys it. A Deployment is `Available` only when `replicas - maxUnavailable` pods are ready, and the RollingUpdate default of 25% rounds *down* to `maxUnavailable: 0` at two replicas — so one `Pending` worker during a drain, or one worker failing its storage readiness probe during an NFS failover, would take the whole Deployment out of `Available` and hang every subsequent `kubectl rollout status`. `rq-worker` therefore sets `maxUnavailable: 1` explicitly (and `maxSurge: 0`, because a surge replica needs a whole extra worker's worth of memory free somewhere, which a cluster sized for the steady-state count does not have). The pair is what makes a lost worker a queue running at half rate rather than a blocked rollout. That the *other* replica is genuinely up is asserted directly against `.spec.replicas`, by `assert_workers_spread_across_nodes` in CI, rather than being inferred from the `Available` condition.
+
+Forks are isolated from each other: each PVC that claims the shared class gets a Manila share of its own, so apps share the StorageClass and the drivers, never the data.
 
 ### Ingress
 
@@ -110,16 +120,17 @@ All resources deploy into the shared `openms` namespace (`namespace: openms` in 
 Redis 7 Deployment (1 replica) + ClusterIP Service on port 6379. Backs the RQ job queue. Low resource requests (64Mi / 50m CPU).
 
 ### `workspace-pvc.yaml`
-PersistentVolumeClaim `workspaces-pvc`:
-- `accessModes: [ReadWriteOnce]`
-- `storageClassName: cinder-csi`
-- `resources.requests.storage: 500Gi`
-- `argocd.argoproj.io/sync-options: Prune=false,Delete=false`, because `cinder-csi` reclaims with `Delete` and removing the claim would destroy the workspaces
+PersistentVolumeClaim `workspaces-manila-pvc`:
+- `accessModes: [ReadWriteMany]`
+- `storageClassName: openms-manila-nfs` — published once per cluster by `k8s/storage/`; the same for every app
+- `resources.requests.storage: 400Gi` — the size of this app's Manila share, counted against the project's share quota. Manila grows a share in place, so raising the number and re-applying is enough.
+
+This is a **different object** from the claims earlier releases used (`workspaces-pvc`, `ReadWriteOnce` on `cinder-csi`, and then `workspaces-nfs-pvc` on a per-app Ganesha server). A bound PVC's spec is immutable apart from `resources.requests`, so the class cannot be changed in place. The old claim is left alone, which is also what makes rollback a single re-apply of the previous manifests. Delete it by hand once the cutover has been stable for a week. Workspaces expire after 7 days, so nothing is migrated.
 
 Demo workspaces live under a hidden `.demos/` subdirectory of this PVC (see [Demo workspaces](#demo-workspaces) below). User workspaces live at the PVC root, one directory per session UUID.
 
 ### Demo workspaces
-Demo workspaces are seeded onto the workspace PVC at `/workspaces-streamlit-template/.demos/` by the `seed-demos` initContainer on the Streamlit Deployment. The init runs `docker/seed-demos.sh` — new demos shipped in an image appear after redeploy, but existing entries on the PV (including admin-saved demos and edits) are preserved. On an empty volume the whole tree is staged in a private directory and renamed into place, so `replicas: 2` cannot corrupt it and a pod killed mid-copy leaves nothing half-written; on a volume that already has `.demos/`, only the entries it is missing are copied in, one atomic rename each. The script bounds itself with `timeout` and always exits 0, so a slow volume degrades the demos instead of holding the pod in `Init`.
+Demo workspaces are seeded onto the workspace PVC at `/workspaces-streamlit-template/.demos/` by the `seed-demos` initContainer on the Streamlit Deployment. The init runs `docker/seed-demos.sh` — new demos shipped in an image appear after redeploy, but existing entries on the PV (including admin-saved demos and edits) are preserved. On an empty volume the whole tree is staged in a private directory and renamed into place, so `replicas: 2` cannot corrupt it and a pod killed mid-copy leaves nothing half-written; on a volume that already has `.demos/`, only the entries it is missing are copied in, one atomic rename each. The script bounds itself with `timeout` and always exits 0, so a slow or restarting NFS server degrades the demos instead of holding the pod in `Init`.
 
 The ConfigMap override points `demo_workspaces.source_dirs` at `/workspaces-streamlit-template/.demos`, so both Streamlit pods and RQ workers read demos from the PV. The "Save as Demo" admin flow writes to the same path.
 
@@ -139,19 +150,20 @@ Main Streamlit Deployment. Key fields:
 - Mounts the workspace PVC at `/workspaces-streamlit-template`
 - Mounts `settings-overrides.json` from the ConfigMap as a `subPath`
 - Readiness and liveness probes hit `/_stcore/health`
-- Pinned to the memory-tier node by the component's `nodeSelector`, next to the RWO workspace PVC
+- Mounts the RWX workspace PVC, which places no constraint on which node the pod lands on
 - `seed-demos` initContainer merges image-shipped demos into `.demos/` on the PVC (see [Demo workspaces](#demo-workspaces))
 
 ### `streamlit-service.yaml`
 ClusterIP Service exposing Streamlit on port 8501.
 
 ### `rq-worker-deployment.yaml`
-RQ worker Deployment, 1 replica. Runs `rq worker openms-workflows --url $REDIS_URL`. Shares the workspace PVC with the Streamlit pods on the same node.
+RQ worker Deployment, 2 replicas by default. Runs `rq worker openms-workflows --url $REDIS_URL`. Shares the workspace PVC over NFS, so it can run on any node, including one no Streamlit pod is on.
 
-- `replicas: 1` — RQ takes one job per worker process, so workflows run one after another.
-- `strategy: RollingUpdate` with `maxSurge: 0`, `maxUnavailable: 1` (see [Pod placement and the shared workspace volume](#pod-placement-and-the-shared-workspace-volume)).
-- Sized by the memory-tier component (low: requests 1Gi / 500m, limits 16Gi / 4 cpu; high: requests 2Gi / 2 cpu, limits 180Gi / 20 cpu).
-- Readiness probe only, never liveness: a liveness failure would SIGKILL the container mid-TOPP-job.
+- `replicas: 2` — RQ takes one job per worker process, so this is exactly how many workflows the deployment can run at once. It was 1, which serialised every workflow in the deployment and was also the only thing keeping the queue path's concurrent-access bugs latent. `memory-tier-high` overrides it to 1, because a 180Gi worker fits on a high-memory node and nowhere else (see [Step 4b](#step-4b--choose-the-worker-size-and-how-many-workers)).
+- `topologySpreadConstraints`, `maxSkew: 1` over `kubernetes.io/hostname`, `DoNotSchedule` — one worker per node before any node takes a second (see [Pod placement and the shared workspace volume](#pod-placement-and-the-shared-workspace-volume)).
+- `strategy: RollingUpdate` with `maxSurge: 0`, `maxUnavailable: 1`, both explicit. The defaults resolve to `maxUnavailable: 0` at this replica count, which would make one `Pending` or `NotReady` worker enough to take the Deployment out of `Available`.
+- Sized by the memory-tier component with `requests` equal to `limits`, which is what makes the pod Guaranteed QoS: `oom_score_adj` of −997 rather than the ~969 a 1Gi request against a 16Gi limit used to score. CI reads `.status.qosClass` off the **Running** worker pods (`assert_worker_qos_guaranteed`) — the class is assigned at admission and is populated on a `Pending` pod too, so a check that did not filter on phase would report a pass for workers that were never scheduled.
+- Readiness probe only, never liveness: a liveness failure would SIGKILL the container mid-TOPP-job, and a restart cannot fix a wedged NFS mount.
 
 ### `cleanup-cronjob.yaml`
 CronJob that runs `python clean-up-workspaces.py` nightly at 03:00 UTC. Uses `concurrencyPolicy: Forbid`, retains 3 successful and 3 failed jobs. Shares the workspace PVC.
@@ -174,13 +186,46 @@ Lists all base resources under the `openms` namespace.
 ### `streamlit-secrets.yaml`
 Ships with an empty admin password by default and is included in `k8s/base/kustomization.yaml`, so `kubectl apply -k` always creates the `streamlit-secrets` Secret. The Streamlit Deployment mounts it at `/app/admin-secrets/`, and `.streamlit/config.toml` registers that path under `[secrets].files` so `st.secrets` picks it up. The admin password gates the "Save as Demo" feature — when empty (default), that UI is hidden entirely; set a password to enable it. The volume mount keeps `optional: true` so forks that inject the Secret out-of-band (Vault, External Secrets Operator) or rename it still boot. See "Configuring the admin password" below.
 
+## 3b. The storage tier (`k8s/storage/`)
+
+**One per cluster, not one per app.** Everything in this root is cluster scoped or lives in `kube-system`, so it is applied once, by whoever operates the cluster, before the first app overlay. Every app on the cluster claims the same StorageClass and gets its own share.
+
+| File | Purpose |
+|------|---------|
+| `storageclass.yaml` | `openms-manila-nfs`: provisioner `nfs.manila.csi.openstack.org`, `reclaimPolicy: Retain`, volume expansion on, mount options `hard`, `nfsvers=4.1`, `nconnect=4`. Two values are **cluster-specific**: `type` (the NFS share type, `isilon-denbi` on de.NBI Berlin) and `nfs-shareClient` (the node subnet that gets the share's access rule, `192.168.1.0/24`). Both are parameters of the StorageClass and cannot be changed in place: to change one, delete and re-apply the class while no PVC uses it. |
+| `manila-csi-values.yaml` | Helm values for `openstack-manila-csi` 2.36.3: NFS only, forwarding mounts to the csi-driver-nfs node plugin. |
+| `csi-driver-nfs-values.yaml` | Helm values for `csi-driver-nfs` 4.11.0, used only as the node plugin that does the mount. Its own controller is scaled to zero. |
+| `kustomization.yaml` | Inflates both charts into `kube-system` and adds the StorageClass. |
+
+How a volume comes about: the workspace PVC asks for `openms-manila-nfs`; the manila-csi controller creates an NFS share of that size through the Manila API and adds an IP access rule for `nfs-shareClient`; on every node that runs a pod using it, the csi-driver-nfs node plugin mounts the share's export.
+
+**Credentials.** manila-csi talks to the Manila API with an OpenStack *application credential*, kept in the Secret `manila-csi-credentials` in `kube-system`. It is never committed. Create the credential in Horizon (*Identity → Application Credentials*, role `member`) and then:
+
+```bash
+kubectl -n kube-system create secret generic manila-csi-credentials \
+  --from-literal=os-authURL=https://<keystone>/v3 \
+  --from-literal=os-region=<region> \
+  --from-literal=os-applicationCredentialID=<id> \
+  --from-literal=os-applicationCredentialSecret=<secret>
+```
+
+Rendering this root needs Helm on `PATH`, because of the `helmCharts` block, and `kubectl apply -k` accepts no `--enable-helm` flag:
+
+```bash
+kubectl kustomize --enable-helm k8s/storage/            # inspect
+kubectl kustomize --enable-helm k8s/storage/ | kubectl apply -f -
+```
+
+Rendering also writes the vendored charts into `k8s/storage/charts/`. That directory is gitignored and must never be committed.
+
+`k8s/ci-storage/` is **not** for real clusters. It is what the kind jobs in CI apply instead: one NFS-Ganesha server inside the cluster, publishing a StorageClass with the same name and mount options, because a GitHub runner cannot reach Manila. `assert_storage_class_contract` keeps the two classes in step.
+
 ## 4. Fork-and-deploy guide
 
 ### Prerequisites
 
 - `kubectl` configured for the target cluster
-- A storage class that supports `ReadWriteOnce` volumes (de.NBI uses `cinder-csi`)
-- Nodes labelled `openms.de/memory-tier=low` and `openms.de/memory-tier=high`
+- OpenStack Manila with an NFS share type and share quota for the project (Horizon shows a *Share* section under *Project*), and the storage tier in `k8s/storage/` applied once on the cluster (section 3b)
 - An ingress controller (Traefik, or nginx if you patch the nginx Ingress instead)
 - Read access to GHCR for pulling the app image
 - A DNS record pointing to the cluster's ingress load balancer
@@ -213,18 +258,39 @@ Open `k8s/overlays/prod/kustomization.yaml` and change the following fields:
 
 The overlay leaves the nginx `Ingress` unpatched because Traefik is the production ingress. If you are deploying to an nginx-only cluster, add an overlay patch for both `rules[].host` entries in the base `Ingress` (same `.de` / `.org` pattern) instead of the IngressRoute patch.
 
-### Step 4b — Choose the memory tier
+### Step 4b — Choose the worker size, and how many workers
 
 The overlay pulls in one of two Kustomize components under `components:`:
 
 ```yaml
 components:
-  - ../../components/memory-tier-low    # default: worker limited to 16Gi / 4 cpu
+  - ../../components/memory-tier-low    # default: 16Gi / 4 cpu per worker
   # OR
-  - ../../components/memory-tier-high   # worker limited to 180Gi / 20 cpu
+  - ../../components/memory-tier-high   # 180Gi / 20 cpu per worker
 ```
 
-A tier picks the node and the worker size. Each component puts `nodeSelector: openms.de/memory-tier: <tier>` on every Deployment and the cleanup CronJob, and patches the Streamlit and `rq-worker` `resources`. `memory-tier-low` is right for most apps; switch to `memory-tier-high` only if the workload genuinely needs tens of GB of RAM (DIA spectral-library + OpenSwath peak picking, DIA-LFQ). The cluster-side maximum is the `LimitRange` in `k8s/base/limitrange.yaml`, at 200Gi / 20 cpu per container.
+A tier is a **pod size**, not a set of nodes. Each component patches the Streamlit and `rq-worker` `resources` and nothing else — no node label is involved, and none has to exist on the cluster. `memory-tier-low` is right for most apps; switch to `memory-tier-high` only if the workload genuinely needs tens of GB of RAM (DIA spectral-library + OpenSwath peak picking, DIA-LFQ).
+
+Both components set `requests` **equal to** `limits` on memory and cpu, which is the exact condition for Guaranteed QoS. Keep it that way when retuning. Only the request enters the Burstable `oom_score_adj` formula, so a worker asking for 1Gi against a 16Gi ceiling is schedulable on every node in the cluster and sits near the top of that node's kill list once it fills up — which is what the old sizing did. The cluster-side maximum is the `LimitRange` in `k8s/base/limitrange.yaml`, at 200Gi / 20 cpu per container — note the high tier's `cpu: 20` sits exactly *on* that ceiling, so raising it without raising the `LimitRange` first is rejected at admission as a quota violation rather than showing up as a `Pending` pod.
+
+How many workers is a separate decision, and the one that actually spends a second node. The base ships `replicas: 2`, one per node on the two-node OpenMS cluster, and `memory-tier-high` is the one place in `k8s/` that overrides it — down to 1, because a 180Gi Guaranteed request fits on a high-memory node and nowhere else. With `DoNotSchedule` forbidding the second replica from doubling up on the node that could hold it, an inherited `replicas: 2` there is a worker that is `Pending` for ever. A fork with N high-memory nodes raises it to N. Otherwise change the count in the overlay rather than the base, so a template rebase cannot revert it:
+
+```yaml
+patches:
+  - target:
+      kind: Deployment
+      name: rq-worker
+    patch: |
+      - op: replace
+        path: /spec/replicas
+        value: 4
+```
+
+`replicas x worker size` is reserved cluster-wide for as long as the workers run, queue empty or not, so raise it only when there is somewhere for the extra workers to fit. One that does not fit stays `Pending`.
+
+### Step 4c — Storage needs no per-fork renaming
+
+The storage tier is shared by every app on the cluster and carries no app name, so a fork changes nothing in `k8s/storage/`. Its workspace claim gets the overlay's `namePrefix` like every other object, and with it a Manila share of its own. Size it with `resources.requests.storage` in `k8s/base/workspace-pvc.yaml` (and `deploy.k8s.storage` in `app.yaml`, which `python -m utils.app_spec` compares with it).
 
 ### Step 5 — Configure the admin password (optional)
 
@@ -255,11 +321,24 @@ kubectl -n openms rollout restart deployment/<your-app-name>-streamlit
 
 ### Step 6 — Deploy
 
+**The storage tier first, once per cluster.** If no other app on the cluster has applied it yet, set the two cluster-specific values in `k8s/storage/storageclass.yaml`, create the credentials Secret (section 3b) and apply the root. It publishes the StorageClass the workspace PVC claims; applied in the other order, every pod sits `Pending` on a class that does not exist yet:
+
 ```bash
-kubectl apply -k k8s/overlays/prod/
+kubectl kustomize --enable-helm k8s/storage/ | kubectl apply -f -
+kubectl -n kube-system rollout status statefulset -l app=openstack-manila-csi --timeout=300s
+kubectl get storageclass openms-manila-nfs
 ```
 
-The apply is idempotent.
+Then the app:
+
+```bash
+kubectl apply -k k8s/overlays/prod/
+kubectl -n openms get pvc     # <slug>-workspaces-manila-pvc Bound, RWX; the share appears in Horizon
+```
+
+The first needs Helm on `PATH`. Both applies are idempotent, and on an upgrade the storage one is usually a no-op.
+
+**Coming from the single Cinder volume** (`<slug>-workspaces-pvc`, `ReadWriteOnce` on `cinder-csi`, pods pinned to an `openms.de/memory-tier` node): install the storage tier first and check that a claim on `openms-manila-nfs` binds. Only then let the new overlay reach the cluster. Under Argo CD with automatic sync that is the moment the template sync merges into the app's deployed branch, so the storage tier must already be in place. The overlay's claim has a new name, so it binds a fresh Manila share and the pods move to it, unpinned. The old claim carries `Prune=false`, so Argo CD leaves it and its Cinder volume alone. Delete it by hand once the new deployment has been stable for a week. Running workspaces do not move with it (they expire after 7 days anyway), and demos are reseeded from the image.
 
 ### Step 7 — Verify
 
@@ -275,7 +354,8 @@ Smoke-test the ingress URL in a browser — the app should load, a session cooki
 Instead of running Step 6 by hand on every change, Argo CD can apply the overlay from git:
 
 - One Application per app on `k8s/overlays/prod`, with automatic sync, prune and self-heal. Turn automatic sync on only after a first manual sync whose diff you have read.
-- The namespace and the workspaces PVC carry `argocd.argoproj.io/sync-options: Prune=false,Delete=false`. All apps share the `openms` namespace, and deleting a claim on `cinder-csi` deletes its volume, so Argo CD must never remove them.
+- The storage root is one Application per cluster on `k8s/storage`, **without** automatic sync. It needs `kustomize.buildOptions: --enable-helm` in `argocd-cm`.
+- The `openms` namespace, the workspace PVC and the StorageClass carry `argocd.argoproj.io/sync-options: Prune=false,Delete=false`. All apps share the namespace and the class, and the claim holds every workspace, so Argo CD must never remove them.
 - Ignore the data of `<prefix>-streamlit-secrets` (`ignoreDifferences` plus `RespectIgnoreDifferences=true`). The admin password is patched live (Step 5), and self-heal would reset it.
 - Argo CD rolls out changes in git. A rebuilt image under a moving tag (`main-full`, `latest`) is not one, so pin `images[0].newTag` to a release tag through a PR (the `release-app` skill).
 - `k8s/argocd/` holds this app's `Application` and `ImageUpdater`, applied once with `kubectl apply -n argocd -f k8s/argocd/`. It is not part of the overlay (the overlay forces every resource into `openms`). Each app keeps its own copy (`k8s/argocd/*` is app-owned), with its own name, repo, branch, image and release-tag pattern.
@@ -298,17 +378,18 @@ One unified workflow owns manifest lint, Docker build, push, and kind integratio
 - **Job 1 — `lint-manifests`:**
   - `kubeconform` runs against `k8s/base/*.yaml` with strict mode and Kubernetes 1.28 schemas (excluding `kustomization.yaml` and the Traefik CRD `traefik-ingressroute.yaml`).
   - `kubectl kustomize k8s/overlays/prod/` must succeed; the kustomized output is re-validated through `kubeconform` (with `IngressRoute` skipped).
-  - `kubectl kustomize k8s/overlays/ci/` — the overlay the kind jobs apply — must succeed and validate the same way. Because a `patches:` entry whose target matches nothing is not an error in kustomize, the step additionally checks that the rendered CI worker is actually *smaller* than prod's ; otherwise a renamed patch target would hand the kind jobs a full-sized worker no runner can schedule, an hour before anything noticed.
-- **Job 1b — `assert-invariants`:** static checks from `.github/scripts/ci-assertions.sh` — that every documented `docs/*.md` reference resolves. It deliberately has no `needs:` and nothing needs it, so a red invariant cannot hide the build.
+  - `kubectl kustomize k8s/overlays/ci/` — the overlay the kind jobs apply — must succeed and validate the same way. Because a `patches:` entry whose target matches nothing is not an error in kustomize, the step additionally checks that the rendered CI worker is actually *smaller* than prod's and still has `requests == limits`; otherwise a renamed patch target would hand the kind jobs a full-sized worker no runner can schedule, an hour before anything noticed.
+  - `kubectl kustomize --enable-helm` on `k8s/storage/` (Manila) and on `k8s/ci-storage/` (the CI stand-in) must succeed and their output is validated the same way, so the charts' own rendered objects are covered too.
+- **Job 1b — `assert-invariants`:** static assertions from `.github/scripts/ci-assertions.sh` over the manifests — that the workspace PVC, the Manila StorageClass and the CI stand-in agree on the class name, `Retain` and the mount options (`assert_storage_class_contract`), that the CI NFS server pins `device-based-fsids` off, and that nothing anywhere pins a pod to a node. It deliberately has no `needs:` and nothing needs it, so a red invariant cannot hide the build.
   - Takes ~30s. Fails fast so manifest typos never trigger the hours-long full Docker build.
 - **Job 2 — `build`** (`needs: lint-manifests`, matrix over `[full, simple]`):
   - Builds `Dockerfile` (full, includes TOPP tools) or `Dockerfile_simple` (pyOpenMS only) depending on the matrix leg.
   - **Buildx registry cache** (`type=registry,…,mode=max`) stored at `ghcr.io/<repo>/cache:full` and `:simple`. A `cache-from` read is attempted on every event; `cache-to` write only on push/tag/workflow_dispatch (fork PRs can't write). Repeat builds with an unchanged Dockerfile finish in minutes.
   - **Push** on push/tag/workflow_dispatch events (not on PRs). Tags: `<branch>-full` / `<branch>-simple`, `v<version>-full` / `v<version>-simple`, `<sha>-full` / `<sha>-simple`. `latest` is emitted only for the full variant on push to `main`.
-  - **Kind integration** runs per variant: creates a two-node kind cluster whose nodes carry the `openms.de/memory-tier` labels (`.github/kind-config.yaml`), loads the just-built image, installs the nginx ingress controller, then applies the kustomized **`ci`** overlay (filtering Traefik `IngressRoute`, forcing `imagePullPolicy: Never`, rewriting `cinder-csi` to kind's `standard` class and shrinking the workspaces claim to fit the runner's disk). It asserts Redis and every Deployment become ready and curls both `.de` and `.org` hostnames through the nginx ingress.
+  - **Kind integration** runs per variant: creates a two-node kind cluster, loads the just-built image, installs the nginx ingress controller, applies the CI storage stand-in `k8s/ci-storage/` (an in-cluster Ganesha server publishing `openms-manila-nfs`), then applies the kustomized **`ci`** overlay (filtering Traefik `IngressRoute`, forcing `imagePullPolicy: Never`, and shrinking the workspaces claim to fit the runner's disk). It asserts Redis and every Deployment become ready, curls both `.de` and `.org` hostnames through the nginx ingress, and then runs the assertions from `.github/scripts/ci-assertions.sh`: that every worker replica is Running on more than one node within the declared `maxSkew` (`assert_workers_spread_across_nodes`), that the Running workers are `Guaranteed` QoS (`assert_worker_qos_guaranteed`), cross-node write visibility, the POSIX contract, a workflow surviving an NFS server restart, stable file-handle identity across that restart, and two pods on two nodes sharing the volume. The two placement assertions run first because they take seconds while the storage ones budget up to 45 minutes of deliberate timeouts.
 
-The kind jobs apply `k8s/overlays/ci/`, which is `k8s/overlays/prod/` with the worker `resources` patched down and nothing else changed. Production limits a worker to 16Gi / 4 cpu, more than a GitHub runner (4 vCPU, ~15.6Gi in total) can give next to the other pods. Same replica count, same node selection, same labels, same images.
-- **Job 3 — `traefik-integration`** (`needs: lint-manifests`, runs once on `Dockerfile_simple`): builds the simple image, brings up a second kind cluster, installs Traefik via Helm (`service.type=ClusterIP`), applies the full kustomized `ci` overlay without filtering the `IngressRoute` (still patching `imagePullPolicy: Never`, the storage class and the claim size for kind compatibility), and curls both hostnames through Traefik. Catches IngressRoute-syntax regressions that the nginx-side test cannot.
+The kind jobs apply `k8s/overlays/ci/`, which is `k8s/overlays/prod/` with the worker `resources` patched down and nothing else changed. Production sizes a worker at 16Gi / 4 cpu with requests equal to limits; a GitHub runner has 4 vCPU and ~15.6Gi in total, every kind node is a container on that one host advertising the whole of it, and both replicas would sit `Pending` for ever. Same replica count, same spread constraint, same labels, same images — and every static assertion still renders `k8s/overlays/prod/`, so the sizing is the only thing CI does not observe directly.
+- **Job 3 — `traefik-integration`** (`needs: lint-manifests`, runs once on `Dockerfile_simple`): builds the simple image, brings up a second kind cluster, installs Traefik via Helm (`service.type=ClusterIP`), applies the CI storage stand-in and then the full kustomized `ci` overlay without filtering the `IngressRoute` (still patching `imagePullPolicy: Never` and the claim size for kind compatibility), and curls both hostnames through Traefik. Catches IngressRoute-syntax regressions that the nginx-side test cannot. It runs the same placement and storage assertions as the nginx job.
 - **Auth:** uses the workflow's `GITHUB_TOKEN` for GHCR login and as a build argument for in-image private-resource access. Fork PRs skip login (their `GITHUB_TOKEN` is read-only) but can still read the public cache.
 - **PR behavior:** all three jobs run on pull requests. No tags are pushed and no cache is written. The kind integration still runs, exercising manifests end-to-end. If branch protection requires these checks, a failure blocks merge.
 
