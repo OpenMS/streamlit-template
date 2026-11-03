@@ -97,7 +97,7 @@ Run docker-compose to launch all services.
 
 
 # Other Architectures
-CI builds every image for amd64 and arm64 (`Dockerfile.arm`, `Dockerfile_simple.arm`), tests both on kind and publishes multi-arch tags, so `docker pull` picks the right one.
+CI builds the images listed in `deploy.images` of `app.yaml`. By default that is all four, the full and the simple image for amd64 and arm64 (`Dockerfile.arm`, `Dockerfile_simple.arm`), and CI tests each on kind and publishes multi-arch tags, so `docker pull` picks the right one. A tag only covers the architectures that were built: with `simple-arm64` left out, the simple tag has no arm64 entry.
 
 An app whose dependencies have no build for one platform (a pip pin without a linux/aarch64 wheel, for example) lists the images it does build in `app.yaml`:
 
