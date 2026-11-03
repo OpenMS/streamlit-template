@@ -9,6 +9,12 @@ on:
     # `FLASHApp-1.1.0` both publish versioned images (`<tag>-full`, ...).
     tags: ['v*', '*-[0-9]+.[0-9]*']
   workflow_dispatch:
+    inputs:
+      openms_branch:
+        description: 'OpenMS branch or tag for the full images (e.g. v3.6.0, develop). Empty: the Dockerfile default.'
+        required: false
+        default: ''
+        type: string
 
 env:
   REGISTRY: ghcr.io
@@ -308,6 +314,7 @@ jobs:
       arch: amd64
       runner: ubuntu-latest
       platform: linux/amd64
+      openms_branch: ${{ inputs.openms_branch || '' }}
       # The amd64 runner image has grown too: exporting the full image to a
       # tar for the test jobs ran out of space ("no space left on device").
       free_disk_space: true
@@ -342,6 +349,7 @@ jobs:
       runner: ubuntu-24.04-arm
       platform: linux/arm64
       free_disk_space: true
+      openms_branch: ${{ inputs.openms_branch || '' }}
     secrets: inherit
 
   build-simple-arm64:
@@ -377,7 +385,9 @@ jobs:
     # and a teardown failure blocks publishing for a reason unrelated to the
     # image. That is the trade; the alternative was publishing untested.
     needs: [build-full-amd64, build-simple-amd64, build-full-arm64, build-simple-arm64, test-nginx, test-traefik]
-    if: github.event_name != 'pull_request'
+    # A dispatch with openms_branch builds and tests another OpenMS; it pushes
+    # no per-arch tags, so there is nothing to stitch or publish.
+    if: github.event_name != 'pull_request' && (inputs.openms_branch || '') == ''
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -628,7 +638,9 @@ jobs:
     # and lets HPC users `apptainer pull oras://...` without the 5-15 min
     # on-the-fly OCI->SIF conversion the docker:// path requires.
     needs: test-apptainer
-    if: github.event_name != 'pull_request'
+    # Not for a dispatch with openms_branch: its SIF would take the default
+    # build's <ref>/<sha> tags.
+    if: github.event_name != 'pull_request' && (inputs.openms_branch || '') == ''
     runs-on: ubuntu-latest
     permissions:
       contents: read
