@@ -202,12 +202,12 @@ How a volume comes about: the workspace PVC asks for `openms-manila-nfs`; the ma
 **Cluster-specific values.** Before the first apply, replace the two `CHANGE-ME-…` placeholders in `k8s/storage/storageclass.yaml`:
 
 ```bash
-openstack share type list            # pick an NFS type; driver_handles_share_servers=False unless you set shareNetworkID
-openstack subnet list                # the node subnet, if the nodes reach the storage network directly
-openstack floating ip list           # or the floating-IP / egress range, if traffic to the storage is NATed
+openstack share type list    # type: an NFS share type
+openstack subnet list        # nfs-shareClient: the node subnet (direct route)
+openstack floating ip list   # ... or the floating-IP range (NAT router)
 ```
 
-Keep the edited file in your own checkout or fork of the operator repository; the template ships only the placeholders, so a class applied unchanged fails at the first PVC (`share type not found`) instead of granting access to the wrong addresses. A rule for the wrong range shows up later as `access denied` when a node mounts the share: check which source address the backend sees, not which address the node has.
+Use a share type with `driver_handles_share_servers=False`, or also set `shareNetworkID`. Keep the edited file in your own checkout or fork of the operator repository; the template ships only the placeholders, so a class applied unchanged fails at the first PVC (`share type not found`) instead of granting access to the wrong addresses. A rule for the wrong range shows up later as `access denied` when a node mounts the share: check which source address the backend sees, not which address the node has.
 
 **Credentials.** manila-csi talks to the Manila API with an OpenStack *application credential*, kept in the Secret `manila-csi-credentials` in `kube-system`. It is never committed. Create the credential in Horizon (*Identity → Application Credentials*, role `member`) and then:
 
