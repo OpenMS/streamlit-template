@@ -43,4 +43,4 @@ spec:
       # The size of this app's Manila share, counted against the project's
       # share quota (Horizon, Project > Share). Manila can grow it later: raise
       # this number and re-apply. The kind jobs shrink it to 1Gi.
-      storage: 400Gi
+      storage: 50Gi

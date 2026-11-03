@@ -94,7 +94,7 @@ The user confirms or overrides each one. Do not omit the "what this controls" li
 ### Q7. Workspace storage size
 
 - *What this controls:* the persistent disk allocated for Streamlit session workspaces, uploaded files, intermediate analysis outputs, and any reference data the app seeds at startup. Too small → users hit "no space left" mid-analysis; too large → wasted cluster storage budget.
-- *Default:* **400 Gi** (matches the stock base, so the default needs zero file edits).
+- *Default:* **50 Gi** (matches the stock base, so the default needs zero file edits).
 - *Note on naming (do not ask the user):* the PVC base name stays `workspaces-manila-pvc` for every fork. Kustomize's `namePrefix: <slug>-` automatically scopes it to `<slug>-workspaces-manila-pvc` in the cluster, so cross-fork name collisions are impossible. Override the size only — never rename the PVC.
 
 ## Step 3 — Apply the answers to `k8s/overlays/prod/kustomization.yaml`
@@ -180,7 +180,7 @@ About the `||` in the IngressRoute match — both TLDs always go in. The OpenMS 
 
 ## Step 5 — Optional storage resize
 
-Skip this step if the user accepted the 400 Gi default.
+Skip this step if the user accepted the 50 Gi default.
 
 Otherwise change one number, the size of this app's Manila share:
 
