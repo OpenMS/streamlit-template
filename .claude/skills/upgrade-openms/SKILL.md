@@ -14,6 +14,15 @@ OpenMS appears in four places, which must move together:
 | `.github/workflows/build-windows-executable-app.yaml` | `openms-version:` passed to `openms-windows.yml` |
 | CI (`ci.yml`, `workflow-tests.yml`) | whatever pyOpenMS they install, via requirements |
 
+**New releases arrive by themselves.** `.github/workflows/openms-release.yml`
+runs weekly in the template and in every app: a repository whose Dockerfile
+builds the release just before the newest gets one PR (`openms-release`
+branch, made by `.github/scripts/openms_release.py`) that bumps the
+Dockerfiles, the pyopenms pin, the desktop default and CI's Python together.
+Use this skill to review that PR (steps 1, 2 and 4) or to move to a branch,
+a fork or an older release by hand; a repository not on the latest release is
+never upgraded automatically.
+
 Do the template first (`upgrade-openms` there, then `sync-from-template` in
 each app). An app only upgrades on its own when it needs a release the
 template does not yet use, and then says so in the PR.
