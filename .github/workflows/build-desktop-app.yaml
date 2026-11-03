@@ -98,7 +98,7 @@ jobs:
     if: needs.scope.outputs.run == 'true'
     uses: ./.github/workflows/openms.yml
     with:
-      openms: ${{ inputs.openms || '3.5.0' }}
+      openms: ${{ inputs.openms || '3.6.0' }}
 
   # One job for all three platforms: the same steps stage OpenMS, Python and
   # the app into electron/payload, then a single packaging step turns it into

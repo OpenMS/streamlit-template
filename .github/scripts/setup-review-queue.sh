@@ -4,7 +4,7 @@
 #
 #   .github/scripts/setup-review-queue.sh OWNER/REPO CHECK [CHECK...]
 #   .github/scripts/setup-review-queue.sh OpenMS/streamlit-template \
-#       "test (ubuntu-latest, 3.10)" build lint-manifests assert-invariants
+#       "test (ubuntu-latest, 3.11)" build lint-manifests assert-invariants
 #
 # CHECK is a check-run name as shown on a PR. Name only fast checks that pass
 # on the default branch today: a red or never-reported required check blocks
