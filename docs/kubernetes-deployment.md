@@ -313,7 +313,26 @@ patches:
 
 ### Step 4c — Storage needs no per-fork renaming
 
-The storage tier is shared by every app on the cluster and carries no app name, so a fork changes nothing in `k8s/storage/`. Its workspace claim gets the overlay's `namePrefix` like every other object, and with it a Manila share of its own. Size it with `resources.requests.storage` in `k8s/base/workspace-pvc.yaml` (and `deploy.k8s.storage` in `app.yaml`, which `python -m utils.app_spec` compares with it).
+The storage tier is shared by every app on the cluster and carries no app name, so a fork changes nothing in `k8s/storage/`. Its workspace claim gets the overlay's `namePrefix` like every other object, and with it a Manila share of its own. Size it with the claim patch in `k8s/overlays/prod/kustomization.yaml` (and `deploy.k8s.storage` in `app.yaml`, which `python -m utils.app_spec` compares with it). Do not edit `k8s/base/workspace-pvc.yaml` for this.
+
+### App values belong in the overlay
+
+`k8s/base/` and `k8s/components/` are template-owned: list only `k8s/overlays/*` and `k8s/argocd/*` under `sync.app_owned`, and every template fix to the base reaches the app through the weekly sync without a conflict. Everything an app sets for itself is a patch in its prod overlay: the share size (above), the worker count (Step 4b), and worker or Streamlit resources when neither tier fits:
+
+```yaml
+patches:
+  - target:
+      kind: Deployment
+      name: rq-worker
+    patch: |
+      - op: replace
+        path: /spec/template/spec/containers/0/resources
+        value:
+          requests: {memory: 8Gi, cpu: "2"}
+          limits:   {memory: 8Gi, cpu: "2"}
+```
+
+`python -m utils.app_spec` prints a note for each template-maintained file an app still owns.
 
 ### Step 5 — Configure the admin password (optional)
 

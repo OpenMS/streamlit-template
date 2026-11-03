@@ -90,6 +90,40 @@ def test_storage_size_must_match_workspace_pvc(tmp_path):
     assert any("deploy.k8s.storage" in e for e in errors)
 
 
+_STORAGE_PATCH = """namePrefix: myapp-
+patches:
+  - target:
+      kind: PersistentVolumeClaim
+      name: workspaces-manila-pvc
+    patch: |
+      - op: replace
+        path: /spec/resources/requests/storage
+        value: {size}
+"""
+
+
+def test_storage_size_from_overlay_patch_wins_over_base(tmp_path):
+    root = _app_tree(tmp_path, pvc_size="50Gi")
+    overlay = root / "k8s" / "overlays" / "prod" / "kustomization.yaml"
+    overlay.write_text(_STORAGE_PATCH.format(size="300Gi"))
+    s = _spec()
+    s["deploy"] = {"k8s": {"storage": "300Gi"}}
+    assert app_spec.consistency_errors(s, root) == []
+    s["deploy"]["k8s"]["storage"] = "50Gi"
+    errors = app_spec.consistency_errors(s, root)
+    assert any("overlays/prod/kustomization.yaml requests '300Gi'" in e for e in errors)
+
+
+def test_owned_template_files():
+    assert app_spec.owned_template_files({"sync": {"app_owned": ["k8s/overlays/*", "CLAUDE.app.md"]}}) == []
+    owned = app_spec.owned_template_files({"sync": {"app_owned": ["k8s/*", "CLAUDE.md"]}})
+    assert "k8s/base/workspace-pvc.yaml" in owned and "CLAUDE.md" in owned
+
+
+def test_template_spec_owns_no_template_files(spec):
+    assert app_spec.owned_template_files(spec) == []
+
+
 def test_missing_python_tool_and_unknown_input(tmp_path):
     root = _app_tree(tmp_path)
     s = _spec()

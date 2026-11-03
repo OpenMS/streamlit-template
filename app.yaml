@@ -80,3 +80,4 @@ sync:
     - assets/*
     - k8s/overlays/*
     - k8s/argocd/*
+    - CLAUDE.app.md

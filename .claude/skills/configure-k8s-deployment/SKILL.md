@@ -182,14 +182,18 @@ About the `||` in the IngressRoute match — both TLDs always go in. The OpenMS 
 
 Skip this step if the user accepted the 50 Gi default.
 
-Otherwise change one number, the size of this app's Manila share:
+Otherwise change one number, the size of this app's Manila share, in the claim patch of the prod overlay (never in `k8s/base/`, which is template-owned):
 
 ```yaml
-# k8s/base/workspace-pvc.yaml
-spec:
-  resources:
-    requests:
-      storage: <size>     # Q7: e.g. 100Gi, 1Ti, 3Ti
+# k8s/overlays/prod/kustomization.yaml
+patches:
+  - target:
+      kind: PersistentVolumeClaim
+      name: workspaces-manila-pvc
+    patch: |
+      - op: replace
+        path: /spec/resources/requests/storage
+        value: <size>     # Q7: e.g. 100Gi, 1Ti, 3Ti
 ```
 
 and `deploy.k8s.storage` in `app.yaml` to the same value (`python -m utils.app_spec` compares them). The share counts against the project's Manila share quota; mention that in the handoff.
