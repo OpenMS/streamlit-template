@@ -547,6 +547,37 @@ def test_queued_multi_run_failure_marks_run_failed(tmp_path):
     assert runs.get(run_id)["status"] == "failed"
 
 
+class ParamsRecordingWorkflow:
+    """Records the parameters execution() sees, directly and through run_topp's reader."""
+
+    def execution(self) -> bool:
+        seen = {
+            "params": self.params.get("value"),
+            "parameter_manager": self.parameter_manager.get_parameters_from_json().get("value"),
+        }
+        Path(self.results_dir, "seen.json").write_text(json.dumps(seen))
+        return True
+
+
+def test_queued_multi_run_uses_the_parameters_it_was_started_with(tmp_path):
+    from src.workflow.RunManager import RunManager
+
+    workflow_dir = tmp_path / "multi-params"
+    workflow_dir.mkdir()
+    shared = Path(workflow_dir, "params.json")
+    shared.write_text(json.dumps({"value": "at start"}), encoding="utf-8")
+    runs = RunManager(workflow_dir)
+    run_id = runs.new_run("snapshot", shared)
+    # Saved on the configure page after the run was started
+    shared.write_text(json.dumps({"value": "changed later"}), encoding="utf-8")
+
+    _run_multi_in_worker(workflow_dir, "ParamsRecordingWorkflow", run_id)
+
+    seen = json.loads(Path(runs.results_dir(run_id), "seen.json").read_text())
+    assert seen == {"params": "at start", "parameter_manager": "at start"}
+    assert runs.get(run_id)["status"] == "finished"
+
+
 # ------------------- worker running other code than the page -------------------
 
 
