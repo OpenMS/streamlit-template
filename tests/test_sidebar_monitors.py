@@ -44,7 +44,9 @@ sys.path.append(PROJECT_ROOT)
 
 
 def _identity_decorator(*args, **kwargs):
-    """Stand in for `st.fragment(run_every=5)`, which wraps the monitors."""
+    """Stand in for `st.fragment`, bare or called, which wraps the panels."""
+    if len(args) == 1 and callable(args[0]) and not kwargs:
+        return args[0]
 
     def _wrap(function):
         return function
@@ -320,3 +322,19 @@ def test_a_broken_storage_indicator_is_not_silent(monkeypatch, caplog):
         "redis client blew up" in str(record.exc_info) or "redis client blew up" in record.getMessage()
         for record in caplog.records
     ), [record.getMessage() for record in caplog.records]
+
+
+def test_sidebar_panels_do_not_rerun_on_a_timer():
+    """
+    A `run_every` timer in the sidebar crashes online pages with "Bad 'setIn'
+    index": when it fires as the user switches pages, its rerun is tagged with
+    the page being left, and the browser clears the new page for it. The
+    panels refresh with the page and with their button instead.
+    """
+    import inspect
+
+    source = inspect.getsource(common)
+    for name in ("_resource_panels", "monitor_queue", "monitor_storage", "monitor_hardware"):
+        start = source.index(f"def {name}(")
+        decorators = source[source.rindex("\n\n", 0, start):start]
+        assert "run_every" not in decorators, f"{name} reruns itself on a timer"
