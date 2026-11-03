@@ -365,7 +365,7 @@ Smoke-test the ingress URL in a browser — the app should load, a session cooki
 
 Instead of running Step 6 by hand on every change, Argo CD can apply the overlay from git:
 
-- One Application per app on `k8s/overlays/prod`, with automatic sync, prune and self-heal. Turn automatic sync on only after a first manual sync whose diff you have read.
+- One Application per app on `k8s/overlays/prod`, with automatic sync, prune, self-heal and a sync retry (5 attempts, 30s to 5m backoff), since Argo CD otherwise tries each commit or image only once. Turn automatic sync on only after a first manual sync whose diff you have read.
 - The storage root is one Application per cluster on `k8s/storage`, **without** automatic sync. It needs `kustomize.buildOptions: --enable-helm` in `argocd-cm`.
 - The `openms` namespace, the workspace PVC and the StorageClass carry `argocd.argoproj.io/sync-options: Prune=false,Delete=false`. All apps share the namespace and the class, and the claim holds every workspace, so Argo CD must never remove them.
 - Ignore the data of `<prefix>-streamlit-secrets` (`ignoreDifferences` plus `RespectIgnoreDifferences=true`). The admin password is patched live (Step 5), and self-heal would reset it.
