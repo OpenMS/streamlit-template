@@ -474,7 +474,9 @@ jobs:
     # image - so the coverage worth rescuing from a one-variant break is the
     # kind suite, not this. Add the same override here if that ever changes.
     needs: [build-full-amd64, build-simple-amd64]
-    runs-on: ubuntu-latest
+    # Pinned: ubuntu-latest is Ubuntu 26.04, which has no libfuse3-3, and the
+    # upstream apptainer .deb depends on it, so the install step fails there.
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
@@ -647,7 +649,9 @@ jobs:
     # Not for a dispatch with openms_branch: its SIF would take the default
     # build's <ref>/<sha> tags.
     if: github.event_name != 'pull_request' && (inputs.openms_branch || '') == ''
-    runs-on: ubuntu-latest
+    # Pinned: ubuntu-latest is Ubuntu 26.04, which has no libfuse3-3, and the
+    # upstream apptainer .deb depends on it, so the install step fails there.
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       packages: write
