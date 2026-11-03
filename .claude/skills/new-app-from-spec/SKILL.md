@@ -54,7 +54,7 @@ ask for it and continue locally meanwhile.
 ## 3. Identity
 
 Run `configure-app-identity` with the spec's `app` block. It writes
-settings.json, the k8s overlay, the storage tier names, the image names and the
+settings.json, the k8s overlay, the image names and the
 desktop installer names, and `python -m utils.app_spec` checks them afterwards.
 
 ## 4. Workflows

@@ -1,3 +1,8 @@
+> **Historical.** The NFS-Ganesha storage tier this document describes (`k8s/storage/`)
+> was removed in November 2026. The template now uses one `ReadWriteOnce`
+> `cinder-csi` volume with every pod pinned to a memory-tier node, as the apps do
+> (see `docs/kubernetes-deployment.md`). Kept as the record of that work.
+
 > **What this is.** The operational runbook for the NFS-Ganesha storage tier
 > that makes the workspace volume ReadWriteMany, so the app can run on more than
 > one Kubernetes node. It covers the cutover, the verification matrix and the

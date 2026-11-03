@@ -71,11 +71,10 @@ Recurring hot spots:
 | `settings.json` | keep the app's values, add new template keys with their defaults |
 | `.github/workflows/build-windows-executable-app.yaml` | take the template's, then restore the app's `APP_NAME` and `TOPP_TOOLS` |
 | `Dockerfile*` | take the template's, restore the app's `GITHUB_REPO` and extra build steps |
-| `k8s/storage/*` | take the template's structure, keep the app's names (CI checks them) |
 | `.claude/skills/*` | always the template's; an app-specific skill gets its own directory name |
 
-**New template features** the app should adopt (a new storage tier, a new
-settings block) are part of the sync, not a follow-up: list them in the PR
+**New template features** the app should adopt (a new settings block, a new
+k8s component) are part of the sync, not a follow-up: list them in the PR
 body with what the app has to set.
 
 ## Prove it

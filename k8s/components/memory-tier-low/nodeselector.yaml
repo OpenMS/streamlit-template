@@ -1,0 +1,4 @@
+- op: add
+  path: /spec/template/spec/nodeSelector
+  value:
+    openms.de/memory-tier: low
