@@ -2098,15 +2098,32 @@ class StreamlitUI:
 
     def file_upload_section(self, custom_upload_function) -> None:
         self.upload_targets = {}
+        if not data_import_ui.enabled():
+            self._upload_tab(custom_upload_function)
+            return
+        # The upload widgets fill self.upload_targets, so the Upload tab is
+        # drawn first and the import tabs route files by it.
+        upload, cloud, pride = st.tabs(
+            ["📁 Upload", "☁️ Import from cloud", "🧬 Import from PRIDE"]
+        )
+        with upload:
+            self._upload_tab(custom_upload_function)
+        with cloud:
+            data_import_ui.link_import_section(
+                self.workflow_dir, self.upload_targets, source=data_import_ui.LINK
+            )
+        with pride:
+            data_import_ui.link_import_section(
+                self.workflow_dir, self.upload_targets, source=data_import_ui.PRIDE
+            )
+
+    def _upload_tab(self, custom_upload_function) -> None:
         custom_upload_function()
         # A local install already has the input files on disk.
-        if st.session_state.location == "local":
-            return
-        c1, _ = st.columns(2)
-        if c1.button("⬇️ Download files", use_container_width=True):
-            self.zip_and_download_files(Path(self.workflow_dir, "input-files"))
-        if data_import_ui.enabled():
-            data_import_ui.link_import_section(self.workflow_dir, self.upload_targets)
+        if st.session_state.location != "local":
+            c1, _ = st.columns(2)
+            if c1.button("⬇️ Download files", use_container_width=True):
+                self.zip_and_download_files(Path(self.workflow_dir, "input-files"))
 
     def parameter_section(self, custom_parameter_function) -> None:
         # No "Show advanced parameters" toggle: each TOPP tool's "All N
