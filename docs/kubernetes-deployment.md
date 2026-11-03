@@ -47,7 +47,7 @@ Every production OpenMS webapp (quantms-web, umetaflow, FLASHApp) deploys via th
             │      (1 replica)       │            ▼
             └────────────────────────┘   ┌────────────────────────┐
                          ▲               │    Workspace PVC       │
-                         │               │   ReadWriteMany 400Gi  │
+                         │               │   ReadWriteMany 50Gi   │
                          │ REDIS_URL     │ (openms-manila-nfs: a  │
                          │               │  Manila NFS share)     │
                          │               └────────────────────────┘
@@ -123,7 +123,7 @@ Redis 7 Deployment (1 replica) + ClusterIP Service on port 6379. Backs the RQ jo
 PersistentVolumeClaim `workspaces-manila-pvc`:
 - `accessModes: [ReadWriteMany]`
 - `storageClassName: openms-manila-nfs` — published once per cluster by `k8s/storage/`; the same for every app
-- `resources.requests.storage: 400Gi` — the size of this app's Manila share, counted against the project's share quota. Manila grows a share in place, so raising the number and re-applying is enough.
+- `resources.requests.storage: 50Gi` — the size of this app's Manila share, counted against the project's share quota (1000 GiB in total on de.NBI Berlin, shared by every app). Start near the space the app really uses. Manila grows a share in place, so raising the number and re-applying is enough.
 
 This is a **different object** from the claims earlier releases used (`workspaces-pvc`, `ReadWriteOnce` on `cinder-csi`, and then `workspaces-nfs-pvc` on a per-app Ganesha server). A bound PVC's spec is immutable apart from `resources.requests`, so the class cannot be changed in place. The old claim is left alone, which is also what makes rollback a single re-apply of the previous manifests. Delete it by hand once the cutover has been stable for a week. Workspaces expire after 7 days, so nothing is migrated.
 
