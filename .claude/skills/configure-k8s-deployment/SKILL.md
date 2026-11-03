@@ -238,7 +238,7 @@ After committing the edits, tell the user the next steps belong to a human opera
 
 1. Open a PR with the overlay edits and have it reviewed.
 2. Merge to `main`. CI (`build-and-test.yml`) rebuilds and pushes the image to GHCR with the tag from Q3. The kind integration jobs (`test-nginx`, `test-traefik`) auto-discover slug and Traefik hostnames from the overlay output, so no workflow edits are needed for fork-specific values.
-3. Cluster operator applies the fork's storage tier first (`kubectl kustomize --enable-helm k8s/storage/ | kubectl apply -f -`), then `kubectl apply -k k8s/overlays/prod/`. That order matters — the overlay's PVC names a StorageClass the storage tier publishes.
+3. On a cluster where the template's deployment does not run (so nothing has created the shared namespace yet), the operator first runs `kubectl create namespace openms --dry-run=client -o yaml | kubectl apply -f -`; it is a no-op where the namespace exists. Then the cluster operator applies the fork's storage tier first (`kubectl kustomize --enable-helm k8s/storage/ | kubectl apply -f -`), then `kubectl apply -k k8s/overlays/prod/`. That order matters — the overlay's PVC names a StorageClass the storage tier publishes.
 4. Operator verifies with `kubectl -n openms rollout status deployment/<slug>-streamlit` and a browser check on `https://<sub>.webapps.openms.de`, then `kubectl -n openms get pods -o wide -l component=rq-worker` to confirm the workers came up on **different** nodes, each with `.status.qosClass` of `Guaranteed`.
 
 ## Reference files
