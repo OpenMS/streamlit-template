@@ -1,11 +1,21 @@
 name: Build desktop app
 # One run builds the Electron app for Windows, macOS (Apple Silicon) and Linux,
 # and a release gets all installers attached.
+#
+# The macOS job takes 35-45 minutes on a runner pool shared by every OpenMS
+# repository, so the full build runs only where it can find something new:
+#   release, manual run   always
+#   nightly               when main moved since the last successful build
+#   pull request          when it changes packaging (electron/, this workflow,
+#                         openms.yml, requirements, settings.json, app.py) or
+#                         carries the label `desktop-build`
+# The `scope` job decides; when it says no, the run ends in seconds.
 on:
-  push:
-    branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
+    types: [opened, reopened, synchronize, labeled]
+  schedule:
+    - cron: "41 2 * * *"   # nightly, 02:41 UTC
   release:
     types: [published]
   workflow_dispatch:
@@ -18,6 +28,14 @@ on:
 permissions:
   contents: read
 
+# A newer push to a PR cancels its running build. Other refs queue, and GitHub
+# keeps only the newest waiting run, so superseded runs never reach a runner.
+# Adding some other label to a PR gets a group of its own, so it never cancels
+# a build that is running.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}${{ github.event.action == 'labeled' && github.event.label.name != 'desktop-build' && '-label' || '' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   # Name of the app and its installers
   APP_NAME: OpenMS-StreamlitTemplateApp
@@ -26,12 +44,58 @@ env:
   TOPP_TOOLS: "FeatureFinderMetabo FeatureLinkerUnlabeledKD SiriusExport FileConverter"
 
 jobs:
+  scope:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
+    outputs:
+      run: ${{ steps.decide.outputs.run }}
+    steps:
+      - id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          PR: ${{ github.event.pull_request.number }}
+          LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+          ACTION: ${{ github.event.action }}
+          ADDED: ${{ github.event.label.name }}
+        run: |
+          set -euo pipefail
+          run=false
+          case "$EVENT" in
+            release|workflow_dispatch) run=true ;;
+            schedule)
+              head=$GITHUB_SHA
+              last=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/build-desktop-app.yaml/runs?status=success&per_page=20" \
+                       --jq '[.workflow_runs[] | select(.event != "pull_request")][0].head_sha // ""')
+              [ "$head" != "$last" ] && run=true || echo "main unchanged since the last successful build"
+              ;;
+            pull_request)
+              if [ "$ACTION" = labeled ] && [ "$ADDED" != desktop-build ]; then
+                echo "label $ADDED does not ask for a desktop build"
+              elif echo "$LABELS" | grep -q '"desktop-build"'; then
+                run=true
+              elif files=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/files" --jq '.[].filename') &&
+                   printf '%s\n' "$files" | grep -Eq '^(electron/|\.github/workflows/(build-desktop-app\.yaml|openms\.yml)$|requirements[^/]*\.txt$|settings\.json$|app\.py$)'; then
+                run=true
+              else
+                echo "no packaging change; add the label desktop-build to build anyway"
+              fi
+              ;;
+          esac
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+          echo "desktop build: $run" >> "$GITHUB_STEP_SUMMARY"
+
   # Release or build? A released OpenMS ("3.5.0") is downloaded by the build
   # job's "Stage OpenMS TOPP tools" step on every platform, and this job only
   # takes seconds. A branch, tag or commit ("OpenMS/OpenMS@develop",
   # "t0mdavid-m/OpenMS@FDmerge") is built here on all three platforms, once
   # per commit: later runs of the same commit restore the cached packages.
   openms:
+    needs: scope
+    if: needs.scope.outputs.run == 'true'
     uses: ./.github/workflows/openms.yml
     with:
       openms: ${{ inputs.openms || '3.5.0' }}

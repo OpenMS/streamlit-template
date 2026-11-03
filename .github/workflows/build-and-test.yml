@@ -16,6 +16,12 @@ on:
         default: ''
         type: string
 
+# A newer push to a PR cancels its running checks. Pushes to main queue, and
+# GitHub keeps only the newest waiting run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
