@@ -19,6 +19,7 @@ develop, or on a branch of a fork has chosen that OpenMS and is left alone.
 Edits, each only where the old release is written:
   Dockerfile*                     ARG OPENMS_BRANCH=<old ref>  ->  <new ref>
   requirements.txt                pyopenms==<old>              ->  <new>, if on PyPI
+                                  and any pin below what that pyOpenMS requires
   .github/workflows/build-desktop-app.yaml
                                   the default `openms` release ('3.5.0')
   .github/workflows/*.yml         python-version below pyOpenMS's Requires-Python
@@ -70,17 +71,48 @@ def release_tags() -> dict:
     return tags
 
 
-def pypi_release(version: str):
-    """(has files, minimum Python) of pyopenms <version> on PyPI, or None."""
+def pypi_json(name: str, version: str = ""):
+    url = f"https://pypi.org/pypi/{name}/{version + '/' if version else ''}json"
     try:
-        with urllib.request.urlopen(f"https://pypi.org/pypi/pyopenms/{version}/json", timeout=30) as r:
-            data = json.load(r)
+        with urllib.request.urlopen(url, timeout=30) as r:
+            return json.load(r)
     except Exception:  # not published (404) or PyPI unreachable
         return None
-    if not data.get("urls"):
+
+
+def pypi_release(version: str):
+    """(minimum Python, {dependency: minimum version}) of pyopenms <version> on
+    PyPI, or None when it is not published."""
+    data = pypi_json("pyopenms", version)
+    if not data or not data.get("urls"):
         return None
     m = re.search(r">=\s*(\d+)\.(\d+)", data["info"].get("requires_python") or "")
-    return (int(m.group(1)), int(m.group(2))) if m else None, True
+    deps = {}
+    for req in data["info"].get("requires_dist") or []:
+        d = re.match(r"^([A-Za-z0-9_.-]+)\s*>=\s*([0-9][0-9.]*)\s*$", req)
+        if d:  # unconditional requirements only, not extras
+            deps[d.group(1).lower()] = d.group(2)
+    return ((int(m.group(1)), int(m.group(2))) if m else None), deps
+
+
+def vtuple(v: str):
+    return tuple(int(x) for x in re.findall(r"\d+", v)[:3])
+
+
+def newest_release(name: str, python):
+    """Newest final release of <name> on PyPI that installs on <python>."""
+    data = pypi_json(name)
+    if not data:
+        return None
+    for v in sorted((v for v in data.get("releases", {}) if re.fullmatch(r"\d+(\.\d+)*", v)),
+                    key=vtuple, reverse=True):
+        files = [f for f in data["releases"][v] if not f.get("yanked")]
+        if not files:
+            continue
+        m = re.search(r">=\s*(\d+)\.(\d+)", files[0].get("requires_python") or "")
+        if python is None or not m or (int(m.group(1)), int(m.group(2))) <= python:
+            return v
+    return None
 
 
 def ref_like(old_ref: str, tag: str, new) -> str:
@@ -149,9 +181,23 @@ def main() -> int:
         if pin and parse(pin.group(1)) == old:
             pypi = pypi_release(fmt(newest))
             if pypi:
-                min_python = pypi[0]
-                req.write_text(text[:pin.start(1)] + fmt(newest) + text[pin.end(1):])
+                min_python, deps = pypi
+                text = text[:pin.start(1)] + fmt(newest) + text[pin.end(1):]
                 notes.append(f"requirements.txt: pyopenms {pin.group(1)} -> {fmt(newest)}")
+                # A pin below what the new pyOpenMS requires (numpy 1.26 when
+                # pyOpenMS 3.6 needs numpy>=2.0) moves to that package's newest
+                # release; the PR's CI shows whether the rest still fits.
+                for dep, minimum in deps.items():
+                    dpin = re.search(rf"^{re.escape(dep)}==(\S+)\s*$", text, re.M | re.I)
+                    if not dpin or vtuple(dpin.group(1)) >= vtuple(minimum):
+                        continue
+                    latest = newest_release(dep, min_python)
+                    if latest and vtuple(latest) >= vtuple(minimum):
+                        text = text[:dpin.start(1)] + latest + text[dpin.end(1):]
+                        notes.append(f"requirements.txt: {dep} {dpin.group(1)} -> {latest} (pyOpenMS {fmt(newest)} needs {dep}>={minimum})")
+                    else:
+                        notes.append(f"requirements.txt: {dep} {dpin.group(1)} is below pyOpenMS's {dep}>={minimum}; raise it by hand")
+                req.write_text(text)
             else:
                 notes.append(f"requirements.txt: pyopenms {fmt(newest)} is not on PyPI yet, pin left at {pin.group(1)}")
 
