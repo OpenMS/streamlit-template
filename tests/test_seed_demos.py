@@ -148,7 +148,7 @@ def _require_seed_script():
             "The seeding logic is still inlined in "
             "k8s/base/streamlit-deployment.yaml, where it cannot be tested. "
             "Extract it to docker/seed-demos.sh and have the manifest run that "
-            "one copy (docs/kubernetes-deployment.md, "Demo workspaces")."
+            "one copy (docs/kubernetes-deployment.md, section Demo workspaces)."
         )
 
 
