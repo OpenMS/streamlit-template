@@ -196,7 +196,7 @@ and `deploy.k8s.storage` in `app.yaml` to the same value (`python -m utils.app_s
 
 Do **not** rename the PVC, the base `kustomization.yaml` resource list, or the `claimName`s. Kustomize's `namePrefix` already gives the in-cluster workspaces PVC a unique per-fork name.
 
-The StorageClass allows volume expansion, so growing an already-deployed share later is the same edit plus a re-apply.
+The StorageClass allows volume expansion, so growing an already-deployed share later is the same edit plus a re-apply. Shrinking a deployed share is not possible in place (Kubernetes rejects it and Argo CD then stops syncing that commit): the claim, its PV and the share in Horizon have to be deleted and the claim created again, empty. The steps are in `docs/kubernetes-deployment.md`, section on the workspace PVC.
 
 ## Step 6 — Handoff
 

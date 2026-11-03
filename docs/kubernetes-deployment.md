@@ -123,7 +123,7 @@ Redis 7 Deployment (1 replica) + ClusterIP Service on port 6379. Backs the RQ jo
 PersistentVolumeClaim `workspaces-manila-pvc`:
 - `accessModes: [ReadWriteMany]`
 - `storageClassName: openms-manila-nfs` — published once per cluster by `k8s/storage/`; the same for every app
-- `resources.requests.storage: 50Gi` — the size of this app's Manila share, counted against the project's share quota (1000 GiB in total on de.NBI Berlin, shared by every app). Start near the space the app really uses. Manila grows a share in place, so raising the number and re-applying is enough.
+- `resources.requests.storage: 50Gi` — the size of this app's Manila share, counted against the project's share quota (1000 GiB in total on de.NBI Berlin, shared by every app). Start near the space the app really uses. Manila grows a share in place, so raising the number and re-applying is enough. Shrinking is not possible: Kubernetes rejects a request below the claim's current capacity, and Argo CD does not retry a sync that failed, so the app stays OutOfSync. To make a share smaller, delete the claim and the pods that use it, delete its PV (`kubectl get pv | grep <slug>-workspaces-manila-pvc`), and delete the share in Horizon. The class uses `Retain`, so deleting the PV leaves the share and its quota in place. Then sync again: under Argo CD, run `kubectl -n argocd patch application <app> --type merge -p '{"operation":{"initiatedBy":{"username":"<you>"},"sync":{}}}'`. The new claim starts with an empty share.
 
 This is a **different object** from the claims earlier releases used (`workspaces-pvc`, `ReadWriteOnce` on `cinder-csi`, and then `workspaces-nfs-pvc` on a per-app Ganesha server). A bound PVC's spec is immutable apart from `resources.requests`, so the class cannot be changed in place. The old claim is left alone, which is also what makes rollback a single re-apply of the previous manifests. Delete it by hand once the cutover has been stable for a week. Workspaces expire after 7 days, so nothing is migrated.
 
@@ -338,13 +338,25 @@ kubectl -n openms get pvc     # <slug>-workspaces-manila-pvc Bound, RWX; the sha
 
 The first needs Helm on `PATH`. Both applies are idempotent, and on an upgrade the storage one is usually a no-op.
 
-**Coming from the single Cinder volume** (`<slug>-workspaces-pvc`, `ReadWriteOnce` on `cinder-csi`, pods pinned to an `openms.de/memory-tier` node): install the storage tier first and check that a claim on `openms-manila-nfs` binds. Only then let the new overlay reach the cluster. Under Argo CD with automatic sync that is the moment the template sync merges into the app's deployed branch, so the storage tier must already be in place. The overlay's claim has a new name, so it binds a fresh Manila share and the pods move to it, unpinned. The old claim carries `Prune=false`, so Argo CD leaves it and its Cinder volume alone. Delete it by hand once the new deployment has been stable for a week. Running workspaces do not move with it (they expire after 7 days anyway), and demos are reseeded from the image.
+**Coming from the single Cinder volume** (`<slug>-workspaces-pvc`, `ReadWriteOnce` on `cinder-csi`, pods pinned to an `openms.de/memory-tier` node): install the storage tier first and check that a claim on `openms-manila-nfs` binds. Only then let the new overlay reach the cluster. Under Argo CD with automatic sync that is the moment the change merges into the app's deployed branch, so the storage tier must already be in place. An app that lists `k8s/*` under `sync.app_owned` keeps its own manifests through every template sync, so it needs a PR of its own: rename the claim to `workspaces-manila-pvc` (RWX, `openms-manila-nfs`, `Prune=false`), update every `claimName`, and delete the memory tiers' `nodeselector.yaml` patches. Check first that the sizes of all apps' shares fit the project's share quota: a claim beyond it stays `Pending`. The overlay's claim has a new name, so it binds a fresh Manila share and the pods move to it, unpinned. The old claim carries `Prune=false`, so Argo CD leaves it and its Cinder volume alone. Until then Argo CD shows the app as OutOfSync, because the old claim is no longer in git; that is expected. Delete it by hand once the new deployment has been stable for a week. Running workspaces do not move with it (they expire after 7 days anyway), and demos are reseeded from the image.
 
 ### Step 7 — Verify
 
 ```bash
 kubectl -n openms get pods -l app=<your-app-name>
 kubectl -n openms rollout status deployment/<your-app-name>-streamlit --timeout=120s
+kubectl -n openms get pvc <your-app-name>-workspaces-manila-pvc        # Bound, RWX
+kubectl -n openms get pods -o wide | grep <your-app-name>               # spread over several nodes
+kubectl -n openms exec deploy/<your-app-name>-streamlit -c streamlit -- grep nfs /proc/mounts   # vers=3
+```
+
+A file written in the Streamlit pod must be visible in the worker, because the worker runs the workflows:
+
+```bash
+W=/workspaces-<repository-name>   # the workspaces directory, as shown by the mount above
+kubectl -n openms exec deploy/<your-app-name>-streamlit -c streamlit -- touch $W/.check
+kubectl -n openms exec deploy/<your-app-name>-rq-worker -- ls $W/.check
+kubectl -n openms exec deploy/<your-app-name>-streamlit -c streamlit -- rm $W/.check
 ```
 
 Smoke-test the ingress URL in a browser — the app should load, a session cookie `stroute` should be set, and uploading a file should work.
