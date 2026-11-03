@@ -170,6 +170,7 @@ class StreamlitUI:
         name: str = "",
         fallback: Union[List, str] = None,
         suggest_folders: bool = False,
+        list_files: bool = True,
     ) -> None:
         """
         Handles file uploads through the Streamlit interface, supporting both direct
@@ -189,6 +190,8 @@ class StreamlitUI:
                 ``treated_R1`` ...). Folders are labels kept in
                 ``input-folders.json``; ``experimental_design()`` takes them
                 as conditions.
+            list_files (bool, optional): Show the current files below the
+                upload. ``select_input_file(upload=...)`` lists them itself.
         """
         files_dir = Path(self.workflow_dir, "input-files", key)
 
@@ -463,6 +466,8 @@ class StreamlitUI:
         if files_dir.exists() and not any(files_dir.iterdir()):
             shutil.rmtree(files_dir)
 
+        if not list_files:
+            return
         c1, _ = st.columns(2)
         if current_files:
             self._input_folders(key, name, current_files, suggest_folders)
@@ -485,12 +490,15 @@ class StreamlitUI:
             st.warning(f"No **{name}** files!")
 
     def _input_folders(
-        self, key: str, name: str, current_files: List[str], suggest: bool
+        self, key: str, name: str, current_files: List[str], suggest: bool,
+        select: dict = None,
     ) -> None:
         """The current files of upload ``key``, browsed and organized by folder.
 
         A folder is a label (``InputFolders``); the files do not move. With
         ``suggest``, groups read from the file names are offered as folders.
+        With ``select`` (``widget``: the selection's session key, ``paths``:
+        file name -> path, ``multiple``) the table also selects files.
         """
         # "(local) name" marks a referenced file; folders are kept by file name
         names = sorted(
@@ -512,7 +520,8 @@ class StreamlitUI:
             except st.errors.StreamlitAPIException:
                 st.rerun()
 
-        st.markdown(f"**Current {name} files** ({len(names)})")
+        if select is None:
+            st.markdown(f"**Current {name} files** ({len(names)})")
         if suggest and unfiled:
             proposal = {
                 s.file: s.group for s in suggest_groups(names) if s.file in unfiled
@@ -558,10 +567,31 @@ class StreamlitUI:
             n for n in names
             if view is None or folders.get(n, "") == view
         ]
+        selected = set()
+        if select is not None:
+            value = st.session_state.get(
+                f"_pending-{select['widget']}", st.session_state.get(select["widget"])
+            ) or []
+            value = [value] if isinstance(value, str) else value
+            selected = {Path(v).name for v in value}
         table = pd.DataFrame({
             "file": [f"{n} (referenced)" if n in local else n for n in shown],
             "folder": [folders.get(n, "") for n in shown],
         })
+        if select is not None:
+            table.insert(0, "use", [n in selected for n in shown])
+            if select["multiple"]:
+                c1, c2, _ = st.columns([1, 1, 2])
+                if c1.button(
+                    "Select all shown", key=f"{version_key}-all", use_container_width=True
+                ):
+                    self._set_selection(select, sorted(selected | set(shown), key=natural_key))
+                    changed()
+                if c2.button(
+                    "Clear selection", key=f"{version_key}-none", use_container_width=True
+                ):
+                    self._set_selection(select, sorted(selected - set(shown), key=natural_key))
+                    changed()
         edited = st.data_editor(
             table,
             key=f"{version_key}-{st.session_state[version_key]}-{view}",
@@ -570,6 +600,9 @@ class StreamlitUI:
             disabled=["file"],
             use_container_width=True,
             column_config={
+                "use": st.column_config.CheckboxColumn(
+                    "Use", help="Use this file in the analysis."
+                ),
                 "file": st.column_config.TextColumn("File"),
                 "folder": st.column_config.TextColumn(
                     "Folder",
@@ -585,6 +618,17 @@ class StreamlitUI:
         if any(new[n] != folders.get(n, "") for n in shown):
             save_folders(self.workflow_dir, key, {**folders, **new})
             changed()
+        if select is not None:
+            ticked = {n for n, u in zip(shown, edited["use"]) if u}
+            before = selected & set(shown)
+            if ticked != before:
+                if select["multiple"]:
+                    chosen = (selected - set(shown)) | ticked
+                else:  # one file: the one just ticked
+                    chosen = (ticked - before) or ticked
+                    chosen = set(sorted(chosen, key=natural_key)[:1])
+                self._set_selection(select, sorted(chosen, key=natural_key))
+                changed()
 
         if counts:
             with st.popover("Rename or remove a folder"):
@@ -609,6 +653,76 @@ class StreamlitUI:
                 ):
                     rename_folder(self.workflow_dir, key, old, "")
                     changed()
+
+    def _set_selection(self, select: dict, names: List[str]) -> None:
+        """Make the files ``names`` the selection of ``select``.
+
+        The selection widget is not drawn while the pop-out is open, and the
+        browser would send its old value back with the next run, so the new
+        one waits under ``_pending-<widget>`` until the widget is drawn again.
+        """
+        paths = [select["paths"][n] for n in names if n in select["paths"]]
+        st.session_state[f"_pending-{select['widget']}"] = (
+            paths if select["multiple"] else (paths[0] if paths else None)
+        )
+
+    def _browse_input_files(
+        self, key: str, name: str, multiple: bool, upload: dict
+    ) -> None:
+        """The pop-out of ``select_input_file(upload=...)``: the files by
+        folder, which of them are used, and the ways to add more."""
+        plain_name = name.replace("*", "")
+
+        @st.dialog(f"📂 {plain_name}", width="large", on_dismiss="rerun")
+        def browse():
+            tabs = st.tabs(["📁 Your files", "⬆️ Add files"])
+            with tabs[0]:
+                options = self._input_file_options(key)
+                if not options:
+                    st.info("No files yet: add some under **Add files**.")
+                else:
+                    paths = {Path(o).name: o for o in options}
+                    files_dir = Path(self.workflow_dir, "input-files", key).resolve()
+                    shown = [
+                        n if Path(p).resolve().parent == files_dir else f"(local) {n}"
+                        for n, p in paths.items()
+                    ]
+                    self._input_folders(
+                        key, plain_name, shown, upload.get("suggest_folders", False),
+                        select={
+                            "widget": f"{self.parameter_manager.param_prefix}{key}",
+                            "paths": paths,
+                            "multiple": multiple,
+                        },
+                    )
+                c1, c2 = st.columns(2)
+                if c1.button(
+                    "Done", type="primary", key=f"_browse-{key}-done",
+                    use_container_width=True,
+                ):
+                    st.rerun()
+                if options and c2.button(
+                    "🗑️ Remove all files", key=f"_browse-{key}-clear",
+                    use_container_width=True,
+                    help="Takes the files out of the workspace; files on your "
+                    "computer that were only referenced stay where they are.",
+                ):
+                    shutil.rmtree(Path(self.workflow_dir, "input-files", key), ignore_errors=True)
+                    save_folders(self.workflow_dir, key, {})
+                    st.session_state.pop(f"{self.parameter_manager.param_prefix}{key}", None)
+                    self.params.pop(key, None)
+                    self.parameter_manager.save_parameters()
+                    st.rerun(scope="fragment")
+            with tabs[1]:
+                self.upload_targets = {}
+                self.upload_widget(
+                    key, name=plain_name, list_files=False,
+                    **{k: v for k, v in upload.items() if k != "name"},
+                )
+                if data_import_ui.enabled():
+                    data_import_ui.link_import_section(self.workflow_dir, self.upload_targets)
+
+        browse()
 
     def _resolve_browser_cwd(self, key: str, mount_root: Path) -> Path:
         """Read cwd for this widget from session state, confine it to mount_root."""
@@ -790,6 +904,7 @@ class StreamlitUI:
         multiple: bool = False,
         display_file_path: bool = False,
         reactive: bool = False,
+        upload: dict = None,
     ) -> None:
         """
         Presents a widget for selecting input files from those that have been uploaded.
@@ -804,52 +919,105 @@ class StreamlitUI:
                 section to re-render, enabling conditional UI based on this widget's
                 value. Use for widgets that control visibility of other UI elements.
                 Default is False (widget changes are isolated for performance).
+            upload (dict, optional): Arguments of ``upload_widget()`` for this
+                key (``file_types``, ``fallback``, ``suggest_folders``). Adds a
+                **Browse** button that opens the files by folder, to select
+                them and add new ones (upload and import from a link) in one
+                place, so the workflow needs no upload page of its own. The
+                ``fallback`` files are used while none are added.
         """
         if reactive:
-            self._select_input_file_impl(key, name, multiple, display_file_path, reactive)
+            self._select_input_file_impl(key, name, multiple, display_file_path, reactive, upload)
         else:
-            self._select_input_file_fragmented(key, name, multiple, display_file_path, reactive)
+            self._select_input_file_fragmented(key, name, multiple, display_file_path, reactive, upload)
 
     @st.fragment
-    def _select_input_file_fragmented(self, key, name, multiple, display_file_path, reactive):
-        self._select_input_file_impl(key, name, multiple, display_file_path, reactive)
+    def _select_input_file_fragmented(self, key, name, multiple, display_file_path, reactive, upload=None):
+        self._select_input_file_impl(key, name, multiple, display_file_path, reactive, upload)
 
-    def _select_input_file_impl(self, key, name, multiple, display_file_path, reactive):
-        """Internal implementation of select_input_file - contains all the widget logic."""
-        if not name:
-            name = f"**{key}**"
+    def _input_file_options(self, key: str) -> List[str]:
+        """Paths of the files of upload ``key``: copied ones and existing referenced ones."""
         path = Path(self.workflow_dir, "input-files", key)
         if not path.exists():
-            st.warning(f"No **{name}** files!")
-            return
+            return []
         options = sorted(
             str(f) for f in path.iterdir() if "external_files.txt" not in str(f)
         )
-
-        # Check if local files are available
-        external_files = Path(
-            self.workflow_dir, "input-files", key, "external_files.txt"
-        )
-
+        external_files = Path(path, "external_files.txt")
         if external_files.exists():
             with open(external_files, "r") as f:
                 external_files_list = f.read().splitlines()
             # Only make files available that still exist
-            options += [f for f in external_files_list if os.path.exists(f)]
+            options += [f for f in external_files_list if f and os.path.exists(f)]
+        return options
+
+    def _ensure_fallback(self, key: str, fallback) -> None:
+        """Copy the example files of upload ``key`` while it has no files."""
+        if not fallback or self._input_file_options(key):
+            return
+        files_dir = Path(self.workflow_dir, "input-files", key)
+        files_dir.mkdir(parents=True, exist_ok=True)
+        for f in [fallback] if isinstance(fallback, str) else fallback:
+            if Path(f).exists() and not Path(files_dir, Path(f).name).exists():
+                shutil.copy(f, Path(files_dir, Path(f).name))
+
+    def _select_input_file_impl(self, key, name, multiple, display_file_path, reactive, upload=None):
+        """Internal implementation of select_input_file - contains all the widget logic."""
+        if not name:
+            name = f"**{key}**"
+        if upload is not None:
+            self._ensure_fallback(key, upload.get("fallback"))
+        options = self._input_file_options(key)
+        widget = f"{self.parameter_manager.param_prefix}{key}"
+        pending = f"_pending-{widget}"
+        if pending in st.session_state:  # chosen in the Browse pop-out
+            value = st.session_state.pop(pending)
+            st.session_state[widget] = (
+                [v for v in value if v in options] if multiple
+                else (value if value in options else (options[0] if options else None))
+            )
+            self.params[key] = st.session_state[widget]
+        if upload is None and not Path(self.workflow_dir, "input-files", key).exists():
+            st.warning(f"No **{name}** files!")
+            return
         if (key in self.params.keys()) and isinstance(self.params[key], list):
             self.params[key] = [f for f in self.params[key] if f in options]
 
         widget_type = "multiselect" if multiple else "selectbox"
         if multiple:
             self._select_by_folder(key, options)
-        self.input_widget(
-            key,
-            name=name,
-            widget_type=widget_type,
-            options=options,
-            display_file_path=display_file_path,
-            reactive=reactive,
-        )
+        if upload is None:
+            self.input_widget(
+                key,
+                name=name,
+                widget_type=widget_type,
+                options=options,
+                display_file_path=display_file_path,
+                reactive=reactive,
+            )
+            return
+        c1, c2 = st.columns([5, 1], vertical_alignment="bottom")
+        with c1:
+            if options:
+                self.input_widget(
+                    key,
+                    name=name,
+                    widget_type=widget_type,
+                    options=options,
+                    display_file_path=display_file_path,
+                    reactive=reactive,
+                )
+            else:
+                st.markdown(name)
+                st.caption(f"No {name.replace('*', '')} files yet: add them with **Browse**.")
+        if c2.button(
+            "📂 Browse",
+            key=f"_browse-{key}",
+            use_container_width=True,
+            help="Your files by folder: choose which to use, sort them into "
+            "folders and add new ones.",
+        ):
+            self._browse_input_files(key, name, multiple, upload)
 
     def _select_by_folder(self, key: str, options: List[str]) -> None:
         """Buttons that select the files of one folder (see ``upload_widget``)."""

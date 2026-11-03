@@ -38,7 +38,16 @@ class Workflow(WorkflowManager):
     def configure(self) -> None:
         # Allow users to select mzML files for the analysis. reactive=True so
         # the experimental design table follows the selection.
-        self.ui.select_input_file("mzML-files", multiple=True, reactive=True)
+        # upload= adds a Browse button: the files by folder, and adding more,
+        # without going back to the upload page.
+        self.ui.select_input_file(
+            "mzML-files", multiple=True, reactive=True,
+            upload=dict(
+                file_types=["mzML", "raw", "d"],
+                fallback=[str(f) for f in Path("example-data", "mzML").glob("*.mzML")],
+                suggest_folders=True,
+            ),
+        )
 
         # Create tabs for different analysis steps.
         t = st.tabs(
