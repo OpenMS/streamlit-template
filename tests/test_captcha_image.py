@@ -21,3 +21,24 @@ def test_captcha_image_is_an_inline_png():
 
 def test_each_text_gets_its_own_image():
     assert captcha_image_html("AB12C") != captcha_image_html("XY34Z")
+
+
+def test_the_requested_text_is_drawn(monkeypatch):
+    import io
+
+    import src.common.captcha_ as captcha_
+
+    drawn = []
+
+    class FakeCaptcha:
+        def __init__(self, width, height):
+            pass
+
+        def generate(self, text):
+            drawn.append(text)
+            return io.BytesIO(b"\x89PNG\r\n\x1a\n")
+
+    monkeypatch.setattr(captcha_, "ImageCaptcha", FakeCaptcha)
+    captcha_.captcha_image_html("AB12C")
+    captcha_.captcha_image_html("XY34Z")
+    assert drawn == ["AB12C", "XY34Z"]
