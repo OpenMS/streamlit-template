@@ -39,7 +39,7 @@
         ]
     },
     "developer_mode": {
-        "password_sha256": "175550fe24ea744ec1bc4c56c1724c81913d90b7143a7153ae6c74a1ac66d05e"
+        "password_sha256": "03d946ae9f6ea81cb0134dc593dee9764d2707116ec39aa14d93989af365d12e"
     },
     "workspace_sync": {
         "enabled": true,
