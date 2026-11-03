@@ -6,6 +6,12 @@ on:
   pull_request:
     branches: [ "main" ]
 
+# A newer push to a PR cancels its running checks. Pushes to main queue, and
+# GitHub keeps only the newest waiting run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   build:
     runs-on: ubuntu-latest
