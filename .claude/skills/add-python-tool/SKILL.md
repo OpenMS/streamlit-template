@@ -58,7 +58,7 @@ DEFAULTS = [
         "key": "advanced-setting",
         "value": 5,
         "name": "Advanced Setting",
-        "help": "Only shown in advanced mode.",
+        "help": "Shown in the advanced parameters expander.",
         "advanced": True,
     },
     {
@@ -106,7 +106,7 @@ self.executor.run_python("tool_name", {"in": input_files})
 | `max` | No | number | Maximum value for numeric inputs |
 | `step_size` | No | number | Step size for numeric inputs |
 | `widget_type` | No | str | Exactly one of `text`, `textarea`, `number`, `selectbox`, `slider`, `checkbox`, `multiselect`, `password`, `auto`. **Anything else renders nothing at all** — the dispatch is a run of `elif`s with no final `else` (`StreamlitUI.py:593`). Not Streamlit's function names: `number_input` is not one of these. |
-| `advanced` | No | bool | If `True`, only shown when user expands advanced parameters |
+| `advanced` | No | bool | If `True`, shown in a collapsed "advanced parameters" expander below the others |
 
 **Every key you name here is stored as `<script>.py:<key>`.** `input_python()`
 prefixes it with the script filename, under `_general`. It matters the moment

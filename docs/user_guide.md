@@ -83,7 +83,7 @@ Parameter presets allow you to quickly apply optimized parameter configurations 
 ### Using Presets
 
 1. Navigate to the parameter configuration page
-2. Look for the **Parameter Presets** section below the "Show advanced parameters" toggle
+2. Look for the **Parameter Presets** section at the top of the parameter page
 3. Hover over a preset button to see its description
 4. Click a preset to apply its optimized parameters
 5. A confirmation message will appear when the preset is applied
