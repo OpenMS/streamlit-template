@@ -110,6 +110,19 @@ def _plain(value):
     return value
 
 
+def _as_str_list(value) -> list[str]:
+    """A list parameter's value as a list of str: bytes items decoded, and
+    newline-separated text (as params.json stores lists) split into items,
+    empty ones included, as CommandExecutor.run_topp() passes them."""
+    if isinstance(value, (list, tuple)):
+        return [v.decode() if isinstance(v, bytes) else str(v) for v in value]
+    if isinstance(value, bytes):
+        value = value.decode()
+    if value is None or value == "":
+        return []
+    return str(value).split("\n")
+
+
 def _short(value) -> str:
     """A parameter value for a caption or tooltip."""
     if isinstance(value, list):
@@ -1510,8 +1523,10 @@ class StreamlitUI:
             name = key.decode().split(":1:")[1]
             default = defaults.get(name, entry.value)
             value = user.get(name, default)
-            if isinstance(entry.value, list) and isinstance(value, str):
-                value = value.split("\n") if value else []
+            if isinstance(entry.value, list):
+                # pyOpenMS gives list items as bytes, and params.json or
+                # custom_defaults can hold a list as newline-separated text
+                default, value = _as_str_list(default), _as_str_list(value)
             rows.append(
                 {
                     "name": name,
@@ -1661,8 +1676,8 @@ class StreamlitUI:
         if isinstance(default, bool):
             current = value if isinstance(value, bool) else str(value).lower() == "true"
             c_value.checkbox(label, value=current, **common)
-        elif isinstance(default, list):
-            items = [str(v) for v in value] if isinstance(value, list) else str(value).split("\n")
+        elif row["is_list"]:
+            items = _as_str_list(value)
             if row["valid_strings"]:
                 c_value.multiselect(
                     label,

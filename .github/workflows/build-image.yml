@@ -139,8 +139,8 @@ jobs:
           # the template it names the app's own image, and a hardcoded
           # template ref leaves every pod in ErrImageNeverPull.
           overlay=k8s/overlays/prod/kustomization.yaml
-          name=$(awk '$1 == "newName:" {print $2; exit}' "$overlay")
-          tag=$(awk '$1 == "newTag:" {print $2; exit}' "$overlay")
+          name=$(awk '$1 == "newName:" {print $2; exit}' "$overlay" | tr -d "\"'")
+          tag=$(awk '$1 == "newTag:" {print $2; exit}' "$overlay" | tr -d "\"'")
           if [ -z "$name" ] || [ -z "$tag" ]; then
             echo "::error::$overlay has no images newName/newTag to tag the kind image with"
             exit 1

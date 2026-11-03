@@ -381,6 +381,10 @@ class WorkflowManager:
         A multi-run workflow first shows a run picker and points
         self.results_dir at the chosen run.
         """
+        if self.multi_run:
+            from .run_widgets import show_import_notice
+
+            show_import_notice(self.runs)
         if self.multi_run and not self.select_run():
             from .run_widgets import run_import
 

@@ -60,7 +60,11 @@ case "$(uname -s)" in
       export CSC_FOR_PULL_REQUEST=true
       # Notarize with an App Store Connect API key, or else with an Apple ID
       # and an app-specific password.
-      if [[ -n "${APPLE_API_KEY_CONTENT:-}" ]]; then
+      if [[ -n "${APPLE_API_KEY_CONTENT:-}" ]] && { [[ -z "${APPLE_API_KEY_ID:-}" ]] || [[ -z "${APPLE_API_ISSUER:-}" ]]; } && [[ -z "${APPLE_ID:-}" ]]; then
+        echo "::error::APPLE_API_KEY is set, but APPLE_API_KEY_ID or APPLE_API_ISSUER is empty: notarization needs all three"
+        exit 1
+      fi
+      if [[ -n "${APPLE_API_KEY_CONTENT:-}" && -n "${APPLE_API_KEY_ID:-}" && -n "${APPLE_API_ISSUER:-}" ]]; then
         printf '%s\n' "$APPLE_API_KEY_CONTENT" > "${RUNNER_TEMP:-/tmp}/AuthKey.p8"
         trap 'rm -f "${RUNNER_TEMP:-/tmp}/AuthKey.p8"' EXIT
         export APPLE_API_KEY="${RUNNER_TEMP:-/tmp}/AuthKey.p8" APPLE_API_KEY_ID APPLE_API_ISSUER

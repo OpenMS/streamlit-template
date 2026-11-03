@@ -87,7 +87,9 @@ def get_branding(theme: str | None = None) -> dict[str, str]:
       * "page_icon": the browser tab icon (one image; the tab ignores the theme),
       * "logo": the image at the top of the sidebar,
       * "logo_icon": the smaller image shown when the sidebar is collapsed,
-      * "app_icon": the image an app page shows next to its title,
+      * "app_icon": an icon for the app's own pages to use, e.g. next to a
+        title (the template shows it nowhere itself; it is also the default
+        "logo_icon"),
       * "logo_size": "small", "medium" (default) or "large"; a wide logo with
         the app name in it reads better at "large".
 
