@@ -21,7 +21,7 @@ commonLabels:
 images:
   - name: openms-streamlit
     newName: ghcr.io/openms/streamlit-template
-    newTag: v2.0.0-full
+    newTag: v2.1.0-full
 
 patches:
   # This app's values belong here, not in k8s/base or k8s/components: those
