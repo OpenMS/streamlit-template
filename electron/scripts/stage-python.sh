@@ -71,8 +71,11 @@ fi
 # pyOpenMS and scikit-learn each bundle libomp.dylib. Two copies in one process
 # abort it ("OMP: Error #15", or #179 when duplicates are allowed), so every
 # other copy becomes a link to pyOpenMS's, which dyld then loads only once.
+# pyOpenMS's must be the one kept: libOpenMS needs symbols an older libomp
+# lacks (___kmpc_dispatch_deinit). pyOpenMS 3.5 has it at pyopenms/, 3.6 at
+# pyopenms/.dylibs/.
 if [[ $triple == *apple-darwin ]]; then
-  keep="$site/pyopenms/libomp.dylib"
+  keep=$(find "$site/pyopenms" -name libomp.dylib -type f | head -n 1)
   find "$site" -name libomp.dylib -type f | while read -r lib; do
     [[ -f $keep ]] || keep=$lib
     [[ $lib == "$keep" ]] && continue
