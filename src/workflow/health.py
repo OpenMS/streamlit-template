@@ -77,6 +77,16 @@ STORAGE_HEARTBEAT_TTL = 120
 # before the mount is touched, so a wedged node keeps re-registering and stays
 # visible for as long as its worker is alive.
 STORAGE_NODE_TTL = 300
+# How recently a node must have re-registered to count as *still probing*.
+# Three probe periods. A node whose mount has wedged keeps re-registering every
+# period (the registration is written before the mount is touched), so its
+# registration is never older than one period plus a probe's start-up. A node
+# whose worker went away - a drain, a rollout that moved the pod, a deleted
+# node - stops re-registering, and its last registration is as old as its last
+# heartbeat. Telling the two apart by this age is what keeps a worker moving to
+# another node from showing as "stopped confirming the shared volume" for the
+# three minutes between its heartbeat expiring and its registration expiring.
+STORAGE_NODE_PROBING_WINDOW = 90
 
 DEFAULT_REDIS_URL = "redis://localhost:6379/0"
 DEFAULT_WORKSPACES_DIR = "/workspaces-streamlit-template"
@@ -496,7 +506,10 @@ def get_storage_status() -> dict:
       an operator to debug the wrong layer.
     - `{"available": True, "state": "connected"}` - every expected node's mount
       answered within its TTL.
-    - `{"available": True, "state": "degraded"}` - some did and some did not.
+    - `{"available": True, "state": "degraded"}` - some did and some did not,
+      while still probing. A node whose worker stopped probing altogether (a
+      drain, a pod that moved) is listed under `departed_nodes` instead and
+      does not make the state degraded.
       This is the case per node keys exist for: with one shared key, or by
       collapsing the keys with `any()`, a healthy node would cover for a node
       whose mount is wedged and the indicator would stay green through a real
@@ -506,8 +519,9 @@ def get_storage_status() -> dict:
 
     Returns:
         dict: Empty when not applicable, otherwise `available`, `state`,
-            `nodes` (reporting a healthy mount), `stale_nodes` (expected but
-            silent) and, when Redis is down, `error`.
+            `nodes` (reporting a healthy mount), `stale_nodes` (still probing,
+            mount silent), `departed_nodes` (no longer probing) and, when Redis
+            is down, `error`.
     """
     redis_url = os.environ.get("REDIS_URL")
     if not redis_url:
@@ -523,12 +537,15 @@ def get_storage_status() -> dict:
         # keyspace, and this runs from a sidebar fragment every 5 seconds.
         healthy = _scan_suffixes(client, STORAGE_HEARTBEAT_PREFIX)
         expected = _scan_suffixes(client, STORAGE_NODE_PREFIX)
+        silent = expected - healthy
+        ages = _registration_ages(client, silent)
     except Exception as e:
         return {
             "available": False,
             "state": "unknown",
             "nodes": [],
             "stale_nodes": [],
+            "departed_nodes": [],
             "error": str(e),
         }
 
@@ -538,7 +555,12 @@ def get_storage_status() -> dict:
     if not expected:
         return {}
 
-    stale = expected - healthy
+    # A silent node that is still re-registering is still probing and its
+    # mount did not answer: the fault. One that stopped re-registering has no
+    # worker left probing there - it moved or stopped - which says nothing
+    # about its mount. Its registration expires on its own.
+    stale = {node for node in silent if ages.get(node, 0) <= STORAGE_NODE_PROBING_WINDOW}
+    departed = silent - stale
     if not healthy:
         state = "unreachable"
     elif stale:
@@ -551,7 +573,31 @@ def get_storage_status() -> dict:
         "state": state,
         "nodes": sorted(healthy),
         "stale_nodes": sorted(stale),
+        "departed_nodes": sorted(departed),
     }
+
+
+def _registration_ages(client, nodes) -> dict:
+    """
+    Seconds since each node last registered, from the key's remaining TTL.
+
+    The TTL, not the timestamp the key carries: the writer's clock is another
+    node's, and a skew between nodes would move a node across the probing
+    window. A key without a TTL (or one that vanished since the SCAN) counts as
+    just registered, which keeps it among the stale nodes - when in doubt,
+    show the fault.
+    """
+    nodes = sorted(nodes)
+    if not nodes:
+        return {}
+    pipeline = client.pipeline()
+    for node in nodes:
+        pipeline.ttl(storage_node_key(node))
+    ages = {}
+    for node, ttl in zip(nodes, pipeline.execute()):
+        ttl = int(ttl) if ttl is not None else -1
+        ages[node] = STORAGE_NODE_TTL - ttl if ttl >= 0 else 0
+    return ages
 
 
 def _scan_suffixes(client, prefix: str) -> set:

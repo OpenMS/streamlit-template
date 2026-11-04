@@ -202,6 +202,39 @@ def test_a_wedged_node_is_not_masked_by_a_healthy_one(fake_redis, monkeypatch, t
     )
 
 
+def test_a_worker_that_moved_away_is_not_a_wedged_mount(fake_redis, tmp_path):
+    """
+    A worker that left a node - a drain, a rollout that placed the new pod
+    elsewhere - stops probing there. Its heartbeat expires two minutes later,
+    its registration three minutes after that. In between, the node is
+    expected but silent, which used to read as "stopped confirming the shared
+    volume" for a mount nobody was using any more. What separates the two is
+    whether the node still re-registers: a wedged one does, every period.
+    """
+    assert _probe_node("node-a", tmp_path) is True
+    assert _probe_node("node-b", tmp_path) is True
+
+    # node-b's worker left: its heartbeat has expired and its registration is
+    # as old as its last heartbeat (written together, TTL counting down).
+    fake_redis.delete(health.storage_heartbeat_key("node-b"))
+    fake_redis.expire(
+        health.storage_node_key("node-b"),
+        health.STORAGE_NODE_TTL - health.STORAGE_HEARTBEAT_TTL,
+    )
+
+    status = health.get_storage_status()
+    assert status.get("state") == "connected", status
+    assert set(status.get("departed_nodes") or []) == {"node-b"}, status
+    assert not status.get("stale_nodes"), status
+
+    # The same node, still probing: it re-registered just now. That is the
+    # wedged mount, and it must stay visible.
+    health.register_storage_node("node-b")
+    status = health.get_storage_status()
+    assert status.get("state") == "degraded", status
+    assert set(status.get("stale_nodes") or []) == {"node-b"}, status
+
+
 def test_local_mode_reports_nothing(monkeypatch):
     """No REDIS_URL means local mode; the sidebar renders no indicator at all."""
     monkeypatch.delenv("REDIS_URL", raising=False)
@@ -800,6 +833,19 @@ def test_probe_timing_outlasts_the_nfs_grace_period():
     assert health.STORAGE_HEARTBEAT_TTL < to_not_ready, (
         "the indicator must go red before the worker is marked NotReady: "
         "degradation should be visible before it is fatal"
+    )
+
+    # A wedged node re-registers once per period, a probe at most
+    # kubelet_timeout late; the window must cover that, or a wedged node is
+    # dismissed as departed. And a departed node's registration must be past
+    # the window by the time its heartbeat expires, or it shows as degraded.
+    assert health.STORAGE_NODE_PROBING_WINDOW > period + kubelet_timeout, (
+        "a node whose mount has wedged would drop out of the indicator between "
+        "two of its registrations"
+    )
+    assert health.STORAGE_NODE_PROBING_WINDOW < health.STORAGE_HEARTBEAT_TTL, (
+        "a worker that moved away would show its old node as degraded until "
+        "the registration expires"
     )
 
     inner = re.search(r"timeout\s+-k\s+\d+\s+(\d+)", _readiness_probe_script())
