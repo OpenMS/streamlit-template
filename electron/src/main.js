@@ -5,7 +5,7 @@ const fs = require("fs");
 const path = require("path");
 const { app, BrowserWindow, Menu, dialog, shell } = require("electron");
 const payload = require("./payload");
-const { checkForUpdate } = require("./update-check");
+const { checkForUpdate, noticeScript } = require("./update-check");
 
 // Set by the CI smoke test: exit 0 once the app page has loaded, 1 on failure.
 const SMOKE_TEST = process.env.OPENMS_APP_SMOKE_TEST === "1";
@@ -118,18 +118,12 @@ function keepLinksInsideApp(win, appUrl) {
   });
 }
 
+// Never blocks start-up or the window: the check runs after the page loaded,
+// and a newer release shows a small notice over the page (see noticeScript).
 async function notifyAboutUpdate(settings) {
   const update = await checkForUpdate(settings);
-  if (!update || !mainWindow) return;
-  const { response } = await dialog.showMessageBox(mainWindow, {
-    type: "info",
-    message: `A new version (${update.version}) is available.`,
-    detail: `You are running ${settings.version}. The installer is on the release page.`,
-    buttons: ["Open release page", "Later"],
-    defaultId: 0,
-    cancelId: 1,
-  });
-  if (response === 0) shell.openExternal(update.url);
+  if (!update || !mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.webContents.executeJavaScript(noticeScript(update, settings.version)).catch(() => {});
 }
 
 function failed(message, logFile) {
