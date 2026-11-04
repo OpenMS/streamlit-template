@@ -106,4 +106,4 @@ deploy:
   images: [full-amd64, simple-amd64, full-arm64]
 ```
 
-The default is all four. The kind tests and the multi-arch tags then cover only the listed images.
+The default is all four. The kind tests and the multi-arch tags then cover only the listed images. `full` and `simple` stand for that image on both architectures: an app without TOPP tools sets `images: [simple]` and skips the two from-source OpenMS builds.

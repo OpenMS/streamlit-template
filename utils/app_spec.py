@@ -183,7 +183,7 @@ def consistency_errors(spec: dict, root: Path | str = ".") -> list[str]:
         variant = "full" if new_tag == "latest" else new_tag.rpartition("-")[2]
         images = spec.get("deploy", {}).get("images")
         if images and variant in ("full", "simple") and not any(
-            i.startswith(f"{variant}-") for i in images
+            i == variant or i.startswith(f"{variant}-") for i in images
         ):
             errors.append(
                 f"{rel} deploys the {variant} image ({new_tag!r}), but "

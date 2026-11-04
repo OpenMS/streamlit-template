@@ -52,6 +52,9 @@ jobs:
           if [ -f app.yaml ]; then
             list=$(yq -o=json -I=0 ".deploy.images // $all" app.yaml)
           fi
+          # `full` and `simple` are shorthand for that image on both
+          # architectures, so `[simple]` is an app without TOPP tools.
+          list=$(jq -c '[.[] | if . == "full" or . == "simple" then (. + "-amd64"), (. + "-arm64") else . end] | reduce .[] as $i ([]; if index([$i]) then . else . + [$i] end)' <<< "$list")
           bad=$(jq -r --argjson all "$all" '.[] | select(. as $i | $all | index($i) | not)' <<< "$list")
           if [ -n "$bad" ]; then
             echo "::error file=app.yaml::deploy.images lists unknown images: $bad (known: full-amd64, simple-amd64, full-arm64, simple-arm64)"
@@ -540,7 +543,11 @@ jobs:
       && needs.images.outputs.apptainer != '[]'
       && (needs.build-full-amd64.result == 'success' || !contains(fromJSON(needs.images.outputs.list), 'full-amd64'))
       && (needs.build-simple-amd64.result == 'success' || !contains(fromJSON(needs.images.outputs.list), 'simple-amd64'))
-    runs-on: ubuntu-latest
+    # Pinned to 24.04, not ubuntu-latest: the apptainer .deb depends on
+    # libfuse3-3, which Ubuntu 26.04 (ubuntu-latest since November 2026) no
+    # longer ships, so setup-apptainer's `apt-get install` fails there with
+    # "sudo exit code 100". Move on once upstream publishes a .deb for 26.04.
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
@@ -751,7 +758,8 @@ jobs:
     # Not for a dispatch with openms_branch: its SIF would take the default
     # build's <ref>/<sha> tags.
     if: github.event_name != 'pull_request' && (inputs.openms_branch || '') == ''
-    runs-on: ubuntu-latest
+    # 24.04 for the same libfuse3-3 reason as test-apptainer.
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       packages: write

@@ -187,6 +187,8 @@ def test_deploy_images_lists_known_images_only(spec):
     ok = copy.deepcopy(spec)
     ok["deploy"]["images"] = ["full-amd64", "simple-amd64", "full-arm64"]
     assert app_spec.schema_errors(ok) == []
+    ok["deploy"]["images"] = ["simple"]
+    assert app_spec.schema_errors(ok) == []
     for images in (["simple-riscv64"], [], ["full-amd64", "full-amd64"]):
         bad = copy.deepcopy(spec)
         bad["deploy"]["images"] = images
@@ -204,4 +206,8 @@ def test_deploy_images_must_build_the_overlay_variant(tmp_path):
     s["deploy"] = {"images": ["simple-amd64"]}
     assert any("deploys the full image" in e for e in app_spec.consistency_errors(s, root))
     s["deploy"] = {"images": ["full-amd64", "simple-amd64"]}
+    assert not any("deploys the" in e for e in app_spec.consistency_errors(s, root))
+    s["deploy"] = {"images": ["simple"]}
+    assert any("deploys the full image" in e for e in app_spec.consistency_errors(s, root))
+    s["deploy"] = {"images": ["full", "simple"]}
     assert not any("deploys the" in e for e in app_spec.consistency_errors(s, root))

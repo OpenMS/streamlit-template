@@ -308,19 +308,6 @@ def copy_demo_workspace(demo_name: str, target_path: Path) -> bool:
         return False
 
 
-def _keep_fragment_non_empty():
-    """Give an auto-rerunning fragment one element even when it shows nothing.
-
-    Precaution against a white page reported in Firefox after a page switch,
-    with the frontend throwing "Bad 'setIn' index". The suspected cause is a
-    `run_every` fragment that renders no element on a run, so a later delta
-    targets a block the browser no longer has. An empty placeholder keeps the
-    fragment's block in the element tree on every run.
-    """
-    st.empty()
-
-
-@st.fragment(run_every=5)
 def monitor_hardware():
     """
     Display CPU and RAM of the machine running this Streamlit process.
@@ -345,10 +332,8 @@ def monitor_hardware():
     st.caption(f"Last fetched at: {time.strftime('%H:%M:%S')}")
 
 
-@st.fragment(run_every=5)
 def monitor_queue():
     """Display queue metrics in sidebar (online mode only)"""
-    _keep_fragment_non_empty()
     try:
         from src.workflow.health import get_queue_metrics
 
@@ -390,7 +375,6 @@ def monitor_queue():
         pass  # Silently fail if queue not available
 
 
-@st.fragment(run_every=5)
 def monitor_storage():
     """
     Display shared storage status in sidebar.
@@ -398,7 +382,7 @@ def monitor_storage():
     Reads Redis and nothing else. The workspace volume is a shared NFS mount
     online, and its failure mode is a hang rather than an error: a `stat` on a
     `hard` mount that has wedged blocks in uninterruptible sleep and cannot be
-    killed, so a fragment re-running every 5 seconds would accumulate unkillable
+    killed, so a panel re-reading it on every rerun would accumulate unkillable
     threads - this indicator would become the very hang it exists to report.
     The mount is touched by the rq-worker readiness probe instead, which
     publishes a per node heartbeat whose Redis TTL is the liveness mechanism.
@@ -407,7 +391,6 @@ def monitor_storage():
     docker-compose, apptainer - because a red tick for a mechanism that is not
     deployed is a false alarm pointing at the wrong layer.
     """
-    _keep_fragment_non_empty()
     try:
         from src.workflow.health import get_storage_status
 
@@ -475,20 +458,41 @@ def render_resource_utilization():
       Redis and no queue, so the psutil panel is the only content there is.
       Gating it on `online_deployment` left the expander empty.
     """
+    with st.expander("📊 **Resource Utilization**"):
+        _resource_panels()
+
+
+@st.fragment
+def _resource_panels():
+    """
+    The panels of the "Resource Utilization" expander, refreshed by a button.
+
+    They update on every rerun of the page and when the button reruns just this
+    fragment. They used to rerun themselves with `run_every=5`, which crashed
+    online pages with "Bad 'setIn' index": a timer that fired as the user
+    switched pages sent its rerun tagged with the page being left, the server
+    ran it after the new page, and the browser took it for a page change,
+    cleared the page and then received the panel's elements for a sidebar it
+    no longer had. The window is one network round trip, so it showed online
+    and not locally.
+    """
     from src.workflow.health import get_queue_metrics, queue_workers_are_remote
 
-    with st.expander("📊 **Resource Utilization**"):
-        # `{}` means "no queue in this deployment" - the same distinction
-        # get_queue_metrics() already draws for the metrics themselves.
-        metrics = get_queue_metrics()
-        if metrics:
-            monitor_queue()
-            monitor_storage()
-        # Short-circuited on `available`: an unreachable queue is not evidence
-        # that the workers are elsewhere, and this saves the second round trip
-        # in exactly the case where Redis is slow to answer.
-        if not (metrics.get("available") and queue_workers_are_remote()):
-            monitor_hardware()
+    st.button(
+        "Refresh", icon=":material/refresh:", key="resource-utilization-refresh",
+        type="tertiary", help="Fetch the current numbers",
+    )
+    # `{}` means "no queue in this deployment" - the same distinction
+    # get_queue_metrics() already draws for the metrics themselves.
+    metrics = get_queue_metrics()
+    if metrics:
+        monitor_queue()
+        monitor_storage()
+    # Short-circuited on `available`: an unreachable queue is not evidence
+    # that the workers are elsewhere, and this saves the second round trip
+    # in exactly the case where Redis is slow to answer.
+    if not (metrics.get("available") and queue_workers_are_remote()):
+        monitor_hardware()
 
 
 def load_params(default: bool = False) -> dict[str, Any]:
