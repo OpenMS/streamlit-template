@@ -2104,7 +2104,7 @@ class StreamlitUI:
         # The upload widgets fill self.upload_targets, so the Upload tab is
         # drawn first and the import tabs route files by it.
         upload, cloud, pride = st.tabs(
-            ["📁 Upload", "☁️ Import from cloud", "🧬 Import from PRIDE"]
+            ["💻 Data on your computer", "☁️ Cloud data", "🧬 Import from PRIDE"]
         )
         with upload:
             self._upload_tab(custom_upload_function)
