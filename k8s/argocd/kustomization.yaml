@@ -1,0 +1,23 @@
+# Everything Argo CD needs to deploy this app, synced by Argo CD itself.
+#
+# Bootstrap once per cluster, by an admin (needs Argo CD and Image Updater
+# >= 1.0 in the argocd namespace):
+#
+#   kubectl apply -k 'https://github.com/OpenMS/streamlit-template//k8s/argocd?ref=main'
+#
+# (or `kubectl apply -k k8s/argocd/` from a checkout). That creates the
+# `streamlit-template-argocd` Application, which from then on keeps this
+# folder - itself, the app's Application and its ImageUpdater - equal to git.
+# A change here reaches the cluster on merge; nothing is applied by hand
+# again. Nothing in this folder holds a secret.
+#
+# Not part of the prod overlay: the overlay forces every resource into
+# `openms`, these belong in `argocd`. See docs/kubernetes-deployment.md,
+# "GitOps with Argo CD".
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - argocd-application.yaml
+  - application.yaml
+  - image-updater.yaml
