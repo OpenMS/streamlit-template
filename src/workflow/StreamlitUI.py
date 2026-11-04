@@ -640,6 +640,28 @@ class StreamlitUI:
                 st.success(f"Added {added} file(s) from `{cwd}`.")
                 st.rerun(scope="fragment")
 
+    def uniprot_proteome_download(self, key: str, name: str = "") -> None:
+        """Search UniProt proteomes by organism name or taxonomy ID and download
+        the chosen one (reviewed entries only, or all of them) as FASTA into the
+        folder of ``upload_widget(key)``, as the selected file of
+        ``select_input_file(key)``. Call it below that ``upload_widget``.
+        """
+        from src.workflow.uniprot_ui import proteome_download
+
+        proteome_download(self, key, name)
+
+    def select_protein_database(
+        self, key: str, name: str = "Protein database", reactive: bool = False
+    ) -> None:
+        """Choose a protein database on a configure page: one of the files of
+        ``upload_widget(key)`` (``select_input_file``), or a UniProt proteome
+        searched and downloaded right here into that upload folder. Either way
+        the selection is ``self.params[key]``.
+        """
+        from src.workflow.uniprot_ui import database_choice
+
+        database_choice(self, key, name, reactive)
+
     def select_input_file(
         self,
         key: str,

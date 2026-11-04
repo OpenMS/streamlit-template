@@ -173,6 +173,13 @@
           }
         },
         "docker_compose": {"type": "boolean"},
+        "images": {
+          "type": "array",
+          "description": "Container images build-and-test.yml builds and publishes. Default [full, simple]; an app that needs no TOPP tools lists only simple.",
+          "items": {"enum": ["full", "simple"]},
+          "contains": {"const": "simple"},
+          "uniqueItems": true
+        },
         "desktop": {
           "type": "array",
           "items": {"enum": ["windows", "macos", "linux"]},
