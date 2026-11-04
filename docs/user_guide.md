@@ -35,10 +35,11 @@ In the OpenMS web application, workspaces are designed to keep your analysis org
        ```
      - This sets the upload limit to 500MB for the current session.
      
-- **Import from a link**: below the uploads of a workflow, paste a link instead of uploading. This is the way in for data that is too large for the browser upload or already sits in the cloud. Accepted links:
+- **Cloud data** and **Import from PRIDE**: the upload page of a workflow has three tabs, **Data on your computer**, **Cloud data** and **Import from PRIDE**. The import tabs take a link or a PRIDE accession instead of an upload. This is the way in for data that is too large for the browser upload or already sits in the cloud. Accepted links:
   - a file over HTTP(S), including presigned S3 links and Swift TempURLs to private objects;
   - a tar, tar.gz or zip archive (e.g. `https://a3s.fi/swift/v1/<bucket>/<name>.tar` on CSC Allas);
   - a public S3 or Swift folder (a link ending in `/`);
+  - in **Import from PRIDE**, a PRIDE Archive dataset to reanalyse: its accession (`PXD000001`), its PRIDE or ProteomeXchange page, or its DOI (pasted in **Cloud data**, these work too). The mzML, Thermo RAW and FASTA files go to the matching upload; when a run is there both as mzML and as a RAW file, only the mzML is ticked at first. A workflow that takes RAW files converts them to mzML when it runs;
   - a Zenodo record or Figshare article (page link or DOI);
   - a OneDrive or SharePoint link shared with "Anyone with the link": files and folders from personal OneDrive, single files from SharePoint / OneDrive for Business (their folders can only be read with a sign-in).
 
