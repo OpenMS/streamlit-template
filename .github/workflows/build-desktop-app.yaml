@@ -174,7 +174,7 @@ jobs:
     - name: Copy the app into the payload
       run: |
         p=electron/payload
-        cp -R src utils content docs assets example-data .streamlit app.py settings.json default-parameters.json "$p/"
+        cp -R src utils content docs assets example-data .streamlit app.py settings.json default-parameters.json presets.json parameter-names.json "$p/"
         # The local server only listens on loopback; the shell passes the address.
         grep -v '^address' "$p/.streamlit/config.toml" > config.tmp && mv config.tmp "$p/.streamlit/config.toml"
         # Read-only on macOS and Linux (see stage-python.sh), so compile now.

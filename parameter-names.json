@@ -1,0 +1,42 @@
+{
+    "_comment": "Display names for TOPP tool parameters, per tool: \"<Tool>\": {\"<parameter path>\": \"Name\"} or {\"name\": ..., \"help\": ...}. A section path (\"algorithm:mtd\") names that section's heading. Parameters and sections without an entry keep the tool's name. See src/workflow/parameter_names.py.",
+    "FeatureFinderMetabo": {
+        "algorithm:common": "Common settings",
+        "algorithm:mtd": "Mass trace detection",
+        "algorithm:epd": "Elution peak detection",
+        "algorithm:ffm": "Feature assembly",
+        "algorithm:common:noise_threshold_int": {
+            "name": "Noise threshold",
+            "help": "Intensity below which a peak is treated as noise and not used for mass traces."
+        },
+        "algorithm:common:chrom_peak_snr": "Minimum signal-to-noise",
+        "algorithm:common:chrom_fwhm": {
+            "name": "Expected peak width (s)",
+            "help": "The typical chromatographic peak width at half maximum, in seconds."
+        },
+        "algorithm:mtd:mass_error_ppm": {
+            "name": "Mass tolerance (ppm)",
+            "help": "How far apart in m/z, in ppm, the peaks of one mass trace may be."
+        },
+        "algorithm:epd:width_filtering": "Peak width filter",
+        "algorithm:ffm:charge_lower_bound": "Lowest charge",
+        "algorithm:ffm:charge_upper_bound": "Highest charge",
+        "algorithm:ffm:isotope_filtering_model": "Isotope pattern model",
+        "algorithm:ffm:remove_single_traces": "Remove features with a single trace"
+    },
+    "FeatureLinkerUnlabeledKD": {
+        "algorithm": "General",
+        "algorithm:link": "Linking",
+        "algorithm:warp": "Retention time alignment",
+        "algorithm:link:rt_tol": {
+            "name": "Retention time tolerance (s)",
+            "help": "How far apart in retention time, in seconds, features of different runs may be and still be linked."
+        },
+        "algorithm:link:mz_tol": {
+            "name": "m/z tolerance",
+            "help": "How far apart in m/z features of different runs may be and still be linked, in the unit set by m/z unit."
+        },
+        "algorithm:mz_unit": "m/z unit",
+        "algorithm:warp:enabled": "Align retention times first"
+    }
+}
