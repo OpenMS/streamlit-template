@@ -15,8 +15,10 @@ understand, per tool, and optionally its own help text::
     }
 
 The top-level key is the tool (or a ``tool_instance_name``, which is looked up
-first), the inner key the parameter path after ``<Tool>:1:``. Keys starting
-with ``_`` are comments. Parameters without an entry keep the tool's own name.
+first), the inner key the parameter path after ``<Tool>:1:``. A section path
+(``"algorithm:mtd": "Mass trace detection"``) names the heading of that
+section. Keys starting with ``_`` are comments. Parameters and sections without
+an entry keep the tool's own name.
 
 Only the label changes: parameters are stored, preset and passed to the tool
 under their real names. Streamlit-free.

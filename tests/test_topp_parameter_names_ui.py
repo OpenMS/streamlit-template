@@ -13,6 +13,7 @@ NAMES = {
     "DemoTool": {
         "algo:tol": {"name": "Mass tolerance (ppm)", "help": "How far apart, in ppm."},
         "algo:min_charge": "Lowest charge",
+        "algo": {"name": "Algorithm settings", "help": "How peaks are matched."},
     }
 }
 
@@ -40,7 +41,8 @@ def _script():
         param.setValue("DemoTool:1:algo:hidden", 2, "An advanced one.", ["advanced"])
         poms.ParamXMLFile().store(str(ini), param)
     ui = StreamlitUI(workflow_dir, None, None, pm)
-    ui.input_TOPP("DemoTool", reactive=True)
+    advanced = [a for a in os.environ.get("PARAMETER_NAMES_TEST_ADVANCED", "").split(",") if a]
+    ui.input_TOPP("DemoTool", reactive=True, advanced_parameters=advanced)
     if os.environ.get("PARAMETER_NAMES_TEST_DIALOG"):
         # The dialog's body, drawn on the page so that it stays across reruns
         ui._all_parameters_dialog("DemoTool", "DemoTool", [])
@@ -113,5 +115,29 @@ def test_dialog_shows_and_finds_both_names(tmp_path, monkeypatch):
         found = search("tolerance for matching")
         assert "**Mass tolerance (ppm)**" in found and "**Lowest charge**" not in found
         assert "**Mass tolerance (ppm)**" in search("how far apart")
+    finally:
+        os.chdir(cwd)
+
+
+def test_section_heading_uses_display_name(app):
+    headings = [m for m in app.markdown if m.value == "**Algorithm settings**"]
+    assert len(headings) == 1
+    assert "How peaks are matched." in headings[0].help
+    assert "`algo`" in headings[0].help
+
+
+def test_advanced_parameters_move_to_the_dialog(tmp_path, monkeypatch):
+    (tmp_path / "parameter-names.json").write_text(json.dumps(NAMES), encoding="utf-8")
+    monkeypatch.setenv("PARAMETER_NAMES_TEST_DIR", str(tmp_path))
+    monkeypatch.setenv("PARAMETER_NAMES_TEST_ADVANCED", "max_charge")
+    cwd = os.getcwd()
+    try:
+        at = AppTest.from_function(_script, default_timeout=30)
+        at.run()
+        assert not at.exception
+        keys = [w.key for w in at.number_input]
+        assert key("tol") in keys and key("max_charge") not in keys
+        # Still one of the tool's parameters, counted by the dialog button
+        assert any(b.label.startswith("All 4 parameters") for b in at.button)
     finally:
         os.chdir(cwd)

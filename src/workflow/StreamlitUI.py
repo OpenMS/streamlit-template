@@ -1428,6 +1428,7 @@ class StreamlitUI:
         custom_defaults: dict = {},
         tool_instance_name: str = None,
         reactive: bool = False,
+        advanced_parameters: List[str] = [],
     ) -> None:
         """
         Generates input widgets for TOPP tool parameters dynamically based on the tool's
@@ -1455,18 +1456,25 @@ class StreamlitUI:
                 section to re-render, enabling conditional UI based on this widget's
                 value. Use when downstream UI depends on a parameter value (e.g.,
                 TMT type driving channel count). Default is False.
+            advanced_parameters (List[str], optional): Parameters to treat as
+                advanced although the tool does not tag them so: they are left
+                off the page and reached through the "All parameters" dialog,
+                like the tool's own advanced ones (e.g. output options). A name
+                ending in ":" matches a whole top-level section.
         """
         if reactive:
             self._input_TOPP_impl(
                 topp_tool_name, num_cols, exclude_parameters, include_parameters,
                 flag_parameters, display_tool_name, display_subsections,
                 display_subsection_tabs, custom_defaults, tool_instance_name,
+                advanced_parameters,
             )
         else:
             self._input_TOPP_fragmented(
                 topp_tool_name, num_cols, exclude_parameters, include_parameters,
                 flag_parameters, display_tool_name, display_subsections,
                 display_subsection_tabs, custom_defaults, tool_instance_name,
+                advanced_parameters,
             )
 
     @st.fragment
@@ -1482,11 +1490,13 @@ class StreamlitUI:
         display_subsection_tabs: bool = False,
         custom_defaults: dict = {},
         tool_instance_name: str = None,
+        advanced_parameters: List[str] = [],
     ) -> None:
         self._input_TOPP_impl(
             topp_tool_name, num_cols, exclude_parameters, include_parameters,
             flag_parameters, display_tool_name, display_subsections,
             display_subsection_tabs, custom_defaults, tool_instance_name,
+            advanced_parameters,
         )
 
     def _read_params_for_update(self, tool_instance_name: str) -> dict:
@@ -1573,6 +1583,7 @@ class StreamlitUI:
         display_subsection_tabs: bool = False,
         custom_defaults: dict = {},
         tool_instance_name: str = None,
+        advanced_parameters: List[str] = [],
     ) -> None:
         """Internal implementation of input_TOPP - contains all the widget logic."""
         # Default instance name to the tool name when not provided
@@ -1669,7 +1680,10 @@ class StreamlitUI:
                 "original_is_list": isinstance(entry.value, list),
                 "valid_strings": _valid_strings(entry),
                 "description": _txt(entry.description),
-                "advanced": ("advanced" in _tags(param, key)),
+                "advanced": (
+                    "advanced" in _tags(param, key)
+                    or any(_matches_topp_parameter(k, key) for k in advanced_parameters)
+                ),
                 "non_included": key not in included_keys,
                 "section_description": param.getSectionDescription(
                     ":".join(_txt(key).split(":")[:-1])
@@ -1764,23 +1778,50 @@ class StreamlitUI:
         def show_subsection_header(section: str, display_subsections: bool):
             # Display section name and help text (section description) if required
             if section and display_subsections:
+                description = section_descriptions.get(section)
+                friendly = _display_name(topp_tool_name, section, tool_instance_name)
+                if friendly:
+                    # The app's own heading; the help keeps the tool's name
+                    st.markdown(
+                        f"**{friendly['name']}**",
+                        help=(friendly["help"] or description or "")
+                        + f"\n\nSection `{section}` of {topp_tool_name}.",
+                    )
+                    return
                 parts = section.split(":")
                 st.markdown(
                     ":".join(parts[:-1])
                     + (":" if len(parts) > 1 else "")
                     + f"**{parts[-1]}**",
-                    help=(
-                        section_descriptions[section]
-                        if section in section_descriptions
-                        else None
-                    ),
+                    help=description,
                 )
 
         def display_TOPP_params(params: dict, num_cols):
             """Displays individual TOPP parameters in given number of columns"""
-            cols = st.columns(num_cols)
+
+            def is_text_area(p):
+                value = p["value"]
+                if isinstance(value, str) and "\n" in value:
+                    return True
+                return isinstance(value, list) and not p["valid_strings"]
+
+            # Free-text lists (multi-line text areas) come after the other
+            # inputs of a section, so every row holds inputs of one height and
+            # they can line up at the bottom: a label that wraps onto a second
+            # line no longer pushes its input below its neighbours'.
+            text_areas = [p for p in params if is_text_area(p)]
+            params = [p for p in params if not is_text_area(p)] + text_areas
+
+            def new_row():
+                return st.columns(num_cols, vertical_alignment="bottom")
+
+            cols = new_row()
             i = 0
             for p in params:
+                if i and text_areas and p is text_areas[0]:
+                    # The text areas start a row of their own
+                    i = 0
+                    cols = new_row()
                 # get key and name – use tool_instance_name in session state key
                 key_str = _txt(p['key'])
                 if tool_instance_name != topp_tool_name:
@@ -1802,7 +1843,6 @@ class StreamlitUI:
                         p["value"] = p["value"].split("\n")
                     # bools
                     if isinstance(p["value"], bool):
-                        cols[i].markdown("##")
                         cols[i].checkbox(
                             name,
                             value=(
@@ -1900,7 +1940,7 @@ class StreamlitUI:
                     i += 1
                     if i == num_cols:
                         i = 0
-                        cols = st.columns(num_cols)
+                        cols = new_row()
                 except Exception as e:
                     cols[i].error(f"Error in parameter **{p['name']}**.")
                     print('Error parsing "' + p["name"] + '": ' + str(e))

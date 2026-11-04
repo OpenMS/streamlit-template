@@ -1,6 +1,10 @@
 {
-    "_comment": "Display names for TOPP tool parameters, per tool: \"<Tool>\": {\"<parameter path>\": \"Name\"} or {\"name\": ..., \"help\": ...}. Parameters without an entry keep the tool's name. See src/workflow/parameter_names.py.",
+    "_comment": "Display names for TOPP tool parameters, per tool: \"<Tool>\": {\"<parameter path>\": \"Name\"} or {\"name\": ..., \"help\": ...}. A section path (\"algorithm:mtd\") names that section's heading. Parameters and sections without an entry keep the tool's name. See src/workflow/parameter_names.py.",
     "FeatureFinderMetabo": {
+        "algorithm:common": "Common settings",
+        "algorithm:mtd": "Mass trace detection",
+        "algorithm:epd": "Elution peak detection",
+        "algorithm:ffm": "Feature assembly",
         "algorithm:common:noise_threshold_int": {
             "name": "Noise threshold",
             "help": "Intensity below which a peak is treated as noise and not used for mass traces."
@@ -21,6 +25,9 @@
         "algorithm:ffm:remove_single_traces": "Remove features with a single trace"
     },
     "FeatureLinkerUnlabeledKD": {
+        "algorithm": "General",
+        "algorithm:link": "Linking",
+        "algorithm:warp": "Retention time alignment",
         "algorithm:link:rt_tol": {
             "name": "Retention time tolerance (s)",
             "help": "How far apart in retention time, in seconds, features of different runs may be and still be linked."
