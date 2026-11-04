@@ -4,7 +4,7 @@ from pathlib import Path
 import shutil
 import filecmp
 import subprocess
-from typing import Any, Union, List, Literal, Callable
+from typing import Any, Callable, Dict, List, Literal, Union
 import json
 import math
 import os
@@ -38,6 +38,7 @@ from src.workflow.progress import (
 from src.workflow.InputFolders import (
     design_rows,
     folder_counts,
+    in_folder,
     load_folders,
     natural_key,
     rename_folder,
@@ -188,7 +189,7 @@ class StreamlitUI:
         key: str,
         file_types: Union[str, List[str]],
         name: str = "",
-        fallback: Union[List, str] = None,
+        fallback: Union[List, str, Dict[str, str]] = None,
         suggest_folders: bool = False,
         list_files: bool = True,
     ) -> None:
@@ -204,7 +205,10 @@ class StreamlitUI:
                 a zip archive. Convert vendor files before use with
                 ``CommandExecutor.convert_to_mzml()``.
             name (str, optional): Display name for the upload component. Defaults to the key if not provided.
-            fallback (Union[List, str], optional): Default files to use if no files are uploaded.
+            fallback (Union[List, str, Dict[str, str]], optional): Default files
+                to use if no files are uploaded. A dict maps each file to the
+                folder it is put in when it is copied (``"Label-free/control"``
+                for a subfolder), so the examples arrive sorted.
             suggest_folders (bool, optional): Offer to sort the files into folders
                 by the groups their names suggest (``ctrl_R1``, ``ctrl_R2``,
                 ``treated_R1`` ...). Folders are labels kept in
@@ -456,6 +460,7 @@ class StreamlitUI:
                 c1, _ = st.columns(2)
                 if not Path(files_dir, f).exists():
                     shutil.copy(f, Path(files_dir, Path(f).name))
+            self._fallback_folders(key, fallback)
             current_files = [f.name for f in files_dir.iterdir() if f.name != "external_files.txt"]
             c1.warning("**No data yet. Using example data file(s).**")
         else:
@@ -585,7 +590,8 @@ class StreamlitUI:
             view = None
         shown = [
             n for n in names
-            if view is None or folders.get(n, "") == view
+            if view is None
+            or (folders.get(n, "") == view if view == "" else in_folder(folders.get(n, ""), view))
         ]
         selected = set()
         if select is not None:
@@ -627,7 +633,8 @@ class StreamlitUI:
                 "folder": st.column_config.TextColumn(
                     "Folder",
                     help="Type a folder name to put the file in it (a new "
-                    "name makes a new folder); clear it to take the file out.",
+                    "name makes a new folder, `folder/subfolder` a subfolder); "
+                    "clear it to take the file out.",
                 ),
             },
         )
@@ -668,7 +675,8 @@ class StreamlitUI:
                 if c2.button(
                     "Remove folder",
                     key=f"{version_key}-remove",
-                    help="The files stay; they are just no longer in a folder.",
+                    help="The files stay; they are just no longer in this "
+                    "folder. Its subfolders move up a level.",
                     use_container_width=True,
                 ):
                     rename_folder(self.workflow_dir, key, old, "")
@@ -1057,6 +1065,20 @@ class StreamlitUI:
         for example in examples.values():
             if not Path(files_dir, example.name).exists():
                 shutil.copy(example, Path(files_dir, example.name))
+        self._fallback_folders(key, fallback)
+
+    def _fallback_folders(self, key: str, fallback) -> None:
+        """Put the example files of upload ``key`` in the folders a ``fallback``
+        dict names (file -> folder); files already in a folder stay there."""
+        if not isinstance(fallback, dict):
+            return
+        named = {Path(f).name: d for f, d in fallback.items() if d}
+        if not named:
+            return
+        folders = load_folders(self.workflow_dir, key)
+        missing = {n: d for n, d in named.items() if n not in folders}
+        if missing:
+            save_folders(self.workflow_dir, key, {**folders, **missing})
 
     def _select_input_file_impl(self, key, name, multiple, display_file_path, reactive, upload=None):
         """Internal implementation of select_input_file - contains all the widget logic."""
@@ -1142,7 +1164,7 @@ class StreamlitUI:
             folder = labels[label]
             st.session_state[widget] = [
                 f for f in options
-                if folder is None or folders.get(Path(f).name) == folder
+                if folder is None or in_folder(folders.get(Path(f).name, ""), folder)
             ]
             st.session_state[pill_key] = None
 
