@@ -38,7 +38,7 @@ Set up app-level configuration (settings, Dockerfile, README) for a new or forke
      - Entrypoint if main file is not `app.py`
 
    - **`Dockerfile_simple`** (lightweight): installs pyOpenMS via pip only. Use when the app only uses pyOpenMS Python API. Update:
-     - Python dependencies in `requirements.txt` (and `conda-requirements.txt`, as above)
+     - Python dependencies in `requirements.txt` (and `conda-requirements.txt` and `requirements-nodeps.txt`, as above)
 
 4. **Update `README.md`** with the new app name, description, and instructions.
 
@@ -66,7 +66,7 @@ Set up app-level configuration (settings, Dockerfile, README) for a new or forke
 
 - [ ] `settings.json` updated with app name, GitHub user/repo, version
 - [ ] Correct Dockerfile chosen; extra tools in `conda-requirements.txt`, not in the Dockerfile
-- [ ] `requirements.txt` or `environment.yml` updated with dependencies
+- [ ] `requirements.txt` updated with dependencies
 - [ ] `README.md` updated
 
 ## Next Steps

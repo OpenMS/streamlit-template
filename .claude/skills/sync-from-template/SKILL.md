@@ -59,7 +59,8 @@ PY
 
 Before an `app.yaml` exists in the app (first sync), treat `app.py`,
 `settings.json`, `default-parameters.json`, `presets.json`,
-`parameter-names.json`, `content/`,
+`parameter-names.json`, `conda-requirements.txt`, `requirements-nodeps.txt`,
+`content/`,
 `src/Workflow.py` and the app's own workflow classes, `src/python-tools/`,
 `example-data/`, `assets/`, `README.md` and `k8s/overlays/` as app-owned, and
 add `app.yaml` in the same PR (`configure-app-identity`).

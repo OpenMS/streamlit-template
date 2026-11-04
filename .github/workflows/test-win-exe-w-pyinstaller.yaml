@@ -24,7 +24,9 @@ jobs:
         python -m venv myenv
         call myenv\Scripts\activate.bat   
         pip install -r requirements.txt
-        if exist requirements-nodeps.txt pip install --no-deps -r requirements-nodeps.txt
+        if exist requirements-nodeps.txt (
+          pip install --no-deps -r requirements-nodeps.txt || exit /b 1
+        )
         pip install pyinstaller   
         
     - name: Check if myenv is activated

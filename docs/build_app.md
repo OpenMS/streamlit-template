@@ -122,9 +122,7 @@ Presets allow users to quickly apply optimized parameter configurations. They ar
         ```dockerfile
         RUN echo "mamba run --no-capture-output -n streamlit-env streamlit run app.py" >> /app/entrypoint.sh
         ```
-3. Update Python package dependency files:
-    - `requirements.txt` if using `Dockerfile_simple`
-    - `environment.yml` if using `Dockerfile`
+3. Update the Python dependencies in `requirements.txt` (both images install it)
 
 ## How to build a workflow
 
