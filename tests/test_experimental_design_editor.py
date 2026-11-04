@@ -1,57 +1,86 @@
 """
-The experimental design table keeps every edit: after an edit is saved, the
-next edit must not be lost (a condition typed and confirmed with Tab or Enter
-vanished on every second edit).
+editor_table(): the table a data editor is drawn from stays the same while the
+editor is on the page, so a saved edit does not replace the editor and drop
+the next edit (every second condition typed in the experimental design table
+and confirmed with Tab or Enter vanished).
 """
 import os
 import sys
 
+import pandas as pd
+
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(PROJECT_ROOT)
 
-from streamlit.testing.v1 import AppTest  # noqa: E402
-
-from src.workflow.ExperimentalDesign import load_design, save_design  # noqa: E402
+import pytest  # noqa: E402
 
 
-def _design_app(workflow_dir, files):
-    def app(workflow_dir, files):
-        from pathlib import Path
-        from types import SimpleNamespace
-
-        from src.workflow.StreamlitUI import StreamlitUI
-
-        ui = SimpleNamespace(
-            workflow_dir=Path(workflow_dir),
-            params={"mzML-files": files},
-            parameter_manager=SimpleNamespace(param_prefix="wf-param-"),
-        )
-        StreamlitUI.experimental_design(ui, "mzML-files")
-
-    return AppTest.from_function(app, args=(str(workflow_dir), files))
+@pytest.fixture(autouse=True, scope="module")
+def _real_streamlit_ui():
+    """Import the real StreamlitUI for these tests only. Later test modules
+    mock streamlit before importing src.workflow, so drop it again."""
+    yield
+    for name in [m for m in sys.modules if m.startswith("src.workflow")]:
+        del sys.modules[name]
 
 
-def _editor(at):
-    editors = [e for e in at.get("arrow_data_frame") if e.proto.editing_mode]
-    assert len(editors) == 1
-    return editors[0].proto
+def editor_table(*args, **kwargs):
+    from src.workflow.StreamlitUI import editor_table as real
+
+    return real(*args, **kwargs)
+
+KEY = "_design-wf-mzML-files-0"
 
 
-def test_saved_edit_does_not_replace_the_editor(tmp_path):
-    wf = tmp_path / "wf"
-    wf.mkdir()
-    files = [str(tmp_path / f"{n}.mzML") for n in ("a", "b", "c")]
-    at = _design_app(wf, files).run()
-    assert not at.exception
-    first = _editor(at).id
+def _design(*conditions):
+    return pd.DataFrame({
+        "file": [f"{i}.mzML" for i in range(len(conditions))],
+        "condition": list(conditions),
+    })
 
-    # What the run after an edit leaves on disk: the design with that edit
-    design = load_design(wf, files)
-    design.loc[0, "condition"] = "ctrl"
-    save_design(wf, design, files)
 
-    at.run()
-    assert not at.exception
-    # Same editor: a new one (other data, other id) would drop the next edit
-    assert _editor(at).id == first
+def _drawn(state, table):
+    """What the browser sends back for an editor that was drawn: its edits."""
+    state[KEY] = {"edited_rows": {}}
+    return table
 
+
+def test_saved_edit_keeps_the_first_table():
+    state = {}
+    first = _drawn(state, editor_table(state, KEY, _design("", "")))
+    # The next run reads the design as saved after the edit
+    again = editor_table(state, KEY, _design("ctrl", ""))
+    assert again is first
+
+
+def test_table_read_again_when_editor_was_not_drawn():
+    state = {}
+    _drawn(state, editor_table(state, KEY, _design("", "")))
+    del state[KEY]  # another page in between: Streamlit forgets the editor
+    shown = editor_table(state, KEY, lambda: _design("ctrl", "treat"))
+    assert list(shown["condition"]) == ["ctrl", "treat"]
+
+
+def test_table_read_again_when_rows_change_or_key_is_new():
+    state = {}
+    _drawn(state, editor_table(state, KEY, _design("", "")))
+    three = _design("ctrl", "", "")
+    shown = editor_table(state, KEY, three, fits=lambda t: len(t) == len(three))
+    assert shown is three
+
+    new_key = "_design-wf-mzML-files-1"
+    imported = _design("a", "b")
+    assert editor_table(state, new_key, imported) is imported
+
+
+def test_callable_is_only_called_when_needed():
+    calls = []
+
+    def load():
+        calls.append(1)
+        return _design("")
+
+    state = {}
+    _drawn(state, editor_table(state, KEY, load))
+    editor_table(state, KEY, load)
+    assert len(calls) == 1
