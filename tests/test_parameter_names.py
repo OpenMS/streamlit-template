@@ -27,6 +27,8 @@ def test_name_and_help(tmp_path):
                 "SD:min_charge": {"name": "Lowest charge", "help": "Below it, no charge."},
                 "SD:max_charge": {"help": "no name: ignored"},
                 "SD:min_mass": "  ",
+                "SD:max_mass": {"name": None, "help": "null name: ignored"},
+                "SD:tol_ppm": {"name": 5},
             },
         },
     )
@@ -41,6 +43,7 @@ def test_name_and_help(tmp_path):
     assert pn.display_name("FLASHDeconv", "SD:max_charge", path=f) is None
     assert pn.display_name("FLASHDeconv", "SD:min_mass", path=f) is None
     assert pn.display_name("FLASHDeconv", "SD:max_mass", path=f) is None
+    assert pn.display_name("FLASHDeconv", "SD:tol_ppm", path=f) is None
     assert pn.display_name("FLASHTnT", "SD:tol", path=f) is None
     assert pn.display_name("_comment", "x", path=f) is None
 
@@ -93,7 +96,8 @@ def test_shipped_file_is_valid():
                 continue
             assert ":1:" not in parameter, (tool, parameter)
             if isinstance(entry, dict):
-                assert str(entry.get("name", "")).strip(), (tool, parameter)
+                name = entry.get("name")
+                assert isinstance(name, str) and name.strip(), (tool, parameter)
                 assert set(entry) <= {"name", "help"}, (tool, parameter)
             else:
                 assert isinstance(entry, str) and entry.strip(), (tool, parameter)

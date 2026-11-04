@@ -74,10 +74,11 @@ def display_name(tool: str, parameter: str, instance: str = None, path=PARAMETER
         entry = tool_names.get(parameter)
         if isinstance(entry, str) and entry.strip():
             return {"name": entry.strip(), "help": None}
-        if isinstance(entry, dict) and str(entry.get("name", "")).strip():
+        name = entry.get("name") if isinstance(entry, dict) else None
+        if isinstance(name, str) and name.strip():
             help_text = entry.get("help")
             return {
-                "name": str(entry["name"]).strip(),
+                "name": name.strip(),
                 "help": str(help_text) if help_text else None,
             }
     return None

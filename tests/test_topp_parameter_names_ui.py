@@ -130,14 +130,20 @@ def test_advanced_parameters_move_to_the_dialog(tmp_path, monkeypatch):
     (tmp_path / "parameter-names.json").write_text(json.dumps(NAMES), encoding="utf-8")
     monkeypatch.setenv("PARAMETER_NAMES_TEST_DIR", str(tmp_path))
     monkeypatch.setenv("PARAMETER_NAMES_TEST_ADVANCED", "max_charge")
+    monkeypatch.setenv("PARAMETER_NAMES_TEST_DIALOG", "1")
     cwd = os.getcwd()
     try:
         at = AppTest.from_function(_script, default_timeout=30)
         at.run()
         assert not at.exception
-        keys = [w.key for w in at.number_input]
-        assert key("tol") in keys and key("max_charge") not in keys
-        # Still one of the tool's parameters, counted by the dialog button
+        page_keys = {w.key for w in at.number_input}
+        assert key("tol") in page_keys and key("max_charge") not in page_keys
+        # Still one of the tool's parameters: counted by the dialog button,
+        # shown in the dialog and found by its filter
         assert any(b.label.startswith("All 4 parameters") for b in at.button)
+        assert "**max_charge**" in " ".join(m.value for m in at.markdown)
+        at.text_input(key="_all_params_filter").set_value("max_charge").run()
+        assert not at.exception
+        assert "**max_charge**" in " ".join(m.value for m in at.markdown)
     finally:
         os.chdir(cwd)
