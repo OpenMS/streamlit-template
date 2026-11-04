@@ -290,7 +290,7 @@ The `self.executor.run_topp` method takes a TOPP tool name as input and a dictio
 
 Depending on the number of input files, the TOPP tool will be run either in parallel or in a single run (using **`FileManager.collect`**).
 
-While it runs, the Run page shows the tool, which file it is on ("file 2 of 3"), elapsed times and the threads used. If a file fails, the page names the tool and the file ("While running FeatureFinderMetabo on file 2 of 3 (x.mzML)"), shows the tool's error line, and puts its raw output in a collapsed section. The progress is written to `logs/progress.json` by `src/workflow/progress.py`, which also works in queue mode.
+While it runs, the Run page shows the tool, which file it is on ("file 2 of 3"), elapsed times and the threads used. If a file fails, the page names the tool and the file ("While running FeatureFinderMetabo on file 2 of 3 (x.mzML)"), shows the tool's error line, and puts its raw output in a collapsed section. The progress is written to `logs/progress.json` by `src/workflow/progress.py`, which also works in queue mode. A workflow that takes its samples one after another, running several tools on each, can record them with `self.executor.progress.start_samples(names)` and `with self.executor.progress.sample(i):` around each sample's tools: the Run page then lists every sample as waiting, running (with the tool it is in), done or failed. A TOPP tool that reports its own progress ("Progress of 'loading spectra'", "42 %") gets a second bar while it runs.
 """
     )
 
