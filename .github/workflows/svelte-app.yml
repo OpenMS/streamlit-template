@@ -1,0 +1,30 @@
+name: svelte-app
+
+on:
+  push:
+    paths: ["frontend/**", "share-server/**", "settings.json", "presets.json", "default-parameters.json", "docs/**", "example-data/**", ".github/workflows/svelte-app.yml"]
+  pull_request:
+    paths: ["frontend/**", "share-server/**", "settings.json", "presets.json", "default-parameters.json", "docs/**", "example-data/**", ".github/workflows/svelte-app.yml"]
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-node@v4
+      with:
+        node-version: "22"
+        cache: npm
+        cache-dependency-path: frontend/package-lock.json
+    # postinstall fetches the pinned OpenMS WebAssembly package (checksummed)
+    - run: npm ci
+    - run: npm run check
+    # the engine, workflow framework and example workflow on the WebAssembly module, in Node
+    - run: npm test
+    - run: npm run build
+    - name: Share service starts
+      working-directory: share-server
+      run: python3 share.py --help > /dev/null
