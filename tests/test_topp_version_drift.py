@@ -223,6 +223,30 @@ def test_failing_tool_keeps_its_output(tmp_path, monkeypatch):
 
 
 @pytest.mark.skipif(os.name == "nt", reason="shebang executable")
+def test_truncated_ini_does_not_replace_the_cached_one(tmp_path, monkeypatch):
+    """A tool that dies mid-write leaves the previous .ini in place."""
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    exe = bindir / TOOL
+    exe.write_text(
+        f"#!{sys.executable}\n"
+        "import sys\n"
+        "open(sys.argv[2], 'w').write('<?xml version=\"1.0\"?><PARAMETERS><NODE')\n"
+        "sys.exit(1)\n"
+    )
+    exe.chmod(exe.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    monkeypatch.setenv("PATH", f"{bindir}{os.pathsep}{os.environ.get('PATH', '')}")
+    pm = ParameterManager(tmp_path / "wf")
+    Path(pm.ini_dir).mkdir(parents=True, exist_ok=True)
+    ini = Path(pm.ini_dir, f"{TOOL}.ini")
+    ini.write_text("<PARAMETERS/>")
+    os.utime(ini, (0, 0))  # older than the tool, so it is regenerated
+
+    pm.create_ini(TOOL)
+    assert ini.read_text() == "<PARAMETERS/>"
+    assert [p.name for p in Path(pm.ini_dir).iterdir()] == [ini.name]
+
+@pytest.mark.skipif(os.name == "nt", reason="shebang executable")
 def test_success_clears_an_earlier_failure(tmp_path, fake_tool):
     pm = ParameterManager(tmp_path / "wf")
     pm.ini_errors[TOOL] = "earlier failure"

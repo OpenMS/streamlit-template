@@ -29,7 +29,7 @@ from pathlib import Path
 
 PARAMETER_NAMES_FILE = "parameter-names.json"
 
-# path -> (mtime, parsed file); reread when the file changes
+# path -> ((mtime_ns, size), parsed file); reread when the file changes
 _CACHE: dict = {}
 
 
@@ -37,7 +37,8 @@ def load_parameter_names(path=PARAMETER_NAMES_FILE) -> dict:
     """All tools' parameter names, ``{}`` when the file is missing or invalid."""
     file = Path(path)
     try:
-        mtime = file.stat().st_mtime
+        stat = file.stat()
+        mtime = (stat.st_mtime_ns, stat.st_size)
     except OSError:
         return {}
     cached = _CACHE.get(str(file))
