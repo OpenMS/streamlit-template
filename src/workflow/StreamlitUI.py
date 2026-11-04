@@ -2,6 +2,7 @@ import streamlit as st
 import pyopenms as poms
 from pathlib import Path
 import shutil
+import filecmp
 import subprocess
 from typing import Any, Union, List, Literal, Callable
 import json
@@ -684,6 +685,8 @@ class StreamlitUI:
                 labels.append("🔎 UniProt proteome")
             tabs = st.tabs(labels)
             with tabs[0]:
+                # Takes the example files out once files of the user's own are in.
+                self._ensure_fallback(key, upload.get("fallback"))
                 options = self._input_file_options(key)
                 if not options:
                     st.info(
@@ -727,8 +730,10 @@ class StreamlitUI:
             # first and the import tabs route files by it.
             self.upload_targets = {}
             with tabs[1]:
-                self.upload_widget(
-                    key, name=plain_name, list_files=False,
+                # Unwrapped from its fragment: adding files reruns the whole
+                # dialog, so "Your files" lists them at once.
+                StreamlitUI.upload_widget.__wrapped__(
+                    self, key, name=plain_name, list_files=False,
                     **{k: v for k, v in upload.items() if k not in ("name", "uniprot")},
                 )
             if importing:
@@ -999,14 +1004,40 @@ class StreamlitUI:
         return options
 
     def _ensure_fallback(self, key: str, fallback) -> None:
-        """Copy the example files of upload ``key`` while it has no files."""
-        if not fallback or self._input_file_options(key):
+        """Copy the example files of upload ``key`` while it has no files of
+        its own, and take the copies out again once it has."""
+        if not fallback:
             return
         files_dir = Path(self.workflow_dir, "input-files", key)
+        examples = {
+            Path(f).name: Path(f)
+            for f in ([fallback] if isinstance(fallback, str) else fallback)
+            if Path(f).exists()
+        }
+
+        def is_copy(path) -> bool:
+            path = Path(path)
+            example = examples.get(path.name)
+            return (
+                example is not None
+                and path.parent.resolve() == files_dir.resolve()
+                and path.resolve() != example.resolve()
+                and filecmp.cmp(path, example, shallow=False)
+            )
+
+        options = self._input_file_options(key)
+        copies = [o for o in options if is_copy(o)]
+        if len(copies) < len(options):
+            # Files of the user's own: the examples are no longer needed.
+            for c in copies:
+                Path(c).unlink(missing_ok=True)
+            return
+        if options:
+            return
         files_dir.mkdir(parents=True, exist_ok=True)
-        for f in [fallback] if isinstance(fallback, str) else fallback:
-            if Path(f).exists() and not Path(files_dir, Path(f).name).exists():
-                shutil.copy(f, Path(files_dir, Path(f).name))
+        for example in examples.values():
+            if not Path(files_dir, example.name).exists():
+                shutil.copy(example, Path(files_dir, example.name))
 
     def _select_input_file_impl(self, key, name, multiple, display_file_path, reactive, upload=None):
         """Internal implementation of select_input_file - contains all the widget logic."""
@@ -1029,6 +1060,13 @@ class StreamlitUI:
             return
         if (key in self.params.keys()) and isinstance(self.params[key], list):
             self.params[key] = [f for f in self.params[key] if f in options]
+        if upload is not None:
+            # A selected file can be gone (an example replaced by own files).
+            current = st.session_state.get(widget)
+            if isinstance(current, list):
+                st.session_state[widget] = [f for f in current if f in options]
+            elif current is not None and current not in options:
+                del st.session_state[widget]
 
         widget_type = "multiselect" if multiple else "selectbox"
         if multiple:
