@@ -107,7 +107,7 @@ Every session gets a **workspace directory** holding that user's files and param
 | Captcha + GDPR consent | skipped (`controllo` forced true) | enforced |
 | mzML upload | many files at once, or reference a local folder | one file at a time |
 | Save-as-demo | hidden | shown if admin password set |
-| Max threads | `max_threads.local` (4), user-overridable | `max_threads.online` (2) |
+| Max threads | `max_threads.local`, user-overridable | the worker's cgroup CPU quota, else `max_threads.online` |
 
 ## Core Patterns
 
@@ -188,6 +188,8 @@ Workflow keys carry prefixes built from the workflow slug (`ParameterManager.py:
 - `topp_param_prefix` = `"<slug>-TOPP-"` — TOPP params, keyed `"<Instance>:1:<param:path>"`. The literal `:1:` segment separates instance from parameter path and is load-bearing throughout.
 
 TOPP defaults come from `ini/<Tool>.ini`, generated on demand via `<Tool> -write_ini` and never edited; `create_ini()` writes it again when the tool executable is newer than the file (workspaces outlive images), and `run_topp()` leaves out, with a warning in the log, any stored parameter the tool's .ini does not list. Values merge as **ini defaults < `_defaults` (from `custom_defaults=`) < user overrides**, and only values differing from the effective default are persisted. `-ini` is never passed on the command line — every effective parameter becomes an explicit CLI arg.
+
+**Thread budget.** Both `max_threads` keys default to `"auto"` (`null` and `-1` mean the same): every usable CPU but one, at least 1 (`settings_io.default_thread_count()`). Usable is the smaller of the CPUs the process may run on (`sched_getaffinity`) and the cgroup CPU quota, so a container with `--cpus 4` on a 64 core host counts 4. A number pins the budget. Online, a readable cgroup quota still wins over `max_threads.online`, because the rq-worker's pod spec is its allocation.
 
 **Reserved keys in a workflow's `params.json`** — never use as widget keys: `_defaults`, `_flag_params`, `max_threads`, or anything containing `.py:` (python-tool params) or `:1:` (TOPP params).
 
