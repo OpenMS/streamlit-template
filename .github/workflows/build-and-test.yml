@@ -490,6 +490,11 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          # No automatic `latest`: on a tag push metadata-action would add a
+          # plain `latest` beside the tags below. `latest` is set only by the
+          # raw rule (main pushes of the full image).
+          flavor: |
+            latest=false
           # NB: no -amd64/-arm64 suffix here. These are the multi-arch
           # manifest names; they must match the pre-arm64 tag scheme so
           # `:main-full`, `:v1.0.0-full`, `:latest` continue to resolve.
@@ -796,6 +801,11 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/sif
+          # No automatic `latest`: on a tag push metadata-action would add a
+          # plain `latest` beside the tags below. `latest` is set only by the
+          # raw rule (main pushes of the full image).
+          flavor: |
+            latest=false
           tags: |
             type=ref,event=branch,suffix=-${{ matrix.variant }}
             type=ref,event=tag,suffix=-${{ matrix.variant }}
