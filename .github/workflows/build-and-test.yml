@@ -35,6 +35,8 @@ jobs:
     # its build list and matrices from these outputs, and treats an image the
     # app does not build as neither missing nor failed.
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       list: ${{ steps.images.outputs.list }}
       kind: ${{ steps.images.outputs.kind }}
@@ -42,6 +44,16 @@ jobs:
       apptainer: ${{ steps.images.outputs.apptainer }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Check app.yaml against the repository
+        # The same check ci.yml runs, here as well because every build and
+        # create-manifest need this job, and ci.yml does not run on release
+        # tags: a deploy.images that leaves out the variant the prod overlay
+        # deploys would otherwise publish a release without that image.
+        if: hashFiles('app.yaml') != ''
+        run: |
+          pip install --quiet pyyaml jsonschema
+          python -m utils.app_spec
 
       - name: Read deploy.images from app.yaml
         id: images
