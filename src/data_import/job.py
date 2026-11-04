@@ -79,8 +79,11 @@ def build_items(files: List[RemoteFile], targets: Dict[str, dict]) -> List[dict]
                     "id": _item_id(redact(f.url), root), "name": parts[d_index], "path": root,
                     "kind": "folder", "size": 0, "files": [],
                     "target": target_for(parts[d_index], targets),
+                    "preselect": f.preselect,
                 }
                 items.append(folder)
+            # A folder is ticked when any of its files is.
+            folder["preselect"] = folder["preselect"] or f.preselect
             folder["files"].append(asdict(f))
             folder["size"] += f.size or 0
             continue

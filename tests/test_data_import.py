@@ -622,3 +622,21 @@ def test_large_pride_dataset_starts_unticked(monkeypatch):
     listing = sources.resolve(plain(), "PXD000002")
     assert not any(f.preselect for f in listing.files)
     assert "60 GB" in listing.notes[0]
+
+
+def test_unticked_archive_members_stay_unticked(server):
+    server.add("/a.tar", tar_bytes({"r1.mzML": MZML_A, "r2.mzML": MZML_B}))
+    f = sources.RemoteFile(path="a.tar", size=None, url=server.url("/a.tar"), preselect=False)
+    listing = sources.Listing(title="t", url=f.url, files=[f])
+    sources._open_archives(plain(), listing)
+    assert [m.path for m in listing.files] == ["a.tar/r1.mzML", "a.tar/r2.mzML"]
+    assert not any(m.preselect for m in listing.files)
+
+
+def test_bruker_folder_is_ticked_like_its_files():
+    t = {"ms": {"name": "MS data", "file_types": ["mzML", "d"], "dir": "x", "fallback": []}}
+    def files(*ticks):
+        return [sources.RemoteFile(path=f"s.d/f{i}", size=1, url="https://h/x", preselect=p)
+                for i, p in enumerate(ticks)]
+    assert job.build_items(files(False, False), t)[0]["preselect"] is False
+    assert job.build_items(files(False, True), t)[0]["preselect"] is True

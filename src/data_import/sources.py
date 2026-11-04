@@ -520,6 +520,7 @@ def _open_archives(session, listing: Listing) -> None:
             opened += 1
             for m in members:
                 m.path = f"{f.path}/{m.path}"
+                m.preselect = f.preselect
             expanded.extend(members)
         except Exception as e:  # offer it whole instead
             listing.notes.append(f"{f.path}: could not read its table of contents ({e}); "
