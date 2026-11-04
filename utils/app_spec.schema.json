@@ -175,10 +175,10 @@
         "docker_compose": {"type": "boolean"},
         "images": {
           "type": "array",
-          "description": "Container images build-and-test.yml builds and publishes. Default [full, simple]; an app that needs no TOPP tools lists only simple.",
-          "items": {"enum": ["full", "simple"]},
-          "contains": {"const": "simple"},
-          "uniqueItems": true
+          "items": {"enum": ["full-amd64", "simple-amd64", "full-arm64", "simple-arm64", "full", "simple"]},
+          "uniqueItems": true,
+          "minItems": 1,
+          "description": "Container images build-and-test.yml builds and publishes. Default: all four. `full` and `simple` stand for that image on both architectures, so an app without TOPP tools lists only simple. Leave one image out when the app's dependencies have no build for that platform."
         },
         "desktop": {
           "type": "array",

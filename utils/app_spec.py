@@ -176,6 +176,19 @@ def consistency_errors(spec: dict, root: Path | str = ".") -> list[str]:
                 f"app.image is {image!r} but {rel} deploys {new_name!r} "
                 "(images[0].newName)"
             )
+        # The cluster pulls the overlay's tag (`<ref>-full`, `<ref>-simple`
+        # or `latest`, which is full), so deploy.images must build that
+        # variant, or CI publishes nothing new under it.
+        new_tag = str(_field(overlay_doc, "images", 0, "newTag") or "")
+        variant = "full" if new_tag == "latest" else new_tag.rpartition("-")[2]
+        images = spec.get("deploy", {}).get("images")
+        if images and variant in ("full", "simple") and not any(
+            i == variant or i.startswith(f"{variant}-") for i in images
+        ):
+            errors.append(
+                f"{rel} deploys the {variant} image ({new_tag!r}), but "
+                f"deploy.images builds only {images}"
+            )
         overlay_text = overlay.read_text(encoding="utf-8")
         for host in spec.get("deploy", {}).get("k8s", {}).get("hosts", []):
             if f"Host(`{host}`)" not in overlay_text:
