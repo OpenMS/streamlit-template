@@ -146,6 +146,20 @@ jobs:
           kubeconform -summary -strict -kubernetes-version 1.28.0 -skip IngressRoute \
             < /tmp/prod-lint.yaml
 
+      - name: Render the Argo CD folder
+        # k8s/argocd/ is synced by Argo CD itself (argocd-application.yaml),
+        # so a file it cannot render stops every later deploy. Its kinds are
+        # Argo CD CRDs, which kubeconform has no schema for: render only.
+        # tests/test_argocd_autodeploy.py checks the contents.
+        if: hashFiles('k8s/argocd/kustomization.yaml') != ''
+        run: |
+          kubectl kustomize k8s/argocd/ > /tmp/argocd-lint.yaml
+          if [ ! -s /tmp/argocd-lint.yaml ]; then
+            echo "::error::k8s/argocd/ rendered nothing"
+            exit 1
+          fi
+          grep -E '^kind: ' /tmp/argocd-lint.yaml
+
       - name: Validate the CI overlay
         # k8s/overlays/ci/ is what the two kind jobs actually apply, so it is
         # the overlay whose breakage takes them down - and it is the one
@@ -490,6 +504,11 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          # No automatic `latest`: on a tag push metadata-action would add a
+          # plain `latest` beside the tags below. `latest` is set only by the
+          # raw rule (main pushes of the full image).
+          flavor: |
+            latest=false
           # NB: no -amd64/-arm64 suffix here. These are the multi-arch
           # manifest names; they must match the pre-arm64 tag scheme so
           # `:main-full`, `:v1.0.0-full`, `:latest` continue to resolve.
@@ -796,6 +815,11 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/sif
+          # No automatic `latest`: on a tag push metadata-action would add a
+          # plain `latest` beside the tags below. `latest` is set only by the
+          # raw rule (main pushes of the full image).
+          flavor: |
+            latest=false
           tags: |
             type=ref,event=branch,suffix=-${{ matrix.variant }}
             type=ref,event=tag,suffix=-${{ matrix.variant }}

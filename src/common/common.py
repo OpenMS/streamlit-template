@@ -401,6 +401,7 @@ def monitor_storage():
         state = status.get("state", "unknown")
         nodes = status.get("nodes") or []
         stale = status.get("stale_nodes") or []
+        departed = status.get("departed_nodes") or []
 
         st.markdown("---")
         st.markdown("**Storage Status**")
@@ -411,6 +412,13 @@ def monitor_storage():
                 f"{len(nodes)} node{'' if len(nodes) == 1 else 's'} reporting a "
                 "healthy shared volume."
             )
+            if departed:
+                # A worker that moved or stopped, not a mount fault: it stops
+                # being listed once its registration expires.
+                st.caption(
+                    f"{', '.join(departed)} stopped reporting: its worker moved "
+                    "or stopped."
+                )
         elif state == "degraded":
             # The case per node heartbeats exist for. Collapsing them would
             # show green here, because a healthy node is still reporting.

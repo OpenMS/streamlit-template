@@ -138,7 +138,8 @@ jobs:
           python - <<'PY'
           import fnmatch, os, yaml
           default = ["app.yaml", "app.py", "settings.json", "default-parameters.json",
-                     "presets.json", "README.md", "content/*", "src/Workflow.py",
+                     "presets.json", "parameter-names.json", "README.md", "content/*",
+                     "src/Workflow.py",
                      "src/python-tools/*", "example-data/*", "assets/*", "k8s/overlays/*",
                      "k8s/argocd/*"]
           spec = yaml.safe_load(open("/tmp/app.yaml", encoding="utf-8")) or {}

@@ -76,6 +76,7 @@ jobs:
         cp -r assets dist/assets
         cp app.py dist/
         cp presets.json dist/
+        cp parameter-names.json dist/
 
     - name: Modify .spec file
       shell: bash
