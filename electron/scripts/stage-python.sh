@@ -8,6 +8,7 @@
 # extension in place, and it ships tkinter (the local file dialog).
 #
 #   stage-python.sh <python minor version, e.g. 3.11> <out dir> <requirements.txt>
+# A requirements-nodeps.txt beside the requirements file is installed with --no-deps.
 # Needs gh (GH_TOKEN). PBS_RELEASE pins a python-build-standalone release tag
 # (default: the latest release).
 set -euo pipefail
@@ -40,6 +41,12 @@ if [[ $triple == *windows* ]]; then py="$dest/python.exe"; else py="$dest/bin/py
 echo "Staged $asset as $dest"
 
 "$py" -m pip install --upgrade --no-warn-script-location --disable-pip-version-check -r "$requirements"
+# requirements-nodeps.txt next to it: packages installed without their
+# dependencies, because their own pins conflict with the app's.
+nodeps="$(dirname "$requirements")/requirements-nodeps.txt"
+if [[ -f $nodeps ]]; then
+  "$py" -m pip install --no-deps --no-warn-script-location --disable-pip-version-check -r "$nodeps"
+fi
 
 # DuckDB's extension wheels (pulled in by some dependencies) append DuckDB's
 # own signature to a Mach-O file, which codesign rejects ("main executable

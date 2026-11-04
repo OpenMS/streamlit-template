@@ -62,7 +62,7 @@ SHELL ["mamba", "run", "-n", "streamlit-env", "/bin/bash", "-c"]
 
 #################################### install streamlit
 # install packages
-COPY requirements.txt requirements.txt
+COPY requirements.txt requirements-nodeps.tx[t] ./
 RUN mamba install pip
 
 # Command line tools an app installs from conda-forge (SIRIUS, for example),
@@ -85,6 +85,10 @@ RUN touch /tmp/app-env/conda-requirements.txt \
     fi && rm -rf /tmp/app-env
 RUN python -m pip install --upgrade pip
 RUN python -m pip install -r requirements.txt
+# Packages whose own pins conflict with the app's (numpy<2 next to pyOpenMS
+# 3.6, for example), one per line in the app's optional requirements-nodeps.txt,
+# installed without their dependencies; requirements.txt lists those it needs.
+RUN if [ -f requirements-nodeps.txt ]; then python -m pip install --no-deps -r requirements-nodeps.txt; fi
 
 # Pre-create bind-mount targets so apptainer/singularity has a real attach
 # point. Docker auto-creates missing `-v` targets, but singularity uses a

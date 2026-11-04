@@ -117,6 +117,7 @@ Presets allow users to quickly apply optimized parameter configurations. They ar
 2. The Dockerfiles are template-owned and take the app's values from its own files:
     - the bundled Windows installer comes from the latest release of `github-user`/`repository-name` in `settings.json`
     - command line tools from conda-forge (SIRIUS, for example) go one per line into an optional `conda-requirements.txt` (end a line with `# [x86_64]` or `# [aarch64]` to install it on that architecture only)
+    - a Python package whose own pins conflict with the app's (numpy<2 next to pyOpenMS 3.6, for example) goes into an optional `requirements-nodeps.txt`, installed with `pip install --no-deps` after `requirements.txt` in the images, the desktop apps and CI; list the dependencies it needs in `requirements.txt`
     - if your main page Python file is not called `app.py`, modify the following line
         ```dockerfile
         RUN echo "mamba run --no-capture-output -n streamlit-env streamlit run app.py" >> /app/entrypoint.sh

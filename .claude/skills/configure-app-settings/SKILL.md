@@ -34,7 +34,7 @@ Set up app-level configuration (settings, Dockerfile, README) for a new or forke
 
    - **`Dockerfile`** (full): builds OpenMS from source with TOPP tools. Use when the app runs TOPP tools via `executor.run_topp()`. Update:
      - nothing for the app's identity: the bundled Windows installer comes from `github-user`/`repository-name` in `settings.json`
-     - Python dependencies in `requirements.txt`; command line tools from conda-forge (SIRIUS, for example) one per line in `conda-requirements.txt` (a trailing `# [x86_64]` or `# [aarch64]` limits a line to that architecture, for tools without an ARM build)
+     - Python dependencies in `requirements.txt`; command line tools from conda-forge (SIRIUS, for example) one per line in `conda-requirements.txt` (a trailing `# [x86_64]` or `# [aarch64]` limits a line to that architecture, for tools without an ARM build); a package whose own pins conflict with the app's goes in `requirements-nodeps.txt`, installed with `--no-deps` (its dependencies stay in `requirements.txt`)
      - Entrypoint if main file is not `app.py`
 
    - **`Dockerfile_simple`** (lightweight): installs pyOpenMS via pip only. Use when the app only uses pyOpenMS Python API. Update:

@@ -183,9 +183,13 @@ SHELL ["mamba", "run", "-n", "streamlit-env", "/bin/bash", "-c"]
 RUN pip install /pyopenms-wheel/*.whl && rm -rf /pyopenms-wheel
 
 # Install other dependencies (excluding pyopenms)
-COPY requirements.txt ./requirements.txt
+COPY requirements.txt requirements-nodeps.tx[t] ./
 RUN grep -Ev '^pyopenms([=<>!~].*)?$' requirements.txt > requirements_cleaned.txt && mv requirements_cleaned.txt requirements.txt
 RUN pip install -r requirements.txt
+# Packages whose own pins conflict with the app's (numpy<2 next to pyOpenMS
+# 3.6, for example), one per line in the app's optional requirements-nodeps.txt,
+# installed without their dependencies; requirements.txt lists those it needs.
+RUN if [ -f requirements-nodeps.txt ]; then pip install --no-deps -r requirements-nodeps.txt; fi
 
 WORKDIR /
 RUN mkdir openms
