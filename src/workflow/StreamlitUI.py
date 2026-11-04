@@ -675,11 +675,19 @@ class StreamlitUI:
 
         @st.dialog(f"📂 {plain_name}", width="large", on_dismiss="rerun")
         def browse():
-            tabs = st.tabs(["📁 Your files", "⬆️ Add files"])
+            # The same ways to add files as the upload page's tabs.
+            importing = data_import_ui.enabled()
+            labels = ["📁 Your files", "💻 Data on your computer"]
+            if importing:
+                labels += ["☁️ Cloud data", "🧬 Import from PRIDE"]
+            tabs = st.tabs(labels)
             with tabs[0]:
                 options = self._input_file_options(key)
                 if not options:
-                    st.info("No files yet: add some under **Add files**.")
+                    st.info(
+                        "No files yet: add some from your computer"
+                        + (", from the cloud or from PRIDE." if importing else ".")
+                    )
                 else:
                     paths = {Path(o).name: o for o in options}
                     files_dir = Path(self.workflow_dir, "input-files", key).resolve()
@@ -713,14 +721,23 @@ class StreamlitUI:
                     self.params.pop(key, None)
                     self.parameter_manager.save_parameters()
                     st.rerun(scope="fragment")
+            # The upload widget fills self.upload_targets, so it is drawn
+            # first and the import tabs route files by it.
+            self.upload_targets = {}
             with tabs[1]:
-                self.upload_targets = {}
                 self.upload_widget(
                     key, name=plain_name, list_files=False,
                     **{k: v for k, v in upload.items() if k != "name"},
                 )
-                if data_import_ui.enabled():
-                    data_import_ui.link_import_section(self.workflow_dir, self.upload_targets)
+            if importing:
+                with tabs[2]:
+                    data_import_ui.link_import_section(
+                        self.workflow_dir, self.upload_targets, source=data_import_ui.LINK
+                    )
+                with tabs[3]:
+                    data_import_ui.link_import_section(
+                        self.workflow_dir, self.upload_targets, source=data_import_ui.PRIDE
+                    )
 
         browse()
 
