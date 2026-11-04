@@ -108,6 +108,9 @@ function makeHelpers(app, page, baseUrl, out) {
         .first();
       const multi = (await widget.getAttribute("data-testid")) === "stMultiSelect";
       await widget.locator('[data-baseweb="select"]').click();
+      // Type the option first: the dropdown lists only the options that fit
+      // the window (none at all in a small one, such as xvfb's 640x480).
+      await widget.locator('[data-baseweb="select"] input').fill(option);
       await page.getByRole("option", { name: option }).first().click();
       // A multiselect stays open after a pick. Escape on a selectbox would
       // clear the value just chosen.
