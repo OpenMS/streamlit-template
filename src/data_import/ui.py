@@ -29,6 +29,11 @@ def enabled() -> bool:
     return bool(settings().get("enabled", False))
 
 
+def pride_example() -> str:
+    """The accession shown as the example in the PRIDE tab (`pride_example`)."""
+    return str(settings().get("pride_example") or "PXD000001")
+
+
 def _online() -> bool:
     return st.session_state.get("location") == "online"
 
@@ -59,7 +64,7 @@ def _lookup(link: str, targets: Dict[str, dict], state_key: str, source: str = L
         st.error("Enter a PRIDE accession first." if source == PRIDE else "Enter a link first.")
         return
     if source == PRIDE and not pride_accession(normalize(link)):
-        st.error(f"'{link.strip()}' is not a PRIDE accession. Enter one such as PXD000001, "
+        st.error(f"'{link.strip()}' is not a PRIDE accession. Enter one such as {pride_example()}, "
                  "or a PRIDE or ProteomeXchange project link.")
         return
     try:
@@ -223,7 +228,7 @@ def link_import_section(workflow_dir, targets: Dict[str, dict], source: str = LI
     if source == PRIDE:
         st.markdown(
             "Reanalyse a public dataset from the [PRIDE Archive](https://www.ebi.ac.uk/pride/archive): "
-            "enter its accession (e.g. PXD000001) or its PRIDE or ProteomeXchange link. "
+            f"enter its accession (e.g. {pride_example()}) or its PRIDE or ProteomeXchange link. "
             "Its files are added to the matching upload; MS runs as mzML or vendor files, "
             "and a FASTA database if the dataset has one."
         )
@@ -252,7 +257,7 @@ def link_import_section(workflow_dir, targets: Dict[str, dict], source: str = LI
     with st.form(f"{prefix}-form", border=False):
         c1, c2 = st.columns([4, 1])
         if source == PRIDE:
-            link = c1.text_input("PRIDE accession", placeholder="PXD000001",
+            link = c1.text_input("PRIDE accession", placeholder=pride_example(),
                                  label_visibility="collapsed")
         else:
             link = c1.text_input("Link", placeholder="https://a3s.fi/swift/v1/<bucket>/data.tar",

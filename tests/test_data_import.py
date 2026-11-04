@@ -640,3 +640,11 @@ def test_bruker_folder_is_ticked_like_its_files():
                 for i, p in enumerate(ticks)]
     assert job.build_items(files(False, False), t)[0]["preselect"] is False
     assert job.build_items(files(False, True), t)[0]["preselect"] is True
+
+
+def test_pride_example_comes_from_settings(monkeypatch):
+    from src.data_import import ui
+    monkeypatch.setattr(ui, "settings", lambda: {})
+    assert ui.pride_example() == "PXD000001"
+    monkeypatch.setattr(ui, "settings", lambda: {"pride_example": "PXD078120"})
+    assert ui.pride_example() == "PXD078120"
