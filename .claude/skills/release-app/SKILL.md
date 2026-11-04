@@ -32,13 +32,13 @@ cluster is updated by changing the image tag the prod overlay pulls.
    multi-arch manifests to GHCR, plus the SIF.
 5. **Wait for both workflows** to finish green before announcing. A release
    without its installer asset is not done.
-6. **Deploy**: set `images[0].newTag` in `k8s/overlays/prod/kustomization.yaml`
-   to `<tag>-full` (e.g. `v1.3-full` or `OpenDDA-1.3-full`) in a PR; after merge the operator (or the GitOps
-   controller, if the cluster has one) applies it. Pinning a tag instead of
-   `latest` is what makes a rollback a one-line revert.
-   With Argo CD Image Updater (`k8s/argocd/image-updater.yaml`) the cluster
-   moves to the new release image by itself; pin `newTag` anyway, so a
-   re-created Application starts from the current release.
+6. **Deploy**: nothing to do. With Argo CD Image Updater
+   (`k8s/argocd/image-updater.yaml`) the cluster moves to the new release
+   image, pre-releases included, within a few minutes of the image being
+   published. Do not pin `images[0].newTag` in a PR; the overlay's tag is
+   only where a new Application starts. To roll back, narrow `allowTags` to
+   the release to stay on in a PR. On a cluster without the ImageUpdater,
+   set `newTag` to `<tag>-full` and apply the overlay.
 
 Tagging, publishing and deploying are visible to users and cannot be taken
 back cleanly; do them only when the user asked for the release.

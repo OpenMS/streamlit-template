@@ -1,20 +1,19 @@
 # Argo CD Application: keeps the cluster equal to k8s/overlays/prod on
-# `main`. Apply once, by an admin, into the argocd namespace:
+# `main`, with the image tag the ImageUpdater sets. Itself synced from git
+# by `streamlit-template-argocd` (argocd-application.yaml); bootstrap in
+# kustomization.yaml.
 #
-#   kubectl apply -n argocd -f k8s/argocd/
-#
-# This folder is not part of the prod overlay (the overlay forces every
-# resource into `openms`; these belong in `argocd`). Nothing here holds a
-# secret. See docs/kubernetes-deployment.md, "GitOps with Argo CD".
-#
-# First apply on a cluster that already runs the app: remove the `automated`
-# block, check `argocd app diff streamlit-template`, sync once by hand, then apply this
-# file unchanged.
+# First deployment on a cluster that already runs the app: remove the
+# `automated` block, check `argocd app diff streamlit-template`, sync once by
+# hand, then merge this file unchanged.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: streamlit-template
   namespace: argocd
+  annotations:
+    # Never pruned or deleted by the parent: losing it would stop deploys.
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false
 spec:
   project: default
   source:
