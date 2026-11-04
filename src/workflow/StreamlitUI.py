@@ -2392,9 +2392,25 @@ class StreamlitUI:
                 st.session_state[version_key] += 1
                 st.toast(f"Imported the design of {matched} of {len(files)} file(s)")
 
+        # The editor keeps its edits as changes to the table it was first drawn
+        # with, and Streamlit identifies it by that table too. Handing it the
+        # design as saved after the last edit would make it a new editor that
+        # drops the edit just made (the condition typed before Tab or Enter
+        # vanished on every second edit). So it keeps its first table until
+        # the design is replaced (version bump) or the files change.
+        editor_key = f"{version_key}-{st.session_state[version_key]}"
+        base_key = f"{version_key}-base"
+        base = st.session_state.get(base_key)
+        if (
+            base is None
+            or base[0] != editor_key
+            or list(base[1]["file"]) != list(stored["file"])
+        ):
+            base = (editor_key, stored)
+            st.session_state[base_key] = base
         edited = st.data_editor(
-            stored,
-            key=f"{version_key}-{st.session_state[version_key]}",
+            base[1],
+            key=editor_key,
             hide_index=True,
             num_rows="fixed",
             disabled=["file"],
