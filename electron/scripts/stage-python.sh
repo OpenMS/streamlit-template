@@ -25,8 +25,14 @@ case "$(uname -s)-$(uname -m)" in
 esac
 
 tag="${PBS_RELEASE:-$(gh release view -R "$repo" --json tagName -q .tagName)}"
-asset=$(gh release view "$tag" -R "$repo" --json assets -q '.assets[].name' |
-  grep -E "^cpython-${version//./\\.}\.[0-9]+\+${tag}-${triple}-install_only\.tar\.gz$" | head -n 1 || true)
+# The stripped build has no debug symbols (the Linux interpreter and
+# libpython are about 70 MB smaller); the unstripped one is the fallback.
+assets=$(gh release view "$tag" -R "$repo" --json assets -q '.assets[].name')
+asset=""
+for flavour in install_only_stripped install_only; do
+  asset=$(grep -E "^cpython-${version//./\\.}\.[0-9]+\+${tag}-${triple}-${flavour}\.tar\.gz$" <<<"$assets" | head -n 1 || true)
+  [[ -z "$asset" ]] || break
+done
 [[ -n "$asset" ]] || { echo "::error::no CPython ${version} for ${triple} in ${repo} ${tag}"; exit 1; }
 
 dl=$(mktemp -d)
@@ -52,11 +58,14 @@ if [[ $triple == *apple-darwin ]]; then
   [[ -z "$left" ]] || { echo "::error::DuckDB extensions would fail macOS signing: $left"; exit 1; }
 fi
 
-# Drop caches and test suites the app never runs.
+# Drop caches, test suites and files the app never loads.
 site=$("$py" -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')
 command -v cygpath >/dev/null && site=$(cygpath -u "$site")
 find "$site" -type d -name __pycache__ -prune -exec rm -rf {} +
 find "$site" -type d \( -name tests -o -name test \) -prune -exec rm -rf {} +
+# Jupyter extensions (plotly's) and Windows debug databases are never loaded.
+rm -rf "$dest/share/jupyter"
+find "$dest" -name '*.pdb' -type f -delete
 
 # Compile the bytecode now on macOS and Linux: the shell runs Python with
 # PYTHONDONTWRITEBYTECODE there, because the signed macOS bundle and the
