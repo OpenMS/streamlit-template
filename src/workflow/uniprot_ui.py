@@ -97,7 +97,7 @@ def proteome_download(ui, key: str, name: str = "", heading: bool = True, button
     with st.form(f"{state}-form", border=False):
         c1, c2 = st.columns([4, 1])
         text = c1.text_input(
-            "Organism or taxonomy ID", placeholder="e.g. Escherichia coli, human or 9606",
+            "Organism or taxonomy ID", placeholder="e.g. E. coli, Escherichia, human or 9606",
             label_visibility="collapsed", key=f"{state}-text",
         )
         searched = c2.form_submit_button("Search", use_container_width=True)
@@ -108,7 +108,16 @@ def proteome_download(ui, key: str, name: str = "", heading: bool = True, button
         )
     if searched:
         try:
-            st.session_state[f"{state}-results"] = (text, _search(text, reference_only))
+            proteomes, widened = _search(text, reference_only), False
+            if not proteomes and reference_only:
+                # No reference proteome: list the other proteomes of that name
+                proteomes, widened = _search(text, False), True
+            st.session_state[f"{state}-results"] = (text, proteomes, widened)
+            # A new list starts at its best match, not at the last pick
+            if proteomes:
+                st.session_state[f"{state}-pick"] = proteomes[0].upid
+            else:
+                st.session_state.pop(f"{state}-pick", None)
         except (ValueError, uniprot.UniProtError) as e:
             st.session_state.pop(f"{state}-results", None)
             st.error(str(e))
@@ -116,13 +125,15 @@ def proteome_download(ui, key: str, name: str = "", heading: bool = True, button
     found = st.session_state.get(f"{state}-results")
     if not found:
         return
-    text, proteomes = found
+    text, proteomes, widened = found
     if not proteomes:
         st.warning(
-            f"No {'reference ' if reference_only else ''}proteome found for **{text}**."
-            + (" Try without *Reference proteomes only*." if reference_only else "")
+            f"No proteome found for **{text}**. Try another spelling, the genus "
+            "alone or the NCBI taxonomy ID."
         )
         return
+    if widened:
+        st.info(f"No reference proteome found for **{text}**; these are all its proteomes.")
 
     labels = {p.upid: p.label() for p in proteomes}
     upid = st.selectbox(

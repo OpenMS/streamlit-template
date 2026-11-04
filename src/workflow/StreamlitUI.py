@@ -697,20 +697,31 @@ class StreamlitUI:
         def browse():
             # The same ways to add files as the upload page's tabs.
             importing = data_import_ui.enabled()
-            labels = ["📁 Your files", "💻 Data on your computer"]
+            # A protein database comes from UniProt rather than from a PRIDE
+            # dataset, so its UniProt tab follows "Your files" and PRIDE is left out.
+            uniprot = bool(upload.get("uniprot"))
+            pride = importing and not uniprot
+            labels = ["📁 Your files"]
+            if uniprot:
+                labels.append("🔎 Import from UniProt proteome")
+            labels.append("💻 Data on your computer")
             if importing:
-                labels += ["☁️ Cloud data", "🧬 Import from PRIDE"]
-            if upload.get("uniprot"):
-                labels.append("🔎 UniProt proteome")
-            tabs = st.tabs(labels)
-            with tabs[0]:
+                labels.append("☁️ Cloud data")
+            if pride:
+                labels.append("🧬 Import from PRIDE")
+            tabs = dict(zip(labels, st.tabs(labels)))
+            tab_list = list(tabs.values())
+            with tab_list[0]:
                 # Takes the example files out once files of the user's own are in.
                 self._ensure_fallback(key, upload.get("fallback"))
                 options = self._input_file_options(key)
                 if not options:
                     st.info(
-                        "No files yet: add some from your computer"
-                        + (", from the cloud or from PRIDE." if importing else ".")
+                        "No files yet: add some "
+                        + ("from UniProt, " if uniprot else "")
+                        + "from your computer"
+                        + (", from the cloud or from PRIDE." if pride
+                           else " or from the cloud." if importing else ".")
                     )
                 else:
                     paths = {Path(o).name: o for o in options}
@@ -748,7 +759,7 @@ class StreamlitUI:
             # The upload widget fills self.upload_targets, so it is drawn
             # first and the import tabs route files by it.
             self.upload_targets = {}
-            with tabs[1]:
+            with tabs["💻 Data on your computer"]:
                 # Unwrapped from its fragment: adding files reruns the whole
                 # dialog, so "Your files" lists them at once.
                 StreamlitUI.upload_widget.__wrapped__(
@@ -756,16 +767,17 @@ class StreamlitUI:
                     **{k: v for k, v in upload.items() if k not in ("name", "uniprot")},
                 )
             if importing:
-                with tabs[2]:
+                with tabs["☁️ Cloud data"]:
                     data_import_ui.link_import_section(
                         self.workflow_dir, self.upload_targets, source=data_import_ui.LINK
                     )
-                with tabs[3]:
+            if pride:
+                with tabs["🧬 Import from PRIDE"]:
                     data_import_ui.link_import_section(
                         self.workflow_dir, self.upload_targets, source=data_import_ui.PRIDE
                     )
-            if upload.get("uniprot"):
-                with tabs[-1]:
+            if uniprot:
+                with tabs["🔎 Import from UniProt proteome"]:
                     # Downloads into this upload folder and selects the file.
                     self.uniprot_proteome_download(key, plain_name)
 

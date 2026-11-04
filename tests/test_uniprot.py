@@ -62,7 +62,11 @@ def server(monkeypatch):
             if url.path == "/proteomes/search":
                 found = [p for p in PROTEOMES if "proteome_type:1" not in query
                          or p["proteomeType"].startswith("Reference")]
-                if "nothing" in query:
+                if "noth" in query or ("hum" in query and "organism_name" in query):
+                    found = []
+                if "O6" in query:  # a strain with no reference proteome
+                    found = [p for p in found if "O6" in p["taxonomy"]["scientificName"]]
+                if "Eschericha" in query:  # a typo: only the shortened prefix finds it
                     found = []
                 self._send(json.dumps({"results": found}), "application/json")
             elif url.path == "/uniprotkb/search":
@@ -97,7 +101,17 @@ def test_queries():
     assert uniprot.proteome_query("9606") == \
         "(organism_id:9606 OR taxonomy_id:9606) AND (proteome_type:1)"
     assert uniprot.proteome_query(' Homo "sapiens" ', reference_only=False) == \
-        '(organism_name:"Homo  sapiens")'
+        "(organism_name:Homo AND organism_name:sapiens)"
+    assert uniprot.proteome_query("E. coli", reference_only=False) == \
+        "(organism_name:E* AND organism_name:coli)"
+    assert uniprot.proteome_query("Eschericha", reference_only=False, step="prefix") == \
+        "(organism_name:Eschericha*)"
+    assert uniprot.proteome_query("Eschericha", reference_only=False, step="stem") == \
+        "(organism_name:Escheri*)"
+    assert uniprot.proteome_query("E coli K-12", reference_only=False, step="free") == \
+        "(E* AND coli* AND K* AND 12)"
+    with pytest.raises(ValueError):
+        uniprot.proteome_query(' "() ')
     with pytest.raises(ValueError):
         uniprot.proteome_query("  ")
     assert uniprot.fasta_query("UP000005640", True) == "(proteome:UP000005640) AND (reviewed:true)"
@@ -113,6 +127,26 @@ def test_search_puts_reference_proteomes_first(server):
     assert found[0].label() == ("Escherichia coli (strain K12) · UP000000625 · taxon 83333 · "
                                 "4,402 proteins · Reference and representative proteome")
     assert [p.upid for p in uniprot.search_proteomes("Escherichia coli")] == ["UP000000625"]
+
+
+def test_search_finds_abbreviations_and_common_names(server):
+    assert [p.upid for p in uniprot.search_proteomes("E. coli", reference_only=False)] == \
+        ["UP000000625", "UP000001410"]
+    assert server.seen[-1][1]["query"] == "(organism_name:E* AND organism_name:coli)"
+    # No organism is named "human": the same words are searched in every field
+    server.seen.clear()
+    assert uniprot.search_proteomes("human", reference_only=False)
+    assert [q["query"] for _, q in server.seen] == [
+        "(organism_name:human)", "(organism_name:human*)", "(organism_name:hum*)", "(human*)"]
+    server.seen.clear()
+    assert uniprot.search_proteomes("Eschericha", reference_only=False)
+    assert server.seen[-1][1]["query"] == "(organism_name:Escheri*)"
+    server.seen.clear()
+    assert uniprot.search_proteomes("nothing") == []
+    assert len(server.seen) == 4
+    server.seen.clear()
+    uniprot.search_proteomes("9606")
+    assert len(server.seen) == 1
 
 
 def test_download(server, tmp_path):
@@ -192,7 +226,12 @@ def test_widget_downloads_and_selects(server, tmp_path):
 
     at.text_input(key="uniprot-fasta-file-text").input("nothing here")
     at.button[0].click().run()
-    assert "No reference proteome found" in at.warning[0].value
+    assert "No proteome found for **nothing here**" in at.warning[0].value
+
+    at.text_input(key="uniprot-fasta-file-text").input("E. coli O6")
+    at.button[0].click().run()
+    assert "No reference proteome found" in at.info[0].value
+    assert at.selectbox(key="uniprot-fasta-file-pick").value == "UP000001410"
 
     at.text_input(key="uniprot-fasta-file-text").input("Escherichia coli")
     at.checkbox(key="uniprot-fasta-file-reference").uncheck()
