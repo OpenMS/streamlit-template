@@ -164,6 +164,30 @@ def _short(value) -> str:
     return text if len(text) <= 40 else text[:37] + "..."
 
 
+def editor_table(state, editor_key: str, table, fits=None):
+    """The table to hand ``st.data_editor(key=editor_key)`` in this run.
+
+    A data editor keeps its edits as changes to the table it was first drawn
+    with, and Streamlit identifies it by that table as well as its key. An app
+    that saves each edit and draws the editor from the saved data would hand
+    it a new table after every edit: Streamlit then draws a new editor and the
+    edit made in that run is lost (every second value typed and confirmed with
+    Tab or Enter vanished). So the first table is kept in ``state`` and used
+    again while the editor stays on the page. ``table`` (a value, or a
+    function returning one) is taken again when the editor was not drawn in
+    the previous run (first visit, back from another page), so a change saved
+    meanwhile shows, or when ``fits(kept_table)`` is false (other rows).
+    Pass a new ``editor_key`` to start from ``table`` again (e.g. after an
+    import replaced the data).
+    """
+    kept_key = f"_{editor_key}-table"
+    kept = state.get(kept_key)
+    if kept is None or editor_key not in state or (fits is not None and not fits(kept)):
+        kept = table() if callable(table) else table
+        state[kept_key] = kept
+    return kept
+
+
 class StreamlitUI:
     """
     Provides an interface for Streamlit applications to handle file uploads,
@@ -2484,9 +2508,14 @@ class StreamlitUI:
                 st.session_state[version_key] += 1
                 st.toast(f"Imported the design of {matched} of {len(files)} file(s)")
 
+        editor_key = f"{version_key}-{st.session_state[version_key]}"
+        base = editor_table(
+            st.session_state, editor_key, stored,
+            fits=lambda table: list(table["file"]) == list(stored["file"]),
+        )
         edited = st.data_editor(
-            stored,
-            key=f"{version_key}-{st.session_state[version_key]}",
+            base,
+            key=editor_key,
             hide_index=True,
             num_rows="fixed",
             disabled=["file"],
