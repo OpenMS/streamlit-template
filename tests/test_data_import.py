@@ -583,7 +583,7 @@ def test_pride_dataset(monkeypatch):
              "publicFileLocations": [
                  {"value": "prd_ascp@fasp.ebi.ac.uk:pride/data/archive/2012/03/PXD000001/" + name},
                  {"value": "ftp://ftp.pride.ebi.ac.uk/pride/data/archive/2012/03/PXD000001/" + name}]}
-            for name in ("run1.raw", "run1.mzML.gz", "run2.raw", "ecoli.fasta")],
+            for name in ("run1.raw", "run1.mzML.gz", "run2.raw", "ecoli.fasta", "run3.raw.gz", "run3.mzML")],
     }
     monkeypatch.setattr(sources, "_json", lambda session, url, **kw: pages[url])
     monkeypatch.setattr(sources, "_open_archives", lambda session, listing: None)
@@ -593,14 +593,15 @@ def test_pride_dataset(monkeypatch):
         assert listing.url == "https://www.ebi.ac.uk/pride/archive/projects/PXD000001"
         assert "Organisms: Escherichia coli; Instruments: Orbitrap Eclipse" in listing.notes
         assert [(f.path, f.preselect) for f in listing.files] == [
-            ("run1.raw", False), ("run1.mzML.gz", True), ("run2.raw", True), ("ecoli.fasta", True)]
+            ("run1.raw", False), ("run1.mzML.gz", True), ("run2.raw", True), ("ecoli.fasta", True),
+            ("run3.raw.gz", False), ("run3.mzML", True)]
         assert listing.files[0].url == \
             "https://ftp.pride.ebi.ac.uk/pride/data/archive/2012/03/PXD000001/run1.raw"
     targets = {"ms": {"name": "MS data", "file_types": ["mzML", "raw"], "dir": "x", "fallback": []},
                "db": {"name": "Database", "file_types": ["fasta"], "dir": "y", "fallback": []}}
     items = job.build_items(listing.files, targets)
     assert [(i["target"], i["preselect"]) for i in items] == [
-        ("ms", False), ("ms", True), ("ms", True), ("db", True)]
+        ("ms", False), ("ms", True), ("ms", True), ("db", True), ("ms", False), ("ms", True)]
 
 
 def test_unknown_pride_dataset_is_explained(monkeypatch):

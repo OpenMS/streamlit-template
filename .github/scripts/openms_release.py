@@ -229,13 +229,14 @@ def main() -> int:
                 desktop.write_text(new_text)
                 notes.append(f"build-desktop-app.yaml: desktop OpenMS {fmt(old)} -> {fmt(newest)}")
         if min_python:
-            low = re.compile(r'((?:python-version|PYTHON_VERSION):\s*\[?\s*")(\d+)\.(\d+)(")')
+            # Quoted or not ("3.11", '3.11', 3.11.0); a patch level is dropped.
+            low = re.compile(r"""((?:python-version|PYTHON_VERSION):\s*\[?\s*(["']?))(\d+)\.(\d+)(?:\.\d+)?(\2)(?=[\s,\]]|$)""", re.M)
             want = f"{min_python[0]}.{min_python[1]}"
             for f in sorted(list(wf.glob("*.yml")) + list(wf.glob("*.yaml"))):
                 text = f.read_text()
                 new_text = low.sub(
-                    lambda mm: mm.group(1) + want + mm.group(4)
-                    if (int(mm.group(2)), int(mm.group(3))) < min_python else mm.group(0),
+                    lambda mm: mm.group(1) + want + mm.group(5)
+                    if (int(mm.group(3)), int(mm.group(4))) < min_python else mm.group(0),
                     text)
                 if new_text != text:
                     f.write_text(new_text)
