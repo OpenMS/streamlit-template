@@ -13,6 +13,12 @@ from scripts. It talks to the UniProt REST API
 - ``download_fasta(query, dest)`` streams ``/uniprotkb/stream`` into a file,
   through a ``.part`` file so a cut-off download never looks finished.
 
+Requests are throttled: one process sends at most one every ``MIN_INTERVAL``
+seconds, and a 429 or server error is retried (``MAX_TRIES``) after UniProt's
+``Retry-After``, else with exponential back-off. biotite's
+``biotite.database.uniprot`` covers only UniProtKB search and per-accession
+fetch, with neither throttling nor the proteome endpoints, so it is not used.
+
 ``UNIPROT_REST_URL`` in the environment points it at another server (a mirror,
 or a stand-in for tests).
 """
@@ -21,6 +27,8 @@ from __future__ import annotations
 
 import os
 import re
+import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, List, Optional
@@ -65,13 +73,50 @@ class Proteome:
         return " · ".join(parts)
 
 
+MAX_TRIES = 4
+MIN_INTERVAL = 0.2  # seconds between two requests of this process
+_RETRY_STATUS = {429, 500, 502, 503, 504}
+_last_request = [0.0]
+_lock = threading.Lock()
+_sleep = time.sleep
+
+
+def _wait_turn() -> None:
+    """Space requests out so one app never sends UniProt bursts."""
+    with _lock:
+        wait = _last_request[0] + MIN_INTERVAL - time.monotonic()
+        if wait > 0:
+            _sleep(wait)
+        _last_request[0] = time.monotonic()
+
+
+def _retry_after(response: requests.Response, attempt: int) -> float:
+    """Seconds to wait before the next try: UniProt's Retry-After, else back-off."""
+    value = response.headers.get("Retry-After", "")
+    if value.strip().isdigit():
+        return min(float(value), 60.0)
+    return min(2.0 ** attempt, 30.0)
+
+
 def _get(path: str, params: dict, stream: bool = False) -> requests.Response:
-    try:
-        response = requests.get(
-            f"{BASE_URL}{path}", params=params, headers=HEADERS, timeout=TIMEOUT, stream=stream
-        )
-    except requests.RequestException as e:
-        raise UniProtError(f"UniProt could not be reached: {e}") from e
+    """GET with request spacing and retries on 429 and server errors."""
+    for attempt in range(MAX_TRIES):
+        _wait_turn()
+        try:
+            response = requests.get(
+                f"{BASE_URL}{path}", params=params, headers=HEADERS, timeout=TIMEOUT, stream=stream
+            )
+        except requests.RequestException as e:
+            if attempt + 1 < MAX_TRIES:
+                _sleep(min(2.0 ** attempt, 30.0))
+                continue
+            raise UniProtError(f"UniProt could not be reached: {e}") from e
+        if response.status_code in _RETRY_STATUS and attempt + 1 < MAX_TRIES:
+            delay = _retry_after(response, attempt)
+            response.close()
+            _sleep(delay)
+            continue
+        break
     if response.status_code != 200:
         message = ""
         try:

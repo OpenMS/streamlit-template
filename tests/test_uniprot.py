@@ -71,6 +71,13 @@ def server(monkeypatch):
                            {"x-total-results": str(n)})
             elif url.path == "/uniprotkb/stream":
                 self._send(FASTA[reviewed], "text/plain")
+            elif url.path == "/busy" and sum(p == "/busy" for p, _ in seen) < 3:
+                self.send_response(429)
+                self.send_header("Retry-After", "0")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+            elif url.path == "/busy":
+                self._send("{}", "application/json")
             else:
                 self.send_response(400)
                 self.send_header("Content-Type", "application/json")
@@ -80,6 +87,8 @@ def server(monkeypatch):
     httpd = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     monkeypatch.setattr(uniprot, "BASE_URL", f"http://127.0.0.1:{httpd.server_port}")
+    monkeypatch.setattr(uniprot, "MIN_INTERVAL", 0.0)
+    monkeypatch.setattr(uniprot, "_sleep", lambda s: None)
     yield SimpleNamespace(seen=seen, url=uniprot.BASE_URL)
     httpd.shutdown()
 
@@ -117,6 +126,24 @@ def test_download(server, tmp_path):
     assert calls[-1] == 2
     assert not list(tmp_path.glob(".*.part"))
     assert server.seen[-1][1]["includeIsoform"] == "true"
+
+
+def test_busy_server_is_retried(server, monkeypatch):
+    assert uniprot._get("/busy", {}).status_code == 200
+    assert sum(p == "/busy" for p, _ in server.seen) == 3
+    monkeypatch.setattr(uniprot, "MAX_TRIES", 2)
+    server.seen.clear()
+    with pytest.raises(uniprot.UniProtError, match="429"):
+        uniprot._get("/busy", {})
+
+
+def test_requests_are_spaced(monkeypatch):
+    waits = []
+    monkeypatch.setattr(uniprot, "MIN_INTERVAL", 0.2)
+    monkeypatch.setattr(uniprot, "_sleep", waits.append)
+    uniprot._last_request[0] = uniprot.time.monotonic()
+    uniprot._wait_turn()
+    assert waits and 0 < waits[0] <= 0.2
 
 
 def test_errors_leave_no_file(server, tmp_path, monkeypatch):
