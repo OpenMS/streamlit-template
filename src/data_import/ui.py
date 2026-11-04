@@ -18,7 +18,7 @@ DEFAULT_ONLINE_LIMIT_GB = 50
 UNPACK = "Unpack and sort by type"
 SKIP = "Skip"
 LINK, PRIDE = "link", "pride"
-TAB_NAMES = {LINK: "Import from cloud", PRIDE: "Import from PRIDE"}
+TAB_NAMES = {LINK: "Cloud data", PRIDE: "Import from PRIDE"}
 
 
 def settings() -> dict:
