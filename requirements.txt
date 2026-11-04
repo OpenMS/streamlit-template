@@ -50,7 +50,7 @@ matplotlib==3.10.1
     # via pyopenms
 narwhals==2.5.0
     # via altair
-numpy==1.26.4
+numpy==2.4.6
     # via
     #   contourpy
     #   matplotlib
@@ -85,7 +85,7 @@ pyarrow==23.0.1
     # via streamlit
 pydeck==0.9.1
     # via streamlit
-pyopenms==3.5.0
+pyopenms==3.6.0
     # via src (pyproject.toml)
 pyopenms-viz==1.0.0
     # via src (pyproject.toml)
