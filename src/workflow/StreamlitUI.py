@@ -680,6 +680,8 @@ class StreamlitUI:
             labels = ["📁 Your files", "💻 Data on your computer"]
             if importing:
                 labels += ["☁️ Cloud data", "🧬 Import from PRIDE"]
+            if upload.get("uniprot"):
+                labels.append("🔎 UniProt proteome")
             tabs = st.tabs(labels)
             with tabs[0]:
                 options = self._input_file_options(key)
@@ -727,7 +729,7 @@ class StreamlitUI:
             with tabs[1]:
                 self.upload_widget(
                     key, name=plain_name, list_files=False,
-                    **{k: v for k, v in upload.items() if k != "name"},
+                    **{k: v for k, v in upload.items() if k not in ("name", "uniprot")},
                 )
             if importing:
                 with tabs[2]:
@@ -738,6 +740,10 @@ class StreamlitUI:
                     data_import_ui.link_import_section(
                         self.workflow_dir, self.upload_targets, source=data_import_ui.PRIDE
                     )
+            if upload.get("uniprot"):
+                with tabs[-1]:
+                    # Downloads into this upload folder and selects the file.
+                    self.uniprot_proteome_download(key, plain_name)
 
         browse()
 
@@ -963,7 +969,9 @@ class StreamlitUI:
                 **Browse** button that opens the files by folder, to select
                 them and add new ones (upload and import from a link) in one
                 place, so the workflow needs no upload page of its own. The
-                ``fallback`` files are used while none are added.
+                ``fallback`` files are used while none are added. With
+                ``uniprot=True`` (a protein database) the dialog also searches
+                UniProt proteomes and downloads one as the selected file.
         """
         if reactive:
             self._select_input_file_impl(key, name, multiple, display_file_path, reactive, upload)
