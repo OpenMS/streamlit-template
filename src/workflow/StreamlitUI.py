@@ -1560,6 +1560,26 @@ class StreamlitUI:
             # stubbed out; re-raise rather than fall through to the write.
             raise
 
+    def _topp_tool_unavailable(self, topp_tool_name: str) -> None:
+        """Say why a TOPP tool's parameters cannot be shown: missing, or failing."""
+        from src.workflow.ParameterManager import INI_TOOL_MISSING
+
+        reason = getattr(self.parameter_manager, "ini_errors", {}).get(
+            topp_tool_name, INI_TOOL_MISSING
+        )
+        if reason == INI_TOOL_MISSING:
+            st.error(
+                f"TOPP tool **'{topp_tool_name}'** not found. The OpenMS TOPP "
+                "tools are not installed here, or not on the PATH of this app."
+            )
+            return
+        st.error(
+            f"TOPP tool **'{topp_tool_name}'** is installed but could not "
+            "write its parameters, so they cannot be shown."
+        )
+        with st.expander("Tool output"):
+            st.code(reason, language=None)
+
     def _input_TOPP_impl(
         self,
         topp_tool_name: str,
@@ -1605,7 +1625,7 @@ class StreamlitUI:
         # Create pristine ini file (never mutated with custom defaults)
         ini_file_path = Path(self.parameter_manager.ini_dir, f"{topp_tool_name}.ini")
         if not self.parameter_manager.create_ini(topp_tool_name):
-            st.error(f"TOPP tool **'{topp_tool_name}'** not found.")
+            self._topp_tool_unavailable(topp_tool_name)
             return
 
         # Seed custom defaults into params.json under _defaults key

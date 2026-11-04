@@ -209,7 +209,14 @@ RUN rm -rf openms-build
 # Check that pyOpenMS loads and finds its data, and that the TOPP tools run.
 RUN python -c "import pyopenms; print('pyOpenMS', pyopenms.__version__, pyopenms.EmpiricalFormula('C6H12O6').getMonoWeight())" \
     && test -x /openms/bin/FileInfo \
-    && ! ldd /openms/bin/FileInfo | grep 'not found'
+    && ! ldd /openms/bin/FileInfo | grep 'not found' \
+    && for tool in FileInfo FeatureFinderMetabo; do \
+        "$tool" -write_ini "/tmp/$tool.ini" > "/tmp/$tool.log" 2>&1; \
+        if [ ! -s "/tmp/$tool.ini" ]; then \
+            echo "$tool -write_ini failed:"; cat "/tmp/$tool.log"; exit 1; \
+        fi; \
+        rm -f "/tmp/$tool.ini" "/tmp/$tool.log"; \
+    done
 
 # Prepare and run streamlit app.
 FROM compile-openms AS run-app
