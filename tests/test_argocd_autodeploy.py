@@ -108,7 +108,11 @@ def _release_tag():
     tag = str(overlay["images"][0]["newTag"])
     release, _, variant = tag.rpartition("-")
     assert variant in ("full", "simple") and release, tag
-    return release, variant
+    # The starting tag may itself be a pre-release (`2.0.0-alpha`): keep the
+    # prefix and version only.
+    match = re.fullmatch(r"(.*?[0-9]+(?:\.[0-9]+)+)(?:-[0-9A-Za-z.]+)?", release)
+    assert match, tag
+    return match.group(1), variant
 
 
 def test_allow_tags_match_releases_and_pre_releases():
