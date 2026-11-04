@@ -37,7 +37,10 @@ from src.workflow.progress import (
     failures,
     format_duration,
     key_message,
+    current_step,
     read_progress,
+    sample_counts,
+    tool_progress,
 )
 
 if _original_streamlit is not None:
@@ -311,3 +314,74 @@ def test_executor_survives_pickling(workflow, workflow_modules):
     _, executor = workflow
     copy = pickle.loads(pickle.dumps(executor))
     assert copy.progress.workflow_dir == executor.progress.workflow_dir
+
+
+def test_samples_one_after_another(workflow):
+    """A workflow that runs its tools sample by sample records each sample."""
+    wf_dir, executor = workflow
+    progress = executor.progress
+    progress.start_samples(["one.mzML", "bad.mzML", "three.mzML"])
+    assert sample_counts(read_progress(wf_dir))["pending"] == 3
+    names = ["one.mzML", "bad.mzML", "three.mzML"]
+    for i, name in enumerate(names):
+        try:
+            with progress.sample(i):
+                assert sample_counts(read_progress(wf_dir))["running"] == 1
+                if not executor.run_topp("FakeTool", {"in": [name], "out": ["o"]}):
+                    raise RuntimeError(name)
+                assert executor.run_topp(
+                    "FakeTool", {"in": ["db.fasta"], "out": ["o"]},
+                )
+        except RuntimeError:
+            pass
+    state = read_progress(wf_dir)
+    assert [s["status"] for s in state["samples"]] == ["done", "failed", "done"]
+    assert all(s["ended"] >= s["started"] for s in state["samples"])
+    assert sample_counts(state) == {"pending": 0, "running": 0, "done": 2, "failed": 1}
+    # Every step names the sample it ran for
+    assert [s["sample"] for s in state["steps"]] == [
+        "one.mzML", "one.mzML", "bad.mzML", "three.mzML", "three.mzML"
+    ]
+    assert current_step(state, "three.mzML") is state["steps"][-1]
+    assert current_step(state, "nothing.mzML") is None
+    (failure,) = failures(state)
+    assert failure["context"] == "While running FakeTool on (bad.mzML)"
+
+
+def test_sample_failure_names_the_sample(tmp_path):
+    progress = RunProgress(tmp_path)
+    progress.start_samples(["a.mzML", "b.mzML"])
+    with progress.sample(1):
+        step = progress.start_step("DecoyDatabase", ["db.fasta"])
+        progress.file_finished(step, 0, ok=False, returncode=1)
+        # A failure that does not raise is marked by the workflow itself
+        progress.sample_finished(1, ok=False)
+    state = read_progress(tmp_path)
+    assert [s["status"] for s in state["samples"]] == ["pending", "failed"]
+    assert failure_context(state["steps"][0], 0) == (
+        "While running DecoyDatabase on (db.fasta) for sample b.mzML"
+    )
+    # A step outside every sample names none
+    assert progress.start_step("Consensus", ["2 files"]) == 1
+    assert read_progress(tmp_path)["steps"][1]["sample"] is None
+
+
+def test_tool_progress_from_the_log(tmp_path):
+    log = tmp_path / "all.log"
+    assert tool_progress(log) is None
+    log.write_text(
+        "Running command:\nFLASHDeconv -in a.mzML\n\n"
+        "Progress of 'loading mzML file':\n"
+        "  10.00 %\n  42.50 %\n"
+    )
+    assert tool_progress(log) == ("loading mzML file", 0.425)
+    # Progress of an earlier command does not count for the next one
+    with open(log, "a") as f:
+        f.write("Process finished:\nFLASHDeconv -in a.mzML\n\n")
+    assert tool_progress(log) is None
+    with open(log, "a") as f:
+        f.write("Running command:\nFLASHTnT\n\nProgress of 'matching tags':\n")
+    assert tool_progress(log) is None
+    with open(log, "a") as f:
+        f.write("  7 %\n")
+    assert tool_progress(log) == ("matching tags", 0.07)
