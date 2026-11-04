@@ -17,6 +17,8 @@
 # Needs gh (GH_TOKEN), admin rights to run the installer (Windows), and sudo to
 # install the release package (macOS) or the deb's dependencies (Linux).
 # OPENMS_REPOSITORY overrides the repository the release comes from.
+# THIRDPARTY_TOOLS names further share/OpenMS/THIRDPARTY folders to keep (see
+# the end of this script).
 set -euo pipefail
 
 version="$1"
@@ -196,8 +198,40 @@ if [[ -n "${bad:-}" ]]; then
   exit 1
 fi
 
-if [[ -d "$out/share/OpenMS/THIRDPARTY" ]]; then
-  echo "THIRDPARTY: $(ls "$out/share/OpenMS/THIRDPARTY" | tr '\n' ' ')"
+# share/OpenMS/examples holds OpenMS's own tutorial data, which no TOPP tool
+# reads at run time.
+rm -rf "$out/share/OpenMS/examples"
+
+# Keep only the THIRDPARTY programs a staged tool runs, plus those named in
+# THIRDPARTY_TOOLS (folder names, for an app that calls one itself). The rest
+# (ProteoWizard alone is 225 MB on Windows) is never used by the app.
+thirdparty="$out/share/OpenMS/THIRDPARTY"
+if [[ -d "$thirdparty" ]]; then
+  keep=" ${THIRDPARTY_TOOLS:-} "
+  for t in "${tools[@]}"; do
+    case "$t" in
+      CometAdapter) keep+=" Comet " ;;
+      LuciphorAdapter) keep+=" LuciPHOr2 " ;;
+      MSFraggerAdapter) keep+=" MSFragger " ;;
+      MSGFPlusAdapter) keep+=" MSGFPlus " ;;
+      MaRaClustAdapter) keep+=" MaRaCluster " ;;
+      PercolatorAdapter) keep+=" Percolator " ;;
+      SageAdapter) keep+=" Sage " ;;
+      SpectraSTSearchAdapter) keep+=" SpectraST " ;;
+      XTandemAdapter) keep+=" XTandem " ;;
+      # Thermo .raw input (CommandExecutor.convert_to_mzml).
+      FileConverter) keep+=" ThermoRawFileParser " ;;
+    esac
+  done
+  for d in "$thirdparty"/*/; do
+    name=$(basename "$d")
+    if [[ $keep != *" $name "* ]]; then
+      echo "Leaving out THIRDPARTY/$name ($(du -sh "$d" | cut -f1))"
+      rm -rf "$d"
+    fi
+  done
+  echo "THIRDPARTY: $(ls "$thirdparty" | tr '\n' ' ')"
 fi
 libs=$(find "$out/openms" -type f \( -name '*.dll' -o -name '*.dylib' -o -name '*.so*' \) | wc -l)
 echo "Staged ${#tools[@]} TOPP tools and $libs libraries from $asset"
+du -sh "$out/openms" "$out/share/OpenMS"
