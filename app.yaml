@@ -72,6 +72,7 @@ sync:
     - settings.json
     - default-parameters.json
     - presets.json
+    - parameter-names.json
     - README.md
     - content/*
     - src/Workflow.py

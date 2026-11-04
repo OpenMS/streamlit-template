@@ -60,6 +60,7 @@ from src.workflow.ParameterManager import (
     ParameterManager,
     TransientParameterFileError,
 )
+from src.workflow.parameter_names import display_name as _display_name
 
 
 def _txt(value) -> str:
@@ -1657,8 +1658,12 @@ class StreamlitUI:
         params = []
         for key in valid_keys:
             entry = param.getEntry(key)
+            friendly = _display_name(
+                topp_tool_name, _txt(key).split(":1:", 1)[-1], tool_instance_name
+            )
             p = {
                 "name": _txt(entry.name),
+                "friendly": friendly,
                 "key": key,
                 "value": entry.value,
                 "original_is_list": isinstance(entry.value, list),
@@ -1782,6 +1787,15 @@ class StreamlitUI:
                     key_str = key_str.replace(f"{topp_tool_name}:1:", f"{tool_instance_name}:1:", 1)
                 key = f"{self.parameter_manager.topp_param_prefix}{key_str}"
                 name = p["name"]
+                if p.get("friendly"):
+                    # The app's own name for it; the help keeps the tool's
+                    # name, which logs, presets and the tool's docs use.
+                    name = p["friendly"]["name"]
+                    p["description"] = (
+                        (p["friendly"]["help"] or p["description"])
+                        + f"\n\nParameter `{_txt(p['key']).split(':1:', 1)[-1]}`"
+                        + f" of {topp_tool_name}."
+                    )
                 try:
                     # sometimes strings with newline, handle as list
                     if isinstance(p["value"], str) and "\n" in p["value"]:
@@ -1975,6 +1989,7 @@ class StreamlitUI:
                 continue
             entry = param.getEntry(key)
             name = _txt(key).split(":1:")[1]
+            friendly = _display_name(topp_tool_name, name, tool_instance_name)
             default = defaults.get(name, entry.value)
             value = user.get(name, default)
             if isinstance(entry.value, list):
@@ -1984,9 +1999,15 @@ class StreamlitUI:
             rows.append(
                 {
                     "name": name,
-                    "label": _txt(entry.name),
+                    "label": friendly["name"] if friendly else _txt(entry.name),
+                    "friendly": bool(friendly),
                     "section": ":".join(name.split(":")[:-1]),
-                    "description": _txt(entry.description),
+                    "description": (
+                        (friendly["help"] or _txt(entry.description))
+                        if friendly
+                        else _txt(entry.description)
+                    ),
+                    "tool_description": _txt(entry.description),
                     "value": value,
                     "default": default,
                     "valid_strings": _valid_strings(entry),
@@ -2035,7 +2056,9 @@ class StreamlitUI:
             r
             for r in rows
             if all(
-                w in f"{r['name']} {r['description']}".lower() for w in words
+                w
+                in f"{r['label']} {r['name']} {r['description']} {r['tool_description']}".lower()
+                for w in words
             )
             and (not only_changed or not same(r["value"], r["default"]))
         ]
@@ -2115,13 +2138,22 @@ class StreamlitUI:
                 st.session_state[k] = as_widget_value(r, v)
 
         c_label, c_value, c_actions = st.columns([5, 4, 3], vertical_alignment="center")
-        section = f":gray[{row['section']}:]" if row["section"] else ""
         marker = " :orange[●]" if changed else ""
-        c_label.markdown(
-            f"{section}**{row['label']}**{marker}"
-            + (" :gray[· advanced]" if row["advanced"] else ""),
-            help=row["description"] or None,
-        )
+        if row.get("friendly"):
+            # The app's name first, the tool's own name beside it, so both
+            # read the same as on the page and in the tool's documentation.
+            c_label.markdown(
+                f"**{row['label']}**{marker} :gray[· {row['name']}]"
+                + (" :gray[· advanced]" if row["advanced"] else ""),
+                help=row["description"] or None,
+            )
+        else:
+            section = f":gray[{row['section']}:]" if row["section"] else ""
+            c_label.markdown(
+                f"{section}**{row['label']}**{marker}"
+                + (" :gray[· advanced]" if row["advanced"] else ""),
+                help=row["description"] or None,
+            )
         if changed:
             c_label.caption(f"default: {_short(default)}")
 
