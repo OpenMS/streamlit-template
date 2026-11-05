@@ -38,7 +38,6 @@ from src.workflow.progress import (
 from src.workflow.InputFolders import (
     design_rows,
     folder_counts,
-    in_folder,
     load_folders,
     natural_key,
     rename_folder,
@@ -207,8 +206,8 @@ class StreamlitUI:
             name (str, optional): Display name for the upload component. Defaults to the key if not provided.
             fallback (Union[List, str, Dict[str, str]], optional): Default files
                 to use if no files are uploaded. A dict maps each file to the
-                folder it is put in when it is copied (``"Label-free/control"``
-                for a subfolder), so the examples arrive sorted.
+                folder it is put in when it is copied, so the examples arrive
+                sorted.
             suggest_folders (bool, optional): Offer to sort the files into folders
                 by the groups their names suggest (``ctrl_R1``, ``ctrl_R2``,
                 ``treated_R1`` ...). Folders are labels kept in
@@ -590,8 +589,7 @@ class StreamlitUI:
             view = None
         shown = [
             n for n in names
-            if view is None
-            or (folders.get(n, "") == view if view == "" else in_folder(folders.get(n, ""), view))
+            if view is None or folders.get(n, "") == view
         ]
         selected = set()
         if select is not None:
@@ -633,8 +631,7 @@ class StreamlitUI:
                 "folder": st.column_config.TextColumn(
                     "Folder",
                     help="Type a folder name to put the file in it (a new "
-                    "name makes a new folder, `folder/subfolder` a subfolder); "
-                    "clear it to take the file out.",
+                    "name makes a new folder); clear it to take the file out.",
                 ),
             },
         )
@@ -675,8 +672,7 @@ class StreamlitUI:
                 if c2.button(
                     "Remove folder",
                     key=f"{version_key}-remove",
-                    help="The files stay; they are just no longer in this "
-                    "folder. Its subfolders move up a level.",
+                    help="The files stay; they are just no longer in a folder.",
                     use_container_width=True,
                 ):
                     rename_folder(self.workflow_dir, key, old, "")
@@ -1164,7 +1160,7 @@ class StreamlitUI:
             folder = labels[label]
             st.session_state[widget] = [
                 f for f in options
-                if folder is None or in_folder(folders.get(Path(f).name, ""), folder)
+                if folder is None or folders.get(Path(f).name) == folder
             ]
             st.session_state[pill_key] = None
 
@@ -2321,10 +2317,11 @@ class StreamlitUI:
                 to that ``select_input_file`` so the table follows the selection.
             name (str, optional): The heading shown above the table.
             suggest (bool, optional): Also fill the condition and replicate of
-                files in no folder from the groups their names suggest
-                (``ctrl_R1``, ``ctrl_R2``, ``treated_R1`` ...). Files in a
-                folder (see ``upload_widget``) always take the folder as
-                their condition when they have none yet.
+                files from the groups their names suggest (``ctrl_R1``,
+                ``ctrl_R2``, ``treated_R1`` ...): files in no folder from all
+                names, files in a folder (see ``upload_widget``) from the
+                names in that folder. Without such groups a file in a folder
+                takes the folder as its condition when it has none yet.
         """
         files = st.session_state.get(
             f"{self.parameter_manager.param_prefix}{key}", self.params.get(key, [])

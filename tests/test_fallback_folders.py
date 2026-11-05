@@ -23,8 +23,8 @@ def _examples(tmp_path):
     for name in ("a.mzML", "b.mzML", "c.mzML"):
         (src / name).write_text(name)
     return {
-        str(src / "a.mzML"): "Label-free/ctrl",
-        str(src / "b.mzML"): "Label-free/drug",
+        str(src / "a.mzML"): "Label-free",
+        str(src / "b.mzML"): "TMT",
         str(src / "c.mzML"): "",
     }
 
@@ -36,7 +36,7 @@ def test_copied_examples_arrive_in_their_folders(tmp_path):
         "a.mzML", "b.mzML", "c.mzML"
     ]
     assert load_folders(workflow_dir, "mzML-files") == {
-        "a.mzML": "Label-free/ctrl", "b.mzML": "Label-free/drug"
+        "a.mzML": "Label-free", "b.mzML": "TMT"
     }
 
 
@@ -45,7 +45,7 @@ def test_folders_the_user_chose_stay(tmp_path):
     save_folders(workflow_dir, "mzML-files", {"a.mzML": "mine"})
     _ui(workflow_dir)._ensure_fallback("mzML-files", _examples(tmp_path))
     assert load_folders(workflow_dir, "mzML-files") == {
-        "a.mzML": "mine", "b.mzML": "Label-free/drug"
+        "a.mzML": "mine", "b.mzML": "TMT"
     }
 
 

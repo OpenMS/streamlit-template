@@ -4,7 +4,6 @@ import pytest
 from src.workflow.InputFolders import (
     design_rows,
     folder_counts,
-    in_folder,
     load_folders,
     rename_folder,
     save_folders,
@@ -112,41 +111,21 @@ def test_design_rows_suggest_for_files_outside_folders():
     assert design_rows(files, {}, suggest=False) == {}
 
 
-def test_subfolders_count_toward_their_folder():
-    folders = {"a": "LFQ/ctrl", "b": "LFQ/ctrl", "c": "LFQ/drug", "d": "TMT", "e": "LFQ 2"}
-    counts = folder_counts(folders, list(folders))
-    assert list(counts.items()) == [
-        ("LFQ", 3), ("LFQ/ctrl", 2), ("LFQ/drug", 1), ("LFQ 2", 1), ("TMT", 1)
+def test_a_decimal_stays_one_token():
+    names = ["mix_1x_R1.mzML", "mix_1x_R2.mzML", "mix_0.1x_R1.mzML", "mix_0.1x_R2.mzML"]
+    assert _groups(names) == [
+        ("mix_1x_R1.mzML", "1x", 1, 1), ("mix_1x_R2.mzML", "1x", 2, 1),
+        ("mix_0.1x_R1.mzML", "0.1x", 1, 1), ("mix_0.1x_R2.mzML", "0.1x", 2, 1),
     ]
 
 
-def test_folder_names_are_cleaned(tmp_path):
-    save_folders(tmp_path, "k", {"a.mzML": " LFQ / /ctrl ", "b.mzML": " / "})
-    assert load_folders(tmp_path, "k") == {"a.mzML": "LFQ/ctrl"}
-
-
-def test_in_folder():
-    assert in_folder("LFQ/ctrl", "LFQ")
-    assert in_folder("LFQ", "LFQ")
-    assert not in_folder("LFQ 2", "LFQ")
-    assert not in_folder("LFQ", "")
-
-
-def test_rename_and_remove_a_folder_with_subfolders(tmp_path):
-    save_folders(tmp_path, "k", {"a": "LFQ/ctrl", "b": "LFQ", "c": "LFQ 2"})
-    rename_folder(tmp_path, "k", "LFQ", "Label-free")
-    assert load_folders(tmp_path, "k") == {"a": "Label-free/ctrl", "b": "Label-free", "c": "LFQ 2"}
-    rename_folder(tmp_path, "k", "Label-free", "")  # subfolders move up
-    assert load_folders(tmp_path, "k") == {"a": "ctrl", "c": "LFQ 2"}
-    save_folders(tmp_path, "k", {"a": "X/ctrl/day1"})
-    rename_folder(tmp_path, "k", "X/ctrl", "")
-    assert load_folders(tmp_path, "k") == {"a": "X/day1"}
-
-
-def test_design_rows_take_the_subfolder_as_condition():
-    files = ["s_1x_R1.mzML", "s_1x_R2.mzML", "s_01x_R1.mzML"]
-    folders = {files[0]: "LFQ/Spike-in 1x", files[1]: "LFQ/Spike-in 1x", files[2]: "LFQ/Spike-in 0.1x"}
-    rows = design_rows(files, folders)
+def test_a_folder_holding_an_experiment_takes_the_groups_of_its_names():
+    lfq = ["ctrl_R1.mzML", "ctrl_R2.mzML", "drug_R1.mzML", "drug_R2.mzML"]
+    files = lfq + ["other.mzML"]
+    folders = {**{f: "Label-free" for f in lfq}, "other.mzML": "Other"}
+    rows = design_rows(files, folders, suggest=True)
     assert [(rows[f].group, rows[f].replicate) for f in files] == [
-        ("Spike-in 1x", 1), ("Spike-in 1x", 2), ("Spike-in 0.1x", 1)
+        ("ctrl", 1), ("ctrl", 2), ("drug", 1), ("drug", 2), ("Other", 1)
     ]
+    # Without suggestions the folder is the condition
+    assert {rows.group for rows in design_rows(lfq, folders).values()} == {"Label-free"}

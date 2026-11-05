@@ -8,9 +8,7 @@ directories keeps working. The labels live in
 
 ``suggest_groups()`` reads conditions, biological replicates and fractions
 from file names such as ``ctrl_R1.mzML`` / ``ctrl_R2.mzML`` /
-``treated_R1.mzML``. A folder name with ``/`` is a subfolder
-(``Label-free/control``): a folder holds the files of its subfolders too, and
-the last part of the name is the condition. ``design_rows()`` turns folders (and, optionally, those
+``treated_R1.mzML``. ``design_rows()`` turns folders (and, optionally, those
 suggestions) into rows of the experimental design.
 
 This module has no Streamlit dependency.
@@ -25,15 +23,14 @@ from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Union
 
 FOLDERS_FILE = "input-folders.json"
-# Separates a folder from its subfolders in a folder name
-SEPARATOR = "/"
 # Sessions are threads of one server process: one save at a time, so two
 # sessions on one workspace do not drop each other's folders
 _LOCK = threading.Lock()
 
 _COMPRESSION = re.compile(r"\.(gz|bz2|xz|zip)$", re.IGNORECASE)
 _EXTENSION = re.compile(r"\.[A-Za-z][A-Za-z0-9]{0,5}$")
-_SEPARATORS = re.compile(r"[_\-\s.]+")
+# A dot between digits is a decimal point (0.1x), not a separator
+_SEPARATORS = re.compile(r"(?:[_\-\s]|(?<!\d)\.|\.(?!\d))+")
 _FRACTION = re.compile(r"^(?:f|fr|frac|fraction)(\d{1,3})$", re.IGNORECASE)
 _REPLICATE = re.compile(
     r"^(?:r|rep|repl|replicate|br|biorep)(\d{1,3})$", re.IGNORECASE
@@ -45,24 +42,6 @@ _LETTERS_NUMBER = re.compile(r"^([A-Za-z]+?)(\d{1,3})$")
 
 def _name(path: str) -> str:
     return re.split(r"[\\/]", str(path).rstrip("\\/"))[-1]
-
-
-def clean_folder(folder) -> str:
-    """``folder`` with its parts trimmed and empty parts dropped (``" a / /b "`` -> ``"a/b"``)."""
-    if folder is None:
-        return ""
-    parts = [p.strip() for p in str(folder).split(SEPARATOR)]
-    return SEPARATOR.join(p for p in parts if p)
-
-
-def in_folder(folder: str, parent: str) -> bool:
-    """Whether a file in ``folder`` is in ``parent``, directly or in a subfolder of it."""
-    return bool(parent) and (folder == parent or folder.startswith(parent + SEPARATOR))
-
-
-def condition_of(folder: str) -> str:
-    """The condition a folder stands for: the last part of its name."""
-    return folder.rsplit(SEPARATOR, 1)[-1]
 
 
 # --- folders ----------------------------------------------------------------
@@ -86,12 +65,16 @@ def load_folders(workflow_dir: Union[str, Path], key: str) -> Dict[str, str]:
     folders = _load_all(workflow_dir).get(key, {})
     if not isinstance(folders, dict):
         return {}
-    return {str(f): clean_folder(d) for f, d in folders.items() if clean_folder(d)}
+    return {str(f): str(d).strip() for f, d in folders.items() if str(d).strip()}
 
 
 def save_folders(workflow_dir: Union[str, Path], key: str, folders: Dict[str, str]) -> None:
     """Store the folders of upload ``key``; an empty folder name takes the file out."""
-    clean = {_name(f): clean_folder(d) for f, d in folders.items() if clean_folder(d)}
+    clean = {
+        _name(f): str(d).strip()
+        for f, d in folders.items()
+        if d is not None and str(d).strip()
+    }
     path = folders_path(workflow_dir)
     with _LOCK:
         data = _load_all(workflow_dir)
@@ -115,48 +98,21 @@ def save_folders(workflow_dir: Union[str, Path], key: str, folders: Dict[str, st
 
 
 def rename_folder(workflow_dir, key: str, old: str, new: str) -> None:
-    """Rename folder ``old`` of upload ``key``, its subfolders with it.
-
-    An empty ``new`` removes the folder: its files stay, and its subfolders
-    move up to where it was.
-    """
-    old, new = clean_folder(old), clean_folder(new)
-    parent = old.rsplit(SEPARATOR, 1)[0] if SEPARATOR in old else ""
-    target = new if new else parent
-
-    def renamed(d: str) -> str:
-        if d == old:
-            return target
-        if in_folder(d, old):
-            rest = d[len(old) + len(SEPARATOR):]
-            return SEPARATOR.join(p for p in (target, rest) if p)
-        return d
-
+    """Rename folder ``old`` of upload ``key``; an empty ``new`` removes the folder (its files stay)."""
     folders = load_folders(workflow_dir, key)
-    save_folders(workflow_dir, key, {f: renamed(d) for f, d in folders.items()})
+    save_folders(
+        workflow_dir, key, {f: (new if d == old else d) for f, d in folders.items()}
+    )
 
 
 def folder_counts(folders: Dict[str, str], files: Sequence[str]) -> Dict[str, int]:
-    """Files per folder among ``files`` (paths or names), in natural order of the folder names.
-
-    A folder counts the files of its subfolders too, and is listed even when
-    it holds none of its own.
-    """
+    """Files per folder among ``files`` (paths or names), in natural order of the folder names."""
     counts: Dict[str, int] = {}
     for f in files:
         d = folders.get(_name(f))
-        if not d:
-            continue
-        parts = d.split(SEPARATOR)
-        for i in range(1, len(parts) + 1):
-            name = SEPARATOR.join(parts[:i])
-            counts[name] = counts.get(name, 0) + 1
-    return dict(sorted(counts.items(), key=lambda kv: folder_key(kv[0])))
-
-
-def folder_key(folder: str):
-    """Natural order of folder names, each folder followed by its subfolders."""
-    return [natural_key(p) for p in folder.split(SEPARATOR)]
+        if d:
+            counts[d] = counts.get(d, 0) + 1
+    return dict(sorted(counts.items(), key=lambda kv: natural_key(kv[0])))
 
 
 def natural_key(text: str):
@@ -304,18 +260,27 @@ def design_rows(
     """Condition, replicate and fraction for each file name that has a folder
     (or, with ``suggest``, a group read from the names).
 
-    The folder is the condition (of a subfolder, the last part of its
-    name, so ``Label-free/control`` is ``control``). Replicates come from the names when they are
+    The folder is the condition, unless (with ``suggest``) the names of its
+    files suggest groups: a folder holding a whole experiment
+    (``ctrl_R1``, ``ctrl_R2``, ``drug_R1``, ``drug_R2``) gets those groups as
+    its conditions. Replicates come from the names when they are
     unique within the folder, else they are counted within it. Files with
     neither a folder nor a suggestion are absent.
     """
     names = [_name(f) for f in files]
     suggested = {s.file: s for s in suggest_groups(names)} if suggest else {}
-    condition = {}
+    by_folder: Dict[str, List[str]] = {}
     for n in names:
         if folders.get(n):
-            condition[n] = condition_of(folders[n])
-        elif n in suggested:
+            by_folder.setdefault(folders[n], []).append(n)
+    condition = {}
+    for folder, members in by_folder.items():
+        # A folder that holds one experiment: the groups its names suggest
+        within = {s.file: s.group for s in suggest_groups(members)} if suggest else {}
+        for n in members:
+            condition[n] = within.get(n, folder)
+    for n in names:
+        if n not in condition and n in suggested:
             condition[n] = suggested[n].group
     rows: Dict[str, Suggestion] = {}
     by_condition: Dict[str, List[str]] = {}
