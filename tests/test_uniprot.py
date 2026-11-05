@@ -28,6 +28,9 @@ PROTEOMES = [
      "taxonomy": {"scientificName": "Escherichia coli O6:H1", "taxonId": 199310},
      "proteinCount": 5336},
 ]
+HUMAN = {"id": "UP000005640", "proteomeType": "Reference and representative proteome",
+         "taxonomy": {"scientificName": "Homo sapiens", "taxonId": 9606, "commonName": "Human"},
+         "proteinCount": 82485}
 FASTA = {
     False: "".join(f">tr|A{i:05d}|A{i}_ECOLI Protein {i}\nMKTAYIAKQR\n" for i in range(7)),
     True: ">sp|P0A7V8|RS4_ECOLI 30S ribosomal protein S4\nMARYLGPKLK\n"
@@ -62,6 +65,8 @@ def server(monkeypatch):
             if url.path == "/proteomes/search":
                 found = [p for p in PROTEOMES if "proteome_type:1" not in query
                          or p["proteomeType"].startswith("Reference")]
+                if query == "(human*)":  # a common name is matched in every field
+                    found = [HUMAN]
                 if "noth" in query or ("hum" in query and "organism_name" in query):
                     found = []
                 if "O6" in query:  # a strain with no reference proteome
@@ -135,7 +140,7 @@ def test_search_finds_abbreviations_and_common_names(server):
     assert server.seen[-1][1]["query"] == "(organism_name:E* AND organism_name:coli)"
     # No organism is named "human": the same words are searched in every field
     server.seen.clear()
-    assert uniprot.search_proteomes("human", reference_only=False)
+    assert [p.upid for p in uniprot.search_proteomes("human", reference_only=False)] == ["UP000005640"]
     assert [q["query"] for _, q in server.seen] == [
         "(organism_name:human)", "(organism_name:human*)", "(organism_name:hum*)", "(human*)"]
     server.seen.clear()
