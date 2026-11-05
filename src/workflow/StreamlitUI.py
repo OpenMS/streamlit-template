@@ -59,7 +59,7 @@ from src.workflow.ExperimentalDesign import (
 from src.workflow.vendor_files import extract_bruker_zip, has_type
 from src.workflow.settings_io import (
     default_thread_count,
-    resolve_thread_setting,
+    local_thread_default,
     usable_cpu_count,
 )
 from src.data_import import ui as data_import_ui
@@ -2778,14 +2778,14 @@ class StreamlitUI:
 
         # Display threads configuration for local mode only
         if not st.session_state.settings.get("online_deployment", False):
-            max_threads_config = st.session_state.settings.get("max_threads", {})
-            default_threads = resolve_thread_setting(
-                max_threads_config.get("local", "auto")
-            )
-            try:
-                default_threads = max(1, int(default_threads))
-            except (TypeError, ValueError):
-                default_threads = default_thread_count()
+            default_threads = local_thread_default(st.session_state.settings)
+            if default_threads == default_thread_count():
+                default_help = (
+                    f"Default: all CPUs of this computer but one "
+                    f"({usable_cpu_count()} usable, so {default_threads})."
+                )
+            else:
+                default_help = f"Default: {default_threads}, set by this app."
             self.input_widget(
                 key="max_threads",
                 default=default_threads,
@@ -2795,8 +2795,7 @@ class StreamlitUI:
                 help=(
                     "Maximum threads for parallel processing. Threads are "
                     "distributed between parallel commands and per-tool thread "
-                    f"allocation. Default: all CPUs of this computer but one "
-                    f"({usable_cpu_count()} usable, so {default_thread_count()})."
+                    f"allocation. {default_help}"
                 ),
             )
 
