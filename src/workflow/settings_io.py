@@ -14,6 +14,7 @@ and must stay importable without Streamlit.
 import json
 import logging
 import math
+import os
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -149,3 +150,54 @@ def detect_cpu_quota() -> int | None:
     if not quota_us or not period_us or period_us <= 0:
         return None
     return max(1, math.ceil(quota_us / period_us))
+
+
+# Values of max_threads.local / max_threads.online that mean "size it to this
+# machine". null and -1 are the spellings apps used before "auto" existed.
+AUTO_THREADS = ("auto", None, -1)
+
+
+def usable_cpu_count() -> int:
+    """
+    Number of CPUs this process may actually run on.
+
+    The smallest of what the OS lets the process see (``sched_getaffinity``,
+    which a cpuset-pinned container or ``taskset`` narrows) and the cgroup CPU
+    quota (``docker run --cpus``, a Kubernetes ``limits.cpu``). A container on
+    a 64 core host limited to 4 CPUs answers 4, not 64.
+
+    Returns:
+        int: CPU count, at least 1.
+    """
+    try:
+        visible = len(os.sched_getaffinity(0))
+    except (AttributeError, OSError):
+        # Windows and macOS have no sched_getaffinity.
+        visible = os.cpu_count() or 1
+    quota = detect_cpu_quota()
+    if quota is not None:
+        visible = min(visible, quota)
+    return max(1, visible)
+
+
+def default_thread_count() -> int:
+    """
+    The thread budget used when settings.json says ``"auto"``: every usable
+    CPU but one, so the app's own server and the rest of the machine stay
+    responsive while a workflow runs. Never less than 1.
+    """
+    return max(1, usable_cpu_count() - 1)
+
+
+def resolve_thread_setting(value):
+    """
+    Turn a configured ``max_threads`` value into a thread count.
+
+    ``"auto"``, ``null`` and ``-1`` become :func:`default_thread_count`; any
+    other value is returned unchanged for the caller to validate.
+    """
+    if isinstance(value, str) and value.strip().lower() == "auto":
+        return default_thread_count()
+    if value is None or value == -1:
+        return default_thread_count()
+    return value

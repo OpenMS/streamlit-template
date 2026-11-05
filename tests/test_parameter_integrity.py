@@ -984,3 +984,83 @@ def test_detect_cpu_quota_absent_everywhere(tmp_path, monkeypatch):
     monkeypatch.setitem(g, "CGROUP_V1_CPU_PERIOD", tmp_path / "no-period")
 
     assert detect() is None
+
+
+# ---------------------------------------------------------------------------
+# "auto" thread budget: every usable CPU but one
+# ---------------------------------------------------------------------------
+
+
+def _pin_usable_cpus(monkeypatch, visible, quota=None):
+    """Pin what the auto thread budget sees: CPUs visible to the process and
+    the cgroup quota. Patched in the live settings_io namespace (see
+    _settings_io_ns for why)."""
+    ns = CommandExecutor._get_max_threads.__globals__["resolve_thread_setting"].__globals__
+    fake_os = MagicMock(wraps=ns["os"])
+    fake_os.sched_getaffinity = lambda pid: set(range(visible))
+    monkeypatch.setitem(ns, "os", fake_os)
+    monkeypatch.setitem(ns, "detect_cpu_quota", lambda: quota)
+    return ns
+
+
+@pytest.mark.parametrize("configured", ["auto", "AUTO", None, -1])
+def test_auto_local_threads_are_all_cpus_but_one(tmp_path, monkeypatch, configured):
+    _pin_usable_cpus(monkeypatch, visible=16)
+    executor = _executor_in_worker(
+        tmp_path,
+        monkeypatch,
+        {"online_deployment": False, "max_threads": {"local": configured}},
+    )
+    assert executor._get_max_threads() == 15
+
+
+def test_auto_is_the_default_when_max_threads_is_missing(tmp_path, monkeypatch):
+    _pin_usable_cpus(monkeypatch, visible=8)
+    executor = _executor_in_worker(tmp_path, monkeypatch, {"online_deployment": False})
+    assert executor._get_max_threads() == 7
+
+
+def test_auto_respects_container_cpu_limit(tmp_path, monkeypatch):
+    """A container limited to 4 CPUs on a 64 core host uses 3, not 63."""
+    _pin_usable_cpus(monkeypatch, visible=64, quota=4)
+    executor = _executor_in_worker(
+        tmp_path,
+        monkeypatch,
+        {"online_deployment": False, "max_threads": {"local": "auto"}},
+    )
+    assert executor._get_max_threads() == 3
+
+
+def test_auto_never_goes_below_one(tmp_path, monkeypatch):
+    _pin_usable_cpus(monkeypatch, visible=1)
+    executor = _executor_in_worker(
+        tmp_path,
+        monkeypatch,
+        {"online_deployment": False, "max_threads": {"local": "auto"}},
+    )
+    assert executor._get_max_threads() == 1
+
+
+def test_auto_online_without_quota(tmp_path, monkeypatch):
+    _pin_usable_cpus(monkeypatch, visible=12)
+    executor = _executor_in_worker(
+        tmp_path,
+        monkeypatch,
+        {"online_deployment": True, "max_threads": {"online": "auto"}},
+    )
+    assert executor._get_max_threads() == 11
+
+
+def test_number_still_pins_local_threads(tmp_path, monkeypatch):
+    _pin_usable_cpus(monkeypatch, visible=16)
+    executor = _executor_in_worker(
+        tmp_path,
+        monkeypatch,
+        {"online_deployment": False, "max_threads": {"local": 5}},
+    )
+    assert executor._get_max_threads() == 5
+
+
+def test_template_settings_default_to_auto():
+    settings = json.loads(Path("settings.json").read_text(encoding="utf-8"))
+    assert settings["max_threads"] == {"local": "auto", "online": "auto"}
