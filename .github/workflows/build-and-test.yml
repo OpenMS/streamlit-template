@@ -1328,14 +1328,24 @@ jobs:
           kubectl delete pod -n openms redis-test --wait=false
 
       - name: Verify Redis refuses pods of other apps
-        # Same client without this app's labels: the NetworkPolicy has to drop
-        # its connection, so it must never see PONG.
+        # Same client without this app's labels: the NetworkPolicy drops its
+        # packets, so every attempt has to end in a connect timeout (busybox
+        # `timeout` exits 143 when it kills the client, coreutils 124). The Service name must resolve first, and any other
+        # result (PONG, a refused connection, a DNS error) fails the step, so a
+        # broken client or an absent Redis cannot pass for a denial.
         run: |
           kubectl run redis-denied -n openms --image=redis:7.4.12-alpine --restart=Never \
             --labels="app=another-app,component=rq-worker" --command -- \
-            sh -c 'for i in $(seq 1 5); do timeout 5 redis-cli -h '"${SLUG}"'-redis.openms.svc.cluster.local ping | grep -q PONG && echo PONG && exit 1; sleep 1; done; echo refused'
+            sh -c 'H='"${SLUG}"'-redis.openms.svc.cluster.local
+              for i in $(seq 1 10); do getent hosts "$H" && break; sleep 2; done
+              getent hosts "$H" >/dev/null || { echo "cannot resolve $H"; exit 2; }
+              for i in 1 2 3; do
+                timeout 5 redis-cli -h "$H" ping; rc=$?
+                [ "$rc" -eq 143 ] || [ "$rc" -eq 124 ] || { echo "attempt $i ended with exit $rc, not a timeout"; exit 1; }
+              done
+              echo refused'
           kubectl wait -n openms --for=jsonpath='{.status.phase}'=Succeeded pod/redis-denied --timeout=120s \
-            || { echo "::error::a pod of another app reached this app's Redis"; kubectl logs -n openms redis-denied || true; kubectl delete pod -n openms redis-denied --wait=false; exit 1; }
+            || { echo "::error::Redis did not drop a connection from a pod of another app"; kubectl logs -n openms redis-denied || true; kubectl delete pod -n openms redis-denied --wait=false; exit 1; }
           kubectl logs -n openms redis-denied
           kubectl delete pod -n openms redis-denied --wait=false
 
