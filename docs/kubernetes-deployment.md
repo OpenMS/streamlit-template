@@ -117,7 +117,10 @@ All resources deploy into the shared `openms` namespace (`namespace: openms` in 
 `streamlit-config` ConfigMap holding `settings-overrides.json`, merged into the app's `settings.json` at pod startup. Currently sets `online_deployment: true`.
 
 ### `redis.yaml`
-Redis 7 Deployment (1 replica) + ClusterIP Service on port 6379. Backs the RQ job queue. Low resource requests (64Mi / 50m CPU).
+Redis Deployment (1 replica, `redis:7.4.12-alpine`) + ClusterIP Service on port 6379. Backs the RQ job queue. Low resource requests (64Mi / 50m CPU).
+
+### `redis-networkpolicy.yaml`
+NetworkPolicy that admits connections to Redis on 6379 only from this app's `streamlit`, `rq-worker` and `sync` pods. The overlay's `commonLabels` add `app: <slug>` to both selectors, so other apps in the shared `openms` namespace cannot reach it. The kind integration test checks both directions. It needs a CNI that enforces NetworkPolicy (kindnet does from kind v0.24); on one that does not, the policy is ignored and Redis stays reachable as before.
 
 ### `workspace-pvc.yaml`
 PersistentVolumeClaim `workspaces-manila-pvc`:

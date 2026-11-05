@@ -6,6 +6,7 @@ namespace: openms
 resources:
   - configmap.yaml
   - redis.yaml
+  - redis-networkpolicy.yaml
   - workspace-pvc.yaml
   - streamlit-secrets.yaml
   - streamlit-deployment.yaml

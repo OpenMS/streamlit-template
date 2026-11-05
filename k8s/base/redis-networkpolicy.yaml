@@ -1,0 +1,29 @@
+# Only this app's own pods talk to its Redis: the Streamlit server, the RQ
+# workers and the sync service, all of which read REDIS_URL. Every app shares
+# the namespace openms, so without this any pod there could reach the queue.
+# The overlay's commonLabels add `app: <slug>` to both selectors (into the
+# empty matchLabels below, which has to stay for that), which keeps one app's
+# pods away from another app's Redis as well.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: redis
+  labels:
+    component: redis
+spec:
+  podSelector:
+    matchLabels:
+      component: redis
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: {}
+            matchExpressions:
+              - key: component
+                operator: In
+                values: [streamlit, rq-worker, sync]
+      ports:
+        - protocol: TCP
+          port: 6379
