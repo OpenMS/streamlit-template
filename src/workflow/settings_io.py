@@ -220,3 +220,16 @@ def local_thread_default(settings: dict | None = None) -> int:
         return max(1, int(value))
     except (TypeError, ValueError):
         return default_thread_count()
+
+
+def local_threads_pinned(settings: dict | None = None) -> bool:
+    """True when max_threads.local is a fixed number, not "auto" or invalid."""
+    if settings is None:
+        settings = load_settings()
+    value = (settings.get("max_threads") or {}).get("local", "auto")
+    if resolve_thread_setting(value) is not value:
+        return False
+    try:
+        return int(value) >= 1
+    except (TypeError, ValueError):
+        return False

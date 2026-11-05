@@ -1125,3 +1125,17 @@ def test_drop_automatic_threads_leaves_other_keys():
         "max_threads": 4,
         "_max_threads_user": True,
     }
+
+
+def test_local_threads_pinned_only_for_numbers():
+    from src.workflow.settings_io import local_threads_pinned
+    assert local_threads_pinned({"max_threads": {"local": 6}})
+    assert local_threads_pinned({"max_threads": {"local": "6"}})
+    for value in ("auto", "AUTO", None, -1, "abc", 0):
+        assert not local_threads_pinned({"max_threads": {"local": value}})
+    assert not local_threads_pinned({})
+
+
+def test_invalid_local_setting_falls_back_to_cpu_default():
+    from src.workflow.settings_io import default_thread_count, local_thread_default
+    assert local_thread_default({"max_threads": {"local": "abc"}}) == default_thread_count()

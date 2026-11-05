@@ -58,8 +58,9 @@ from src.workflow.ExperimentalDesign import (
 )
 from src.workflow.vendor_files import extract_bruker_zip, has_type
 from src.workflow.settings_io import (
-    default_thread_count,
+    THREADS_USER_MARKER,
     local_thread_default,
+    local_threads_pinned,
     usable_cpu_count,
 )
 from src.data_import import ui as data_import_ui
@@ -2779,7 +2780,7 @@ class StreamlitUI:
         # Display threads configuration for local mode only
         if not st.session_state.settings.get("online_deployment", False):
             default_threads = local_thread_default(st.session_state.settings)
-            if default_threads == default_thread_count():
+            if not local_threads_pinned(st.session_state.settings):
                 default_help = (
                     f"Default: all CPUs of this computer but one "
                     f"({usable_cpu_count()} usable, so {default_threads})."
@@ -3378,7 +3379,9 @@ Started: {status.get('started_at', 'N/A')}""")
             return cleaned_dict
 
         # Don't want file paths to be shown in summary for export
-        params = remove_full_paths(self.params)
+        params = remove_full_paths(
+            {k: v for k, v in self.params.items() if k != THREADS_USER_MARKER}
+        )
 
         summary_text = ""
         python = {}
