@@ -29,7 +29,8 @@ _LOCK = threading.Lock()
 
 _COMPRESSION = re.compile(r"\.(gz|bz2|xz|zip)$", re.IGNORECASE)
 _EXTENSION = re.compile(r"\.[A-Za-z][A-Za-z0-9]{0,5}$")
-_SEPARATORS = re.compile(r"[_\-\s.]+")
+# A dot between digits is a decimal point (0.1x), not a separator
+_SEPARATORS = re.compile(r"(?:[_\-\s]|(?<!\d)\.|\.(?!\d))+")
 _FRACTION = re.compile(r"^(?:f|fr|frac|fraction)(\d{1,3})$", re.IGNORECASE)
 _REPLICATE = re.compile(
     r"^(?:r|rep|repl|replicate|br|biorep)(\d{1,3})$", re.IGNORECASE
@@ -259,17 +260,27 @@ def design_rows(
     """Condition, replicate and fraction for each file name that has a folder
     (or, with ``suggest``, a group read from the names).
 
-    The folder is the condition. Replicates come from the names when they are
+    The folder is the condition, unless (with ``suggest``) the names of its
+    files suggest groups: a folder holding a whole experiment
+    (``ctrl_R1``, ``ctrl_R2``, ``drug_R1``, ``drug_R2``) gets those groups as
+    its conditions. Replicates come from the names when they are
     unique within the folder, else they are counted within it. Files with
     neither a folder nor a suggestion are absent.
     """
     names = [_name(f) for f in files]
     suggested = {s.file: s for s in suggest_groups(names)} if suggest else {}
-    condition = {}
+    by_folder: Dict[str, List[str]] = {}
     for n in names:
         if folders.get(n):
-            condition[n] = folders[n]
-        elif n in suggested:
+            by_folder.setdefault(folders[n], []).append(n)
+    condition = {}
+    for folder, members in by_folder.items():
+        # A folder that holds one experiment: the groups its names suggest
+        within = {s.file: s.group for s in suggest_groups(members)} if suggest else {}
+        for n in members:
+            condition[n] = within.get(n, folder)
+    for n in names:
+        if n not in condition and n in suggested:
             condition[n] = suggested[n].group
     rows: Dict[str, Suggestion] = {}
     by_condition: Dict[str, List[str]] = {}

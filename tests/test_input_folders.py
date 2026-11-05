@@ -109,3 +109,23 @@ def test_design_rows_suggest_for_files_outside_folders():
     assert rows["ctrl_R2.mzML"].group == "ctrl"
     assert (rows["treat_R2.mzML"].group, rows["treat_R2.mzML"].replicate) == ("treat", 2)
     assert design_rows(files, {}, suggest=False) == {}
+
+
+def test_a_decimal_stays_one_token():
+    names = ["mix_1x_R1.mzML", "mix_1x_R2.mzML", "mix_0.1x_R1.mzML", "mix_0.1x_R2.mzML"]
+    assert _groups(names) == [
+        ("mix_1x_R1.mzML", "1x", 1, 1), ("mix_1x_R2.mzML", "1x", 2, 1),
+        ("mix_0.1x_R1.mzML", "0.1x", 1, 1), ("mix_0.1x_R2.mzML", "0.1x", 2, 1),
+    ]
+
+
+def test_a_folder_holding_an_experiment_takes_the_groups_of_its_names():
+    lfq = ["ctrl_R1.mzML", "ctrl_R2.mzML", "drug_R1.mzML", "drug_R2.mzML"]
+    files = lfq + ["other.mzML"]
+    folders = {**{f: "Label-free" for f in lfq}, "other.mzML": "Other"}
+    rows = design_rows(files, folders, suggest=True)
+    assert [(rows[f].group, rows[f].replicate) for f in files] == [
+        ("ctrl", 1), ("ctrl", 2), ("drug", 1), ("drug", 2), ("Other", 1)
+    ]
+    # Without suggestions the folder is the condition
+    assert {rows.group for rows in design_rows(lfq, folders).values()} == {"Label-free"}

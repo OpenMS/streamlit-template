@@ -4,7 +4,7 @@ from pathlib import Path
 import shutil
 import filecmp
 import subprocess
-from typing import Any, Union, List, Literal, Callable
+from typing import Any, Callable, Dict, List, Literal, Union
 import json
 import math
 import os
@@ -221,7 +221,7 @@ class StreamlitUI:
         key: str,
         file_types: Union[str, List[str]],
         name: str = "",
-        fallback: Union[List, str] = None,
+        fallback: Union[List, str, Dict[str, str]] = None,
         suggest_folders: bool = False,
         list_files: bool = True,
     ) -> None:
@@ -237,7 +237,10 @@ class StreamlitUI:
                 a zip archive. Convert vendor files before use with
                 ``CommandExecutor.convert_to_mzml()``.
             name (str, optional): Display name for the upload component. Defaults to the key if not provided.
-            fallback (Union[List, str], optional): Default files to use if no files are uploaded.
+            fallback (Union[List, str, Dict[str, str]], optional): Default files
+                to use if no files are uploaded. A dict maps each file to the
+                folder it is put in when it is copied, so the examples arrive
+                sorted.
             suggest_folders (bool, optional): Offer to sort the files into folders
                 by the groups their names suggest (``ctrl_R1``, ``ctrl_R2``,
                 ``treated_R1`` ...). Folders are labels kept in
@@ -489,6 +492,7 @@ class StreamlitUI:
                 c1, _ = st.columns(2)
                 if not Path(files_dir, f).exists():
                     shutil.copy(f, Path(files_dir, Path(f).name))
+            self._fallback_folders(key, fallback)
             current_files = [f.name for f in files_dir.iterdir() if f.name != "external_files.txt"]
             c1.warning("**No data yet. Using example data file(s).**")
         else:
@@ -1102,6 +1106,20 @@ class StreamlitUI:
         for example in examples.values():
             if not Path(files_dir, example.name).exists():
                 shutil.copy(example, Path(files_dir, example.name))
+        self._fallback_folders(key, fallback)
+
+    def _fallback_folders(self, key: str, fallback) -> None:
+        """Put the example files of upload ``key`` in the folders a ``fallback``
+        dict names (file -> folder); files already in a folder stay there."""
+        if not isinstance(fallback, dict):
+            return
+        named = {Path(f).name: d for f, d in fallback.items() if d}
+        if not named:
+            return
+        folders = load_folders(self.workflow_dir, key)
+        missing = {n: d for n, d in named.items() if n not in folders}
+        if missing:
+            save_folders(self.workflow_dir, key, {**folders, **missing})
 
     def _select_input_file_impl(self, key, name, multiple, display_file_path, reactive, upload=None):
         """Internal implementation of select_input_file - contains all the widget logic."""
@@ -2435,10 +2453,11 @@ class StreamlitUI:
                 to that ``select_input_file`` so the table follows the selection.
             name (str, optional): The heading shown above the table.
             suggest (bool, optional): Also fill the condition and replicate of
-                files in no folder from the groups their names suggest
-                (``ctrl_R1``, ``ctrl_R2``, ``treated_R1`` ...). Files in a
-                folder (see ``upload_widget``) always take the folder as
-                their condition when they have none yet.
+                files from the groups their names suggest (``ctrl_R1``,
+                ``ctrl_R2``, ``treated_R1`` ...): files in no folder from all
+                names, files in a folder (see ``upload_widget``) from the
+                names in that folder. Without such groups a file in a folder
+                takes the folder as its condition when it has none yet.
         """
         files = st.session_state.get(
             f"{self.parameter_manager.param_prefix}{key}", self.params.get(key, [])
