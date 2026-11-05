@@ -3,7 +3,7 @@
 # the same commands on every platform:
 #   Windows  silent per-user install of the NSIS installer
 #   macOS    mounts the dmg read-only (and checks signature and notarization)
-#   Linux    the AppImage, plus an extracted copy for Playwright
+#   Linux    the AppImage, mounted for Playwright, plus an extracted copy of its payload
 #
 #   APP_NAME=MyApp electron/scripts/install-app.sh <installer>
 # Prints, and appends to $GITHUB_ENV when set:
@@ -63,9 +63,19 @@ case "$(uname -s)" in
     (cd "$tmp" && "$exe" --appimage-extract >/dev/null)
     payload="$tmp/squashfs-root/resources/app-payload"
     log="$HOME/.config/$APP_NAME/logs/streamlit.log"
-    # Playwright drives the extracted AppImage, with APPIMAGE set as its
-    # runtime would.
-    e2e="$tmp/squashfs-root/$id"
+    # Playwright drives the AppImage's own mounted image, so the app reads its
+    # files through the image's compression as it does for a user (an
+    # extracted copy would hide that), with APPIMAGE set as its runtime would.
+    # The mount stays up until the job ends.
+    nohup "$exe" --appimage-mount >"$tmp/appimage-mount.txt" 2>&1 &
+    mnt=""
+    for _ in $(seq 60); do
+      mnt=$(head -n 1 "$tmp/appimage-mount.txt" 2>/dev/null || true)
+      [[ -n $mnt && -x $mnt/$id ]] && break
+      sleep 1
+    done
+    [[ -n $mnt && -x $mnt/$id ]] || { echo "::error::could not mount $exe"; cat "$tmp/appimage-mount.txt"; exit 1; }
+    e2e="$mnt/$id"
     if [[ -n "${GITHUB_ENV:-}" ]]; then echo "APPIMAGE=$exe" >> "$GITHUB_ENV"; fi
     ;;
 

@@ -62,7 +62,7 @@
     },
     "dmg": {
       "writeUpdateInfo": false,
-      "format": "UDBZ"
+      "format": "ULFO"
     },
     "linux": {
       "target": [
@@ -72,9 +72,6 @@
       "category": "Science",
       "synopsis": "OpenMS web app for mass spectrometry data",
       "maintainer": "OpenMS Developer Team <open-ms-general@lists.sourceforge.net>"
-    },
-    "appImage": {
-      "compression": "xz"
     },
     "publish": null
   },
