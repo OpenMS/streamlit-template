@@ -25,6 +25,7 @@ or a stand-in for tests).
 
 from __future__ import annotations
 
+import difflib
 import os
 import re
 import threading
@@ -129,17 +130,49 @@ def _get(path: str, params: dict, stream: bool = False) -> requests.Response:
     return response
 
 
-def proteome_query(text: str, reference_only: bool = True) -> str:
-    """The /proteomes query for an organism name or taxonomy ID."""
+#: How a name search widens when nothing is found: whole words, then each word
+#: as a prefix ("Escher" finds Escherichia), then shortened prefixes, which
+#: also catch a typo near the end ("Eschericha"), then every field (common
+#: names such as "human").
+SEARCH_STEPS = ("words", "prefix", "stem", "free")
+
+
+def _name_terms(text: str, step: str = "words") -> List[str]:
+    """The words of an organism name as query terms for one ``SEARCH_STEPS``
+    step. An abbreviated word ("E." in "E. coli", or a single letter) always
+    matches as a prefix."""
+    terms = []
+    for token in re.findall(r"[A-Za-z0-9]+\.?", text):
+        word = token.rstrip(".")
+        if token.endswith(".") or len(word) == 1:
+            terms.append(f"{word}*")
+        elif step == "prefix" and not word.isdigit():
+            terms.append(f"{word}*")
+        elif step == "stem" and not word.isdigit():
+            terms.append(f"{word[:max(3, min(len(word) - 2, (len(word) * 2 + 2) // 3))]}*")
+        else:
+            terms.append(word)
+    if not terms:
+        raise ValueError("Enter an organism name or a taxonomy ID.")
+    return terms
+
+
+def proteome_query(text: str, reference_only: bool = True, step: str = "words") -> str:
+    """The /proteomes query for an organism name or taxonomy ID.
+
+    A name matches when every word is in the organism name, in any order, so
+    "E. coli", "coli K12" and "Homo sapiens" each find their proteomes;
+    ``step`` (one of ``SEARCH_STEPS``) widens the match.
+    """
     text = text.strip()
     if not text:
         raise ValueError("Enter an organism name or a taxonomy ID.")
     if text.isdigit():
         query = f"(organism_id:{text} OR taxonomy_id:{text})"
+    elif step == "free":
+        query = "(" + " AND ".join(_name_terms(text, "prefix")) + ")"
     else:
-        # Quotes keep "Homo sapiens" one phrase; quotes in the text would end it
-        cleaned = text.replace('"', " ").strip()
-        query = f'(organism_name:"{cleaned}")'
+        query = "(" + " AND ".join(f"organism_name:{t}" for t in _name_terms(text, step)) + ")"
     if reference_only:
         query += f" AND (proteome_type:{REFERENCE})"
     return query
@@ -159,15 +192,25 @@ def _proteome(entry: dict) -> Proteome:
     )
 
 
-def search_proteomes(text: str, reference_only: bool = True, size: int = 25) -> List[Proteome]:
+def search_proteomes(text: str, reference_only: bool = True, size: int = 50) -> List[Proteome]:
     """Proteomes of the organisms that match an organism name or taxonomy ID:
     reference proteomes first, representative ones among them before the rest,
-    larger ones before smaller ones."""
-    query = proteome_query(text, reference_only)
-    results = _get("/proteomes/search", {"query": query, "format": "json", "size": size}).json()
-    proteomes = [p for p in map(_proteome, results.get("results", [])) if p.upid]
+    then the names closest to ``text``, larger proteomes before smaller ones.
+    A name that finds nothing is searched again more loosely (``SEARCH_STEPS``)."""
+    proteomes: List[Proteome] = []
+    steps = SEARCH_STEPS[:1] if text.strip().isdigit() else SEARCH_STEPS
+    for step in steps:
+        query = proteome_query(text, reference_only, step)
+        results = _get("/proteomes/search", {"query": query, "format": "json", "size": size}).json()
+        proteomes = [p for p in map(_proteome, results.get("results", [])) if p.upid]
+        if proteomes:
+            break
+    typed = text.strip().lower()
     proteomes.sort(key=lambda p: (
-        not p.is_reference, "representative" not in p.proteome_type.lower(), -(p.protein_count or 0)
+        not p.is_reference,
+        "representative" not in p.proteome_type.lower(),
+        -round(difflib.SequenceMatcher(None, typed, p.organism.lower()).ratio(), 1),
+        -(p.protein_count or 0),
     ))
     return proteomes
 
