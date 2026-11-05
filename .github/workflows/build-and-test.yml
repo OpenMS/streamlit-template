@@ -82,8 +82,8 @@ jobs:
           # tests off for an app with few CI minutes (default: on).
           kind_tests=true; apptainer_tests=true
           if [ -f app.yaml ]; then
-            [ "$(yq '.ci.kind_tests' app.yaml)" = false ] && kind_tests=false
-            [ "$(yq '.ci.apptainer' app.yaml)" = false ] && apptainer_tests=false
+            [ "$(yq '.ci.kind_tests' app.yaml | tr '[:upper:]' '[:lower:]')" = false ] && kind_tests=false
+            [ "$(yq '.ci.apptainer' app.yaml | tr '[:upper:]' '[:lower:]')" = false ] && apptainer_tests=false
           fi
           echo "kind tests: $kind_tests, Apptainer: $apptainer_tests"
           {

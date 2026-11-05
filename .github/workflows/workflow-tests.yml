@@ -21,7 +21,7 @@ jobs:
       id: gate
       run: |
         run=true
-        if [ -f app.yaml ] && [ "$(yq '.ci.example_workflow_tests' app.yaml)" = false ]; then
+        if [ -f app.yaml ] && [ "$(yq '.ci.example_workflow_tests' app.yaml | tr '[:upper:]' '[:lower:]')" = false ]; then
           run=false
           echo "ci.example_workflow_tests is false in app.yaml: skipped" >> "$GITHUB_STEP_SUMMARY"
         fi

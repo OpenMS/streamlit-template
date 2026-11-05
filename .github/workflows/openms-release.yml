@@ -66,7 +66,7 @@ jobs:
         id: gate
         run: |
           run=true
-          if [ -f app.yaml ] && [ "$(yq '.ci.openms_release' app.yaml)" = false ]; then
+          if [ -f app.yaml ] && [ "$(yq '.ci.openms_release' app.yaml | tr '[:upper:]' '[:lower:]')" = false ]; then
             run=false
             echo "ci.openms_release is false in app.yaml: skipped" >> "$GITHUB_STEP_SUMMARY"
           fi
