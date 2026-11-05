@@ -42,6 +42,7 @@ jobs:
       kind: ${{ steps.images.outputs.kind }}
       manifest: ${{ steps.images.outputs.manifest }}
       apptainer: ${{ steps.images.outputs.apptainer }}
+      kind_tests: ${{ steps.images.outputs.kind_tests }}
     steps:
       - uses: actions/checkout@v4
 
@@ -77,11 +78,24 @@ jobs:
             exit 1
           fi
           echo "Images built: $list"
+          # `ci.kind_tests` / `ci.apptainer: false` in app.yaml turn those
+          # tests off for an app with few CI minutes (default: on).
+          kind_tests=true; apptainer_tests=true
+          if [ -f app.yaml ]; then
+            [ "$(yq '.ci.kind_tests' app.yaml)" = false ] && kind_tests=false
+            [ "$(yq '.ci.apptainer' app.yaml)" = false ] && apptainer_tests=false
+          fi
+          echo "kind tests: $kind_tests, Apptainer: $apptainer_tests"
           {
             echo "list=$list"
             echo "kind=$(jq -c 'map(split("-") | {variant: .[0], arch: .[1], runner: (if .[1] == "arm64" then "ubuntu-24.04-arm" else "ubuntu-latest" end)})' <<< "$list")"
             echo "manifest=$(jq -c '[["full", "simple"][] as $v | {variant: $v, arches: ([.[] | split("-") | select(.[0] == $v) | .[1]] | join(" "))} | select(.arches != "")]' <<< "$list")"
-            echo "apptainer=$(jq -c '[.[] | split("-") | select(.[1] == "amd64") | .[0]]' <<< "$list")"
+            if [ "$apptainer_tests" = true ]; then
+              echo "apptainer=$(jq -c '[.[] | split("-") | select(.[1] == "amd64") | .[0]]' <<< "$list")"
+            else
+              echo "apptainer=[]"
+            fi
+            echo "kind_tests=$kind_tests"
           } >> "$GITHUB_OUTPUT"
 
   lint-manifests:
@@ -478,8 +492,8 @@ jobs:
       && (needs.build-simple-amd64.result == 'success' || !contains(fromJSON(needs.images.outputs.list), 'simple-amd64'))
       && (needs.build-full-arm64.result == 'success' || !contains(fromJSON(needs.images.outputs.list), 'full-arm64'))
       && (needs.build-simple-arm64.result == 'success' || !contains(fromJSON(needs.images.outputs.list), 'simple-arm64'))
-      && needs.test-nginx.result == 'success'
-      && needs.test-traefik.result == 'success'
+      && (needs.images.outputs.kind_tests != 'true'
+          || (needs.test-nginx.result == 'success' && needs.test-traefik.result == 'success'))
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -880,6 +894,7 @@ jobs:
     needs: [images, build-full-amd64, build-simple-amd64, build-full-arm64, build-simple-arm64]
     if: always() && !cancelled()
         && needs.images.result == 'success'
+        && needs.images.outputs.kind_tests == 'true'
         && (needs.build-simple-amd64.result == 'success' || !contains(fromJSON(needs.images.outputs.list), 'simple-amd64'))
         && (needs.build-simple-arm64.result == 'success' || !contains(fromJSON(needs.images.outputs.list), 'simple-arm64'))
     runs-on: ${{ matrix.runner }}
@@ -1611,6 +1626,7 @@ jobs:
     needs: [images, build-full-amd64, build-simple-amd64, build-full-arm64, build-simple-arm64]
     if: always() && !cancelled()
         && needs.images.result == 'success'
+        && needs.images.outputs.kind_tests == 'true'
         && (needs.build-simple-amd64.result == 'success' || !contains(fromJSON(needs.images.outputs.list), 'simple-amd64'))
         && (needs.build-simple-arm64.result == 'success' || !contains(fromJSON(needs.images.outputs.list), 'simple-arm64'))
     runs-on: ${{ matrix.runner }}

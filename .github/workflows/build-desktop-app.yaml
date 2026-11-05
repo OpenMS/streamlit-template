@@ -53,6 +53,10 @@ jobs:
     outputs:
       run: ${{ steps.decide.outputs.run }}
     steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: app.yaml
+          sparse-checkout-cone-mode: false
       - id: decide
         env:
           GH_TOKEN: ${{ github.token }}
@@ -85,6 +89,13 @@ jobs:
               fi
               ;;
           esac
+          # `deploy.desktop: []` in app.yaml: the app ships no desktop installers,
+          # so only a run started by hand builds them.
+          if [ "$run" = true ] && [ "$EVENT" != workflow_dispatch ] && [ -f app.yaml ] &&
+             [ "$(yq -o=json -I=0 '.deploy.desktop' app.yaml)" = "[]" ]; then
+            run=false
+            echo "deploy.desktop is empty in app.yaml: no desktop build"
+          fi
           echo "run=$run" >> "$GITHUB_OUTPUT"
           echo "desktop build: $run" >> "$GITHUB_STEP_SUMMARY"
 

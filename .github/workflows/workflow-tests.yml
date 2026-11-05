@@ -17,18 +17,31 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
-    - name: Set up Python
+    - name: Read ci.example_workflow_tests from app.yaml
+      id: gate
+      run: |
+        run=true
+        if [ -f app.yaml ] && [ "$(yq '.ci.example_workflow_tests' app.yaml)" = false ]; then
+          run=false
+          echo "ci.example_workflow_tests is false in app.yaml: skipped" >> "$GITHUB_STEP_SUMMARY"
+        fi
+        echo "run=$run" >> "$GITHUB_OUTPUT"
+    - if: steps.gate.outputs.run == 'true'
+      name: Set up Python
       uses: actions/setup-python@v3
       with:
         python-version: "3.11"
-    - name: Install dependencies
+    - if: steps.gate.outputs.run == 'true'
+      name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
         pip install pytest
-    - name: Running test cases
+    - if: steps.gate.outputs.run == 'true'
+      name: Running test cases
       run: |
         pytest test.py
-    - name: Running GUI tests
+    - if: steps.gate.outputs.run == 'true'
+      name: Running GUI tests
       run: |
         pytest test_gui.py
