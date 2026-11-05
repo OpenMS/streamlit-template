@@ -6,7 +6,7 @@ import threading
 from pathlib import Path
 from .Logger import Logger
 from .ParameterManager import ParameterManager, bool_param_paths_from_param_xml_ini
-from .settings_io import load_settings, detect_cpu_quota, resolve_thread_setting
+from .settings_io import load_settings, detect_cpu_quota, resolve_thread_setting, local_thread_default
 from .vendor_files import vendor_format
 from .progress import RunProgress, read_progress, failure_context, OUTPUT_TAIL
 from collections import deque
@@ -87,7 +87,7 @@ class CommandExecutor:
             else:
                 value = resolve_thread_setting(max_threads_config.get("online", "auto"))
         else:
-            default = resolve_thread_setting(max_threads_config.get("local", "auto"))
+            default = local_thread_default(settings)
             params = self.parameter_manager.get_parameters_from_json()
             value = params.get("max_threads", default)
 

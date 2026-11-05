@@ -201,3 +201,35 @@ def resolve_thread_setting(value):
     if value is None or value == -1:
         return default_thread_count()
     return value
+
+
+# Marks a stored max_threads as one the user chose. Without it a stored value
+# is the default some earlier version wrote on its own (4 for a long time) and
+# is ignored, so the default keeps following this machine.
+THREADS_USER_MARKER = "_max_threads_user"
+
+
+def local_thread_default(settings: dict | None = None) -> int:
+    """The local Threads default: max_threads.local resolved, at least 1."""
+    if settings is None:
+        settings = load_settings()
+    value = resolve_thread_setting(
+        (settings.get("max_threads") or {}).get("local", "auto")
+    )
+    try:
+        return max(1, int(value))
+    except (TypeError, ValueError):
+        return default_thread_count()
+
+
+def local_threads_pinned(settings: dict | None = None) -> bool:
+    """True when max_threads.local is a fixed number, not "auto" or invalid."""
+    if settings is None:
+        settings = load_settings()
+    value = (settings.get("max_threads") or {}).get("local", "auto")
+    if resolve_thread_setting(value) is not value:
+        return False
+    try:
+        return int(value) >= 1
+    except (TypeError, ValueError):
+        return False

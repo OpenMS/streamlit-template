@@ -11,6 +11,8 @@ import uuid
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+from .settings_io import THREADS_USER_MARKER, local_thread_default
+
 logger = logging.getLogger(__name__)
 
 # ParameterManager.ini_errors value for a TOPP tool that is not on PATH.
@@ -134,6 +136,37 @@ _TRANSIENT_READ_ERRNOS = frozenset(
 # transient errnos retry, so a corrupt file still fails on the first attempt.
 _READ_ATTEMPTS = 3
 _READ_RETRY_DELAY_SECONDS = 0.2
+
+
+def _drop_automatic_threads(params: dict) -> dict:
+    """
+    Leave out a stored ``max_threads`` the user did not choose.
+
+    Earlier versions wrote the Threads default into params.json on every visit
+    to the Configure page, so a stored value says nothing about the user: it
+    would pin a workspace to the default of the day (4 threads for a long
+    time) on every machine it is later opened on. Only a value marked by
+    _keep_threads_only_if_chosen() is a choice.
+    """
+    if "max_threads" in params and not params.get(THREADS_USER_MARKER):
+        params = dict(params)
+        del params["max_threads"]
+    return params
+
+
+def _keep_threads_only_if_chosen(params: dict) -> None:
+    """
+    Store ``max_threads`` only when it differs from this machine's default,
+    and mark it as the user's choice; otherwise leave it out, so the default
+    keeps following the machine (every usable CPU but one).
+    """
+    params.pop(THREADS_USER_MARKER, None)
+    if "max_threads" not in params:
+        return
+    if params["max_threads"] == local_thread_default():
+        del params["max_threads"]
+    else:
+        params[THREADS_USER_MARKER] = True
 
 
 def _read_parameter_file(params_file: Path) -> dict:
@@ -445,7 +478,7 @@ class ParameterManager:
                 e, "Parameters were not saved, the existing file is left unchanged."
             )
             return False
-        json_params = stored_params | json_params
+        json_params = _drop_automatic_threads(stored_params) | json_params
 
         # get a list of TOPP tools (or tool instance names) which are in session state
         current_topp_tools = list(
@@ -498,6 +531,7 @@ class ParameterManager:
                     ):
                         # store non-default value
                         json_params[tool][short_key] = value
+        _keep_threads_only_if_chosen(json_params)
         # Save to json file
         _write_parameter_file(self.params_file, json_params)
         return True
@@ -518,7 +552,7 @@ class ParameterManager:
                 and values are parameter values.
         """
         try:
-            return _read_parameter_file(self.params_file)
+            return _drop_automatic_threads(_read_parameter_file(self.params_file))
         except InvalidParameterFileError as e:
             self._report_unreadable_parameter_file(
                 e, "Falling back to default parameters."
