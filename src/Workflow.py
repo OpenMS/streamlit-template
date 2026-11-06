@@ -272,8 +272,10 @@ class Workflow(WorkflowManager):
         return merge_feature_tables(tables) if tables else None
 
     def _features_key(self) -> str:
-        """The feature table's widget key, one per run, so a selection never carries over."""
-        return f"topp-results-features-{self.run_id}"
+        """The feature table's widget key, one per experiment and its runs, so a
+        selection never carries over to another table (files added change it)."""
+        members = self.runs.experiment(self.run_id) or [self.run_id]
+        return "topp-results-features-" + "-".join(members)
 
     def _features(self) -> None:
         df = self._feature_table()

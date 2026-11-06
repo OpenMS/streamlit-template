@@ -328,3 +328,18 @@ def test_merge_feature_tables_updates_one_of_two_features_with_the_same_label():
     merged = merge_feature_tables([first, added])
     assert merged["c.mzML"].iloc[0] == 11.0
     assert pd.isna(merged["c.mzML"].iloc[1])
+
+
+def test_deleting_the_first_run_keeps_finished_additions_selectable(tmp_path):
+    runs = RunManager(tmp_path)
+    first = runs.new_run("First")
+    runs.finish(first, FINISHED)
+    failed = runs.new_run("Failed addition", adds_to=first)
+    runs.finish(failed, FAILED)
+    done = runs.new_run("Finished addition", adds_to=first)
+    runs.finish(done, FINISHED)
+
+    assert runs.delete(first)
+    # The finished addition starts the experiment, so the picker still lists it
+    assert [r["id"] for r in runs.experiments()] == [done]
+    assert runs.experiment_root(failed) == done

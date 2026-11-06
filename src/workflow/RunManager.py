@@ -255,17 +255,20 @@ class RunManager:
         """Delete a run and all its files.
 
         The runs that added files to its experiment then form one of their own,
-        started by the oldest of them.
+        started by the oldest finished one of them (else the oldest).
         """
         if self.get(run_id) is None:
             return False
         if self.experiment_root(run_id) == run_id:
             added = self.added_runs(run_id, status=None)
             if added:
-                # The others point at the oldest first, and it becomes the root
-                # last: a write that fails leaves one experiment to delete again
-                first = added[0]
-                for other in added[1:]:
+                # The others point at the oldest finished one (else the oldest),
+                # and it becomes the root last: a write that fails leaves one
+                # experiment to delete again
+                first = next((r for r in added if r.get("status") == FINISHED), added[0])
+                for other in added:
+                    if other is first:
+                        continue
                     other[ADDS_TO] = first["id"]
                     self._write(other["id"], {k: v for k, v in other.items() if k != "id"})
                 first.pop(ADDS_TO, None)
