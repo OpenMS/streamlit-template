@@ -51,8 +51,8 @@ def _workflow(tmp_path):
 def test_command_io_pairs_inputs_and_outputs_per_command():
     io = command_io({"in": ["a", "b"], "out": ["x", "y"], "database": ["db.fasta"]}, 2)
     assert io == [
-        {"inputs": ["a", "db.fasta"], "outputs": ["x"]},
-        {"inputs": ["b", "db.fasta"], "outputs": ["y"]},
+        {"inputs": ["a", "db.fasta"], "outputs": ["x"], "shared": ["db.fasta"]},
+        {"inputs": ["b", "db.fasta"], "outputs": ["y"], "shared": ["db.fasta"]},
     ]
     # A collected list is one command with every file as input
     assert command_io({"in": [["a", "b"]], "out": ["m"]}, 1) == [{"inputs": ["a", "b"], "outputs": ["m"]}]
@@ -89,6 +89,20 @@ def test_each_input_file_lists_every_tool_that_worked_on_it(tmp_path):
         {"name": "export.py", "version": "Python script"},
     ]
     assert report["steps"][0]["params"] == {"algorithm:common:noise_threshold_int": "1000.0"}
+
+
+def test_a_shared_database_is_not_an_input_file(tmp_path):
+    progress = RunProgress(tmp_path)
+    # One file searched: the database is shared by its key, not by being reused
+    _step(progress, "CometAdapter",
+          command_io({"in": ["/d/A.mzML"], "database": ["/d/db.fasta"], "out": ["/r/A.idXML"]}, 1))
+    _step(progress, "PercolatorAdapter", command_io({"in": ["/r/A.idXML"], "out": ["/r/A_perc.idXML"]}, 1))
+    report = build_report(read_progress(tmp_path))
+
+    assert [i["name"] for i in report["inputs"]] == ["A.mzML"]
+    calls = report["inputs"][0]["calls"]
+    assert [c["tool"] for c in calls] == ["CometAdapter", "PercolatorAdapter"]
+    assert calls[0]["with"] == 0
 
 
 def test_an_alias_keeps_a_converted_file_with_its_original(tmp_path):

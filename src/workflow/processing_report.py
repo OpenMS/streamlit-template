@@ -46,22 +46,38 @@ def _flatten(value: Any) -> List[str]:
     return [str(value)] if value not in (None, "") else []
 
 
+# Inputs every command of a call shares (a protein database, a design), named by
+# their run_topp key. They are listed with the call, not as input files of their own.
+SHARED_INPUT_KEYS = {"database", "fasta", "design", "exp_design", "in_design"}
+
+
 def command_io(input_output: Dict[str, list], n_commands: int) -> List[dict]:
     """The files each command reads and writes, as ``run_topp`` pairs them.
 
     A key starting with ``out`` names outputs, every other key inputs
-    (``in``, ``database``, ``design``, ...).
+    (``in``, ``database``, ``design``, ...). Inputs every command shares (one
+    file for several commands, or a key in ``SHARED_INPUT_KEYS``) are also
+    listed as ``shared``, so the report does not take them for input files.
     """
     commands = []
     for i in range(n_commands):
         inputs: List[str] = []
         outputs: List[str] = []
+        shared: List[str] = []
         for key, values in input_output.items():
             if not isinstance(values, (list, tuple)) or not values:
                 continue
             value = values[i] if len(values) > 1 and i < len(values) else values[0]
-            (outputs if key.lower().startswith("out") else inputs).extend(_flatten(value))
-        commands.append({"inputs": inputs, "outputs": outputs})
+            if key.lower().startswith("out"):
+                outputs.extend(_flatten(value))
+                continue
+            inputs.extend(_flatten(value))
+            if key.lower() in SHARED_INPUT_KEYS or (n_commands > 1 and len(values) == 1):
+                shared.extend(_flatten(value))
+        command = {"inputs": inputs, "outputs": outputs}
+        if shared and len(shared) < len(inputs):
+            command["shared"] = shared
+        commands.append(command)
     return commands
 
 
@@ -204,8 +220,10 @@ def build_report(
         steps.append(entry)
         for index, io in enumerate(prov.get("io") or []):
             roots = set()
+            shared = set(io.get("shared") or [])
             for path in io.get("inputs", []):
-                roots |= origin(path)
+                if path not in shared:
+                    roots |= origin(path)
             for path in io.get("outputs", []):
                 produced[path] = roots
             command = files[index] if index < len(files) else {}
