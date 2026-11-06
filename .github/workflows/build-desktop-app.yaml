@@ -185,7 +185,7 @@ jobs:
     - name: Copy the app into the payload
       run: |
         p=electron/payload
-        cp -R src utils content docs assets example-data .streamlit app.py settings.json default-parameters.json presets.json parameter-names.json "$p/"
+        cp -R src utils content docs assets static example-data .streamlit app.py settings.json default-parameters.json presets.json parameter-names.json "$p/"
         # The license agreement on first start and the About dialog show it.
         for f in LICENSE LICENSE.md LICENSE.txt; do if [[ -f $f ]]; then cp "$f" "$p/"; fi; done
         # The local server only listens on loopback; the shell passes the address.

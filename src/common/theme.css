@@ -1,0 +1,61 @@
+/*
+ * OpenMS "Studio Blue": the layout part of the theme in .streamlit/config.toml.
+ * page_setup() adds this file to every page. Colours are from the OpenMS
+ * corporate design (OpenMS/Assets); the dark variants follow the operating
+ * system's color scheme like the theme does.
+ */
+:root { --openms-gradient: linear-gradient(90deg, #ffcb4f, #ff7501 25%, #ff03cb 50%, #b503ff 75%, #3157e9); }
+
+/* The page as one rounded white sheet on the tinted canvas */
+[data-testid="stHeader"] { background: transparent; }
+[data-testid="stDecoration"] { display: none; }
+[data-testid="stMain"] { padding: 12px 12px 12px 0; }
+[data-testid="stMainBlockContainer"] {
+  background: #ffffff; border-radius: 22px; margin-top: 12px; padding: 2.2rem 2.6rem !important;
+  box-shadow: 0 0 0 1px rgba(35, 31, 32, .05), 0 8px 30px -12px rgba(35, 31, 32, .16);
+}
+@media (prefers-color-scheme: dark) {
+  [data-testid="stMainBlockContainer"] { background: #231f20; box-shadow: 0 0 0 1px #3a3335; }
+}
+@media (max-width: 640px) {
+  [data-testid="stMain"] { padding: 0; }
+  [data-testid="stMainBlockContainer"] { border-radius: 0; margin-top: 0; padding: 1.5rem 1rem !important; }
+}
+
+/* Navigation: section names in the heading face, the current page as a blue pill */
+[data-testid="stNavSectionHeader"] {
+  font-family: "Montserrat Alternates", sans-serif; font-size: .9rem; font-weight: 700;
+  text-transform: none; letter-spacing: 0; opacity: .9; padding-top: 1rem;
+}
+[data-testid="stSidebarNavLink"] { border-radius: 999px; padding-left: .8rem; }
+[data-testid="stSidebarNavLink"][aria-current="page"] { background: #1436b8; }
+[data-testid="stSidebarNavLink"][aria-current="page"] span { color: #ffffff !important; }
+@media (prefers-color-scheme: dark) {
+  [data-testid="stSidebarNavLink"][aria-current="page"] { background: #0c2171; }
+}
+
+/* Page titles carry the logo gradient */
+[data-testid="stMain"] h1 { letter-spacing: -.02em; font-size: 2.5rem; line-height: 1.1; }
+/* Only titles with text: v_space() writes empty "#" headings, which have no id. */
+[data-testid="stMain"] h1[id]::after {
+  content: ""; display: block; width: 6rem; height: 4px; border-radius: 4px;
+  background: var(--openms-gradient); margin-top: .55rem;
+}
+[data-testid="stMain"] [style*="text-align: center"] h1[id]::after { margin-left: auto; margin-right: auto; }
+
+/* Labels and numbers. Raleway's default numerals are oldstyle; data wants lining ones. */
+[data-testid="stMain"] [data-testid="stWidgetLabel"] p { font-size: .84rem; font-weight: 600; }
+[data-testid="stMain"], [data-testid="stSidebar"] { font-variant-numeric: lining-nums tabular-nums; }
+
+/* openms-insight components sit on a soft panel */
+[data-testid="stMain"] iframe[title*="openms_insight"] { background: #f9faff; border-radius: 16px; box-shadow: 0 0 0 1px #e3e8fb; }
+@media (prefers-color-scheme: dark) {
+  [data-testid="stMain"] iframe[title*="openms_insight"] { background: #2b2627; box-shadow: none; }
+}
+
+/* Expanders and the version box as soft rounded panels */
+[data-testid="stExpander"] details { border-radius: 16px; border: none; background: rgba(255, 255, 255, .6); }
+.version-box { border-radius: 16px !important; border: none !important; background: rgba(255, 255, 255, .6); font-size: .78rem; text-align: left !important; }
+@media (prefers-color-scheme: dark) {
+  [data-testid="stExpander"] details, .version-box { background: #2b2627 !important; }
+}

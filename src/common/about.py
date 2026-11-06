@@ -69,6 +69,10 @@ def about_dialog() -> None:
             _component_table(programs, "programs", ["Name"])
         else:
             st.write("This installation includes no third-party programs.")
+        fonts = third_party.fonts()
+        if fonts:
+            st.markdown("**Fonts**")
+            _component_table(fonts, "fonts", ["Name", "License"])
     with tabs[2]:
         _component_table(third_party.python_packages(), "packages", ["Name", "Version", "License"])
 
