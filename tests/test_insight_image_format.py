@@ -56,3 +56,27 @@ def test_insight_not_installed(app, monkeypatch):
     monkeypatch.setitem(sys.modules, "openms_insight", None)
     app.run(timeout=60)
     assert not app.exception
+
+
+def test_options_follow_insight_list(app, monkeypatch):
+    # The sidebar offers exactly the formats Insight lists, in its order
+    fake = types.ModuleType("openms_insight")
+    fake.IMAGE_FORMATS = ("png", "svg")
+    fake.set_image_format = lambda fmt: None
+    monkeypatch.setitem(sys.modules, "openms_insight", fake)
+    app.run(timeout=60)
+    assert not app.exception
+    box = app.selectbox(key="image-format")
+    assert box.options == ["png", "svg"]
+    assert box.value == "svg"
+
+
+def test_saved_format_insight_dropped(app, monkeypatch):
+    # A saved format Insight no longer lists falls back to its first one
+    fake = types.ModuleType("openms_insight")
+    fake.IMAGE_FORMATS = ("png",)
+    fake.set_image_format = lambda fmt: None
+    monkeypatch.setitem(sys.modules, "openms_insight", fake)
+    app.run(timeout=60)
+    assert not app.exception
+    assert app.selectbox(key="image-format").value == "png"
