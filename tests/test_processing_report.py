@@ -210,3 +210,14 @@ def test_report_without_run_folders_names_what_the_last_start_followed(tmp_path)
 
     assert report["run"]["follows"] == "A"
     assert "| Settings from | A (with identification) |" in to_markdown(report)
+
+
+def test_execution_reads_which_results_a_start_adds_files_to(tmp_path):
+    from src.workflow.WorkflowManager import WorkflowManager
+
+    workflow = object.__new__(WorkflowManager)  # as tasks.execute_workflow builds it
+    workflow.workflow_dir = tmp_path
+    assert workflow.follow_up_info() == {}
+    Path(tmp_path, "last-follow-up.json").write_text(json.dumps(
+        {"name": "A", "note": "for more files", "adds_to": ["a_1"], "files": ["a.mzML"]}))
+    assert workflow.follow_up_info()["adds_to"] == ["a_1"]

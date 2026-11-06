@@ -158,14 +158,34 @@ class WorkflowManager:
         name: str = "",
         page=None,
         note: str = "",
+        adds_to: Optional[list] = None,
+        files: Optional[list] = None,
     ) -> None:
         """``follow_up`` for an app without run folders: start from ``params``.
 
         ``params`` are the settings the earlier result was made with (as the
         app stored them), ``name`` names that result on the configure page.
+        ``adds_to`` (the app's ids of earlier results, with their input
+        ``files``) is for more files: the next run then adds to them, and
+        ``execution()`` reads them with ``self.follow_up_info()``.
         """
-        apply_settings(self.workflow_dir, params, changes, {"name": name, "note": note})
+        info = {"name": name, "note": note}
+        if adds_to:
+            info.update(adds_to=list(adds_to), files=list(files or []))
+        apply_settings(self.workflow_dir, params, changes, info)
         self._reload_settings(page)
+
+    def follow_up_info(self) -> dict:
+        """What the running start follows (``start_from``), for ``execution()``.
+
+        Without run folders the start keeps it apart from params.json (so the
+        next settings start fresh); empty when the start followed nothing.
+        """
+        try:
+            info = json.loads(Path(self.workflow_dir, FOLLOW_UP_FILE).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+        return info if isinstance(info, dict) else {}
 
     def _reload_settings(self, page=None) -> None:
         self.params = self.parameter_manager.get_parameters_from_json()
