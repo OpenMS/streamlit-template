@@ -358,33 +358,95 @@ def _classify_one(term: str) -> str:
     return REVIEW
 
 
-def _classify_part(part: str) -> str:
-    base, *exception = re.split(r"\s+WITH\s+", part.strip("() "), maxsplit=1)
-    status = _classify_one(base)
-    if exception and status != OK:
-        return REVIEW
-    return status
+_TOKEN = re.compile(r"\(|\)|;|[^\s();]+")
+_OPERATORS = {"AND", "OR", "WITH", ";"}
+
+
+def _group_end(tokens: list[str], i: int) -> int:
+    """Index after the parenthesis group that opens at ``tokens[i]``."""
+    depth = 0
+    for j in range(i, len(tokens)):
+        depth += {"(": 1, ")": -1}.get(tokens[j], 0)
+        if depth == 0:
+            return j + 1
+    raise ValueError("unbalanced parentheses")
+
+
+def _words(tokens: list[str], i: int) -> tuple[str, int]:
+    """A license name: words up to the next operator. A parenthesis group
+    without an operator in it is part of the name, as in ``GNU General Public
+    License v3 (GPLv3)``."""
+    words = []
+    while i < len(tokens) and tokens[i] not in _OPERATORS and tokens[i] != ")":
+        if tokens[i] == "(":
+            end = _group_end(tokens, i)
+            if _OPERATORS & set(tokens[i:end]):
+                break
+            words.extend(tokens[i:end])
+            i = end
+        else:
+            words.append(tokens[i])
+            i += 1
+    return " ".join(words), i
+
+
+def _parse_or(tokens: list[str], i: int) -> tuple[str, int]:
+    status, i = _parse_and(tokens, i)
+    while i < len(tokens) and tokens[i] == "OR":
+        other, i = _parse_and(tokens, i + 1)
+        status = min(status, other, key=_RANK.get)
+    return status, i
+
+
+def _parse_and(tokens: list[str], i: int) -> tuple[str, int]:
+    status, i = _parse_with(tokens, i)
+    while i < len(tokens) and tokens[i] in {"AND", ";"}:
+        other, i = _parse_with(tokens, i + 1)
+        status = max(status, other, key=_RANK.get)
+    return status, i
+
+
+def _parse_with(tokens: list[str], i: int) -> tuple[str, int]:
+    if i < len(tokens) and tokens[i] == "(":
+        status, i = _parse_or(tokens, i + 1)
+        if i >= len(tokens) or tokens[i] != ")":
+            raise ValueError("unbalanced parentheses")
+        i += 1
+    else:
+        name, i = _words(tokens, i)
+        if not name:
+            raise ValueError("missing license")
+        status = _classify_one(name)
+    if i < len(tokens) and tokens[i] == "WITH":
+        exception, i = _words(tokens, i + 1)
+        # An exception only adds permissions to a permissive license. Anything
+        # else after WITH, or an exception to another license, needs a person.
+        if status != OK or "EXCEPTION" not in exception.upper():
+            status = REVIEW
+    return status, i
 
 
 def classify(license: str) -> str:
     """Status of an SPDX expression or a license name.
 
     ``A OR B`` lets the app pick, so the most permissive option counts;
-    ``A AND B`` binds to both, so the strictest counts. An exception only adds
-    permissions, so ``Apache-2.0 WITH LLVM-exception`` is as permissive as
-    Apache-2.0; one on any other license (``GPL-2.0 WITH
-    Classpath-exception-2.0``) is left to a person.
+    ``A AND B`` binds to both, so the strictest counts; parentheses group as in
+    SPDX. An exception only adds permissions, so ``Apache-2.0 WITH
+    LLVM-exception`` is as permissive as Apache-2.0; one on any other license
+    (``GPL-2.0 WITH Classpath-exception-2.0``), or a WITH operand that is not
+    an exception, is left to a person. An expression that does not parse is
+    read as one license name.
     """
-    expr = license.strip()
-    if not expr:
+    tokens = _TOKEN.findall(license)
+    if not tokens:
         return REVIEW
-    best = None
-    for alternative in re.split(r"\s+OR\s+", expr):
-        parts = re.split(r"\s+AND\s+|\s*;\s*", alternative)
-        worst = max((_classify_part(p) for p in parts), key=_RANK.get)
-        if best is None or _RANK[worst] < _RANK[best]:
-            best = worst
-    return best or REVIEW
+    try:
+        status, i = _parse_or(tokens, 0)
+        if i != len(tokens):
+            raise ValueError("unexpected token")
+    except ValueError:
+        return _classify_one(license)
+    return status
 
 
 # --------------------------------------------------------------------------
