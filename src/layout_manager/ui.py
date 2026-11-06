@@ -473,6 +473,13 @@ def view_bar(
 
     state = _views(path, components, presets, default_layout, default_view)
     missing_of = {v["name"]: missing_analyses(v["rows"], components, available) for v in state["views"]}
+    # A view the shown dataset cannot fill is locked, the current one too: show
+    # the first view it can fill instead (left as it is when none can be)
+    if missing_of.get(state["current"]):
+        fallback = next((v["name"] for v in state["views"] if not missing_of[v["name"]]), None)
+        if fallback is not None:
+            state["current"] = fallback
+            save_views(path, state)
 
     def _bar_view(v: Dict[str, Any]) -> Dict[str, Any]:
         out = {k: v[k] for k in ("name", "label", "rows", "preset", "in_bar", "help") if k in v}

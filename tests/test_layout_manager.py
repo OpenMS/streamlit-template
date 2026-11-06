@@ -602,11 +602,22 @@ def test_component_draws_a_note_where_its_analysis_is_missing(tmp_path):
     drawn = [m.value for m in at.markdown]
     assert "current:ids" in drawn and "drawn:ids" in drawn
 
-    # ... and a run without it draws the note with a button that opens the dialog
+    # ... and a run without it does not show the locked view: the first view it can fill instead
+    at.session_state["available"] = []
+    at.run()
+    drawn = [m.value for m in at.markdown]
+    assert "current:all" in drawn and "drawn:ids" not in drawn
+
+
+def test_component_draws_a_note_where_no_view_can_be_filled(tmp_path):
+    only_ids = [{"name": "ids", "label": "IDs", "layout": [["table", "ids"]]}]
+    at = AppTest.from_string(_NEEDS_APP.format(components=NEEDS, views=only_ids, default=[["table", "ids"]],
+                                               analyses=ANALYSES))
+    at.session_state["path"] = str(tmp_path / "viewer.json")
     at.session_state["available"] = []
     at.run()
     texts = " ".join(m.value for m in at.markdown)
-    assert "drawn:ids" not in texts
+    assert "current:ids" in texts and "drawn:table" in texts and "drawn:ids" not in texts
     assert "Needs Identification, which this run was not processed with." in texts
     at.button(key="grid_missing_ids").click().run()
     assert at.session_state["vb_missing"]["component"] == "ids"
