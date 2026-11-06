@@ -459,17 +459,22 @@ class WorkflowManager:
         self.ui.parameter_section(self.configure, after_parameters=self._add_files_start)
 
     def _add_files_start(self) -> None:
-        """While the settings add files to an experiment (``follow_up`` or
-        ``start_from`` with more files): a button that starts that run here."""
+        """While the settings follow an earlier run (``follow_up``, ``start_from``),
+        such as adding files to its experiment: a button that starts the run here."""
         info = self.parameter_manager.get_parameters_from_json().get(FOLLOW_UP_KEY)
-        if not isinstance(info, dict) or not info.get("adds_to"):
+        if not isinstance(info, dict):
             return
         running = self.get_workflow_status()["running"]
+        name = info.get("name") or info.get("run") or "the earlier run"
         with st.container(border=True):
-            st.markdown(f"**:material/library_add: Add files to {info.get('name', 'the experiment')}**")
-            st.caption("A run is still going: start once it has finished." if running else
-                       "Processes the files picked above with these settings; the results then "
-                       "show them together with the experiment's files.")
+            if info.get("adds_to"):
+                st.markdown(f"**:material/library_add: Add files to {name}**")
+                text = ("Processes the files picked above with these settings; the results then "
+                        "show them together with the experiment's files.")
+            else:
+                st.markdown(f"**:material/history: Start from the settings of {name}**")
+                text = "Processes the files picked above with these settings."
+            st.caption("A run is still going: start once it has finished." if running else text)
             if st.button("Start analysis", type="primary", icon=":material/play_arrow:",
                          key=f"{self.workflow_dir.name}-add-files-start", disabled=running):
                 key = info.get("files_key")

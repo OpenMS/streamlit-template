@@ -2840,8 +2840,7 @@ class StreamlitUI:
                      f"{'file' if len(done) == 1 else 'files'} of that run "
                      f"{'is' if len(done) == 1 else 'are'} processed already, and the results "
                      "show them together with the new ones as one experiment.")
-        text += (" Pick them, then start below." if info.get("adds_to")
-                 else " Check them, then start the run on the next page.")
+        text += " Check them, then start below."
         with st.container(border=True, horizontal=True, vertical_alignment="center"):
             st.markdown(f":material/history: {text}", width="stretch")
             if st.button("Dismiss", key=f"{self.workflow_dir.name}-follow-up-dismiss"):
