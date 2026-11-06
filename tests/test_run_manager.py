@@ -4,6 +4,8 @@ import json
 import zipfile
 from pathlib import Path
 
+import pytest
+
 from streamlit.testing.v1 import AppTest
 
 from src.workflow.RunManager import (
@@ -288,3 +290,41 @@ def test_merge_feature_tables_matches_features_of_added_runs():
     assert merged.loc["f1", "c.mzML"] == 11.0  # within 10 ppm and 30 s
     assert pd.isna(merged.loc["f2", "c.mzML"])
     assert pd.isna(merged.loc["g2", "a.mzML"]) and merged.loc["g2", "c.mzML"] == 30.0
+
+
+def test_a_delete_cut_short_keeps_the_experiment_together(tmp_path, monkeypatch):
+    runs = RunManager(tmp_path)
+    ids = []
+    for name in ("First", "More", "Even more"):
+        ids.append(runs.new_run(name, adds_to=ids[0] if ids else None))
+        runs.finish(ids[-1], FINISHED)
+    first, added, third = ids
+
+    # The write that makes the oldest added run the new start fails
+    write = runs._write
+    def failing(run_id, run):
+        if run_id == added:
+            raise OSError("disk full")
+        write(run_id, run)
+    monkeypatch.setattr(runs, "_write", failing)
+    with pytest.raises(OSError):
+        runs.delete(first)
+    assert runs.experiment(third) == [first, added, third]
+
+    monkeypatch.setattr(runs, "_write", write)
+    assert runs.delete(first)
+    assert runs.experiment(third) == [added, third]
+
+
+def test_merge_feature_tables_updates_one_of_two_features_with_the_same_label():
+    import pandas as pd
+
+    from src.Workflow import merge_feature_tables
+
+    cols = ["charge", "rt", "mz", "quality"]
+    first = pd.DataFrame([[1, 100.0, 300.0, 1, 10.0], [1, 100.0, 300.02, 1, 20.0]],
+                         columns=cols + ["a.mzML"], index=["300.0@100", "300.0@100"])
+    added = pd.DataFrame([[1, 101.0, 300.0001, 1, 11.0]], columns=cols + ["c.mzML"], index=["g1"])
+    merged = merge_feature_tables([first, added])
+    assert merged["c.mzML"].iloc[0] == 11.0
+    assert pd.isna(merged["c.mzML"].iloc[1])

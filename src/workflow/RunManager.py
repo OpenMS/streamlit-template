@@ -124,15 +124,23 @@ class RunManager:
         run = self.get(run_id)
         if run is None:
             return None
-        root = run.get(ADDS_TO)
-        return root if root and root != run_id and self.get(root) is not None else run_id
+        seen = {run_id}
+        # Follows a chain, which a delete leaves while it re-points the runs
+        while run.get(ADDS_TO) and run[ADDS_TO] not in seen:
+            parent = self.get(run[ADDS_TO])
+            if parent is None:
+                break
+            seen.add(run[ADDS_TO])
+            run_id, run = run[ADDS_TO], parent
+        return run_id
 
     def added_runs(self, run_id: str, status: Optional[str] = FINISHED) -> list[dict]:
         """The runs that add files to ``run_id``'s experiment, oldest first."""
         root = self.experiment_root(run_id)
         if root is None:
             return []
-        added = [r for r in self.list_runs(status) if r.get(ADDS_TO) == root and r["id"] != root]
+        added = [r for r in self.list_runs(status)
+                 if r.get(ADDS_TO) and r["id"] != root and self.experiment_root(r["id"]) == root]
         return sorted(added, key=lambda r: (r.get("created", ""), r["id"]))
 
     def experiment(self, run_id: Optional[str]) -> list[str]:
@@ -254,12 +262,14 @@ class RunManager:
         if self.experiment_root(run_id) == run_id:
             added = self.added_runs(run_id, status=None)
             if added:
+                # The others point at the oldest first, and it becomes the root
+                # last: a write that fails leaves one experiment to delete again
                 first = added[0]
-                first.pop(ADDS_TO, None)
-                self._write(first["id"], {k: v for k, v in first.items() if k != "id"})
                 for other in added[1:]:
                     other[ADDS_TO] = first["id"]
                     self._write(other["id"], {k: v for k, v in other.items() if k != "id"})
+                first.pop(ADDS_TO, None)
+                self._write(first["id"], {k: v for k, v in first.items() if k != "id"})
         shutil.rmtree(self.run_dir(run_id), ignore_errors=True)
         Path(self.workflow_dir, "downloads", f"{run_id}.zip").unlink(missing_ok=True)
         return True

@@ -25,14 +25,16 @@ def merge_feature_tables(tables: list, ppm: float = 10.0, rt_tolerance: float = 
         for c in files:
             merged[c] = float("nan")
         new_rows = []
-        for index, row in table.iterrows():
-            close = merged[((merged["mz"] - row["mz"]).abs() <= row["mz"] * ppm * 1e-6)
-                           & ((merged["rt"] - row["rt"]).abs() <= rt_tolerance)]
-            if close.empty:
+        columns = [merged.columns.get_loc(c) for c in files]
+        for _, row in table.iterrows():
+            # By position: two features can share a rounded label
+            close = (((merged["mz"] - row["mz"]).abs() <= row["mz"] * ppm * 1e-6)
+                     & ((merged["rt"] - row["rt"]).abs() <= rt_tolerance)).to_numpy().nonzero()[0]
+            if len(close) == 0:
                 new_rows.append(row)
                 continue
-            best = (close["rt"] - row["rt"]).abs().idxmin()
-            merged.loc[best, files] = row[files].values
+            best = close[(merged["rt"].iloc[close] - row["rt"]).abs().to_numpy().argmin()]
+            merged.iloc[best, columns] = row[files].values
         if new_rows:
             merged = pd.concat([merged, pd.DataFrame(new_rows)])
     return merged
@@ -298,9 +300,11 @@ class Workflow(WorkflowManager):
 
     def _intensities(self) -> None:
         df = self._feature_table()
-        rows = (st.session_state.get(self._features_key()) or {}).get("selection", {}).get("rows", [])
         if df is None:
             return
+        # The table shrinks when a run of the experiment is deleted
+        rows = (st.session_state.get(self._features_key()) or {}).get("selection", {}).get("rows", [])
+        rows = [row for row in rows if 0 <= row < len(df)]
         if rows:
             fig = px.bar(df.iloc[rows, 4:], barmode="group", labels={"value": "intensity"})
             show_fig(fig, "consensus-feature-intensities")

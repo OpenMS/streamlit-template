@@ -2902,8 +2902,17 @@ class StreamlitUI:
                 # encoding="utf-8" explicitly: the payload is decoded as utf-8
                 # just above, and writing it back in the platform codepage
                 # produced a params.json that no later utf-8 read could decode.
+                text = up.read().decode("utf-8")
+                try:
+                    # An export made while a follow-up was prepared names the run
+                    # it followed: imported settings start no follow-up
+                    imported = json.loads(text)
+                    if isinstance(imported, dict) and imported.pop(FOLLOW_UP_KEY, None) is not None:
+                        text = json.dumps(imported, indent=4)
+                except ValueError:
+                    pass
                 with open(self.parameter_manager.params_file, "w", encoding="utf-8") as f:
-                    f.write(up.read().decode("utf-8"))
+                    f.write(text)
                 self.parameter_manager.clear_parameter_session_state()
                 st.toast("Parameters imported")
                 st.rerun()
