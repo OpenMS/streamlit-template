@@ -372,14 +372,17 @@ jobs:
           -DENABLE_TOPP_TESTING=OFF \
           -DENABLE_PIPELINE_TESTING=OFF
 
-    # As soon as configure (which runs `vcpkg install`) succeeded, so a failing
-    # compile does not throw away hours of dependency builds.
+    # Right after configure (which runs `vcpkg install`), so a failing compile
+    # does not throw away hours of dependency builds. A failed `vcpkg install`
+    # (a port's download refused, say) saves what it built under a key of its
+    # own: restore-keys picks it up next time, and the full key stays free for
+    # a complete cache.
     - name: Save the vcpkg binary cache
-      if: always() && steps.vcpkg-configure.outcome == 'success' && steps.vcpkg-cache.outputs.cache-hit != 'true'
+      if: always() && (steps.vcpkg-configure.outcome == 'success' || steps.vcpkg-configure.outcome == 'failure') && steps.vcpkg-cache.outputs.cache-hit != 'true'
       uses: actions/cache/save@v4
       with:
         path: .vcpkg-cache
-        key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
+        key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}${{ steps.vcpkg-configure.outcome == 'failure' && format('-partial-{0}-{1}', github.run_id, github.run_attempt) || '' }}
 
     - name: Build and package (vcpkg)
       if: steps.package.outputs.cache-hit != 'true' && steps.route.outputs.route == 'vcpkg'
