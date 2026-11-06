@@ -66,6 +66,7 @@ Set up app-level configuration (settings, Dockerfile, README) for a new or forke
 
 - [ ] `settings.json` updated with app name, GitHub user/repo, version
 - [ ] Correct Dockerfile chosen; extra tools in `conda-requirements.txt`, not in the Dockerfile
+- [ ] Every new dependency's license checked (`python -m utils.dependency_licenses`); non-permissive ones recorded in `dependency-licenses.json`
 - [ ] `requirements.txt` or `environment.yml` updated with dependencies
 - [ ] `README.md` updated
 

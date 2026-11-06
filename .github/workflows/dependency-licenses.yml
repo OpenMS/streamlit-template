@@ -1,0 +1,50 @@
+name: Dependency licenses
+
+# Looks up the license of every dependency a pull request adds or re-pins and
+# fails on one that needs a decision not recorded in dependency-licenses.json.
+# The report (license and where to attribute each dependency) is in the job
+# summary. The Claude Code hook .claude/hooks/dependency_licenses.py runs the
+# same check while editing.
+on:
+  pull_request:
+    paths:
+      - "**/requirements*.txt"
+      - "**/conda-requirements.txt"
+      - "**/package.json"
+      - "dependency-licenses.json"
+      - "utils/dependency_licenses.py"
+      - ".github/workflows/dependency-licenses.yml"
+  workflow_dispatch:
+    inputs:
+      all:
+        description: "Check every dependency, not only the changed ones"
+        type: boolean
+        default: false
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  licenses:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Check dependency licenses
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          ALL: ${{ inputs.all }}
+        run: |
+          if [[ "$ALL" == "true" || -z "$BASE_REF" ]]; then
+            python -m utils.dependency_licenses --all --summary "$GITHUB_STEP_SUMMARY"
+          else
+            python -m utils.dependency_licenses --base "origin/$BASE_REF" --summary "$GITHUB_STEP_SUMMARY"
+          fi
