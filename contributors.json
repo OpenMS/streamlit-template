@@ -1,0 +1,38 @@
+{
+  "repository": "streamlit-template",
+  "name": "OpenMS web app template",
+  "lead": "The OpenMS web app framework is open source, built on OpenMS.",
+  "groups": [
+    {
+      "title": "OpenMS tools behind the example workflow",
+      "people": [
+        "timosachsenberg",
+        "hroest",
+        "jpfeuffer",
+        "cbielow",
+        "oliveralka",
+        "poshul",
+        "axelwalter",
+        "enetz",
+        "hendrikweisser",
+        "aiche",
+        "ahmedskhalil",
+        "grosenberger"
+      ]
+    }
+  ],
+  "names": {
+    "timosachsenberg": "Timo Sachsenberg",
+    "hroest": "Hannes Röst",
+    "jpfeuffer": "Julianus Pfeuffer",
+    "cbielow": "Chris Bielow",
+    "oliveralka": "Oliver Alka",
+    "poshul": "Samuel Wein",
+    "axelwalter": "Axel Walter",
+    "enetz": "Eugen Netz",
+    "hendrikweisser": "Hendrik Weisser",
+    "aiche": "Stephan Aiche",
+    "ahmedskhalil": "Ahmed Khalil",
+    "grosenberger": "George Rosenberger"
+  }
+}

@@ -73,6 +73,7 @@ sync:
     - default-parameters.json
     - presets.json
     - parameter-names.json
+    - contributors.json
     - README.md
     - content/*
     - src/Workflow.py

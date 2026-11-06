@@ -1,0 +1,59 @@
+{
+  "groups": [
+    {
+      "title": "Web app framework (all OpenMS web apps)",
+      "github": "OpenMS/streamlit-template",
+      "exclude": [
+        "claude"
+      ],
+      "extra": [
+        "jonasscheid"
+      ],
+      "people": [
+        "t0mdavid-m",
+        "axelwalter",
+        "Arslan-Siraj",
+        "singjc",
+        "jcharkow",
+        "ChandraDevs1",
+        "subCode321",
+        "achalbajpai",
+        "Ayesha-Feroz",
+        "jisnoo123",
+        "poshul",
+        "Srajald",
+        "definitelynotchirag",
+        "timosachsenberg",
+        "asterisk-ragavan",
+        "hjn0415a",
+        "ZenMachina16",
+        "blenbot",
+        "JKVISION1101",
+        "JeeH-K",
+        "ketan1406",
+        "jonasscheid"
+      ]
+    }
+  ],
+  "names": {
+    "t0mdavid-m": "Tom David Müller",
+    "axelwalter": "Axel Walter",
+    "Arslan-Siraj": "Arslan Siraj",
+    "singjc": "Justin Sing",
+    "jcharkow": "Joshua Charkow",
+    "ChandraDevs1": "Chandra Pratap Shah",
+    "subCode321": "Soubhagya Mohapatra",
+    "achalbajpai": "Achal Bajpai",
+    "Ayesha-Feroz": "Ayesha Feroz",
+    "jisnoo123": "Jisnoo Dev Pal",
+    "poshul": "Samuel Wein",
+    "Srajald": "Srajal Dwivedi",
+    "definitelynotchirag": "Chirag Dave",
+    "timosachsenberg": "Timo Sachsenberg",
+    "hjn0415a": "Yoo HoJun",
+    "JKVISION1101": "Jaekwan Kim",
+    "JeeH-K": "Jihyung Kim",
+    "ketan1406": "Ketan Saini",
+    "jonasscheid": "Jonas Scheid"
+  }
+}
