@@ -62,6 +62,14 @@ deploy:
   desktop: [windows]
   online_deployment: false
 
+# Optional CI checks, all on by default. An app with few CI minutes turns off
+# what it does not need (and sets deploy.desktop: [] to skip desktop builds).
+# ci:
+#   kind_tests: false             # kind deployments behind nginx and Traefik
+#   apptainer: false              # Apptainer test and SIF
+#   example_workflow_tests: false # workflow-tests.yml (template example)
+#   openms_release: false         # PRs for new OpenMS releases
+
 sync:
   # Files the app owns. A merge conflict in one of them keeps the app's
   # version; a conflict anywhere else stops the sync for a human. Apps copy

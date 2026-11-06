@@ -62,7 +62,18 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.TEMPLATE_SYNC_TOKEN || github.token }}
 
+      - name: Read ci.openms_release from app.yaml
+        id: gate
+        run: |
+          run=true
+          if [ -f app.yaml ] && [ "$(yq '.ci.openms_release' app.yaml | tr '[:upper:]' '[:lower:]')" = false ]; then
+            run=false
+            echo "ci.openms_release is false in app.yaml: skipped" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+
       - name: Look at the upgrade branch
+        if: steps.gate.outputs.run == 'true'
         id: branch
         run: |
           set -euo pipefail
@@ -80,7 +91,7 @@ jobs:
 
       - name: Upgrade OpenMS
         id: upgrade
-        if: steps.branch.outputs.human != 'true'
+        if: steps.gate.outputs.run == 'true' && steps.branch.outputs.human != 'true'
         run: |
           set -euo pipefail
           git checkout -B "$BRANCH"

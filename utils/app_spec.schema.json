@@ -182,6 +182,7 @@
         },
         "desktop": {
           "type": "array",
+          "description": "Desktop installers. An empty list turns off build-desktop-app.yaml except when it is started by hand.",
           "items": {"enum": ["windows", "macos", "linux"]},
           "uniqueItems": true
         },
@@ -189,6 +190,17 @@
           "type": "boolean",
           "description": "Must equal online_deployment in settings.json."
         }
+      }
+    },
+    "ci": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Which optional CI checks run. Every switch defaults to true; an app with few CI minutes turns off what it does not need.",
+      "properties": {
+        "kind_tests": {"type": "boolean", "description": "build-and-test.yml deploys the images to kind clusters behind nginx and Traefik."},
+        "apptainer": {"type": "boolean", "description": "build-and-test.yml tests the amd64 images under Apptainer and publishes the SIF."},
+        "example_workflow_tests": {"type": "boolean", "description": "workflow-tests.yml runs test.py (the template's example workflow, downloads an mzML) and test_gui.py."},
+        "openms_release": {"type": "boolean", "description": "openms-release.yml opens a PR when a new OpenMS release comes out."}
       }
     },
     "sync": {
