@@ -26,6 +26,8 @@ from src.common.common import (
     tk_file_dialog,
 )
 from src.workflow._log_status import classify_log_outcome
+from src.workflow.report_ui import report_buttons
+from src.workflow.RunManager import FOLLOW_UP_KEY
 from src.workflow.progress import (
     DONE,
     FAILED,
@@ -2790,11 +2792,35 @@ class StreamlitUI:
             if c1.button("⬇️ Download files", use_container_width=True):
                 self.zip_and_download_files(Path(self.workflow_dir, "input-files"))
 
+    def follow_up_notice(self) -> None:
+        """Say which run the settings come from, after ``WorkflowManager.follow_up``.
+
+        Drawn once per page, at the top of the parameter section; a page that
+        draws its own box above that section calls it first.
+        """
+        if getattr(self, "_follow_up_drawn", False):
+            return
+        self._follow_up_drawn = True
+        info = self.parameter_manager.get_parameters_from_json().get(FOLLOW_UP_KEY)
+        if not isinstance(info, dict):
+            return
+        text = f"These are the settings of the run **{info.get('name', info.get('run', ''))}**"
+        text += f", {info['note']}." if info.get("note") else "."
+        text += " Check them, then start the run on the next page."
+        with st.container(border=True, horizontal=True, vertical_alignment="center"):
+            st.markdown(f":material/history: {text}", width="stretch")
+            if st.button("Dismiss", key=f"{self.workflow_dir.name}-follow-up-dismiss"):
+                params = self.parameter_manager.get_parameters_from_json()
+                params.pop(FOLLOW_UP_KEY, None)
+                self.parameter_manager.write_parameters(params)
+                st.rerun()
+
     def parameter_section(self, custom_parameter_function) -> None:
         # No "Show advanced parameters" toggle: each TOPP tool's "All N
         # parameters" dialog reaches the advanced ones, and a python tool's
         # sit in an expander. An app can still set this to True itself.
         st.session_state.setdefault("advanced", False)
+        self.follow_up_notice()
 
         # Display threads configuration for local mode only
         if not st.session_state.settings.get("online_deployment", False):
@@ -2986,6 +3012,7 @@ class StreamlitUI:
                 else:
                     st.error("**Errors occurred, check log file.**")
                 self._show_run_summary(show_failures=outcome != "finished")
+                report_buttons(self.workflow_dir, key=f"{self.workflow_dir.name}-run-report")
                 # Apply line limit to static display
                 if log_lines_count == "all":
                     display_lines = lines
@@ -3408,7 +3435,7 @@ Started: {status.get('started_at', 'N/A')}""")
         general = {}
 
         for k, v in params.items():
-            if k == "_defaults":
+            if k.startswith("_"):  # _defaults, _flag_params, _follow_up: bookkeeping
                 continue
             if isinstance(v, dict):
                 topp[k] = v

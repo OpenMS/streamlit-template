@@ -13,6 +13,8 @@ from typing import Optional
 
 import streamlit as st
 
+from src.workflow.report_ui import report_buttons
+
 from src.workflow.RunManager import (
     CANCELLED,
     FAILED,
@@ -168,7 +170,7 @@ def run_manager_section(
         )
         c_status.write(STATUS_LABELS.get(status, status))
 
-        b_show, b_rename, b_download, b_delete = c_actions.columns(4, gap="small")
+        b_show, b_rename, b_report, b_download, b_delete = c_actions.columns(5, gap="small")
 
         if b_show.button(
             "👁️", key=f"runs-{slug}-show-{run_id}", help="Show this run on the results pages",
@@ -186,6 +188,10 @@ def run_manager_section(
                 if runs.rename(run_id, new_name):
                     st.rerun()
                 st.error("The name can not be empty.")
+
+        with b_report.popover("📄", help="Processing report: how each input file was processed",
+                              width="stretch", disabled=status == RUNNING):
+            report_buttons(runs.workflow_dir, run_id, key=f"runs-{slug}-report-{run_id}", compact=True)
 
         prepared = f"_runs-{slug}-zip-{run_id}"
         zip_path = Path(runs.workflow_dir, "downloads", f"{run_id}.zip")

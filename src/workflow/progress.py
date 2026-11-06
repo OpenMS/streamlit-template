@@ -77,7 +77,7 @@ class RunProgress:
     def _load(self) -> dict:
         state = read_progress(self.workflow_dir)
         if not state:
-            state = {"started": time.time(), "steps": []}
+            state = {"started": time.time(), "steps": [], "environment": _environment()}
         return state
 
     def _save(self, state: dict) -> None:
@@ -109,24 +109,38 @@ class RunProgress:
             except (OSError, ValueError, KeyError, IndexError, TypeError):
                 return None
 
-    def start_step(self, tool: str, labels: List[str], threads: int = 1, parallel: int = 1) -> int:
-        """Record a tool call with one entry per label; returns the step index."""
+    def start_step(
+        self,
+        tool: str,
+        labels: List[str],
+        threads: int = 1,
+        parallel: int = 1,
+        provenance: Optional[dict] = None,
+    ) -> int:
+        """Record a tool call with one entry per label; returns the step index.
+
+        ``provenance`` is what the processing report needs to say how each
+        input file was processed (``src/workflow/processing_report.py``):
+        ``{"kind": "topp"|"python", "program", "version", "params",
+        "io": [{"inputs": [...], "outputs": [...]}, one per label]}``.
+        """
 
         def change(state):
-            state["steps"].append(
-                {
-                    "tool": tool,
-                    "started": time.time(),
-                    "ended": None,
-                    "threads": threads,
-                    "parallel": parallel,
-                    "sample": _running_sample(state),
-                    "files": [
-                        {"name": label, "status": PENDING, "started": None, "ended": None}
-                        for label in labels
-                    ],
-                }
-            )
+            step = {
+                "tool": tool,
+                "started": time.time(),
+                "ended": None,
+                "threads": threads,
+                "parallel": parallel,
+                "sample": _running_sample(state),
+                "files": [
+                    {"name": label, "status": PENDING, "started": None, "ended": None}
+                    for label in labels
+                ],
+            }
+            if provenance:
+                step["provenance"] = provenance
+            state["steps"].append(step)
             return len(state["steps"]) - 1
 
         step = self._update(change)
@@ -162,6 +176,15 @@ class RunProgress:
 
         if step >= 0:
             self._update(change)
+
+    def record_alias(self, path: str, source: str, note: str = "") -> None:
+        """``path`` is ``source`` under another name (a renamed or reused file),
+        so the processing report traces files made from it back to ``source``."""
+
+        def change(state):
+            state.setdefault("aliases", {})[str(path)] = {"source": str(source), "note": note}
+
+        self._update(change)
 
     def end_step(self, step: int) -> None:
         def change(state):
@@ -218,6 +241,19 @@ class RunProgress:
         samples = state.get("samples") or []
         if index < len(samples) and samples[index]["status"] == RUNNING:
             self.sample_finished(index, ok=True)
+
+
+def _environment() -> dict:
+    """Versions the processing report names: Python, pyOpenMS, the platform."""
+    import platform  # pylint: disable=import-outside-toplevel
+    from importlib import metadata  # pylint: disable=import-outside-toplevel
+
+    env = {"python": platform.python_version(), "platform": platform.platform(terse=True)}
+    try:
+        env["pyopenms"] = metadata.version("pyopenms")
+    except metadata.PackageNotFoundError:
+        pass
+    return env
 
 
 def _running_sample(state: dict) -> Optional[str]:

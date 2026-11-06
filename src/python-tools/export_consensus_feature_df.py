@@ -24,6 +24,7 @@ from pathlib import Path
 
 DEFAULTS = [
     {"key": "in", "value": "", "help": "Input consensusXML file.", "hide": True},
+    {"key": "out", "value": "", "help": "Output table (default: the input with .tsv).", "hide": True},
 ]
 
 def get_params():
@@ -43,4 +44,7 @@ if __name__ == "__main__":
     df = df.reset_index()
     df = df.drop(columns=["id", "sequence"])
     df.insert(0, "metabolite", df.apply(lambda x: f"{round(x['mz'], 4)}@{round(x['rt'], 2)}", axis=1))
-    df.to_csv(Path(params["in"]).with_suffix(".tsv"), sep="\t", index=False)
+    out = params.get("out") or Path(params["in"]).with_suffix(".tsv")
+    if isinstance(out, list):
+        out = out[0]
+    df.to_csv(out, sep="\t", index=False)

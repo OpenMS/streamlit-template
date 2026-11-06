@@ -5,7 +5,7 @@ from .ParameterManager import ParameterManager
 from .CommandExecutor import CommandExecutor
 from .StreamlitUI import StreamlitUI
 from .FileManager import FileManager
-from .RunManager import RunManager, FINISHED, FAILED, CANCELLED, RUNNING
+from .RunManager import RunManager, FINISHED, FAILED, CANCELLED, RUNNING, FOLLOW_UP_KEY
 import multiprocessing
 import streamlit as st
 import shutil
@@ -98,8 +98,38 @@ class WorkflowManager:
 
         name = st.session_state.pop(run_name_key(self.runs), "")
         self.run_id = self.runs.new_run(name, Path(self.workflow_dir, "params.json"))
+        # The run keeps which run it follows; the next settings start fresh
+        params = self.parameter_manager.get_parameters_from_json()
+        if params.pop(FOLLOW_UP_KEY, None) is not None:
+            self.parameter_manager.write_parameters(params)
         self._use_run(self.run_id)
         set_selected_run(self.runs, self.run_id)
+
+    def follow_up(
+        self,
+        run_id: str,
+        changes: Optional[dict] = None,
+        page=None,
+        note: str = "",
+    ) -> bool:
+        """Set up the next run from the settings ``run_id`` was started with.
+
+        For an analysis a run is missing (identification after deconvolution
+        only), more files, or a comparison with other runs: the parameters the
+        user set for that run, and its experimental design, become the
+        workflow's again, with ``changes`` on top (params.json keys, e.g.
+        ``{"identify": True}`` or ``{"mzML-files": [...]}``; a TOPP tool's dict is
+        merged). The configure page then says which run it starts from and
+        ``note`` (what changed). ``page`` switches there (``st.switch_page``).
+        Returns False if the run recorded no parameters.
+        """
+        if not self.multi_run or not self.runs.restore_settings(run_id, changes, note):
+            return False
+        self.params = self.parameter_manager.get_parameters_from_json()
+        self.parameter_manager.clear_parameter_session_state()
+        if page is not None:
+            st.switch_page(page)
+        return True
 
     def _use_run(self, run_id: str) -> None:
         """Point results_dir (and the FileManager) at a run."""
