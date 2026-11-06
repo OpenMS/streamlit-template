@@ -471,14 +471,27 @@ def render_experiments(
     return picked
 
 
-def experiment_state(key: str, index: int, dataset_id: Optional[str] = None) -> Any:
+
+def experiment_state(
+    key: str,
+    index: int,
+    dataset_id: Optional[str] = None,
+    private: Sequence[str] = (),
+    owner: str = "",
+) -> Any:
     """The OpenMS-Insight ``StateManager`` all components of one experiment share.
 
     Keyed by experiment, not by view or component: a protein, peptide or
     spectrum picked in one view stays picked when the user switches views,
     and two experiments side by side keep their own selections. Pass the
     experiment's ``dataset_id`` so that picking another dataset clears the
-    selection. Needs ``openms-insight``, which the template does not install.
+    selection.
+
+    An identifier that means something else in each component (a row number
+    of that component's own table, say) is listed in ``private`` with the
+    component's name as ``owner``: it is then kept apart for that component,
+    while every other identifier stays shared. Needs ``openms-insight``, which
+    the template does not install.
     """
     from openms_insight import StateManager  # pylint: disable=import-outside-toplevel
 
@@ -487,4 +500,46 @@ def experiment_state(key: str, index: int, dataset_id: Optional[str] = None) -> 
     if dataset_id is not None and st.session_state.get(shown) != dataset_id:
         st.session_state.pop(name, None)
         st.session_state[shown] = dataset_id
-    return StateManager(name)
+    # Also without private identifiers: other components' private ones stay hidden
+    return _private_state(StateManager)(name, {i: f"{i}@{owner}" for i in private})
+
+
+def _private_state(base: type) -> type:
+    """A ``StateManager`` that keeps some identifiers apart under other names."""
+
+    class PrivateState(base):  # type: ignore[misc, valid-type]
+        def __init__(self, session_key: str, renamed: Dict[str, str]):
+            self._renamed = renamed
+            self._back = {v: k for k, v in renamed.items()}
+            super().__init__(session_key)
+
+        def _to_store(self, identifier: str) -> str:
+            return self._renamed.get(identifier, identifier)
+
+        def _from_store(self, values: Dict[str, Any]) -> Dict[str, Any]:
+            # The shared names this component keeps apart are hidden, its own shown under them
+            out = {k: v for k, v in values.items() if k not in self._renamed and "@" not in k}
+            out.update({self._back[k]: v for k, v in values.items() if k in self._back})
+            return out
+
+        def get_selection(self, identifier: str) -> Any:
+            return super().get_selection(self._to_store(identifier))
+
+        def set_selection(self, identifier: str, value: Any) -> bool:
+            return super().set_selection(self._to_store(identifier), value)
+
+        def clear_selection(self, identifier: str) -> bool:
+            return super().clear_selection(self._to_store(identifier))
+
+        def get_all_selections(self) -> Dict[str, Any]:
+            return self._from_store(super().get_all_selections())
+
+        def get_state_for_vue(self) -> Dict[str, Any]:
+            return self._from_store(super().get_state_for_vue())
+
+        def update_from_vue(self, vue_state: Dict[str, Any]) -> bool:
+            if vue_state is None:
+                return super().update_from_vue(vue_state)
+            return super().update_from_vue({self._to_store(k): v for k, v in vue_state.items()})
+
+    return PrivateState

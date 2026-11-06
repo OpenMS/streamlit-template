@@ -432,3 +432,63 @@ def test_experiment_state_kept_until_dataset_changes(monkeypatch):
     at.session_state["dataset"] = "run2"
     at.run()
     assert at.markdown[0].value == "v_state_0 v_state_1 {}"
+
+
+class _FakeStateManager:
+    """The part of openms-insight's StateManager experiment_state relies on."""
+
+    def __init__(self, session_key):
+        import streamlit as st
+        self._key = session_key
+        st.session_state.setdefault(session_key, {"selections": {}})
+
+    @property
+    def _sel(self):
+        import streamlit as st
+        return st.session_state[self._key]["selections"]
+
+    def get_selection(self, identifier):
+        return self._sel.get(identifier)
+
+    def set_selection(self, identifier, value):
+        self._sel[identifier] = value
+        return True
+
+    def clear_selection(self, identifier):
+        return self._sel.pop(identifier, None) is not None
+
+    def get_all_selections(self):
+        return dict(self._sel)
+
+    def get_state_for_vue(self):
+        return {"id": 1, **self._sel}
+
+    def update_from_vue(self, vue_state):
+        vue_state = {k: v for k, v in vue_state.items() if k != "id"}
+        self._sel.update(vue_state)
+        return bool(vue_state)
+
+
+def test_private_identifiers_are_kept_apart(monkeypatch):
+    import sys
+    import types
+    from unittest.mock import patch
+
+    from src.layout_manager import experiment_state
+
+    monkeypatch.setitem(sys.modules, "openms_insight", types.SimpleNamespace(StateManager=_FakeStateManager))
+    session = {}
+    with patch("src.layout_manager.ui.st") as fake_st:
+        fake_st.session_state = session
+        with patch("streamlit.session_state", session):
+            search = experiment_state("v", 0, private=["identification"], owner="search")
+            rescored = experiment_state("v", 0, private=["identification"], owner="rescored")
+            plain = experiment_state("v", 0)
+            search.update_from_vue({"id": 1, "spectrum": 7, "identification": 3})
+            rescored.set_selection("identification", 9)
+            # The spectrum is shared, each table keeps its own row
+            assert plain.get_selection("spectrum") == 7
+            assert rescored.get_selection("spectrum") == 7
+            assert search.get_selection("identification") == 3
+            assert rescored.get_state_for_vue() == {"id": 1, "spectrum": 7, "identification": 9}
+            assert plain.get_all_selections() == {"spectrum": 7}
