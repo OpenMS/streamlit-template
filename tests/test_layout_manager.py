@@ -6,8 +6,10 @@ from pathlib import Path
 from streamlit.testing.v1 import AppTest
 
 from src.layout_manager.layout import (
+    apply_preset,
     clear_layout,
     load_layout,
+    match_preset,
     resolve_layout,
     save_layout,
     validate_layout,
@@ -241,3 +243,59 @@ def test_render_experiments_side_by_side_and_empty():
         "st.session_state['picked'] = render_experiments([[['plot']]], False, {}, lambda d, i: {}, key='v')\n"
     ).run()
     assert not empty.exception and empty.session_state["picked"] == [None]
+
+
+PRESETS = [
+    {"name": "all", "label": "All", "layout": [["table", "detail"], ["plot"]]},
+    {"name": "plots", "label": "Plots", "layout": [["plot"]], "help": "Only the plot."},
+]
+
+
+def test_match_and_apply_preset(tmp_path):
+    path = tmp_path / "viewer.json"
+    assert match_preset([[["table", "detail"], ["plot"]]], PRESETS, COMPONENTS) == "all"
+    assert match_preset([[["plot"]], [["plot"]]], PRESETS, COMPONENTS) == "plots"
+    assert match_preset([[["plot"]], [["table"]]], PRESETS, COMPONENTS) is None
+    # Components the page does not offer are left out of both sides
+    offered = [c for c in COMPONENTS if c["name"] != "plot"]
+    assert match_preset([[["table", "detail"]]], PRESETS, offered) == "all"
+
+    apply_preset(path, PRESETS[1]["layout"])
+    assert load_layout(path) == ([[["plot"]]], False)
+    # Experiments and side by side are kept
+    save_layout(path, [[["table"]], [["table"]]], side_by_side=True)
+    apply_preset(path, PRESETS[0]["layout"])
+    assert load_layout(path) == ([PRESETS[0]["layout"]] * 2, True)
+
+
+_PRESET_APP = """
+import streamlit as st
+from pathlib import Path
+from src.layout_manager import layout_presets, resolve_layout
+
+path = Path(st.session_state["path"])
+shown = layout_presets(path, {components!r}, {presets!r}, [["table", "detail"], ["plot"]], key="view")
+layout, _ = resolve_layout(path, {components!r}, [["table", "detail"], ["plot"]])
+st.markdown(f"{{shown}}: " + " | ".join(",".join(row) for row in layout[0]))
+"""
+
+
+def test_preset_selector(tmp_path):
+    path = tmp_path / "viewer.json"
+    at = AppTest.from_string(_PRESET_APP.format(components=COMPONENTS, presets=PRESETS))
+    at.session_state["path"] = str(path)
+    at.run()
+    assert not at.exception
+    # The default layout is the first preset, and Custom is not offered
+    assert at.markdown[0].value == "all: table,detail | plot"
+    assert at.radio(key="view").options == ["All", "Plots"]
+    # Picking a preset stores it
+    at.radio(key="view").set_value("plots").run()
+    assert at.markdown[0].value == "plots: plot"
+    assert load_layout(path) == ([[["plot"]]], False)
+    # A layout saved in the editor shows as Custom
+    save_layout(path, [[["table"]]])
+    at.run()
+    assert at.markdown[0].value == "None: table"
+    assert at.session_state["view"] == "_custom"
+    assert at.radio(key="view").options == ["All", "Plots", "Custom"]

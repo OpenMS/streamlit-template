@@ -18,6 +18,17 @@ catalog the page defines::
 
 ``requires`` names a component that has to be in the same experiment, e.g. a
 peak list that follows the spectra table's selection.
+
+A page can also offer preset views, ready-made layouts for one purpose::
+
+    PRESETS = [
+        {"name": "overview", "label": "Overview", "layout": [["peak_map"], ["spectrum"]]},
+        {"name": "spectra", "label": "Spectra", "layout": [["spectra_table", "peak_list"]],
+         "help": "Browse the spectra one by one."},
+    ]
+
+``apply_preset`` stores a preset's rows for every experiment, and
+``match_preset`` tells which preset the current layout is, if any.
 """
 
 import json
@@ -116,3 +127,37 @@ def resolve_layout(
     if not out:
         return [default], False
     return out, side_by_side and len(out) == 2
+
+
+def _known_rows(rows: Sequence[Sequence[str]], known: set) -> List[List[str]]:
+    rows = [[n for n in row if n in known] for row in rows]
+    return [row for row in rows if row]
+
+
+def match_preset(
+    layout: Layout,
+    presets: Sequence[Dict[str, Any]],
+    components: Sequence[Dict[str, Any]],
+) -> Optional[str]:
+    """The name of the preset every experiment of ``layout`` shows, or None.
+
+    Presets are compared as the page renders them, without the components
+    ``components`` does not offer.
+    """
+    known = {c["name"] for c in components}
+    for preset in presets:
+        rows = _known_rows(preset["layout"], known)
+        if layout and all(_known_rows(exp, known) == rows for exp in layout):
+            return preset["name"]
+    return None
+
+
+def apply_preset(path: Path, rows: List[List[str]]) -> None:
+    """Store ``rows`` as the layout of every experiment of the stored layout.
+
+    The number of experiments and whether two are side by side stay as they
+    are, so a comparison of runs keeps its runs when the view changes.
+    """
+    stored = load_layout(path)
+    count, side_by_side = (len(stored[0]) or 1, stored[1]) if stored else (1, False)
+    save_layout(path, [[list(row) for row in rows] for _ in range(count)], side_by_side)

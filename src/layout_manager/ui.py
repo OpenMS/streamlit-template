@@ -14,8 +14,11 @@ import streamlit.components.v1 as st_components
 from src.layout_manager.layout import (
     MAX_COLUMNS,
     Layout,
+    apply_preset,
     clear_layout,
     load_layout,
+    match_preset,
+    resolve_layout,
     save_layout,
     validate_layout,
 )
@@ -153,6 +156,49 @@ def layout_button(
         st.session_state[open_key] = True
     if st.session_state.get(open_key):
         _dialog()
+
+
+CUSTOM = "_custom"
+
+
+def layout_presets(
+    path: Path,
+    components: Sequence[Dict[str, Any]],
+    presets: Sequence[Dict[str, Any]],
+    default_layout: List[List[str]],
+    key: str,
+    label: str = "View",
+    custom_label: str = "Custom",
+) -> Optional[str]:
+    """A selector of preset views; picking one stores its layout at ``path``.
+
+    ``presets`` are ``{"name", "label", "layout": rows, "help"?}``. The
+    selector shows the preset the current layout is, or ``custom_label`` for a
+    layout saved in the editor that is none of them. Picking a preset keeps
+    the experiments and their datasets, only their components change. Returns
+    the name of the preset shown, or None for a custom layout.
+    """
+    layout, _ = resolve_layout(path, components, default_layout)
+    current = match_preset(layout, presets, components)
+    labels = {p["name"]: p["label"] for p in presets}
+    options = list(labels) + ([] if current else [CUSTOM])
+    labels[CUSTOM] = custom_label
+    # The selector follows the stored layout, also after a save in the editor
+    st.session_state[key] = current or CUSTOM
+
+    def _picked() -> None:
+        preset = next((p for p in presets if p["name"] == st.session_state.get(key)), None)
+        if preset is not None:
+            apply_preset(path, preset["layout"])
+
+    tips = [f"**{p['label']}**: {p['help']}" for p in presets if p.get("help")]
+    # A radio rather than st.segmented_control, whose string value AppTest
+    # cannot hold (it reads it as a list of characters on the next run)
+    st.radio(
+        label, options, format_func=lambda name: labels.get(name, name), key=key,
+        on_change=_picked, help="\n\n".join(tips) or None, horizontal=True,
+    )
+    return current
 
 
 def _selection_key(key: str, index: int) -> str:

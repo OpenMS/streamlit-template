@@ -23,6 +23,9 @@ experiments and renders each below its own dataset selector::
             max_experiments=MAX_EXPERIMENTS) if i == 0 else None,
     )
 
+``layout_presets`` adds a selector of ready-made layouts (preset views) next
+to the editor; a layout saved in the editor shows there as Custom.
+
 ``layout.py`` is Streamlit-free; ``ui.py`` holds the editor and the grid.
 Ported from FLASHApp's Layout Manager.
 """
@@ -30,8 +33,10 @@ Ported from FLASHApp's Layout Manager.
 from src.layout_manager.layout import (
     MAX_COLUMNS,
     MAX_EXPERIMENTS,
+    apply_preset,
     clear_layout,
     load_layout,
+    match_preset,
     resolve_layout,
     save_layout,
     validate_layout,
@@ -39,6 +44,7 @@ from src.layout_manager.layout import (
 from src.layout_manager.ui import (
     layout_button,
     layout_editor,
+    layout_presets,
     render_experiments,
     render_layout,
     selected_datasets,
@@ -47,10 +53,13 @@ from src.layout_manager.ui import (
 __all__ = [
     "MAX_COLUMNS",
     "MAX_EXPERIMENTS",
+    "apply_preset",
     "clear_layout",
     "layout_button",
     "layout_editor",
+    "layout_presets",
     "load_layout",
+    "match_preset",
     "render_experiments",
     "render_layout",
     "resolve_layout",

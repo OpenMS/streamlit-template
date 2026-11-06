@@ -4,7 +4,7 @@ import streamlit as st
 
 from src.common.common import page_setup
 from src import view
-from src.layout_manager import layout_button, render_layout, resolve_layout
+from src.layout_manager import layout_button, layout_presets, render_layout, resolve_layout
 
 # Components of this page, arranged with Edit layout
 COMPONENTS = [
@@ -13,6 +13,13 @@ COMPONENTS = [
     {"name": "chromatograms", "label": "Chromatograms (MS1)", "group": "Plots"},
 ]
 DEFAULT_LAYOUT = [["peak_map"], ["spectrum"], ["chromatograms"]]
+# Ready-made layouts, picked with the View selector next to Edit layout
+PRESETS = [
+    {"name": "all", "label": "All", "layout": DEFAULT_LAYOUT, "help": "Peak map, spectra and chromatograms."},
+    {"name": "peak_map", "label": "Peak map", "layout": [["peak_map"]]},
+    {"name": "spectra", "label": "Spectra", "layout": [["spectrum"]]},
+    {"name": "chromatograms", "label": "Chromatograms", "layout": [["chromatograms"]]},
+]
 RENDERERS = {
     "peak_map": view.view_peak_map,
     "spectrum": view.view_spectrum,
@@ -50,7 +57,9 @@ if selected_file:
 
 
     layout_path = Path(st.session_state.workspace, "layouts", "raw_data_viewer.json")
-    with cols[1].container(height="stretch", vertical_alignment="bottom"):
+    with cols[1]:
+        layout_presets(layout_path, COMPONENTS, PRESETS, DEFAULT_LAYOUT, key="raw_data_viewer_view")
+    with cols[2].container(height="stretch", vertical_alignment="bottom"):
         layout_button(
             layout_path, COMPONENTS, DEFAULT_LAYOUT, key="raw_data_viewer_layout",
             help_text="Drag components into the grid (up to 3 per row), then press **Save**.",
