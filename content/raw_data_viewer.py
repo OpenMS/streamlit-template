@@ -4,6 +4,20 @@ import streamlit as st
 
 from src.common.common import page_setup
 from src import view
+from src.layout_manager import layout_editor, render_layout, resolve_layout
+
+# Components of this page, arranged with the layout editor below
+COMPONENTS = [
+    {"name": "peak_map", "label": "Peak map (MS1)", "group": "Plots"},
+    {"name": "spectrum", "label": "Spectra (MS1 + MS2)", "group": "Plots"},
+    {"name": "chromatograms", "label": "Chromatograms (MS1)", "group": "Plots"},
+]
+DEFAULT_LAYOUT = [["peak_map"], ["spectrum"], ["chromatograms"]]
+RENDERERS = {
+    "peak_map": view.view_peak_map,
+    "spectrum": view.view_spectrum,
+    "chromatograms": view.view_bpc_tic,
+}
 
 
 params = page_setup()
@@ -35,12 +49,11 @@ if selected_file:
     view.get_df(Path(st.session_state.workspace, "mzML-files", selected_file))
 
 
-    tabs = st.tabs(
-        ["📈 Peak map (MS1)", "📈 Spectra (MS1 + MS2)", "📈 Chromatograms (MS1)"]
-    )
-    with tabs[0]:
-        view.view_peak_map()
-    with tabs[1]:
-        view.view_spectrum()
-    with tabs[2]:
-        view.view_bpc_tic()
+    layout_path = Path(st.session_state.workspace, "layouts", "raw_data_viewer.json")
+    with st.expander("Arrange this page", icon="🧩"):
+        layout_editor(
+            layout_path, COMPONENTS, DEFAULT_LAYOUT, key="raw_data_viewer_layout",
+            target="this page",
+        )
+    layout, _ = resolve_layout(layout_path, COMPONENTS, DEFAULT_LAYOUT)
+    render_layout(layout[0], RENDERERS, {c["name"]: c["label"] for c in COMPONENTS})
