@@ -2,6 +2,10 @@ name: Test streamlit executable for Windows with pyinstaller
 on: 
   workflow_dispatch:
 
+# Every job reads the repository only; a job that needs more says so itself.
+permissions:
+  contents: read
+
 jobs:
   build-win-executable-with-pyinstaller:
     runs-on: windows-latest 

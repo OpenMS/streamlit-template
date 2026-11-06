@@ -10,6 +10,10 @@ on:
         type: boolean
         default: false
 
+# Every job reads the repository only; a job that needs more says so itself.
+permissions:
+  contents: read
+
 jobs:
   cleanup-app-images:
     runs-on: ubuntu-latest
