@@ -35,8 +35,11 @@ def layout_editor(
     target: str = "the Viewer",
     experiment_label: str = "Experiment",
     export_filename: str = "layout.json",
-) -> None:
+) -> bool:
     """Drag-and-drop editor that saves a layout to ``path`` (JSON).
+
+    Returns True in the run that saved or reset the layout (not after a
+    refused save), so a caller drawing it in a dialog can rerun the page.
 
     Args:
         path: Where the layout is stored, e.g. ``<workspace>/layouts/viewer.json``.
@@ -59,6 +62,7 @@ def layout_editor(
     # triggers, so persist it before rendering and the editor gets fresh args.
     submitted = st.session_state.get(key)
     error = ""
+    done = False
     if submitted and submitted.get("nonce") != st.session_state.get(handled_key):
         st.session_state[handled_key] = submitted.get("nonce")
         if submitted.get("action") == "save":
@@ -66,9 +70,11 @@ def layout_editor(
             error = validate_layout(layout, components, max_experiments, max_columns)
             if not error:
                 save_layout(path, layout, bool(submitted.get("side_by_side")))
+                done = True
         elif submitted.get("action") == "reset":
             clear_layout(path)
             st.session_state[revision_key] += 1
+            done = True
 
     saved = load_layout(path)
     _editor(
@@ -86,6 +92,7 @@ def layout_editor(
         key=key,
         default=None,
     )
+    return done
 
 
 def render_layout(
@@ -121,8 +128,9 @@ def layout_button(
 ) -> None:
     """A button that opens ``layout_editor`` in a dialog over the page.
 
-    Saving or resetting reruns the page, which closes the dialog and shows the
-    new layout. ``editor_args`` go to ``layout_editor`` (``max_experiments``,
+    A dialog reruns on its own when its widgets change, so after a save or a
+    reset it reruns the whole page, which closes the dialog and shows the new
+    layout. A refused save keeps the dialog open with the editor's message. ``editor_args`` go to ``layout_editor`` (``max_experiments``,
     ``experiment_label``, ...).
     """
 
@@ -130,7 +138,8 @@ def layout_button(
     def _dialog() -> None:
         if help_text:
             st.caption(help_text)
-        layout_editor(path, components, default_layout, key=key, **editor_args)
+        if layout_editor(path, components, default_layout, key=key, **editor_args):
+            st.rerun()
 
     if st.button(label, key=f"{key}_open", icon=":material/dashboard_customize:"):
         _dialog()

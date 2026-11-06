@@ -91,7 +91,9 @@ import streamlit as st
 from pathlib import Path
 from src.layout_manager import layout_editor
 
-layout_editor(Path(st.session_state["path"]), {components!r}, [["table", "detail"]], key="ed")
+st.session_state["done"] = layout_editor(
+    Path(st.session_state["path"]), {components!r}, [["table", "detail"]], key="ed"
+)
 """
 
 
@@ -107,16 +109,22 @@ def test_editor_saves_submitted_layout(tmp_path):
     at.session_state["ed"] = {"action": "save", "layout": [[["plot"]]], "side_by_side": False, "nonce": 1}
     at.run()
     assert load_layout(path) == ([[["plot"]]], False)
+    # A save reports itself once, so a dialog reruns the page only then
+    assert at.session_state["done"] is True
+    at.run()
+    assert at.session_state["done"] is False
 
     # An invalid layout is refused
     at.session_state["ed"] = {"action": "save", "layout": [[["detail"]]], "side_by_side": False, "nonce": 2}
     at.run()
     assert load_layout(path) == ([[["plot"]]], False)
+    assert at.session_state["done"] is False  # the dialog stays open on its message
 
     # Reset forgets it
     at.session_state["ed"] = {"action": "reset", "nonce": 3}
     at.run()
     assert load_layout(path) is None
+    assert at.session_state["done"] is True
     assert Path(path).parent.exists()
 
 
