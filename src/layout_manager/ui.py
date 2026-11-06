@@ -140,7 +140,7 @@ def render_layout(
                 label = (labels or {}).get(name) or by_name.get(name, {}).get("label", name)
                 missing = missing_analyses([name], components or [], available) if components else []
                 if missing:
-                    _missing_note(label, missing, analyses, on_missing, f"{key}_missing_{name}", name,
+                    missing_note(label, missing, analyses, on_missing, f"{key}_missing_{name}", name,
                                   dataset_label)
                     continue
                 renderer = renderers.get(name)
@@ -150,8 +150,14 @@ def render_layout(
                     renderer()
 
 
-def _missing_note(label, missing, analyses, on_missing, key, name, dataset_label) -> None:
-    """The note a component draws when its dataset was not processed for it."""
+def missing_note(label: str, missing: Sequence[str], analyses: Optional[Dict[str, Any]],
+                 on_missing: Optional[Callable[[List[str], str], Any]], key: str, name: str,
+                 dataset_label: str = "run") -> None:
+    """The note component ``name`` draws in place of itself when its dataset lacks ``missing``.
+
+    ``render_layout`` draws it; an app with a grid renderer of its own calls it
+    the same way. The button calls ``on_missing(missing, name)``.
+    """
     needed = join_labels([analysis_label(a, analyses) for a in missing])
     with st.container(border=True):
         st.markdown(f"**{label}**  \n:gray[Needs {needed}, which this {dataset_label} was not processed with.]")

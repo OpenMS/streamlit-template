@@ -5,7 +5,7 @@ from .ParameterManager import ParameterManager
 from .CommandExecutor import CommandExecutor
 from .StreamlitUI import StreamlitUI
 from .FileManager import FileManager
-from .RunManager import RunManager, FINISHED, FAILED, CANCELLED, RUNNING, FOLLOW_UP_KEY
+from .RunManager import RunManager, FINISHED, FAILED, CANCELLED, RUNNING, FOLLOW_UP_KEY, apply_settings
 import multiprocessing
 import streamlit as st
 import shutil
@@ -125,11 +125,30 @@ class WorkflowManager:
         """
         if not self.multi_run or not self.runs.restore_settings(run_id, changes, note):
             return False
+        self._reload_settings(page)
+        return True
+
+    def start_from(
+        self,
+        params: dict,
+        changes: Optional[dict] = None,
+        name: str = "",
+        page=None,
+        note: str = "",
+    ) -> None:
+        """``follow_up`` for an app without run folders: start from ``params``.
+
+        ``params`` are the settings the earlier result was made with (as the
+        app stored them), ``name`` names that result on the configure page.
+        """
+        apply_settings(self.workflow_dir, params, changes, {"name": name, "note": note})
+        self._reload_settings(page)
+
+    def _reload_settings(self, page=None) -> None:
         self.params = self.parameter_manager.get_parameters_from_json()
         self.parameter_manager.clear_parameter_session_state()
         if page is not None:
             st.switch_page(page)
-        return True
 
     def _use_run(self, run_id: str) -> None:
         """Point results_dir (and the FileManager) at a run."""

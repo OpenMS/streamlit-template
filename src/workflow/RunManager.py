@@ -147,17 +147,8 @@ class RunManager:
         params = self.params(run_id)
         if run is None or not params:
             return False
-        params.pop(FOLLOW_UP_KEY, None)
-        for key, value in (changes or {}).items():
-            if isinstance(value, dict) and isinstance(params.get(key), dict):
-                params[key] = {**params[key], **value}
-            else:
-                params[key] = value
-        params[FOLLOW_UP_KEY] = {"run": run_id, "name": run.get("name", run_id), "note": note}
-        target = Path(self.workflow_dir, "params.json")
-        tmp = target.with_name(f".params-{uuid.uuid4().hex}.json")
-        tmp.write_text(json.dumps(params, indent=4), encoding="utf-8")
-        tmp.replace(target)
+        apply_settings(self.workflow_dir, params, changes,
+                       {"run": run_id, "name": run.get("name", run_id), "note": note})
         design = Path(self.run_dir(run_id), DESIGN_FILE)
         if design.exists():
             shutil.copy2(design, Path(self.workflow_dir, DESIGN_FILE))
@@ -423,6 +414,31 @@ class RunManager:
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(run, f, indent=2)
         tmp.replace(path)
+
+
+def apply_settings(workflow_dir: Path, params: dict, changes: Optional[dict] = None,
+                   follow_up: Optional[dict] = None) -> dict:
+    """Write ``params`` with ``changes`` on top as the workflow's params.json.
+
+    A dict value of ``changes`` (one TOPP tool's parameters) is merged into the
+    stored one. ``follow_up`` (``{"run"?, "name", "note"}``) is kept under
+    ``FOLLOW_UP_KEY`` for the configure page and the processing report.
+    Returns what was written.
+    """
+    params = dict(params)
+    params.pop(FOLLOW_UP_KEY, None)
+    for key, value in (changes or {}).items():
+        if isinstance(value, dict) and isinstance(params.get(key), dict):
+            params[key] = {**params[key], **value}
+        else:
+            params[key] = value
+    if follow_up:
+        params[FOLLOW_UP_KEY] = dict(follow_up)
+    target = Path(workflow_dir, "params.json")
+    tmp = target.with_name(f".params-{uuid.uuid4().hex}.json")
+    tmp.write_text(json.dumps(params, indent=4), encoding="utf-8")
+    tmp.replace(target)
+    return params
 
 
 def _now() -> str:

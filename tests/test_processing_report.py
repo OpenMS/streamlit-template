@@ -171,3 +171,17 @@ def test_restore_settings_makes_a_runs_parameters_the_next_ones(tmp_path):
                                        "note": "with identification"}
     assert Path(tmp_path, DESIGN_FILE).read_text() == "design of run 1"
     assert not runs.restore_settings("no-such-run")
+
+
+def test_apply_settings_starts_from_stored_settings(tmp_path):
+    """An app without run folders starts a follow-up from the settings it stored itself."""
+    from src.workflow.RunManager import apply_settings
+
+    Path(tmp_path, "params.json").write_text(json.dumps({"fasta-file": "db.fasta"}))
+    written = apply_settings(tmp_path, {"mzML-files": ["a.mzML"], "Tool": {"a": 1}, FOLLOW_UP_KEY: {"old": 1}},
+                             {"identify": True, "Tool": {"b": 2}}, {"name": "a", "note": "with identification"})
+
+    assert json.loads(Path(tmp_path, "params.json").read_text()) == written == {
+        "mzML-files": ["a.mzML"], "Tool": {"a": 1, "b": 2}, "identify": True,
+        FOLLOW_UP_KEY: {"name": "a", "note": "with identification"},
+    }
