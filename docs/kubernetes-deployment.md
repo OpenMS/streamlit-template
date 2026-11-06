@@ -257,7 +257,7 @@ The apps cannot use a bucket directly. TOPP tools and pyOpenMS open files by pat
 | `metadata-db.yaml` | PostgreSQL 16 for the JuiceFS metadata, on a 10 Gi RWO volume of the cluster's default class. JuiceFS writes a metadata backup into the bucket every hour. |
 | `s3-gateway.yaml` | `juicefs gateway --multi-buckets` (2 replicas) at `juicefs-s3-gateway.openms-storage.svc:9000`: every app directory is served as an S3 bucket of the same name, one object per file. This is what lets code read workspace files through the S3 API (see below). |
 
-**Secrets.** None is committed. Create them before the first apply:
+**Secrets.** None is committed. Create them before the first apply. Use URL-safe passwords (`openssl rand -hex 24`), because the database password is part of the `metaurl` URL and `@ : / ?` in it break the URL. The gateway user needs at least 3 characters and its password at least 8, or the gateway pods fail at start.
 
 ```bash
 kubectl create namespace openms-storage
@@ -273,12 +273,14 @@ kubectl -n openms-storage create secret generic juicefs-s3-credentials \
   --from-literal=access-key=<ec2-access-key> \
   --from-literal=secret-key=<ec2-secret-key>
 
-# Credentials the S3 gateway accepts (choose them freely), and the same pair for every app namespace that uses it.
+# Credentials the S3 gateway accepts, and the same pair for every app namespace that uses it.
 kubectl -n openms-storage create secret generic juicefs-s3-gateway \
   --from-literal=access-key=<gateway-user> --from-literal=secret-key=<gateway-password>
 kubectl -n openms create secret generic workspaces-s3-gateway \
   --from-literal=access-key=<gateway-user> --from-literal=secret-key=<gateway-password>
 ```
+
+**One trust domain.** The gateway has one credential pair, and it reaches the folder of every app. Each app mounts only its own folder, but any pod with the `WORKSPACES_S3_*` variables can read and write the workspaces of every S3-enabled app through the gateway, and presigned links are signed with that pair. The apps share the `openms` namespace and its secrets anyway, so treat all S3-enabled apps on a cluster as one trust domain for workspace data.
 
 **Install**, once per cluster (Helm on `PATH`, as for `k8s/storage/`):
 
