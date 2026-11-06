@@ -476,8 +476,7 @@
       return h('option', { value: x.name, text: x.label, selected: x.name === f.from });
     })));
     return h('div', null, [head, h('div', { class: 'startfrom' }, [
-      h('span', { text: 'New view, started from' }), pick,
-      untouched ? null : h('span', { class: 'label', text: 'Fixed once its components change' })
+      h('span', { text: 'New view, started from' }), pick
     ])]);
   }
   function uniqueLabelExcept(base, self) {
