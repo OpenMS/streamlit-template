@@ -258,6 +258,24 @@ async function navTargets(page) {
   return [...new Set(hrefs.map((h) => new URL(h, "http://x").pathname.replace(/^\//, "")))];
 }
 
+// On a first start the app window shows the license agreement before the app.
+// Accepts it (with a screenshot), or returns once the app page is there.
+async function acceptLicense(page, out) {
+  const accept = page.locator("a.primary", { hasText: "I accept" });
+  const started = Date.now();
+  while (Date.now() - started < 120000) {
+    if (/^http:\/\/127\.0\.0\.1:\d+\//.test(page.url())) return;
+    if ((await accept.count().catch(() => 0)) > 0) {
+      await page.screenshot({ path: path.join(out, "00-license-agreement.png") });
+      await accept.click();
+      console.log("ok: license agreement accepted");
+      return;
+    }
+    await page.waitForTimeout(250);
+  }
+  throw new Error("neither the license agreement nor the app appeared within 120s");
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   fs.mkdirSync(args.out, { recursive: true });
@@ -270,6 +288,7 @@ async function main() {
     page.on("console", (m) => {
       if (m.type() === "error") console.log(`   [console] ${m.text()}`);
     });
+    await acceptLicense(page, args.out);
     await page.waitForURL(/^http:\/\/127\.0\.0\.1:\d+\//, { timeout: 300000 });
     const baseUrl = new URL(page.url()).origin;
     console.log(`App is up at ${baseUrl}`);

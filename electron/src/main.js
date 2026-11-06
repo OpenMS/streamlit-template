@@ -6,6 +6,7 @@ const path = require("path");
 const { app, BrowserWindow, Menu, dialog, shell } = require("electron");
 const payload = require("./payload");
 const { checkForUpdate, noticeScript } = require("./update-check");
+const license = require("./license");
 
 // Set by the CI smoke test: exit 0 once the app page has loaded, 1 on failure.
 const SMOKE_TEST = process.env.OPENMS_APP_SMOKE_TEST === "1";
@@ -63,6 +64,10 @@ async function start() {
       Menu.buildFromTemplate([{ role: "appMenu" }, { role: "editMenu" }, { role: "windowMenu" }])
     );
   }
+  if (!(await licenseAccepted(mainWindow, payloadDir, title))) {
+    quit(0);
+    return;
+  }
   await mainWindow.loadURL(LOADING_PAGE);
 
   try {
@@ -85,6 +90,31 @@ async function start() {
   }
 
   if (!SMOKE_TEST && process.env.OPENMS_APP_NO_UPDATE_CHECK !== "1") notifyAboutUpdate(settings);
+}
+
+// The license agreement is shown in the app window on the first start, and
+// again whenever its text changed (an update that adds RawFileReader, a new
+// license). Declining, or closing the window, quits. The CI smoke test, which
+// cannot click, skips it; OPENMS_APP_ACCEPT_LICENSE=1 does the same for
+// automated installs that accepted the terms on the user's behalf.
+async function licenseAccepted(win, payloadDir, title) {
+  if (SMOKE_TEST || process.env.OPENMS_APP_ACCEPT_LICENSE === "1") return true;
+  const userData = app.getPath("userData");
+  const sections = license.agreementSections(payloadDir, title);
+  if (license.isAccepted(userData, sections)) return true;
+  const accepted = await new Promise((resolve) => {
+    const onNavigate = (event, url) => {
+      if (!url.startsWith(license.ANSWER_URL)) return;
+      event.preventDefault();
+      win.webContents.off("will-navigate", onNavigate);
+      resolve(url === license.ANSWER_URL + "accept");
+    };
+    win.webContents.on("will-navigate", onNavigate);
+    win.once("closed", () => resolve(false));
+    win.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(license.agreementPage(title, sections)));
+  });
+  if (accepted) license.recordAcceptance(userData, sections);
+  return accepted;
 }
 
 // The page has rendered once page_setup() created the default workspace in

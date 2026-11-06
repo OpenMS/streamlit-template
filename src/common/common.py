@@ -1046,6 +1046,9 @@ def render_sidebar(page: str = "") -> None:
                 f'<div class="version-box">{app_name}<br>Version: {version_info}</div>',
                 unsafe_allow_html=True,
             )
+            from src.common.about import render_about_button
+
+            render_about_button()
 
         # Legal links (Impressum, Privacy Policy, Terms of Use), shown on every
         # page. URLs are configurable via "legal_links" in settings.json.

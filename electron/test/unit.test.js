@@ -75,3 +75,47 @@ test("pythonExecutable prefers the embedded interpreter", () => {
   fs.writeFileSync(path.join(dir, "python-3.11.0", exe), "");
   assert.equal(payload.pythonExecutable(dir), path.join(dir, "python-3.11.0", exe));
 });
+
+const license = require("../src/license");
+
+function fakePayload({ thermo = false, licenseText = null } = {}) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "payload-"));
+  if (licenseText !== null) fs.writeFileSync(path.join(dir, "LICENSE"), licenseText);
+  if (thermo) {
+    const t = path.join(dir, "share", "OpenMS", "THIRDPARTY", "ThermoRawFileParser");
+    fs.mkdirSync(t, { recursive: true });
+    fs.writeFileSync(path.join(t, "THERMO_LICENSE"), "terms");
+  }
+  return dir;
+}
+
+test("the agreement names RawFileReader only when the payload ships it", () => {
+  const without = license.agreementSections(fakePayload({ licenseText: "BSD text" }), "MyApp");
+  assert.deepEqual(without.map((s) => s.title), ["MyApp license", "Other components"]);
+  assert.equal(without[0].text, "BSD text");
+
+  const withThermo = license.agreementSections(fakePayload({ thermo: true }), "MyApp");
+  assert.deepEqual(withThermo.map((s) => s.title), ["MyApp license", "Thermo RawFileReader", "Other components"]);
+  assert.match(withThermo[0].text, /three-clause BSD/);
+  assert.ok(withThermo[1].text.includes(license.THERMO_NOTICE));
+  assert.match(withThermo[1].text, /not redistribute RawFileReader/);
+  assert.match(withThermo[1].text, /THERMO_LICENSE/);
+});
+
+test("acceptance is remembered per agreement text", () => {
+  const userData = fs.mkdtempSync(path.join(os.tmpdir(), "userdata-"));
+  const a = license.agreementSections(fakePayload({ licenseText: "A" }), "MyApp");
+  const b = license.agreementSections(fakePayload({ licenseText: "A", thermo: true }), "MyApp");
+  assert.equal(license.isAccepted(userData, a), false);
+  license.recordAcceptance(userData, a);
+  assert.equal(license.isAccepted(userData, a), true);
+  assert.equal(license.isAccepted(userData, b), false);
+});
+
+test("the agreement page escapes its text and links both answers", () => {
+  const html = license.agreementPage("A<b>", [{ title: "<x>", text: "a & b" }]);
+  assert.ok(!html.includes("<x>"));
+  assert.ok(html.includes("&lt;x&gt;") && html.includes("a &amp; b") && html.includes("A&lt;b&gt;"));
+  assert.ok(html.includes(`href="${license.ANSWER_URL}accept"`));
+  assert.ok(html.includes(`href="${license.ANSWER_URL}decline"`));
+});
