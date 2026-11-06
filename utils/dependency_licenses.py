@@ -358,22 +358,30 @@ def _classify_one(term: str) -> str:
     return REVIEW
 
 
+def _classify_part(part: str) -> str:
+    base, *exception = re.split(r"\s+WITH\s+", part.strip("() "), maxsplit=1)
+    status = _classify_one(base)
+    if exception and status != OK:
+        return REVIEW
+    return status
+
+
 def classify(license: str) -> str:
     """Status of an SPDX expression or a license name.
 
     ``A OR B`` lets the app pick, so the most permissive option counts;
-    ``A AND B`` binds to both, so the strictest counts. ``WITH`` exceptions
-    (``GPL-2.0 WITH Classpath-exception-2.0``) are left to a person.
+    ``A AND B`` binds to both, so the strictest counts. An exception only adds
+    permissions, so ``Apache-2.0 WITH LLVM-exception`` is as permissive as
+    Apache-2.0; one on any other license (``GPL-2.0 WITH
+    Classpath-exception-2.0``) is left to a person.
     """
     expr = license.strip()
     if not expr:
         return REVIEW
-    if re.search(r"\bWITH\b", expr):
-        return REVIEW
     best = None
     for alternative in re.split(r"\s+OR\s+", expr):
         parts = re.split(r"\s+AND\s+|\s*;\s*", alternative)
-        worst = max((_classify_one(p) for p in parts), key=_RANK.get)
+        worst = max((_classify_part(p) for p in parts), key=_RANK.get)
         if best is None or _RANK[worst] < _RANK[best]:
             best = worst
     return best or REVIEW

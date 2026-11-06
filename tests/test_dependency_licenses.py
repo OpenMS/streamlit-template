@@ -58,6 +58,8 @@ def repo(tmp_path):
         ("MPL-2.0 AND MIT", dl.REVIEW),
         ("GPL-2.0-only OR MIT", dl.OK),
         ("GPL-2.0 WITH Classpath-exception-2.0", dl.REVIEW),
+        ("Apache-2.0 AND Apache-2.0 WITH LLVM-exception AND BSL-1.0 AND Zlib", dl.OK),
+        ("Apache-2.0 WITH LLVM-exception AND MPL-2.0", dl.REVIEW),
         ("Other/Proprietary License", dl.REVIEW),
         ("Free for non-commercial use", dl.RESTRICTED),
         ("", dl.REVIEW),
