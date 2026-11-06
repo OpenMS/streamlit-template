@@ -99,8 +99,8 @@ wf.show_file_upload_section()
 
 The 4 pages call these methods respectively:
 - `wf.show_file_upload_section()` — upload page
-- `wf.show_parameter_section()` — configure page
-- `wf.show_execution_section()` — run page
+- `wf.show_parameter_section()` — configure page, then `wf.show_run_button("content/<run page>.py", summary=...)` as its last call (a bar fixed to the bottom of the window; opens the Run page and starts the run there)
+- `wf.show_execution_section(results_page="content/<results page>.py")` — run page; a finished run links to the results page
 - `wf.show_results_section()` — results page
 
 4. **Register all 4 pages** as a group in `app.py`:

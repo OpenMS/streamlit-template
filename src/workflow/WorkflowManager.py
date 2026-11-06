@@ -357,24 +357,93 @@ class WorkflowManager:
         """
         self.ui.parameter_section(self.configure)
 
-    def show_execution_section(self) -> None:
+    def _autostart_key(self) -> str:
+        """Session-state flag set by ``show_run_button``: start on the Run page."""
+        return f"{self.workflow_dir.name}-autostart"
+
+    def show_run_button(
+        self,
+        run_page,
+        label: str = "Run analysis",
+        help: Optional[str] = None,
+        key: str = "",
+        sticky: bool = True,
+        summary: Optional[str] = None,
+    ) -> None:
+        """A primary button that opens the Run page and starts the workflow there.
+
+        For the end of the configure page, so a user who has described the
+        experiment goes straight on: the settings are saved, ``run_page`` (a
+        page path or ``st.Page``) opens and the run starts at once. While a run
+        is going, the button opens the Run page to follow it instead.
+
+        ``sticky`` (default) draws it in a bar that stays at the bottom of the
+        window while the page scrolls, with ``summary`` (a short line on what
+        will run) beside it; call it last on the page. ``sticky=False`` draws
+        the button alone where it is called.
+        """
+        running = self.get_workflow_status().get("running", False)
+        if running:
+            label, icon = "Follow the running analysis", ":material/hourglass_top:"
+            help = help or "An analysis is running. Open the Run page to follow it."
+            summary = "An analysis is running."
+        else:
+            icon = ":material/play_arrow:"
+            help = help or "Save these settings, open the Run page and start the analysis."
+        key = key or f"{self.workflow_dir.name}-run-button"
+        if sticky:
+            bar = st.container(key=f"{key}-bar", horizontal=True,
+                               vertical_alignment="center", horizontal_alignment="right")
+            st.html(_run_bar_css(f"{key}-bar"))
+        else:
+            bar = st.container()
+        with bar:
+            if sticky and summary:
+                st.caption(summary, width="stretch")
+            clicked = st.button(label, type="primary", icon=icon, help=help, key=key)
+        if clicked:
+            if not running:
+                self.parameter_manager.save_parameters()
+                st.session_state[self._autostart_key()] = True
+            st.switch_page(run_page)
+
+    def show_execution_section(
+        self,
+        results_page=None,
+        results_label: str = "Open results",
+    ) -> None:
         """
         Shows the execution section of the UI with content defined in self.execution().
+
+        A start requested by ``show_run_button`` on the configure page begins
+        here at once. ``results_page`` (a page path or ``st.Page``) is linked
+        when the run has finished, labelled ``results_label``.
         """
+        autostart = bool(st.session_state.pop(self._autostart_key(), False))
         name_key = ""
         if self.multi_run:
             from .run_widgets import run_name_input, run_name_key
 
-            run_name_input(self.runs, disabled=self.get_workflow_status()["running"])
+            run_name_input(self.runs, disabled=self.get_workflow_status()["running"] or autostart)
             name_key = run_name_key(self.runs)
         if self._run_online(name_key):
             return
         self.ui.execution_section(
             start_workflow_function=self.start_workflow,
             get_status_function=self.get_workflow_status,
-            stop_workflow_function=self.stop_workflow
+            stop_workflow_function=self.stop_workflow,
+            autostart=autostart,
+            results_page=results_page,
+            results_label=results_label,
+            on_open_results=self._select_newest_run if self.multi_run else None,
         )
-        
+
+    def _select_newest_run(self) -> None:
+        """Show the newest finished run on the results page, not an older pick."""
+        from .run_widgets import set_selected_run
+
+        set_selected_run(self.runs, self.runs.latest())
+
     def _run_online(self, name_key: str) -> bool:
         """Offer the linked online workspace (offline app, workspace sync on).
 
@@ -501,3 +570,26 @@ class WorkflowManager:
         # Display results here
         ###################################
         pass
+
+def _run_bar_css(container_key: str) -> str:
+    """Style of the Run bar: it sticks to the bottom of the window, in the
+    background colour of the active theme so the page scrolls under it."""
+    try:
+        theme = st.context.theme.type or "light"
+    except Exception:  # pragma: no cover - older Streamlit
+        theme = "light"
+    try:
+        background = st.get_option(f"theme.{theme}.backgroundColor")
+    except Exception:
+        background = None
+    background = background or ("#0e1117" if theme == "dark" else "#ffffff")
+    # The bar's own element wrapper is what sticks: the bar alone would only
+    # stick within that wrapper.
+    return f"""<style>
+div:has(> .st-key-{container_key}) {{
+  position: sticky; bottom: 0; z-index: 99;
+  background: {background};
+  padding: 0.75rem 0 1rem 0; margin-top: 1rem;
+  border-top: 1px solid rgba(128, 128, 128, 0.3);
+}}
+</style>"""

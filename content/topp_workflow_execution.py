@@ -7,6 +7,5 @@ params = page_setup()
 
 wf = Workflow()
 
-wf.show_execution_section()
-
-
+# A finished run links to its results
+wf.show_execution_section(results_page="content/topp_workflow_results.py", results_label="Open results")
