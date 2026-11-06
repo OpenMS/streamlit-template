@@ -477,7 +477,8 @@ def view_bar(
     def _bar_view(v: Dict[str, Any]) -> Dict[str, Any]:
         out = {k: v[k] for k in ("name", "label", "rows", "preset", "in_bar", "help") if k in v}
         if missing_of.get(v["name"]):
-            out["missing"] = [analysis_label(a, analyses) for a in missing_of[v["name"]]]
+            out["missing"] = join_labels([analysis_label(a, analyses) for a in missing_of[v["name"]]])
+            out["dataset_label"] = dataset_label
         return out
 
     _view_bar(

@@ -10,6 +10,10 @@ from src.layout_manager import render_layout, request_analysis, resolve_layout, 
 from src.workflow.RunManager import FINISHED as FINISHED_STATUS
 
 
+def _no_settings() -> None:
+    st.toast("This run recorded no settings to start from.", icon=":material/error:")
+
+
 class Workflow(WorkflowManager):
     # Setup pages for upload, parameter, execution and results.
     # For layout use any streamlit components such as tabs (as shown in example), columns, or even expanders.
@@ -201,14 +205,14 @@ class Workflow(WorkflowManager):
                         "The new run is kept next to this one.",
                 "on_click": lambda: self.follow_up(
                     self.run_id, {"run-python-script": True}, page=configure,
-                    note="with the custom Python tool switched on"),
+                    note="with the custom Python tool switched on") or _no_settings(),
             },
             {
                 "label": "Process more files with these settings",
                 "icon": ":material/library_add:",
                 "help": "Opens Configure with this run's settings, to add files.",
                 "on_click": lambda: self.follow_up(
-                    self.run_id, page=configure, note="to add more files"),
+                    self.run_id, page=configure, note="to add more files") or _no_settings(),
             },
         ]
         others = [r for r in self.runs.list_runs(FINISHED_STATUS)
@@ -243,17 +247,21 @@ class Workflow(WorkflowManager):
         file = Path(self.results_dir, "feature-linking", "feature_matrix.tsv")
         return pd.read_csv(file, sep="\t", index_col=0) if file.exists() else None
 
+    def _features_key(self) -> str:
+        """The feature table's widget key, one per run, so a selection never carries over."""
+        return f"topp-results-features-{self.run_id}"
+
     def _features(self) -> None:
         df = self._feature_table()
         if df is None:
             st.warning("No consensus feature file found. Please run workflow first.")
             return
         st.metric("number of consensus features", df.shape[0])
-        st.dataframe(df, selection_mode="multi-row", on_select="rerun", key="topp-results-features")
+        st.dataframe(df, selection_mode="multi-row", on_select="rerun", key=self._features_key())
 
     def _intensities(self) -> None:
         df = self._feature_table()
-        rows = (st.session_state.get("topp-results-features") or {}).get("selection", {}).get("rows", [])
+        rows = (st.session_state.get(self._features_key()) or {}).get("selection", {}).get("rows", [])
         if df is None:
             return
         if rows:

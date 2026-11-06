@@ -147,7 +147,7 @@ class RunManager:
         """
         run = self.get(run_id)
         params = self.params(run_id)
-        if run is None or not params:
+        if run is None or not isinstance(params, dict) or not params:
             return False
         apply_settings(self.workflow_dir, params, changes,
                        {"run": run_id, "name": run.get("name", run_id), "note": note})
@@ -217,10 +217,11 @@ class RunManager:
 
         try:
             report = report_for(self.workflow_dir, run_id)
-        except (OSError, ValueError, KeyError, TypeError):
-            return
-        if report["steps"]:
-            zf.writestr(f"{REPORT_NAME}.md", to_markdown(report))
+            text = to_markdown(report) if report["steps"] else ""
+        except (OSError, ValueError, KeyError, TypeError, AttributeError):
+            return  # a damaged progress.json: the ZIP goes without the report
+        if text:
+            zf.writestr(f"{REPORT_NAME}.md", text)
 
     def import_zip(
         self, source, name: str = "", max_bytes: int = MAX_IMPORT_BYTES

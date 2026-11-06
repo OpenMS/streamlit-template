@@ -22,14 +22,17 @@ def _stamp(workflow_dir: Path, run_id: Optional[str]) -> tuple:
 
 
 @st.cache_data(max_entries=32, show_spinner=False)
-def _report(workflow_dir: str, run_id: Optional[str], workflow: str, _stamp: tuple) -> dict:
+def _report(workflow_dir: str, run_id: Optional[str], workflow: str, stamp: tuple) -> dict:
     return report_for(Path(workflow_dir), run_id, settings=st.session_state.get("settings"),
                       workflow=workflow)
 
 
 @st.cache_data(max_entries=32, show_spinner=False)
-def _pdf(workflow_dir: str, run_id: Optional[str], workflow: str, _stamp: tuple) -> Optional[bytes]:
-    return to_pdf(_report(workflow_dir, run_id, workflow, _stamp))
+def _pdf(workflow_dir: str, run_id: Optional[str], workflow: str, stamp: tuple) -> Optional[bytes]:
+    try:
+        return to_pdf(_report(workflow_dir, run_id, workflow, stamp))
+    except Exception:  # a layout error in reportlab leaves the Markdown report
+        return None
 
 
 def has_report(workflow_dir: Path, run_id: Optional[str] = None) -> bool:
@@ -52,13 +55,16 @@ def report_buttons(
     ``compact`` draws icon buttons for a row of a run list.
     """
     stamp = _stamp(workflow_dir, run_id)
-    report = _report(str(workflow_dir), run_id, workflow, stamp)
-    if not report["steps"]:
+    try:
+        report = _report(str(workflow_dir), run_id, workflow, stamp)
+        md = to_markdown(report) if report["steps"] else ""
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return  # a run whose progress.json is damaged (an imported run) has no report
+    if not md:
         return
     stem = file_stem(report)
     help_text = ("How each input file was processed: the tools, their versions "
                  "and the parameters that differ from their defaults.")
-    md = to_markdown(report)
     pdf = _pdf(str(workflow_dir), run_id, workflow, stamp)
     if compact:
         st.download_button("📄 Markdown", md, file_name=f"{stem}.md", mime="text/markdown",

@@ -75,7 +75,7 @@
   var cfg = null, current = null, menuOpen = false;
 
   function unavailable(v) { return v.missing && v.missing.length && v.name !== current; }
-  function needsText(v) { return 'Needs ' + v.missing.join(' and ') + ', which this run was not processed with. Click to add it.'; }
+  function needsText(v) { return 'Needs ' + v.missing + ', which this ' + v.dataset_label + ' was not processed with. Click to add it.'; }
   function choose(v) {
     if (unavailable(v)) { menuOpen = false; setValue({ action: 'unavailable', view: v.name }); render(); return; }
     pick(v.name);
@@ -153,7 +153,7 @@
         var off = unavailable(v);
         return h('button', { role: 'menuitem', class: off ? 'off' : null, 'aria-current': String(v.name === current), onclick: function () { choose(v); } },
                  [h('span', { text: (off ? '🔒 ' : '') + v.label }),
-                  h('small', { text: off ? 'Needs ' + v.missing.join(' and ') : v.help || (count(v) + ' panels' + (v.preset ? '' : ' · yours')) })]);
+                  h('small', { text: off ? 'Needs ' + v.missing : v.help || (count(v) + ' panels' + (v.preset ? '' : ' · yours')) })]);
       }
       var ready = inMore.filter(function (v) { return v.preset; }), mine = inMore.filter(function (v) { return !v.preset; });
       if (ready.length) { menu.appendChild(h('div', { class: 'grp', text: 'Ready-made views' })); ready.forEach(function (v) { menu.appendChild(item(v)); }); }
