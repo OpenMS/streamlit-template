@@ -368,3 +368,62 @@ def select_view(
     state["current"] = name
     save_views(path, state)
     return True
+
+
+# ---- Analyses: which components a dataset's processing allows ----
+#
+# A component that shows results only some runs have (identifications after a
+# deconvolution-only run, a group comparison) names the analysis it needs::
+#
+#     {"name": "volcano", "label": "Volcano plot", "needs": "comparison"}
+#
+# ``needs`` may be a list, all of which are needed. The page tells which
+# analyses a dataset has (``available``); a view needing one it lacks is shown
+# disabled in the view bar, and the component in a layout draws a note instead.
+
+
+def needs(component: Dict[str, Any]) -> List[str]:
+    """The analyses ``component`` needs (its ``needs``, as a list)."""
+    value = component.get("needs")
+    if not value:
+        return []
+    return [value] if isinstance(value, str) else list(value)
+
+
+def missing_analyses(
+    names: Any,
+    components: Sequence[Dict[str, Any]],
+    available: Optional[Any],
+) -> List[str]:
+    """The analyses the components ``names`` (or rows of them) need that are not ``available``.
+
+    ``available`` None means everything is; the result keeps the order of first need.
+    """
+    if available is None:
+        return []
+    flat: List[str] = []
+    for item in names or []:
+        flat.extend(item if isinstance(item, list) else [item])
+    by_name = {c["name"]: c for c in components}
+    out: List[str] = []
+    for name in flat:
+        for need in needs(by_name.get(name, {})):
+            if need not in available and need not in out:
+                out.append(need)
+    return out
+
+
+def analysis_label(name: str, analyses: Optional[Dict[str, Any]] = None) -> str:
+    """How messages name the analysis ``name``: its label in ``analyses``, else the name."""
+    entry = (analyses or {}).get(name)
+    if isinstance(entry, dict):
+        return str(entry.get("label") or name)
+    return str(entry or name)
+
+
+def join_labels(labels: Sequence[str]) -> str:
+    """'A', 'A and B', 'A, B and C'."""
+    labels = list(labels)
+    if len(labels) < 2:
+        return "".join(labels)
+    return ", ".join(labels[:-1]) + " and " + labels[-1]

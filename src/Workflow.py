@@ -6,6 +6,41 @@ from pathlib import Path
 import pandas as pd
 import plotly.express as px
 from src.common.common import show_fig
+from src.layout_manager import render_layout, request_analysis, resolve_layout, view_bar
+
+
+def merge_feature_tables(tables: list, ppm: float = 10.0, rt_tolerance: float = 30.0):
+    """One consensus feature table from the tables of several runs.
+
+    Each table has ``mz`` and ``rt`` columns followed by one intensity column
+    per file (after ``quality``). A feature of a later table joins the nearest
+    feature of the tables before it within ``ppm`` and ``rt_tolerance``
+    seconds, otherwise it is a feature of its own; a file it was not found in
+    has no intensity (NaN).
+    """
+    merged = tables[0].copy()
+    for table in tables[1:]:
+        files = [c for c in table.columns[4:] if c not in merged.columns]
+        for c in files:
+            merged[c] = float("nan")
+        new_rows = []
+        columns = [merged.columns.get_loc(c) for c in files]
+        for _, row in table.iterrows():
+            # By position: two features can share a rounded label
+            close = (((merged["mz"] - row["mz"]).abs() <= row["mz"] * ppm * 1e-6)
+                     & ((merged["rt"] - row["rt"]).abs() <= rt_tolerance)).to_numpy().nonzero()[0]
+            if len(close) == 0:
+                new_rows.append(row)
+                continue
+            best = close[(merged["rt"].iloc[close] - row["rt"]).abs().to_numpy().argmin()]
+            merged.iloc[best, columns] = row[files].values
+        if new_rows:
+            merged = pd.concat([merged, pd.DataFrame(new_rows)])
+    return merged
+
+
+def _no_settings() -> None:
+    st.toast("This run recorded no settings to start from.", icon=":material/error:")
 
 
 class Workflow(WorkflowManager):
@@ -15,6 +50,7 @@ class Workflow(WorkflowManager):
     # Results page picks which one to show and the Download page renames,
     # downloads and deletes them. Results are read from self.results_dir.
     multi_run = True
+    run_page = Path("content", "topp_workflow_execution.py")
 
     def __init__(self) -> None:
         # Initialize the parent class with the workflow name.
@@ -136,42 +172,133 @@ class Workflow(WorkflowManager):
         # not found or exited non-zero.
         self.logger.log("Exporting consensus features to pandas DataFrame...")
         if not self.executor.run_python(
-            "export_consensus_feature_df", input_output={"in": out_fl[0]}
+            "export_consensus_feature_df",
+            input_output={"in": out_fl[0], "out": str(Path(out_fl[0]).with_suffix(".tsv"))},
         ):
             self.logger.log("ERROR: Exporting consensus features failed.")
             return False
 
-        # Check if adduct detection should be run.
+        # Check if the custom Python tool should be run.
         if self.params["run-python-script"]:
             # Example for a custom Python tool, which is located in src/python-tools.
-            if not self.executor.run_python("example", {"in": in_mzML}):
+            # It writes the features with the highest mean intensity.
+            out_top = self.file_manager.get_files("top-features.tsv", set_results_dir="custom-tool")
+            if not self.executor.run_python(
+                "example", {"in": [str(Path(out_fl[0]).with_suffix(".tsv"))], "out": out_top}
+            ):
                 self.logger.log("ERROR: Custom Python script failed.")
                 return False
 
         return True
 
+    # The Results page: components arranged in views. A component that shows
+    # the result of an optional step names it as "needs"; views of a run
+    # without it are drawn disabled, and a click offers to add it.
+    COMPONENTS = [
+        {"name": "features", "label": "Consensus features", "group": "Tables"},
+        {"name": "intensities", "label": "Intensities of the selected features", "group": "Plots",
+         "requires": "features"},
+        {"name": "top_features", "label": "Top features (custom Python tool)", "group": "Tables",
+         "needs": "custom-tool"},
+    ]
+    PRESETS = [
+        {"name": "features", "label": "Features", "layout": [["features", "intensities"]]},
+        {"name": "top", "label": "Top features", "layout": [["top_features"]],
+         "help": "The features with the highest mean intensity, from the custom Python tool."},
+        {"name": "all", "label": "All", "layout": [["features", "intensities"], ["top_features"]]},
+    ]
+    ANALYSES = {
+        "custom-tool": {
+            "label": "the custom Python tool",
+            "help": "It is an optional step of this workflow (**Python Custom Tool** on the Configure page).",
+        },
+    }
+
+    def available(self, run_id=None) -> set:
+        """The optional analyses a run (default: the one shown) includes."""
+        results = self.runs.results_dir(run_id) if run_id else self.results_dir
+        found = set()
+        if Path(results, "custom-tool", "top-features.tsv").exists():
+            found.add("custom-tool")
+        return found
+
+    def add_files(self, changes=None) -> None:
+        """Open Configure with this run's settings (and ``changes``), to pick
+        files that are then processed and added to its experiment."""
+        self.follow_up(
+            self.run_id, changes or {}, page=Path("content", "topp_workflow_parameter.py"),
+            note="to add more files", add_files="mzML-files") or _no_settings()
+
+    def missing_options(self, missing: list, view) -> list:
+        """What the Results page offers for a view whose run lacks ``missing``: processing
+        more files with this run's settings and the missing analysis switched on."""
+        changes = {"run-python-script": True} if "custom-tool" in missing else {}
+        return [{
+            "label": "Process more files with these settings",
+            "icon": ":material/library_add:",
+            "help": "Opens Configure with this run's settings"
+                    + (" and the custom Python tool switched on" if changes else "")
+                    + ", to pick files to add. Only those are processed; the Results page then "
+                    "shows them with this run's files as one experiment.",
+            "on_click": lambda: self.add_files(changes),
+        }]
+
     @st.fragment
     def results(self) -> None:
-        @st.fragment
-        def show_consensus_features():
-            df = pd.read_csv(file, sep="\t", index_col=0)
-            st.metric("number of consensus features", df.shape[0])
-            c1, c2 = st.columns(2)
-            rows = c1.dataframe(df, selection_mode="multi-row", on_select="rerun")[
-                "selection"
-            ]["rows"]
-            if rows:
-                df = df.iloc[rows, 4:]
-                fig = px.bar(df, barmode="group", labels={"value": "intensity"})
-                with c2:
-                    show_fig(fig, "consensus-feature-intensities")
-            else:
-                st.info(
-                    "💡 Select one ore more rows in the table to show a barplot with intensities."
-                )
+        layout_path = Path(self.workflow_dir, "layouts", "results.json")
+        view_bar(
+            layout_path, self.COMPONENTS, self.PRESETS, self.PRESETS[0]["layout"], key="topp-results-view",
+            available=self.available(), analyses=self.ANALYSES,
+            unavailable_options=self.missing_options, target="the Results page",
+            actions=[{"id": "add-files", "icon": "➕", "label": "Add files", "on_click": self.add_files,
+                      "help": "Process more files with this run's settings and add them to its experiment"}],
+        )
+        layout, _ = resolve_layout(layout_path, self.COMPONENTS, self.PRESETS[0]["layout"])
+        render_layout(
+            layout[0],
+            {"features": self._features, "intensities": self._intensities, "top_features": self._top_features},
+            components=self.COMPONENTS, available=self.available(), analyses=self.ANALYSES,
+            on_missing=lambda missing, name: request_analysis("topp-results-view", missing, component=name),
+        )
 
-        file = Path(self.results_dir, "feature-linking", "feature_matrix.tsv")
-        if file.exists():
-            show_consensus_features()
-        else:
+    def _feature_table(self):
+        """The consensus features of the shown experiment: one run, or a run and
+        the runs that added files to it, their features matched here."""
+        tables = []
+        for run_id in self.runs.experiment(self.run_id) or [self.run_id]:
+            file = Path(self.runs.results_dir(run_id), "feature-linking", "feature_matrix.tsv")
+            if file.exists():
+                tables.append(pd.read_csv(file, sep="\t", index_col=0))
+        return merge_feature_tables(tables) if tables else None
+
+    def _features_key(self) -> str:
+        """The feature table's widget key, one per experiment and its runs, so a
+        selection never carries over to another table (files added change it)."""
+        members = self.runs.experiment(self.run_id) or [self.run_id]
+        return "topp-results-features-" + "-".join(members)
+
+    def _features(self) -> None:
+        df = self._feature_table()
+        if df is None:
             st.warning("No consensus feature file found. Please run workflow first.")
+            return
+        st.metric("number of consensus features", df.shape[0])
+        st.dataframe(df, selection_mode="multi-row", on_select="rerun", key=self._features_key())
+
+    def _intensities(self) -> None:
+        df = self._feature_table()
+        if df is None:
+            return
+        # The table shrinks when a run of the experiment is deleted
+        rows = (st.session_state.get(self._features_key()) or {}).get("selection", {}).get("rows", [])
+        rows = [row for row in rows if 0 <= row < len(df)]
+        if rows:
+            fig = px.bar(df.iloc[rows, 4:], barmode="group", labels={"value": "intensity"})
+            show_fig(fig, "consensus-feature-intensities")
+        else:
+            st.info("💡 Select one or more rows in the table to show a barplot with intensities.")
+
+    def _top_features(self) -> None:
+        file = Path(self.results_dir, "custom-tool", "top-features.tsv")
+        st.markdown("**Top features**")
+        st.dataframe(pd.read_csv(file, sep="\t"), hide_index=True)

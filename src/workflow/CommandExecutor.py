@@ -9,6 +9,7 @@ from .ParameterManager import ParameterManager, bool_param_paths_from_param_xml_
 from .settings_io import load_settings, detect_cpu_quota, resolve_thread_setting, local_thread_default
 from .vendor_files import vendor_format
 from .progress import RunProgress, read_progress, failure_context, OUTPUT_TAIL
+from .processing_report import command_io, report_params
 from collections import deque
 import sys
 import importlib.util
@@ -505,12 +506,20 @@ class CommandExecutor:
         if not commands:
             raise Exception("No commands to execute.")
 
-        # Record the call for the Run page: one entry per command (input file)
+        # Record the call for the Run page: one entry per command (input file),
+        # with what the processing report says about it
         step = self.progress.start_step(
             tool if params_key == tool else f"{tool} ({params_key})",
             self._command_labels(input_output, len(commands)),
             threads=threads_per_command,
             parallel=parallel_commands,
+            provenance={
+                "kind": "topp",
+                "program": tool,
+                "version": self.parameter_manager.tool_version(tool),
+                "params": report_params({**merged_params, **custom_params}),
+                "io": command_io(input_output, len(commands)),
+            },
         )
         try:
             if len(commands) == 1:
@@ -587,6 +596,7 @@ class CommandExecutor:
             return self.run_command([sys.executable, str(path)])
         elif isinstance(defaults, list):
             defaults = {entry["key"]: entry["value"] for entry in defaults}
+            script_defaults = dict(defaults)
             # load paramters from JSON file
             params = {k: v for k, v in self.parameter_manager.get_parameters_from_json().items() if path.name in k}
             # update defaults
@@ -598,12 +608,30 @@ class CommandExecutor:
             tmp_params_file = Path(self.pid_dir.parent, f"{path.stem}.json")
             with open(tmp_params_file, "w", encoding="utf-8") as f:
                 json.dump(defaults, f, indent=4)
-            # run command
-            success = self.run_command(
-                [sys.executable, str(path), str(tmp_params_file)]
+            # Record the call like run_topp(), for the Run page and the report
+            io = {k: v if isinstance(v, list) else [v] for k, v in input_output.items()}
+            io = {k: v for k, v in io.items() if v}
+            step = self.progress.start_step(
+                path.name,
+                self._command_labels(io, 1) if io else [""],
+                provenance={
+                    "kind": "python",
+                    "program": path.name,
+                    "version": None,
+                    "params": report_params({k: v for k, v in defaults.items()
+                                            if k not in input_output and v != script_defaults.get(k)}),
+                    "io": command_io({k: [v] for k, v in io.items()}, 1),
+                },
             )
-            # remove tmp params file
-            tmp_params_file.unlink()
+            # run command
+            try:
+                success = self.run_command(
+                    [sys.executable, str(path), str(tmp_params_file)], task=(step, 0)
+                )
+            finally:
+                self.progress.end_step(step)
+                # remove tmp params file
+                tmp_params_file.unlink(missing_ok=True)
             return success
 
         # DEFAULTS exists but is not the documented list of parameter dicts, so
@@ -645,6 +673,7 @@ class CommandExecutor:
             out = Path(out_dir, f"{Path(f).stem}.mzML")
             if out.exists() and out.stat().st_mtime >= Path(f).stat().st_mtime:
                 self.logger.log(f"Using converted {out.name} for {Path(f).name}.")
+                self.progress.record_alias(str(out), str(f), "converted to mzML in an earlier run")
                 mzmls.append(str(out))
                 continue
             out_dir.mkdir(parents=True, exist_ok=True)
@@ -662,5 +691,7 @@ class CommandExecutor:
                 self.logger.log(f"ERROR: Could not convert {Path(f).name} to mzML.", 0)
                 return None
             os.replace(tmp, out)
+            # The report follows the mzML back to the file it came from
+            self.progress.record_alias(str(out), str(tmp))
             mzmls.append(str(out))
         return mzmls

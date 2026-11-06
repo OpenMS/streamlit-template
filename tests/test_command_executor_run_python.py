@@ -144,7 +144,7 @@ def test_run_python_passes_input_output_and_stored_parameters(tmp_path):
     executor = CommandExecutor(tmp_path, MagicMock(), pm)
     captured = {}
 
-    def capture(command):
+    def capture(command, **kwargs):
         captured["params"] = json.loads(
             Path(command[2]).read_text(encoding="utf-8")
         )
@@ -199,3 +199,28 @@ def test_run_command_runs_in_the_given_working_directory(tmp_path):
 
     assert executor.run_command([sys.executable, "-c", script])
     assert Path(out.read_text()).resolve() == Path.cwd().resolve()
+
+
+def test_run_python_records_a_step_for_the_processing_report(tmp_path):
+    """
+    A Python tool is part of how a file was processed: run_python() records a
+    progress step with its inputs, outputs and the parameters that differ from
+    the script's DEFAULTS, like run_topp() does.
+    """
+    pm = ParameterManager(tmp_path)
+    script = _write_tool(tmp_path)
+    pm.params_file.write_text(json.dumps({f"{script.name}:my-param": 7}), encoding="utf-8")
+    executor = CommandExecutor(tmp_path, MagicMock(), pm)
+    executor.run_command = MagicMock(return_value=True)
+
+    assert executor.run_python(str(script), {"in": ["/d/table.tsv"], "out": ["/r/top.tsv"]})
+
+    from src.workflow.progress import read_progress
+
+    step = read_progress(tmp_path)["steps"][-1]
+    assert step["tool"] == script.name
+    assert step["ended"] is not None
+    assert step["provenance"]["kind"] == "python"
+    assert step["provenance"]["io"] == [{"inputs": ["/d/table.tsv"], "outputs": ["/r/top.tsv"]}]
+    assert step["provenance"]["params"] == {"my-param": "7"}
+    assert executor.run_command.call_args.kwargs["task"] == (0, 0)

@@ -65,3 +65,14 @@ if __name__ == "__main__":
     print("Writing stdout which will get logged...")
     print("Parameters for this example Python tool:")
     print(json.dumps(params, indent=4))
+    # The example workflow passes the consensus feature table and asks for the
+    # features with the highest mean intensity ("number of features" of them).
+    if params.get("in") and params.get("out"):
+        import pandas as pd
+
+        df = pd.read_csv(params["in"][0], sep="\t")
+        samples = [c for c in df.columns if c.lower().endswith(".mzml")]
+        if samples:
+            df.insert(1, "mean intensity", df[samples].mean(axis=1))
+            df = df.sort_values("mean intensity", ascending=False)
+        df.head(int(params.get("number-slider", 6))).to_csv(params["out"][0], sep="\t", index=False)

@@ -38,6 +38,13 @@ Give all components of one experiment the same OpenMS-Insight state,
 ``experiment_state(key, index, dataset_id)``, so a selection stays when the
 user switches views; side-by-side experiments keep their own.
 
+A component that shows results only some runs have names the analysis it
+needs (``"needs": "identification"``). Pass the analyses the shown run has as
+``view_bar(available=...)``: views it cannot show are drawn disabled, and a
+click offers ``unavailable_options`` (run the missing analysis, add files,
+bring in another run). ``render_layout``/``render_experiments`` draw a note
+with the same offer for such a component in a view of the user's own.
+
 ``layout_presets`` is the earlier, simpler selector of presets.
 
 ``layout.py`` is Streamlit-free; ``ui.py`` holds the editor and the grid.
@@ -52,6 +59,8 @@ from src.layout_manager.layout import (
     load_layout,
     load_views,
     match_preset,
+    missing_analyses,
+    needs,
     resolve_layout,
     save_layout,
     save_views,
@@ -64,8 +73,11 @@ from src.layout_manager.ui import (
     layout_button,
     layout_editor,
     layout_presets,
+    missing_analysis_dialog,
+    missing_note,
     render_experiments,
     render_layout,
+    request_analysis,
     selected_datasets,
     view_bar,
     views_editor,
@@ -83,8 +95,13 @@ __all__ = [
     "load_layout",
     "load_views",
     "match_preset",
+    "missing_analyses",
+    "missing_analysis_dialog",
+    "missing_note",
+    "needs",
     "render_experiments",
     "render_layout",
+    "request_analysis",
     "resolve_layout",
     "save_layout",
     "save_views",

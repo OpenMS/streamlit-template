@@ -5,6 +5,7 @@ JavaScript with no build step), so arranging components never reruns the
 script. Python only hears from it when the user presses Save or Reset.
 """
 
+import functools
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence
 
@@ -14,7 +15,10 @@ import streamlit.components.v1 as st_components
 from src.layout_manager.layout import (
     MAX_COLUMNS,
     Layout,
+    analysis_label,
     apply_preset,
+    join_labels,
+    missing_analyses,
     clear_layout,
     load_layout,
     load_views,
@@ -109,22 +113,117 @@ def render_layout(
     rows: List[List[str]],
     renderers: Mapping[str, Callable[[], Any]],
     labels: Mapping[str, str] | None = None,
+    components: Optional[Sequence[Dict[str, Any]]] = None,
+    available: Optional[Any] = None,
+    analyses: Optional[Dict[str, Any]] = None,
+    on_missing: Optional[Callable[[List[str], str], Any]] = None,
+    key: str = "layout",
+    dataset_label: str = "run",
 ) -> None:
     """Render one experiment: each row in ``st.columns``, each cell by its renderer.
 
     ``renderers`` maps component names to functions that draw the component in
     the current container. A component without a renderer shows a notice instead
     of stopping the page.
+
+    With ``components`` and ``available`` (the analyses the shown dataset has),
+    a component that ``needs`` an analysis the dataset lacks draws a note in its
+    place, with a button that calls ``on_missing(missing, component_name)`` (as
+    a button callback, so it may set state the next run reads, such as
+    ``request_analysis``). ``analyses`` names the analyses (see ``view_bar``).
     """
+    by_name = {c["name"]: c for c in components or []}
     for row in rows:
         columns = st.columns(len(row)) if len(row) > 1 else [st.container()]
         for column, name in zip(columns, row):
             with column:
+                label = (labels or {}).get(name) or by_name.get(name, {}).get("label", name)
+                missing = missing_analyses([name], components or [], available) if components else []
+                if missing:
+                    missing_note(label, missing, analyses, on_missing, f"{key}_missing_{name}", name,
+                                  dataset_label)
+                    continue
                 renderer = renderers.get(name)
                 if renderer is None:
-                    st.info(f"{(labels or {}).get(name, name)} is not available here.")
+                    st.info(f"{label} is not available here.")
                 else:
                     renderer()
+
+
+def missing_note(label: str, missing: Sequence[str], analyses: Optional[Dict[str, Any]],
+                 on_missing: Optional[Callable[[List[str], str], Any]], key: str, name: str,
+                 dataset_label: str = "run") -> None:
+    """The note component ``name`` draws in place of itself when its dataset lacks ``missing``.
+
+    ``render_layout`` draws it; an app with a grid renderer of its own calls it
+    the same way. The button calls ``on_missing(missing, name)``.
+    """
+    needed = join_labels([analysis_label(a, analyses) for a in missing])
+    with st.container(border=True):
+        st.markdown(f"**{label}**  \n:gray[Needs {needed}, which this {dataset_label} was not processed with.]")
+        if on_missing is not None:
+            st.button(f"Add {needed}…", key=key, icon=":material/add_circle:",
+                      on_click=on_missing, args=(list(missing), name))
+
+
+def _dataset_missing(on_missing, dataset, index, missing, name) -> None:
+    """``render_layout``'s callback for one experiment of ``render_experiments``."""
+    on_missing(missing, name, dataset, index)
+
+
+def request_analysis(key: str, missing: Sequence[str], view: Optional[str] = None,
+                     component: Optional[str] = None) -> None:
+    """Open the dialog of ``view_bar(key=key)`` that offers the analyses ``missing``.
+
+    Call it from a button callback (``on_click``), e.g. as ``on_missing`` of
+    ``render_layout``/``render_experiments``, so the bar drawn in the same run
+    opens the dialog.
+    """
+    st.session_state[f"{key}_missing"] = {"missing": list(missing), "view": view, "component": component}
+
+
+def missing_analysis_dialog(
+    key: str,
+    title: str,
+    message: str,
+    options: Sequence[Dict[str, Any]],
+) -> None:
+    """A dialog offering ways to get results a view or component needs.
+
+    ``options`` are ``{"label", "help"?, "icon"?, "on_click", "primary"?}``. A
+    click closes the dialog, calls ``on_click()`` (which may switch pages or
+    change the layout) and reruns. Drawn by ``view_bar``; call it yourself only
+    on a page without a bar. ``key`` is the flag ``request_analysis`` sets.
+    """
+    flag = f"{key}_missing"
+
+    def _closed() -> None:
+        st.session_state.pop(flag, None)
+
+    @st.dialog(title, on_dismiss=_closed)
+    def _dialog() -> None:
+        st.markdown(message)
+        if not options:
+            st.caption("This page offers no way to add it here.")
+        for index, option in enumerate(options):
+            with st.container(border=True):
+                clicked = st.button(
+                    option["label"], key=f"{key}_missing_option_{index}", icon=option.get("icon"),
+                    type="primary" if option.get("primary", index == 0) else "secondary",
+                    width="stretch",
+                )
+                if option.get("help"):
+                    st.caption(option["help"])
+            if clicked:
+                _closed()
+                if option.get("on_click"):
+                    option["on_click"]()
+                st.rerun()
+        if st.button("Cancel", key=f"{key}_missing_cancel"):
+            _closed()
+            st.rerun()
+
+    _dialog()
 
 
 def layout_button(
@@ -320,9 +419,25 @@ def view_bar(
     dialog_title: str = "Customize views",
     help_text: str = "",
     default_view: Optional[str] = None,
+    available: Optional[Any] = None,
+    analyses: Optional[Dict[str, Any]] = None,
+    unavailable_options: Optional[Callable[[List[str], Optional[Dict[str, Any]]], Sequence[Dict[str, Any]]]] = None,
+    dataset_label: str = "run",
     **editor_args: Any,
 ) -> str:
     """The view bar: as many views as fit, the rest in More, and ✏️ Customize.
+
+    **Views the data was not processed for.** Components may name the analyses
+    they need (``"needs": "identification"``). ``available`` is the set of
+    analyses the shown dataset has (None: all); a view with a component needing
+    another one is drawn disabled, and clicking it opens a dialog instead of
+    switching. ``analyses`` names them, ``{"identification": "Identification"}``
+    or ``{"identification": {"label": ..., "help": ...}}``.
+    ``unavailable_options(missing, view)`` returns the dialog's choices
+    (``missing_analysis_dialog``), e.g. run the missing analysis on this run,
+    add more files, or bring in another run for a comparison. The same dialog
+    opens for a component's note (``render_layout(on_missing=...)`` with
+    ``request_analysis(key, ...)``).
 
     Views are the page's ``presets`` (``{"name", "label", "layout", "help"?}``)
     and the views users make in the editor, in the order users give them.
@@ -352,11 +467,29 @@ def view_bar(
             st.session_state[new_key] = bool(submitted.get("new_view"))
         elif submitted.get("action") == "button":
             clicked = submitted.get("id")
+        elif submitted.get("action") == "unavailable":
+            view = submitted.get("view")
+            request_analysis(key, [], view=view)
 
     state = _views(path, components, presets, default_layout, default_view)
+    missing_of = {v["name"]: missing_analyses(v["rows"], components, available) for v in state["views"]}
+    # A view the shown dataset cannot fill is locked, the current one too: show
+    # the first view it can fill instead (left as it is when none can be)
+    if missing_of.get(state["current"]):
+        fallback = next((v["name"] for v in state["views"] if not missing_of[v["name"]]), None)
+        if fallback is not None:
+            state["current"] = fallback
+            save_views(path, state)
+
+    def _bar_view(v: Dict[str, Any]) -> Dict[str, Any]:
+        out = {k: v[k] for k in ("name", "label", "rows", "preset", "in_bar", "help") if k in v}
+        if missing_of.get(v["name"]):
+            out["missing"] = join_labels([analysis_label(a, analyses) for a in missing_of[v["name"]]])
+            out["dataset_label"] = dataset_label
+        return out
+
     _view_bar(
-        views=[{k: v[k] for k in ("name", "label", "rows", "preset", "in_bar", "help") if k in v}
-               for v in state["views"]],
+        views=[_bar_view(v) for v in state["views"]],
         current=state["current"],
         details=details,
         label=label,
@@ -375,13 +508,42 @@ def view_bar(
         if help_text:
             st.caption(help_text)
         new = st.session_state.get(new_key, False)
-        if views_editor(path, components, presets, default_layout, key=f"{key}_editor",
+        shown = components
+        if available is not None:
+            # The palette marks what the shown dataset was not processed for
+            shown = []
+            for c in components:
+                lacking = missing_analyses([c["name"]], components, available)
+                shown.append(dict(c, unavailable="add " + join_labels(
+                    [analysis_label(a, analyses) for a in lacking]) + f" to this {dataset_label} to use it")
+                    if lacking else c)
+        if views_editor(path, shown, presets, default_layout, key=f"{key}_editor",
                         new_view=new, default_view=default_view, **editor_args):
             _closed()
             st.rerun()
 
     if st.session_state.get(open_key):
         _dialog()
+    request = st.session_state.get(f"{key}_missing")
+    if request and not st.session_state.get(open_key):
+        view = next((v for v in state["views"] if v["name"] == request.get("view")), None)
+        missing = list(request.get("missing") or (missing_of.get(view["name"], []) if view else []))
+        if not missing:
+            st.session_state.pop(f"{key}_missing", None)
+        else:
+            needed = join_labels([analysis_label(a, analyses) for a in missing])
+            what = f"The view **{view['label']}**" if view else (
+                f"**{request['component']}**" if request.get("component") else "This")
+            label_of = {c["name"]: c["label"] for c in components}
+            if not view and request.get("component") in label_of:
+                what = f"**{label_of[request['component']]}**"
+            message = f"{what} needs {needed}, which this {dataset_label} was not processed with."
+            details = [analyses[m]["help"] for m in missing
+                       if isinstance((analyses or {}).get(m), dict) and analyses[m].get("help")]
+            if details:
+                message += "\n\n" + "\n\n".join(details)
+            options = list(unavailable_options(missing, view) if unavailable_options else [])
+            missing_analysis_dialog(key, f"Add {needed}", message, options)
     for action in actions or []:
         if action.get("id") == clicked and action.get("on_click"):
             action["on_click"]()
@@ -438,6 +600,11 @@ def render_experiments(
     labels: Optional[Mapping[str, str]] = None,
     experiment_label: str = "Experiment",
     buttons: Optional[Callable[[int], Any]] = None,
+    components: Optional[Sequence[Dict[str, Any]]] = None,
+    available: Optional[Callable[[str], Any]] = None,
+    analyses: Optional[Dict[str, Any]] = None,
+    on_missing: Optional[Callable[[List[str], str, str, int], Any]] = None,
+    dataset_label: str = "run",
 ) -> List[Optional[str]]:
     """Render every experiment of ``layout``, each below its own dataset selector.
 
@@ -460,6 +627,10 @@ def render_experiments(
         experiment_label: Label of each selector.
         buttons: ``buttons(index)`` draws buttons right of a selector, such as
             ``layout_button``.
+        components, available, analyses: With ``available(dataset_id)``
+            returning the analyses a dataset has, components that need another
+            draw a note (see ``render_layout``); its button calls
+            ``on_missing(missing, component, dataset_id, index)``.
 
     Returns:
         The dataset id picked in each experiment (None without datasets).
@@ -470,7 +641,13 @@ def render_experiments(
     def one(index: int, rows: List[List[str]]) -> Optional[str]:
         dataset = _selector(key, index, datasets, experiment_label, buttons)
         if dataset is not None:
-            render_layout(rows, renderers(dataset, index), labels)
+            has = available(dataset) if available is not None else None
+            missing_cb = None
+            if on_missing is not None:
+                missing_cb = functools.partial(_dataset_missing, on_missing, dataset, index)
+            render_layout(rows, renderers(dataset, index), labels, components=components,
+                          available=has, analyses=analyses, on_missing=missing_cb,
+                          key=f"{key}_{index}", dataset_label=dataset_label)
         return dataset
 
     if side_by_side and len(layout) == 2:

@@ -523,3 +523,101 @@ def test_default_view_until_one_is_picked(tmp_path):
     at.session_state["vb_bar"] = {"action": "pick", "view": "all", "nonce": 1}
     at.run()
     assert at.markdown[0].value == "all"
+
+
+# ---- Views and components the shown data was not processed for ----
+
+NEEDS = COMPONENTS + [
+    {"name": "ids", "label": "Identifications", "group": "Tables", "needs": "identification"},
+    {"name": "volcano", "label": "Volcano", "group": "Plots", "needs": ["identification", "comparison"]},
+]
+ANALYSES = {"identification": {"label": "Identification", "help": "Search a protein database."},
+            "comparison": "Comparison"}
+
+
+def test_missing_analyses():
+    from src.layout_manager.layout import analysis_label, join_labels, missing_analyses, needs
+
+    assert needs(NEEDS[-1]) == ["identification", "comparison"]
+    assert needs(NEEDS[0]) == []
+    assert missing_analyses([["table", "ids"], ["volcano"]], NEEDS, set()) == ["identification", "comparison"]
+    assert missing_analyses([["volcano"]], NEEDS, {"identification"}) == ["comparison"]
+    assert missing_analyses([["table", "plot"]], NEEDS, set()) == []
+    assert missing_analyses([["ids"]], NEEDS, None) == []  # None: everything is there
+    assert analysis_label("identification", ANALYSES) == "Identification"
+    assert analysis_label("comparison", ANALYSES) == "Comparison"
+    assert join_labels(["A", "B", "C"]) == "A, B and C"
+
+
+_NEEDS_APP = """
+import streamlit as st
+from pathlib import Path
+from src.layout_manager import render_layout, request_analysis, view_bar, resolve_layout
+
+picked = st.session_state.setdefault("picked", [])
+available = set(st.session_state.get("available", []))
+current = view_bar(Path(st.session_state["path"]), {components!r}, {views!r}, {default!r}, key="vb",
+                   available=available, analyses={analyses!r},
+                   unavailable_options=lambda missing, view: [
+                       {{"label": "Run identification", "on_click": lambda: picked.append((missing, view and view["name"]))}}])
+layout, _ = resolve_layout(Path(st.session_state["path"]), {components!r}, {default!r})
+st.markdown("current:" + current)
+render_layout(layout[0], {{n: (lambda n=n: st.markdown("drawn:" + n)) for n in ["table", "detail", "plot", "ids", "volcano"]}},
+              components={components!r}, available=available, analyses={analyses!r},
+              on_missing=lambda missing, name: request_analysis("vb", missing, component=name), key="grid")
+"""
+
+NEEDS_VIEWS = VIEWS + [{"name": "ids", "label": "IDs", "layout": [["table", "ids"]]}]
+
+
+def test_unavailable_view_opens_the_dialog_instead_of_switching(tmp_path):
+    at = AppTest.from_string(_NEEDS_APP.format(components=NEEDS, views=NEEDS_VIEWS, default=DEFAULT,
+                                               analyses=ANALYSES))
+    at.session_state["path"] = str(tmp_path / "viewer.json")
+    at.run()
+    assert not at.exception
+
+    at.session_state["vb_bar"] = {"action": "unavailable", "view": "ids", "nonce": 1}
+    at.run()
+    assert not at.exception
+    assert "current:all" in [m.value for m in at.markdown]  # the view did not change
+    texts = " ".join(m.value for m in at.markdown)
+    assert "The view **IDs** needs Identification" in texts
+    assert "Search a protein database." in texts
+
+    at.button(key="vb_missing_option_0").click().run()
+    assert at.session_state["picked"] == [(["identification"], "ids")]
+    assert "vb_missing" not in at.session_state
+
+
+def test_component_draws_a_note_where_its_analysis_is_missing(tmp_path):
+    path = tmp_path / "viewer.json"
+    at = AppTest.from_string(_NEEDS_APP.format(components=NEEDS, views=NEEDS_VIEWS, default=DEFAULT,
+                                               analyses=ANALYSES))
+    at.session_state["path"] = str(path)
+    at.session_state["vb_bar"] = {"action": "pick", "view": "ids", "nonce": 1}
+    # Picking works while the run has identification ...
+    at.session_state["available"] = ["identification"]
+    at.run()
+    drawn = [m.value for m in at.markdown]
+    assert "current:ids" in drawn and "drawn:ids" in drawn
+
+    # ... and a run without it does not show the locked view: the first view it can fill instead
+    at.session_state["available"] = []
+    at.run()
+    drawn = [m.value for m in at.markdown]
+    assert "current:all" in drawn and "drawn:ids" not in drawn
+
+
+def test_component_draws_a_note_where_no_view_can_be_filled(tmp_path):
+    only_ids = [{"name": "ids", "label": "IDs", "layout": [["table", "ids"]]}]
+    at = AppTest.from_string(_NEEDS_APP.format(components=NEEDS, views=only_ids, default=[["table", "ids"]],
+                                               analyses=ANALYSES))
+    at.session_state["path"] = str(tmp_path / "viewer.json")
+    at.session_state["available"] = []
+    at.run()
+    texts = " ".join(m.value for m in at.markdown)
+    assert "current:ids" in texts and "drawn:table" in texts and "drawn:ids" not in texts
+    assert "Needs Identification, which this run was not processed with." in texts
+    at.button(key="grid_missing_ids").click().run()
+    assert at.session_state["vb_missing"]["component"] == "ids"

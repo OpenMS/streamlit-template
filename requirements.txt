@@ -148,3 +148,6 @@ timsrust_pyo3==0.4.1
 
 # Reads app.yaml, the app spec (utils/app_spec.py)
 pyyaml>=6.0
+
+# Writes the processing report of a run as PDF (src/workflow/processing_report.py)
+reportlab>=4.0

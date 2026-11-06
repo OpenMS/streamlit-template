@@ -431,6 +431,12 @@ class ParameterManager:
         logger.warning("Could not write %s: %s", ini_path, self.ini_errors[tool])
         return False
 
+    def tool_version(self, tool: str) -> str | None:
+        """The version of the installed ``tool``, as its .ini records it, or None."""
+        from .processing_report import ini_version  # pylint: disable=import-outside-toplevel
+
+        return ini_version(Path(self.ini_dir, f"{tool}.ini"))
+
     def known_topp_params(self, tool: str) -> set[str] | None:
         """
         The parameters the installed ``tool`` accepts, from its .ini.

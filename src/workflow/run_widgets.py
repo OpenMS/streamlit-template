@@ -13,6 +13,8 @@ from typing import Optional
 
 import streamlit as st
 
+from src.workflow.report_ui import report_buttons
+
 from src.workflow.RunManager import (
     CANCELLED,
     FAILED,
@@ -45,21 +47,27 @@ def selected_run_key(runs: RunManager) -> str:
 def get_selected_run(runs: RunManager) -> Optional[str]:
     """
     The run the workflow's pages show: the one picked last in this session if
-    it still exists and finished, otherwise the newest finished run.
+    it still exists and finished, otherwise the newest finished run. A run
+    that added files to an experiment stands for the experiment: its first run
+    is returned, and ``runs.experiment()`` lists all of them.
     """
     run_id = st.session_state.get(selected_run_key(runs))
     run = runs.get(run_id)
     if run is None or run.get("status") != FINISHED:
         run_id = runs.latest(FINISHED)
-    return run_id
+    return runs.experiment_root(run_id) if run_id else run_id
 
 
 def set_selected_run(runs: RunManager, run_id: Optional[str]) -> None:
     st.session_state[selected_run_key(runs)] = run_id
 
 
-def run_label(run: dict) -> str:
-    return f"{run.get('name', run['id'])} · {format_time(run.get('created'))}"
+def run_label(run: dict, added: int = 0) -> str:
+    """A run's name and start; ``added`` runs that added files to its experiment."""
+    label = f"{run.get('name', run['id'])} · {format_time(run.get('created'))}"
+    if added:
+        label += f" · files added by {added} more {'run' if added == 1 else 'runs'}"
+    return label
 
 
 def run_status(run: dict, workflow_running: bool) -> str:
@@ -91,9 +99,10 @@ def select_run(
         The selected run id (``multiple=False``, None if there are no finished
         runs) or a list of run ids (``multiple=True``).
     """
-    finished = runs.list_runs(FINISHED)
+    # A run that added files is shown with the experiment it added them to
+    finished = runs.experiments(FINISHED)
     options = [r["id"] for r in finished]
-    labels = {r["id"]: run_label(r) for r in finished}
+    labels = {r["id"]: run_label(r, len(runs.added_runs(r["id"]))) for r in finished}
     slug = _slug(runs)
 
     if multiple:
@@ -162,17 +171,20 @@ def run_manager_section(
         row = st.container(border=True)
         c_name, c_status, c_actions = row.columns([4, 1.6, 2.6], vertical_alignment="center")
         shown = " &nbsp;`shown`" if run_id == selected else ""
+        root = runs.experiment_root(run_id)
+        adds = (f" · adds files to **{(runs.get(root) or {}).get('name', root)}**"
+                if root and root != run_id else "")
         c_name.markdown(
             f"**{run.get('name', run_id)}**{shown}  \n"
-            f":gray[Started {format_time(run.get('created'))}]"
+            f":gray[Started {format_time(run.get('created'))}]{adds}"
         )
         c_status.write(STATUS_LABELS.get(status, status))
 
-        b_show, b_rename, b_download, b_delete = c_actions.columns(4, gap="small")
+        b_show, b_rename, b_report, b_download, b_delete = c_actions.columns(5, gap="small")
 
         if b_show.button(
             "👁️", key=f"runs-{slug}-show-{run_id}", help="Show this run on the results pages",
-            disabled=status != FINISHED or run_id == selected, width="stretch",
+            disabled=status != FINISHED or runs.experiment_root(run_id) == selected, width="stretch",
         ):
             set_selected_run(runs, run_id)
             st.rerun()
@@ -186,6 +198,10 @@ def run_manager_section(
                 if runs.rename(run_id, new_name):
                     st.rerun()
                 st.error("The name can not be empty.")
+
+        with b_report.popover("📄", help="Processing report: how each input file was processed",
+                              width="stretch", disabled=status == RUNNING):
+            report_buttons(runs.workflow_dir, run_id, key=f"runs-{slug}-report-{run_id}", compact=True)
 
         prepared = f"_runs-{slug}-zip-{run_id}"
         zip_path = Path(runs.workflow_dir, "downloads", f"{run_id}.zip")

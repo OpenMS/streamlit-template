@@ -4,6 +4,8 @@ import json
 import zipfile
 from pathlib import Path
 
+import pytest
+
 from streamlit.testing.v1 import AppTest
 
 from src.workflow.RunManager import (
@@ -231,3 +233,113 @@ def test_run_manager_without_runs(tmp_path):
     at = AppTest.from_function(_manager_script, args=(str(tmp_path),)).run(timeout=30)
     assert not at.exception
     assert "No runs yet" in at.info[0].value
+
+
+def test_a_run_that_adds_files_joins_the_earlier_runs_experiment(tmp_path):
+    params = Path(tmp_path, "params.json")
+    params.write_text(json.dumps({"mzML-files": ["a.mzML", "b.mzML"], "mzML-group-a.mzML": "ctrl"}))
+    runs = RunManager(tmp_path)
+    first = runs.new_run("First", params)
+    runs.finish(first, FINISHED)
+
+    # More files: the file selection starts empty, the groups stay
+    assert runs.restore_settings(first, note="to add more files", add_files="mzML-files")
+    restored = json.loads(params.read_text())
+    assert restored["mzML-files"] == []
+    assert restored["mzML-group-a.mzML"] == "ctrl"
+    info = restored["_follow_up"]
+    assert info["adds_to"] == first and info["files"] == ["a.mzML", "b.mzML"]
+
+    restored["mzML-files"] = ["c.mzML"]
+    params.write_text(json.dumps(restored))
+    added = runs.new_run("More", params, adds_to=info["adds_to"])
+    assert runs.experiment(added) == [first]  # still running: not part of it yet
+    runs.finish(added, FINISHED)
+
+    assert runs.experiment(first) == [first, added]
+    assert runs.experiment(added) == [first, added]
+    assert runs.experiment_root(added) == first
+    assert [r["id"] for r in runs.experiments()] == [first]
+    assert runs.experiment_files(first, "mzML-files") == ["a.mzML", "b.mzML", "c.mzML"]
+
+    # Adding again from the added run adds to the same experiment
+    assert runs.restore_settings(added, add_files="mzML-files")
+    assert json.loads(params.read_text())["_follow_up"]["adds_to"] == first
+    third = runs.new_run("Even more", params, adds_to=first)
+    runs.finish(third, FINISHED)
+    assert runs.experiment(first) == [first, added, third]
+
+    # Deleting the first run leaves the others as one experiment
+    assert runs.delete(first)
+    assert runs.experiment(third) == [added, third]
+    assert [r["id"] for r in runs.experiments()] == [added]
+
+
+def test_merge_feature_tables_matches_features_of_added_runs():
+    import pandas as pd
+
+    from src.Workflow import merge_feature_tables
+
+    cols = ["charge", "rt", "mz", "quality"]
+    first = pd.DataFrame([[1, 100.0, 300.0, 1, 10.0], [1, 200.0, 400.0, 1, 20.0]],
+                         columns=cols + ["a.mzML"], index=["f1", "f2"])
+    added = pd.DataFrame([[1, 105.0, 300.001, 1, 11.0], [1, 500.0, 600.0, 1, 30.0]],
+                         columns=cols + ["c.mzML"], index=["g1", "g2"])
+    merged = merge_feature_tables([first, added])
+    assert list(merged.columns) == cols + ["a.mzML", "c.mzML"]
+    assert merged.loc["f1", "c.mzML"] == 11.0  # within 10 ppm and 30 s
+    assert pd.isna(merged.loc["f2", "c.mzML"])
+    assert pd.isna(merged.loc["g2", "a.mzML"]) and merged.loc["g2", "c.mzML"] == 30.0
+
+
+def test_a_delete_cut_short_keeps_the_experiment_together(tmp_path, monkeypatch):
+    runs = RunManager(tmp_path)
+    ids = []
+    for name in ("First", "More", "Even more"):
+        ids.append(runs.new_run(name, adds_to=ids[0] if ids else None))
+        runs.finish(ids[-1], FINISHED)
+    first, added, third = ids
+
+    # The write that makes the oldest added run the new start fails
+    write = runs._write
+    def failing(run_id, run):
+        if run_id == added:
+            raise OSError("disk full")
+        write(run_id, run)
+    monkeypatch.setattr(runs, "_write", failing)
+    with pytest.raises(OSError):
+        runs.delete(first)
+    assert runs.experiment(third) == [first, added, third]
+
+    monkeypatch.setattr(runs, "_write", write)
+    assert runs.delete(first)
+    assert runs.experiment(third) == [added, third]
+
+
+def test_merge_feature_tables_updates_one_of_two_features_with_the_same_label():
+    import pandas as pd
+
+    from src.Workflow import merge_feature_tables
+
+    cols = ["charge", "rt", "mz", "quality"]
+    first = pd.DataFrame([[1, 100.0, 300.0, 1, 10.0], [1, 100.0, 300.02, 1, 20.0]],
+                         columns=cols + ["a.mzML"], index=["300.0@100", "300.0@100"])
+    added = pd.DataFrame([[1, 101.0, 300.0001, 1, 11.0]], columns=cols + ["c.mzML"], index=["g1"])
+    merged = merge_feature_tables([first, added])
+    assert merged["c.mzML"].iloc[0] == 11.0
+    assert pd.isna(merged["c.mzML"].iloc[1])
+
+
+def test_deleting_the_first_run_keeps_finished_additions_selectable(tmp_path):
+    runs = RunManager(tmp_path)
+    first = runs.new_run("First")
+    runs.finish(first, FINISHED)
+    failed = runs.new_run("Failed addition", adds_to=first)
+    runs.finish(failed, FAILED)
+    done = runs.new_run("Finished addition", adds_to=first)
+    runs.finish(done, FINISHED)
+
+    assert runs.delete(first)
+    # The finished addition starts the experiment, so the picker still lists it
+    assert [r["id"] for r in runs.experiments()] == [done]
+    assert runs.experiment_root(failed) == done
