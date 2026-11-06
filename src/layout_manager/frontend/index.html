@@ -156,6 +156,10 @@
 
   function clone(x) { return JSON.parse(JSON.stringify(x)); }
   function label(name) { return byName[name] ? byName[name].label : name; }
+  // ``requires`` is one component, or a list of which one has to be there
+  function reqs(name) { var r = byName[name] && byName[name].requires; return !r ? [] : (typeof r === 'string' ? [r] : r); }
+  function missingReq(name, names) { var r = reqs(name); return r.length && !r.some(function (x) { return names.indexOf(x) >= 0; }); }
+  function reqLabel(name) { return (byName[name] && byName[name].requires_label) || reqs(name).map(label).join(' or '); }
   // Wording set by the page: what shows the layout, and what one column of it is called.
   function target() { return cfg.target || 'the Viewer'; }
   function expName() { return cfg.experiment_label || 'Experiment'; }
@@ -238,7 +242,7 @@
         row.forEach(function (name, c) {
           var why = '';
           if (!byName[name]) why = 'not available here';
-          else if (byName[name].requires && names.indexOf(byName[name].requires) < 0) why = 'needs ' + label(byName[name].requires);
+          else if (missingReq(name, names)) why = 'needs ' + reqLabel(name);
           if (why) { out.cells['0,' + r + ',' + c] = why; if (!out.first && !cur.preset) out.first = label(name) + ' in ' + cur.label + ' ' + why; }
         });
       });
@@ -252,7 +256,7 @@
         row.forEach(function (name, c) {
           var why = '';
           if (!byName[name]) why = 'not available here';
-          else if (byName[name].requires && names.indexOf(byName[name].requires) < 0) why = 'needs ' + label(byName[name].requires);
+          else if (missingReq(name, names)) why = 'needs ' + reqLabel(name);
           if (why) {
             out.cells[e + ',' + r + ',' + c] = why;
             if (!out.first) out.first = label(name) + (multi() ? ' in ' + expName().toLowerCase() + ' ' + (e + 1) : '') + ' ' + why;
@@ -338,7 +342,7 @@
                           title: off ? 'Duplicate this view to change it' : used[c.name] ? 'Already placed' : 'Drag or click to add' }, [
           h('span', { class: 'grip', text: '⋮⋮' }),
           h('span', { text: c.label }),
-          c.requires ? h('span', { class: 'req', text: '+ ' + label(c.requires) }) : null
+          c.requires ? h('span', { class: 'req', text: '+ ' + reqLabel(c.name) }) : null
         ]);
       })));
     });
@@ -367,7 +371,7 @@
           var name = row[c];
           rowEl.appendChild(h('div', { class: 'cell' + (why ? ' invalid' : ''), 'data-drag': lock ? null : 'cell', 'data-drop': lock ? null : 'cell', 'data-exp': e, 'data-row': r, 'data-col': c, title: lock ? '' : 'Drag to move, drop on another component to swap' }, [
             h('div', { class: 'name', text: label(name) }),
-            why ? h('div', { class: 'sub bad', text: why }) : (byName[name] && byName[name].requires ? h('div', { class: 'sub', text: 'linked to ' + label(byName[name].requires) }) : null),
+            why ? h('div', { class: 'sub bad', text: why }) : (byName[name] && byName[name].requires ? h('div', { class: 'sub', text: 'linked to ' + reqLabel(name) }) : null),
             lock ? null : h('button', { class: 'x', title: 'Remove', 'data-remove': '1', onclick: (function (e, r, c) { return function () { removeAt(e, r, c); changed(); }; })(e, r, c) }, ['×'])
           ]));
         }

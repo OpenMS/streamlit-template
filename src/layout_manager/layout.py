@@ -17,7 +17,9 @@ catalog the page defines::
     ]
 
 ``requires`` names a component that has to be in the same experiment, e.g. a
-peak list that follows the spectra table's selection.
+peak list that follows the spectra table's selection. A list names several of
+which one has to be there; ``requires_label`` then names them in messages
+("a protein or proteoform table").
 
 A page can also offer preset views, ready-made layouts for one purpose::
 
@@ -69,12 +71,27 @@ def validate_layout(
         if len(set(names)) != len(names):
             return "Experiment %d contains a component twice" % exp_index
         for name in names:
-            required = by_name[name].get("requires")
-            if required and required not in names:
+            required = requirements(by_name[name])
+            if required and not any(r in names for r in required):
                 return "%s needs %s in experiment %d" % (
-                    by_name[name]["label"], by_name[required]["label"], exp_index
+                    by_name[name]["label"], requirement_label(by_name[name], by_name), exp_index
                 )
     return ""
+
+
+def requirements(component: Dict[str, Any]) -> List[str]:
+    """The components one of which has to be in the same experiment as ``component``."""
+    required = component.get("requires")
+    if not required:
+        return []
+    return [required] if isinstance(required, str) else list(required)
+
+
+def requirement_label(component: Dict[str, Any], by_name: Dict[str, Dict[str, Any]]) -> str:
+    """How messages name what ``component`` requires."""
+    if component.get("requires_label"):
+        return component["requires_label"]
+    return " or ".join(by_name[r]["label"] if r in by_name else r for r in requirements(component))
 
 
 def save_layout(path: Path, layout: Layout, side_by_side: bool = False) -> None:

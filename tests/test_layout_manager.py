@@ -492,3 +492,34 @@ def test_private_identifiers_are_kept_apart(monkeypatch):
             assert search.get_selection("identification") == 3
             assert rescored.get_state_for_vue() == {"id": 1, "spectrum": 7, "identification": 9}
             assert plain.get_all_selections() == {"spectrum": 7}
+
+
+def test_requires_one_of_several():
+    components = COMPONENTS + [
+        {"name": "go", "label": "GO", "group": "Plots", "requires": ["table", "plot"],
+         "requires_label": "a table or the plot"},
+    ]
+    assert validate_layout([[["go", "plot"]]], components) == ""
+    assert validate_layout([[["table"], ["go"]]], components) == ""
+    assert "needs a table or the plot" in validate_layout([[["go"]]], components)
+
+
+_DEFAULT_VIEW_APP = """
+import streamlit as st
+from pathlib import Path
+from src.layout_manager import view_bar
+
+st.markdown(view_bar(Path(st.session_state["path"]), {components!r}, {presets!r}, {default!r},
+                     key="vb", default_view="plots"))
+"""
+
+
+def test_default_view_until_one_is_picked(tmp_path):
+    path = tmp_path / "viewer.json"
+    at = AppTest.from_string(_DEFAULT_VIEW_APP.format(components=COMPONENTS, presets=VIEWS, default=DEFAULT))
+    at.session_state["path"] = str(path)
+    at.run()
+    assert at.markdown[0].value == "plots"
+    at.session_state["vb_bar"] = {"action": "pick", "view": "all", "nonce": 1}
+    at.run()
+    assert at.markdown[0].value == "all"

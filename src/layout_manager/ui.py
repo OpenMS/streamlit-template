@@ -208,6 +208,14 @@ def layout_presets(
     return current
 
 
+def _views(path, components, presets, default_layout, default_view) -> Dict[str, Any]:
+    """``load_views``, with ``default_view`` current while nothing is saved."""
+    state = load_views(path, components, presets, default_layout)
+    if default_view and load_layout(path) is None and any(v["name"] == default_view for v in state["views"]):
+        state["current"] = default_view
+    return state
+
+
 def views_editor(
     path: Path,
     components: Sequence[Dict[str, Any]],
@@ -219,6 +227,7 @@ def views_editor(
     target: str = "the Viewer",
     experiment_label: str = "Experiment",
     new_view: bool = False,
+    default_view: Optional[str] = None,
 ) -> bool:
     """The editor of a page's views: their order, which are in the bar, their components.
 
@@ -227,6 +236,7 @@ def views_editor(
     True in the run that saved or reset (not after a refused save).
     ``new_view`` opens the editor on a new view, a copy of the current one; until
     its components change, a "Start from" choice swaps in another view's.
+    ``default_view`` is the current view while nothing is saved (see ``view_bar``).
     """
     revision_key = f"{key}_revision"
     handled_key = f"{key}_handled"
@@ -258,7 +268,7 @@ def views_editor(
             st.session_state[revision_key] += 1
             done = True
 
-    state = load_views(path, components, presets, default_layout)
+    state = _views(path, components, presets, default_layout, default_view)
     fresh = None
     if new_view:
         source = next(v for v in state["views"] if v["name"] == state["current"])
@@ -307,6 +317,7 @@ def view_bar(
     label: str = "View",
     dialog_title: str = "Customize views",
     help_text: str = "",
+    default_view: Optional[str] = None,
     **editor_args: Any,
 ) -> str:
     """The view bar: as many views as fit, the rest in More, and ✏️ Customize.
@@ -319,6 +330,9 @@ def view_bar(
     name while there is room. ``actions`` are icon
     buttons drawn after ✏️, ``{"id", "icon", "help", "on_click"}``; their
     ``on_click`` runs in the rerun after the click (open a dialog there).
+    ``default_view`` names the view that is current while nothing is saved
+    (the default is the first): a page that picks its default by what a
+    dataset holds renders that view's rows itself until the user picks one.
     ``editor_args`` go to ``views_editor`` (``max_experiments``, ...).
     Returns the name of the current view.
     """
@@ -337,7 +351,7 @@ def view_bar(
         elif submitted.get("action") == "button":
             clicked = submitted.get("id")
 
-    state = load_views(path, components, presets, default_layout)
+    state = _views(path, components, presets, default_layout, default_view)
     _view_bar(
         views=[{k: v[k] for k in ("name", "label", "rows", "preset", "in_bar", "help") if k in v}
                for v in state["views"]],
@@ -360,7 +374,7 @@ def view_bar(
             st.caption(help_text)
         new = st.session_state.get(new_key, False)
         if views_editor(path, components, presets, default_layout, key=f"{key}_editor",
-                        new_view=new, **editor_args):
+                        new_view=new, default_view=default_view, **editor_args):
             _closed()
             st.rerun()
 
