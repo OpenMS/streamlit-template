@@ -2880,8 +2880,17 @@ class StreamlitUI:
         self,
         start_workflow_function,
         get_status_function=None,
-        stop_workflow_function=None
+        stop_workflow_function=None,
+        autostart: bool = False,
+        results_page=None,
+        results_label: str = "Open results",
     ) -> None:
+        """Start/Stop, progress and log of the workflow.
+
+        ``autostart`` starts the workflow on this render unless one is running
+        (the Run button of the configure page). ``results_page`` is linked
+        below the success message of a finished run.
+        """
         with st.expander("**Summary**"):
             st.markdown(self.export_parameters_markdown())
 
@@ -2923,6 +2932,13 @@ class StreamlitUI:
         # Show queue status if available (online mode)
         if status.get("job_id"):
             self._show_queue_status(status)
+
+        # Started from the configure page's Run button
+        if autostart and not is_running:
+            start_workflow_function()
+            with st.spinner("**Workflow starting...**"):
+                time.sleep(1)
+                st.rerun()
 
         # Control buttons
         if is_running:
@@ -2981,6 +2997,8 @@ class StreamlitUI:
                 outcome = classify_log_outcome(content)
                 if outcome == "finished":
                     st.success("**Workflow completed successfully.**")
+                    if results_page is not None:
+                        self._results_link(results_page, results_label)
                 elif outcome == "cancelled":
                     st.warning("**Workflow was cancelled.**")
                 else:
@@ -2992,6 +3010,13 @@ class StreamlitUI:
                 else:
                     display_lines = lines[-st.session_state.log_lines_count:]
                 st.code("".join(display_lines), language="neon", line_numbers=False)
+
+    @staticmethod
+    def _results_link(results_page, label: str) -> None:
+        """A primary button that opens the results page of a finished run."""
+        if st.button(label, type="primary", icon=":material/arrow_forward:",
+                     key="workflow-open-results"):
+            st.switch_page(results_page)
 
     def _show_run_progress(self) -> None:
         """Progress of the running workflow: per sample when the run records

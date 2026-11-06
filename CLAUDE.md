@@ -139,6 +139,8 @@ Subclass `WorkflowManager` (see `src/Workflow.py`) and implement four methods:
 
 Each workflow gets four thin content pages calling `wf.show_file_upload_section()` / `show_parameter_section()` / `show_execution_section()` / `show_results_section()`. An optional fifth page calls `wf.show_results_download_section(exclude=[...])`, which offers every file under `<workflow_dir>/results/` singly or as a ZIP (pass `exclude` for caches that are not results). Decorate `configure()` and `results()` with `@st.fragment`.
 
+**Run flow.** The configure page ends with `wf.show_run_button(run_page)`: it saves the settings, opens the Run page and starts the workflow there at once (a session flag that `show_execution_section()` pops, so a reload never starts a second run; while a run is going it only opens the Run page). `show_execution_section(results_page=..., results_label=...)` links the results page below the success message of a finished run. A user goes configure → run → results without a second click on Start.
+
 **Multi-run workflows (opt-in, FLASHApp-style).** Set the class attribute `multi_run = True` on the subclass and every start becomes its own named result set instead of overwriting `results/`. Layout: `<workflow_dir>/runs/<run_id>/{run.json, params.json, results/, logs/}`, managed by the Streamlit-free `RunManager` (`src/workflow/RunManager.py`; widgets in `src/workflow/run_widgets.py`). What changes for the subclass:
 
 - **Read and write results through `self.results_dir`**, never `Path(self.workflow_dir, "results")`. `FileManager.get_files(set_results_dir=...)` already targets the current run. In `execution()` it is the new run; in `results()` it is the run picked on the page.

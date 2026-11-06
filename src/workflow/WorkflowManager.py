@@ -357,22 +357,66 @@ class WorkflowManager:
         """
         self.ui.parameter_section(self.configure)
 
-    def show_execution_section(self) -> None:
+    def _autostart_key(self) -> str:
+        """Session-state flag set by ``show_run_button``: start on the Run page."""
+        return f"{self.workflow_dir.name}-autostart"
+
+    def show_run_button(
+        self,
+        run_page,
+        label: str = "Run analysis",
+        help: Optional[str] = None,
+        key: str = "",
+    ) -> None:
+        """A primary button that opens the Run page and starts the workflow there.
+
+        For the end of the configure page, so a user who has described the
+        experiment goes straight on: the settings are saved, ``run_page`` (a
+        page path or ``st.Page``) opens and the run starts at once. While a run
+        is going, the button opens the Run page to follow it instead.
+        """
+        running = self.get_workflow_status().get("running", False)
+        if running:
+            label, icon = "Follow the running analysis", ":material/hourglass_top:"
+            help = help or "An analysis is running. Open the Run page to follow it."
+        else:
+            icon = ":material/play_arrow:"
+            help = help or "Save these settings, open the Run page and start the analysis."
+        if st.button(label, type="primary", icon=icon, help=help,
+                     key=key or f"{self.workflow_dir.name}-run-button"):
+            if not running:
+                self.parameter_manager.save_parameters()
+                st.session_state[self._autostart_key()] = True
+            st.switch_page(run_page)
+
+    def show_execution_section(
+        self,
+        results_page=None,
+        results_label: str = "Open results",
+    ) -> None:
         """
         Shows the execution section of the UI with content defined in self.execution().
+
+        A start requested by ``show_run_button`` on the configure page begins
+        here at once. ``results_page`` (a page path or ``st.Page``) is linked
+        when the run has finished, labelled ``results_label``.
         """
+        autostart = bool(st.session_state.pop(self._autostart_key(), False))
         name_key = ""
         if self.multi_run:
             from .run_widgets import run_name_input, run_name_key
 
-            run_name_input(self.runs, disabled=self.get_workflow_status()["running"])
+            run_name_input(self.runs, disabled=self.get_workflow_status()["running"] or autostart)
             name_key = run_name_key(self.runs)
         if self._run_online(name_key):
             return
         self.ui.execution_section(
             start_workflow_function=self.start_workflow,
             get_status_function=self.get_workflow_status,
-            stop_workflow_function=self.stop_workflow
+            stop_workflow_function=self.stop_workflow,
+            autostart=autostart,
+            results_page=results_page,
+            results_label=results_label,
         )
         
     def _run_online(self, name_key: str) -> bool:
