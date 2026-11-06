@@ -197,6 +197,11 @@ def editor_table(state, editor_key: str, table, fits=None):
     return kept
 
 
+def latest_results_key(workflow_dir) -> str:
+    """Session-state flag the Run page's results button sets for the results page."""
+    return f"{Path(workflow_dir).name}-show-latest-results"
+
+
 class StreamlitUI:
     """
     Provides an interface for Streamlit applications to handle file uploads,
@@ -3011,11 +3016,17 @@ class StreamlitUI:
                     display_lines = lines[-st.session_state.log_lines_count:]
                 st.code("".join(display_lines), language="neon", line_numbers=False)
 
-    @staticmethod
-    def _results_link(results_page, label: str) -> None:
-        """A primary button that opens the results page of a finished run."""
+    def _results_link(self, results_page, label: str) -> None:
+        """A primary button that opens the results page of a finished run.
+
+        It leaves ``st.session_state[latest_results_key(workflow_dir)]`` set, so a
+        results page that picks among the results itself (no run folders) can
+        pop it and show the newest one; a multi-run workflow shows the new run
+        already.
+        """
         if st.button(label, type="primary", icon=":material/arrow_forward:",
                      key="workflow-open-results"):
+            st.session_state[latest_results_key(self.workflow_dir)] = True
             st.switch_page(results_page)
 
     def _show_run_progress(self) -> None:

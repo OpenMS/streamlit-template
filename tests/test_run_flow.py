@@ -73,3 +73,19 @@ def test_execution_section_autostarts_once(tmp_path):
     assert first["results_label"] == "Explore results"
     assert second["autostart"] is False
     assert "my-workflow-autostart" not in st.session_state
+
+
+def test_results_button_asks_for_the_newest_result(tmp_path):
+    from src.workflow import StreamlitUI as ui_module
+    from src.workflow.StreamlitUI import StreamlitUI, latest_results_key
+
+    ui = object.__new__(StreamlitUI)
+    ui.workflow_dir = Path(tmp_path, "my-workflow")
+    st = mock.MagicMock()
+    st.session_state = {}
+    st.button.return_value = True
+    with mock.patch.object(ui_module, "st", st):
+        ui._results_link("content/results.py", "Explore results")
+    assert st.session_state == {latest_results_key(ui.workflow_dir): True}
+    assert latest_results_key(ui.workflow_dir) == "my-workflow-show-latest-results"
+    st.switch_page.assert_called_once_with("content/results.py")
