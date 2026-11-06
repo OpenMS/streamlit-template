@@ -7,7 +7,6 @@ import pandas as pd
 import plotly.express as px
 from src.common.common import show_fig
 from src.layout_manager import render_layout, request_analysis, resolve_layout, view_bar
-from src.workflow.RunManager import FINISHED as FINISHED_STATUS
 
 
 def merge_feature_tables(tables: list, ppm: float = 10.0, rt_tolerance: float = 30.0):
@@ -223,42 +222,21 @@ class Workflow(WorkflowManager):
         return found
 
     def missing_options(self, missing: list, view) -> list:
-        """What the Results page offers for a view whose run lacks ``missing``."""
-        from src.workflow.run_widgets import set_selected_run
-
+        """What the Results page offers for a view whose run lacks ``missing``: processing
+        more files with this run's settings and the missing analysis switched on."""
         configure = Path("content", "topp_workflow_parameter.py")
-        options = [
-            {
-                "label": "Run again with the custom Python tool",
-                "icon": ":material/play_circle:",
-                "help": "Opens Configure with this run's settings and the custom Python tool switched on. "
-                        "The new run is kept next to this one.",
-                "on_click": lambda: self.follow_up(
-                    self.run_id, {"run-python-script": True}, page=configure,
-                    note="with the custom Python tool switched on") or _no_settings(),
-            },
-            {
-                "label": "Process more files with these settings",
-                "icon": ":material/library_add:",
-                "help": "Opens Configure with this run's settings, to pick files to add. Only those "
-                        "are processed; the Results page then shows them with this run's files "
-                        "as one experiment.",
-                "on_click": lambda: self.follow_up(
-                    self.run_id, page=configure, note="to add more files",
-                    add_files="mzML-files") or _no_settings(),
-            },
-        ]
-        others = [r for r in self.runs.experiments(FINISHED_STATUS)
-                  if r["id"] != self.run_id and set(missing) <= self.available(r["id"])]
-        if others:
-            other = others[0]
-            options.append({
-                "label": f"Show the run {other.get('name', other['id'])}, which has it",
-                "icon": ":material/swap_horiz:",
-                "help": "An earlier run that includes this analysis.",
-                "on_click": lambda: set_selected_run(self.runs, other["id"]),
-            })
-        return options
+        changes = {"run-python-script": True} if "custom-tool" in missing else {}
+        return [{
+            "label": "Process more files with these settings",
+            "icon": ":material/library_add:",
+            "help": "Opens Configure with this run's settings"
+                    + (" and the custom Python tool switched on" if changes else "")
+                    + ", to pick files to add. Only those are processed; the Results page then "
+                    "shows them with this run's files as one experiment.",
+            "on_click": lambda: self.follow_up(
+                self.run_id, changes, page=configure, note="to add more files",
+                add_files="mzML-files") or _no_settings(),
+        }]
 
     @st.fragment
     def results(self) -> None:
