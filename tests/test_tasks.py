@@ -659,3 +659,42 @@ def test_submit_job_stamps_the_page_build(monkeypatch):
                       connection=fakeredis.FakeStrictRedis())
     job_id = qm.submit_job(func=tasks.execute_workflow, kwargs={}, description="d")
     assert qm._queue.fetch_job(job_id).meta["app_build"] == app_build()
+
+
+class SleepingWorkflow:
+    """A run that outlasts its time limit; it started a tool that is still running."""
+
+    def execution(self) -> bool:
+        import subprocess
+        tool = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+        self.executor.pid_dir.mkdir(parents=True, exist_ok=True)
+        Path(self.executor.pid_dir, str(tool.pid)).touch()
+        SleepingWorkflow.tool = tool
+        time.sleep(30)
+        return True
+
+
+def test_run_over_its_time_limit_says_so_and_ends_its_tools(tmp_path):
+    """
+    A run stopped by the queue's time limit is not a crash: the log says that
+    the time limit was reached (and which), and the tools it started end too,
+    instead of running on in the worker with nobody waiting for them.
+    """
+    workflow_dir = _prepare_workflow_dir(tmp_path, "timed-out")
+    connection = fakeredis.FakeStrictRedis()
+    queue = Queue(f"{QUEUE_NAME}-{uuid.uuid4().hex[:8]}", connection=connection)
+    job = queue.enqueue(
+        tasks.execute_workflow,
+        kwargs={"workflow_dir": str(workflow_dir), "workflow_class": "SleepingWorkflow",
+                "workflow_module": __name__},
+        job_timeout=2,
+    )
+    _FakeRedisSimpleWorker([queue], connection=connection).work(burst=True, logging_level="CRITICAL")
+
+    assert job.id in queue.failed_job_registry.get_job_ids()
+    log = _read_logs(workflow_dir)["minimal.log"]
+    assert "Time limit of this run: 2 s" in log
+    assert "took longer than its time limit" in log
+    assert "Traceback" not in log
+    SleepingWorkflow.tool.wait(timeout=10)
+    assert SleepingWorkflow.tool.returncode is not None

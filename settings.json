@@ -33,6 +33,8 @@
     "local_data_dir": "",
     "queue_settings": {
         "default_timeout": 7200,
+        "timeout_per_input": 1800,
+        "max_timeout": 604800,
         "result_ttl": 86400
     },
     "demo_workspaces": {

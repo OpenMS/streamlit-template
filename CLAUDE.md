@@ -170,6 +170,8 @@ The workflow directory is `<workspace>/<workflow-name-lowercased-hyphenated>/`, 
 
 **The worker refuses a job from a page that runs other code.** `submit_job()` stamps `job.meta["app_build"]` (`src/workflow/app_build.py`: `settings.json` version plus a hash of `src/**/*.py`), and `execute_workflow()` stops before anything runs with a `WorkerBuildMismatchError` when the worker's hash differs, telling the user to restart the workers. Web and worker pods are separate Deployments of one image; with a moving tag such as `latest` a release reaches only the pods that restart, and an old worker then runs the new page's parameters with its old TOPP tools ("Parameters passed to '<tool>' are invalid", exit code 6). A job without a stamp, or a side whose hash is empty, is let through.
 
+**A queued run's time limit grows with its input files** (`src/workflow/job_timeout.py`): `queue_settings.default_timeout` + `timeout_per_input` per selected input file, at most `max_timeout` (defaults 2 h, 30 min, 7 days); `WorkflowManager.job_timeout()` computes it, a subclass may override it, and the sync service uses the same rule. The run's log names the limit, and a run that reaches it says so and SIGTERMs the tools listed in `pids/`, which would otherwise outlive the job.
+
 The off-switches are `online_deployment` and unsetting `REDIS_URL`. `docs/REDIS_QUEUE_IMPLEMENTATION_PLAN.md` is a pre-implementation design doc written in future tense — the work shipped, its line references are stale, and the `queue_settings.enabled` flag it describes is read nowhere. Read the code.
 
 ### Parameters — two independent systems
