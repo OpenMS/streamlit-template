@@ -7,7 +7,7 @@ A step's cache key ("condition hash") is derived from:
     overrides + custom params)
   - the tool's reported version and executable identity (SHA-256 of the
     resolved binary)
-  - the output file paths and the number of threads actually assigned
+  - the output file paths and the effective tool parameters
 
 Keys are computed without ever reading input file contents, so large mzML
 files never need to be hashed or copied just to decide whether a step can be
@@ -29,7 +29,10 @@ PathLike = Union[str, Path]
 class StepCache:
     """Per-workflow cache of TOPP tool step results, keyed by condition hash."""
 
-    SCHEMA = 3
+    # Thread allocation is deliberately excluded. The same per-file step can
+    # be reused when a batch grows or shrinks and the executor assigns a
+    # different number of threads to each command.
+    SCHEMA = 4
     INPUT_IDENTITY = "filename"
 
     def __init__(self, workflow_dir: PathLike):
@@ -131,7 +134,9 @@ class StepCache:
 
         Returns (digest, condition) where ``condition`` is the exact dict
         that was hashed, stored verbatim in the manifest for inspection and
-        debugging.
+        debugging. ``threads`` remains in the API for compatibility, but is
+        intentionally not part of the condition because it only controls
+        scheduling.
         """
         input_names = [Path(p).name for p in input_paths]
         output_names = [str(p) for p in output_paths]
@@ -147,7 +152,6 @@ class StepCache:
             "outputs": output_names,
             "upstream_keys": sorted(set(upstream_keys or [])),
             "params": effective_params,
-            "threads": threads,
         }
         payload = json.dumps(condition, sort_keys=True, default=str)
         digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()

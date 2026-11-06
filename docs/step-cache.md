@@ -37,9 +37,10 @@ Consequences:
   separately from its optional tool instance name. Replacing that executable
   invalidates the key. External binaries invoked internally by an adapter and
   shared libraries are not automatically fingerprinted.
-- Output paths and the actual number of threads assigned to the command are
-  also part of the key.
-- `schema: 3` / `input_identity: "filename"` distinguish this cache from any
+- Output paths are part of the key. Thread allocation is deliberately excluded:
+  changing the batch size may change `-threads` for each process, but a
+  deterministic per-file result can still be reused.
+- `schema: 4` / `input_identity: "filename"` distinguish this cache from any
   earlier content-hash-based scheme. Old cache entries are never deleted
   automatically.
 
@@ -76,9 +77,9 @@ cache hit and a fresh computation register this mapping, so a downstream
 step always finds its upstream key regardless of whether the upstream step
 ran or was served from cache.
 
-If a sample is added and that changes per-command thread allocation, other
-samples in the same batch may also miss cache, since `threads` is part of
-the key.
+If a sample is added and that changes per-command thread allocation, existing
+independent per-sample steps can still hit cache. The combined step still
+misses when its input list changes.
 
 ## File layout and execution flow
 

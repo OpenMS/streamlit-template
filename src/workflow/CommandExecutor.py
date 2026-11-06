@@ -549,7 +549,13 @@ class CommandExecutor:
             if step_cache_enabled and output_paths:
                 meta, restored = self._lookup_step_cache(
                     tool, params_key, input_paths, output_paths,
-                    {"io": cache_io, "argv": [str(v) for v in command[params_start:]]},
+                    {
+                        "io": cache_io,
+                        # Thread count affects scheduling but is intentionally
+                        # excluded from cache identity. This lets a per-file
+                        # result survive when the batch size changes.
+                        "argv": [str(v) for v in command[params_start:-2]],
+                    },
                     threads_per_command,
                 )
                 if restored:

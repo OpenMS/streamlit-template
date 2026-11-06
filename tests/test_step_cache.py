@@ -112,7 +112,7 @@ class TestConditionHash:
         )
         assert digest1 != digest2
 
-    def test_threads_change_changes_hash(self, tmp_path):
+    def test_threads_do_not_change_hash(self, tmp_path):
         cache = StepCache(tmp_path)
         digest1, _ = cache.condition_hash(
             "Comet", ["a.mzML"], ["a.idXML"], {"x": 1}, 4
@@ -120,7 +120,7 @@ class TestConditionHash:
         digest2, _ = cache.condition_hash(
             "Comet", ["a.mzML"], ["a.idXML"], {"x": 1}, 8
         )
-        assert digest1 != digest2
+        assert digest1 == digest2
 
     def test_input_basename_only_ignores_directory(self, tmp_path):
         """Same basename in a different folder -> identical input identity."""
@@ -391,6 +391,23 @@ def test_all_hits_record_completed_step(tmp_path, integrated_executor):
     assert [f['status'] for f in step['files']] == ['done', 'done']
     assert step['ended'] is not None
     assert all(Path(p).exists() for p in io['out'])
+
+
+def test_thread_budget_change_does_not_invalidate_cache(tmp_path, integrated_executor):
+    """A scheduling-only thread change must not create a new step key."""
+    executor = integrated_executor
+    io = {'in': ['single'], 'out': [str(tmp_path / 'single.out')]}
+    executor._max_threads = 1
+    assert executor.run_topp('Fake', io) is True
+    executor.run_command.reset_mock()
+    Path(io['out'][0]).unlink()
+
+    # The second run gets a different `-threads` value, but the result is
+    # deterministic per input and should be restored from the same cache entry.
+    executor._max_threads = 4
+    assert executor.run_topp('Fake', io) is True
+    executor.run_command.assert_not_called()
+    assert Path(io['out'][0]).read_text() == 'single'
 
 
 def test_public_batch_api_keeps_boolean_and_exception_tracking(tmp_path, integrated_executor):

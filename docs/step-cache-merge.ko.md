@@ -127,7 +127,8 @@ params_start = len(command)  # input_output 인자 구성 직후
 # upstream 방식대로 merged/custom/threads를 command에 추가
 effective_params = {
     "io": cache_io,
-    "argv": [str(v) for v in command[params_start:]],
+    # -threads 값은 스케줄링 조건이므로 캐시 식별자에서 제외
+    "argv": [str(v) for v in command[params_start:-2]],
 }
 ```
 
@@ -170,7 +171,7 @@ digest, condition = self.step_cache.condition_hash(
 
 캐시 디렉터리 이름에는 `SHA256(tool 또는 instance 이름)`을 사용한다. 도구가 절대 경로여도 `cache_root / tool` 결합 때문에 캐시가 워크플로 밖에 만들어지지 않는다.
 
-키 스키마는 2에서 **3**으로 올렸다. 출력 경로, 실제 argv, 실행 파일 구분 방식이 달라졌으므로 기존 키를 재사용하지 않는다. 기존 캐시 파일을 자동 삭제하지는 않는다.
+키 스키마는 3에서 **4**로 올렸다. 출력 경로, 실제 argv, 실행 파일 구분 방식이 달라졌고, 실행 스케줄링용 `-threads`를 키에서 제외하도록 바뀌었으므로 기존 키를 재사용하지 않는다. 기존 캐시 파일을 자동 삭제하지는 않는다.
 
 ## 7. 스레드 계산과 입력 인덱스
 
@@ -188,7 +189,9 @@ parallel_commands = min(n_processes, max_threads)
 threads_per_command = max(1, max_threads // parallel_commands)
 ```
 
-hit를 제외한 뒤 남은 명령의 스레드 수를 다시 늘리지 않는다. 그렇지 않으면 cache hit 유무가 miss 명령의 실행 조건을 바꾸게 된다. 샘플을 추가하여 이 배분 자체가 달라지는 경우에는 스레드 수가 키에 포함되므로 기존 샘플도 miss일 수 있다.
+`threads_per_command`는 실행 스케줄링에만 사용하며 StepCache 키에는 포함하지 않는다. 따라서 같은 파일·출력·도구 파라미터라면 배치 크기 변화로 `-threads` 값이 달라져도 기존 결과를 재사용한다. 단, 여러 입력을 하나의 결합 명령으로 처리하는 단계는 입력 목록 자체가 바뀌면 계속 cache miss가 발생한다.
+
+hit를 제외한 뒤에도 남은 명령의 스레드 수 계산은 upstream 방식대로 유지한다. 다만 이 값은 실행 자원 배분에만 쓰이고 캐시 키에는 넣지 않으므로, 샘플 추가로 배분 값이 달라져도 독립적인 기존 파일 단계는 재사용할 수 있다.
 
 공통 입력 처리에서는 바깥 루프의 `i`를 덮어쓰지 않도록 했다.
 
