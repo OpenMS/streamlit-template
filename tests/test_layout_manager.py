@@ -165,6 +165,34 @@ def test_button_save_redraws_the_page(tmp_path):
     assert at.markdown[0].value == "plot"
 
 
+_OPEN_APP = """
+import streamlit as st
+from pathlib import Path
+from src.layout_manager import layout_button
+
+layout_button(Path(st.session_state["path"]), {components!r}, [["table"]], key="ed", help_text="Arrange")
+"""
+
+
+def test_dialog_stays_open_until_saved(tmp_path):
+    at = AppTest.from_string(_OPEN_APP.format(components=COMPONENTS))
+    at.session_state["path"] = str(tmp_path / "viewer.json")
+    at.run()
+    assert [c.value for c in at.caption] == []
+    at.button(key="ed_open").click().run()
+    assert [c.value for c in at.caption] == ["Arrange"]
+    # A rerun of the page the dialog did not ask for (a component on it) keeps it open
+    at.run()
+    assert [c.value for c in at.caption] == ["Arrange"]
+    # Saving closes it
+    at.session_state["ed"] = {"action": "save", "layout": [[["plot"]]], "side_by_side": False, "nonce": 1}
+    at.run()
+    assert not at.exception
+    assert load_layout(tmp_path / "viewer.json") == ([[["plot"]]], False)
+    at.run()
+    assert [c.value for c in at.caption] == []
+
+
 _EXPERIMENTS_APP = """
 import streamlit as st
 from src.layout_manager import render_experiments

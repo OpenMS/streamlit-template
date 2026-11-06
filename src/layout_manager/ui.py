@@ -131,18 +131,27 @@ def layout_button(
     A dialog reruns on its own when its widgets change, so after a save or a
     reset it reruns the whole page, which closes the dialog and shows the new
     layout. A refused save keeps the dialog open with the editor's message.
-    ``editor_args`` go to ``layout_editor`` (``max_experiments``,
-    ``experiment_label``, ...).
+    The dialog stays open over a rerun of the page it did not ask for (a
+    component on the page can rerun it right after the click), until it is
+    closed or saved. ``editor_args`` go to ``layout_editor``
+    (``max_experiments``, ``experiment_label``, ...).
     """
+    open_key = f"{key}_dialog_open"
 
-    @st.dialog(label, width="large")
+    def _closed() -> None:
+        st.session_state[open_key] = False
+
+    @st.dialog(label, width="large", on_dismiss=_closed)
     def _dialog() -> None:
         if help_text:
             st.caption(help_text)
         if layout_editor(path, components, default_layout, key=key, **editor_args):
+            _closed()
             st.rerun()
 
     if st.button(label, key=f"{key}_open", icon=":material/dashboard_customize:"):
+        st.session_state[open_key] = True
+    if st.session_state.get(open_key):
         _dialog()
 
 
