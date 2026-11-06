@@ -125,3 +125,31 @@ def test_multi_run_results_button_selects_the_newest_run(tmp_path):
     with mock.patch.object(run_widgets, "st", st):
         wf._select_newest_run()
     assert st.session_state[run_widgets.selected_run_key(wf.runs)] == new
+
+
+def test_run_button_sits_in_a_sticky_bar_with_its_summary(tmp_path):
+    wf = _workflow(tmp_path)
+    st = mock.MagicMock()
+    st.session_state = {}
+    st.button.return_value = False
+    st.context.theme.type = "dark"
+    st.get_option.return_value = "#123456"
+    with mock.patch.object(wm_module, "st", st):
+        wf.show_run_button("content/run.py", summary="2 runs, label-free")
+    st.container.assert_called_once()
+    assert st.container.call_args.kwargs["key"] == "my-workflow-run-button-bar"
+    st.caption.assert_called_once_with("2 runs, label-free", width="stretch")
+    css = st.html.call_args.args[0]
+    assert "div:has(> .st-key-my-workflow-run-button-bar)" in css
+    assert "position: sticky" in css and "#123456" in css
+
+
+def test_run_button_without_sticky_bar(tmp_path):
+    wf = _workflow(tmp_path)
+    st = mock.MagicMock()
+    st.session_state = {}
+    st.button.return_value = False
+    with mock.patch.object(wm_module, "st", st):
+        wf.show_run_button("content/run.py", sticky=False, summary="ignored")
+    st.html.assert_not_called()
+    st.caption.assert_not_called()

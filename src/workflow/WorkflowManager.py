@@ -367,6 +367,8 @@ class WorkflowManager:
         label: str = "Run analysis",
         help: Optional[str] = None,
         key: str = "",
+        sticky: bool = True,
+        summary: Optional[str] = None,
     ) -> None:
         """A primary button that opens the Run page and starts the workflow there.
 
@@ -374,16 +376,32 @@ class WorkflowManager:
         experiment goes straight on: the settings are saved, ``run_page`` (a
         page path or ``st.Page``) opens and the run starts at once. While a run
         is going, the button opens the Run page to follow it instead.
+
+        ``sticky`` (default) draws it in a bar that stays at the bottom of the
+        window while the page scrolls, with ``summary`` (a short line on what
+        will run) beside it; call it last on the page. ``sticky=False`` draws
+        the button alone where it is called.
         """
         running = self.get_workflow_status().get("running", False)
         if running:
             label, icon = "Follow the running analysis", ":material/hourglass_top:"
             help = help or "An analysis is running. Open the Run page to follow it."
+            summary = "An analysis is running."
         else:
             icon = ":material/play_arrow:"
             help = help or "Save these settings, open the Run page and start the analysis."
-        if st.button(label, type="primary", icon=icon, help=help,
-                     key=key or f"{self.workflow_dir.name}-run-button"):
+        key = key or f"{self.workflow_dir.name}-run-button"
+        if sticky:
+            bar = st.container(key=f"{key}-bar", horizontal=True,
+                               vertical_alignment="center", horizontal_alignment="right")
+            st.html(_run_bar_css(f"{key}-bar"))
+        else:
+            bar = st.container()
+        with bar:
+            if sticky and summary:
+                st.caption(summary, width="stretch")
+            clicked = st.button(label, type="primary", icon=icon, help=help, key=key)
+        if clicked:
             if not running:
                 self.parameter_manager.save_parameters()
                 st.session_state[self._autostart_key()] = True
@@ -552,3 +570,26 @@ class WorkflowManager:
         # Display results here
         ###################################
         pass
+
+def _run_bar_css(container_key: str) -> str:
+    """Style of the Run bar: it sticks to the bottom of the window, in the
+    background colour of the active theme so the page scrolls under it."""
+    try:
+        theme = st.context.theme.type or "light"
+    except Exception:  # pragma: no cover - older Streamlit
+        theme = "light"
+    try:
+        background = st.get_option(f"theme.{theme}.backgroundColor")
+    except Exception:
+        background = None
+    background = background or ("#0e1117" if theme == "dark" else "#ffffff")
+    # The bar's own element wrapper is what sticks: the bar alone would only
+    # stick within that wrapper.
+    return f"""<style>
+div:has(> .st-key-{container_key}) {{
+  position: sticky; bottom: 0; z-index: 99;
+  background: {background};
+  padding: 0.75rem 0 1rem 0; margin-top: 1rem;
+  border-top: 1px solid rgba(128, 128, 128, 0.3);
+}}
+</style>"""
