@@ -31,12 +31,14 @@ def test_shipped_files_are_valid():
         assert all(isinstance(v, str) for v in data.get("names", {}).values())
 
 
-def test_template_example_shows_its_groups_then_the_framework():
+def test_this_repository_shows_its_groups_then_the_framework():
     settings = json.loads(Path("settings.json").read_text(encoding="utf-8"))
+    app = json.loads(Path("contributors.json").read_text(encoding="utf-8"))
+    framework = json.loads(c.FRAMEWORK_FILE.read_text(encoding="utf-8"))
     content = c.load(settings)
     titles = [g["title"] for g in content["groups"]]
-    assert titles[-1].startswith("Web app framework")
-    assert len(titles) == 2
+    own = [g["title"] for g in app["groups"]] if app.get("repository") == settings["repository-name"] else []
+    assert titles == own + [g["title"] for g in framework["groups"]]
 
 
 def test_app_groups_come_first_and_names_merge(tmp_path):
