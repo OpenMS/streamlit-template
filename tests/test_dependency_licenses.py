@@ -135,6 +135,21 @@ def test_accepted_entries_cover_their_license_only(repo):
         LICENSES["mplpkg"] = "Mozilla Public License 2.0 (MPL 2.0)"
 
 
+def test_entry_without_license_accepts_nothing(repo):
+    (repo / "requirements.txt").write_text("requests==2.33.0\nnolicense==1\n")
+    (repo / dl.POLICY_FILE).write_text(json.dumps({"accepted": {"nolicense": {"reason": "looked"}}}))
+    [finding] = dl.run(repo)
+    assert finding.fails
+
+
+def test_every_baseline_pin_counts(repo):
+    text = "requests==2.33.0\ngplpkg==1 ; sys_platform=='win32'\ngplpkg==2 ; sys_platform!='win32'\n"
+    (repo / "requirements.txt").write_text(text)
+    git(repo, "add", ".")
+    git(repo, "commit", "-qm", "pins")
+    assert dl.run(repo) == []
+
+
 def test_failed_lookup_warns_but_does_not_fail(repo, monkeypatch):
     monkeypatch.setattr(dl, "lookup", lambda dep: ("", True))
     (repo / "requirements.txt").write_text("requests==2.33.0\nnew==1\n")

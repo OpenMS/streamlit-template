@@ -253,12 +253,10 @@ def changed_dependencies(
             found.extend(now)
             continue
         old_text = _git(root, "show", f"{ref}:{rel}")
-        before = {
-            (d.name, d.ecosystem): d.version for d in parse(rel, old_text or "")
-        }
+        # Every pin counts: a file may pin one package per platform marker.
+        before = {(d.name, d.ecosystem, d.version) for d in parse(rel, old_text or "")}
         for d in now:
-            key = (d.name, d.ecosystem)
-            if key not in before or before[key] != d.version:
+            if (d.name, d.ecosystem, d.version) not in before:
                 found.append(d)
     # One finding per package, even when several files declare it.
     unique = {}
@@ -315,8 +313,10 @@ def lookup(dep: Dependency) -> tuple[str, bool]:
         pinned = re.fullmatch(r"[0-9][0-9A-Za-z.+!-]*", dep.version or "")
         data = None
         if pinned:
+            # The pinned release only: another release may carry another license.
             data = _get_json(f"https://pypi.org/pypi/{name}/{dep.version}/json")
-        data = data or _get_json(f"https://pypi.org/pypi/{name}/json")
+        else:
+            data = _get_json(f"https://pypi.org/pypi/{name}/json")
         if not data:
             return "", True
         return license_from_pypi(data.get("info") or {}), False
@@ -489,8 +489,11 @@ def _accepted(policy: dict, dep: Dependency, license: str) -> dict | None:
     # A decision covers the license it was made for. A package that changes
     # its license is asked about again.
     recorded = entry.get("license") or ""
-    recorded = [recorded] if isinstance(recorded, str) else list(recorded)
-    if license and recorded and canonical(license) not in {canonical(r) for r in recorded}:
+    recorded = [r for r in ([recorded] if isinstance(recorded, str) else recorded) if r]
+    if not recorded:
+        # A decision has to name the license it accepts.
+        return None
+    if license and canonical(license) not in {canonical(r) for r in recorded}:
         return None
     return entry
 
