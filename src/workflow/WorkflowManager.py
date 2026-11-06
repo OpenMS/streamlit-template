@@ -417,8 +417,15 @@ class WorkflowManager:
             autostart=autostart,
             results_page=results_page,
             results_label=results_label,
+            on_open_results=self._select_newest_run if self.multi_run else None,
         )
-        
+
+    def _select_newest_run(self) -> None:
+        """Show the newest finished run on the results page, not an older pick."""
+        from .run_widgets import set_selected_run
+
+        set_selected_run(self.runs, self.runs.latest())
+
     def _run_online(self, name_key: str) -> bool:
         """Offer the linked online workspace (offline app, workspace sync on).
 

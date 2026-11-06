@@ -2889,12 +2889,14 @@ class StreamlitUI:
         autostart: bool = False,
         results_page=None,
         results_label: str = "Open results",
+        on_open_results=None,
     ) -> None:
         """Start/Stop, progress and log of the workflow.
 
         ``autostart`` starts the workflow on this render unless one is running
         (the Run button of the configure page). ``results_page`` is linked
-        below the success message of a finished run.
+        below the success message of a finished run; ``on_open_results`` runs
+        before that button switches to it.
         """
         with st.expander("**Summary**"):
             st.markdown(self.export_parameters_markdown())
@@ -3003,7 +3005,7 @@ class StreamlitUI:
                 if outcome == "finished":
                     st.success("**Workflow completed successfully.**")
                     if results_page is not None:
-                        self._results_link(results_page, results_label)
+                        self._results_link(results_page, results_label, on_open_results)
                 elif outcome == "cancelled":
                     st.warning("**Workflow was cancelled.**")
                 else:
@@ -3016,17 +3018,19 @@ class StreamlitUI:
                     display_lines = lines[-st.session_state.log_lines_count:]
                 st.code("".join(display_lines), language="neon", line_numbers=False)
 
-    def _results_link(self, results_page, label: str) -> None:
+    def _results_link(self, results_page, label: str, on_open=None) -> None:
         """A primary button that opens the results page of a finished run.
 
         It leaves ``st.session_state[latest_results_key(workflow_dir)]`` set, so a
         results page that picks among the results itself (no run folders) can
-        pop it and show the newest one; a multi-run workflow shows the new run
-        already.
+        pop it and show the newest one; ``on_open`` (a multi-run workflow
+        selects its newest finished run) runs before the page switch.
         """
         if st.button(label, type="primary", icon=":material/arrow_forward:",
                      key="workflow-open-results"):
             st.session_state[latest_results_key(self.workflow_dir)] = True
+            if on_open is not None:
+                on_open()
             st.switch_page(results_page)
 
     def _show_run_progress(self) -> None:

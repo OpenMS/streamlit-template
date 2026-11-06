@@ -7,6 +7,7 @@ so a reload of the Run page never starts a second run.
 
 import os
 import sys
+import time
 from pathlib import Path
 from unittest import mock
 
@@ -89,3 +90,38 @@ def test_results_button_asks_for_the_newest_result(tmp_path):
     assert st.session_state == {latest_results_key(ui.workflow_dir): True}
     assert latest_results_key(ui.workflow_dir) == "my-workflow-show-latest-results"
     st.switch_page.assert_called_once_with("content/results.py")
+
+
+def test_results_button_runs_its_callback_before_switching(tmp_path):
+    from src.workflow import StreamlitUI as ui_module
+    from src.workflow.StreamlitUI import StreamlitUI
+
+    ui = object.__new__(StreamlitUI)
+    ui.workflow_dir = Path(tmp_path, "my-workflow")
+    st = mock.MagicMock()
+    st.session_state = {}
+    st.button.return_value = True
+    order = []
+    st.switch_page.side_effect = lambda page: order.append("switch")
+    with mock.patch.object(ui_module, "st", st):
+        ui._results_link("content/results.py", "Explore results", lambda: order.append("select"))
+    assert order == ["select", "switch"]
+
+
+def test_multi_run_results_button_selects_the_newest_run(tmp_path):
+    from src.workflow import run_widgets
+    from src.workflow.RunManager import RunManager
+
+    wf = _workflow(tmp_path)
+    wf.multi_run = True
+    wf.runs = RunManager(Path(tmp_path, "my-workflow"))
+    old = wf.runs.new_run("Old")
+    wf.runs.finish(old, "finished")
+    time.sleep(1.1)
+    new = wf.runs.new_run("New")
+    wf.runs.finish(new, "finished")
+    st = mock.MagicMock()
+    st.session_state = {run_widgets.selected_run_key(wf.runs): old}
+    with mock.patch.object(run_widgets, "st", st):
+        wf._select_newest_run()
+    assert st.session_state[run_widgets.selected_run_key(wf.runs)] == new
