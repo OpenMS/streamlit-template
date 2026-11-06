@@ -58,6 +58,14 @@ def repo(tmp_path):
         ("MPL-2.0 AND MIT", dl.REVIEW),
         ("GPL-2.0-only OR MIT", dl.OK),
         ("GPL-2.0 WITH Classpath-exception-2.0", dl.REVIEW),
+        ("(MIT OR BSD-3-Clause) AND GPL-2.0 WITH Classpath-exception-2.0", dl.REVIEW),
+        ("(MIT OR GPL-3.0-only) AND Apache-2.0", dl.OK),
+        ("MIT AND (GPL-3.0-only OR AGPL-3.0-only)", dl.RESTRICTED),
+        ("Apache-2.0 WITH GPL-3.0-only", dl.REVIEW),
+        ("Mozilla Public License 2.0 (MPL 2.0)", dl.REVIEW),
+        ("MIT (", dl.OK),
+        ("Apache-2.0 AND Apache-2.0 WITH LLVM-exception AND BSL-1.0 AND Zlib", dl.OK),
+        ("Apache-2.0 WITH LLVM-exception AND MPL-2.0", dl.REVIEW),
         ("Other/Proprietary License", dl.REVIEW),
         ("Free for non-commercial use", dl.RESTRICTED),
         ("", dl.REVIEW),
@@ -120,11 +128,32 @@ def test_accepted_entries_cover_their_license_only(repo):
     assert not findings["nolicense"].fails
     assert findings["nolicense"].license == "MIT"
 
+    LICENSES["mplpkg"] = "MPL-2.0 AND GPL-3.0-only"
+    try:
+        assert dl.run(repo)[0].fails  # a license added to the expression too
+    finally:
+        LICENSES["mplpkg"] = "Mozilla Public License 2.0 (MPL 2.0)"
+
     LICENSES["mplpkg"] = "GPL-3.0-only"
     try:
         assert dl.run(repo)[0].fails  # a changed license is asked about again
     finally:
         LICENSES["mplpkg"] = "Mozilla Public License 2.0 (MPL 2.0)"
+
+
+def test_entry_without_license_accepts_nothing(repo):
+    (repo / "requirements.txt").write_text("requests==2.33.0\nnolicense==1\n")
+    (repo / dl.POLICY_FILE).write_text(json.dumps({"accepted": {"nolicense": {"reason": "looked"}}}))
+    [finding] = dl.run(repo)
+    assert finding.fails
+
+
+def test_every_baseline_pin_counts(repo):
+    text = "requests==2.33.0\ngplpkg==1 ; sys_platform=='win32'\ngplpkg==2 ; sys_platform!='win32'\n"
+    (repo / "requirements.txt").write_text(text)
+    git(repo, "add", ".")
+    git(repo, "commit", "-qm", "pins")
+    assert dl.run(repo) == []
 
 
 def test_failed_lookup_warns_but_does_not_fail(repo, monkeypatch):
