@@ -84,8 +84,6 @@ Each is a way to produce an app that looks fine and is broken.
   looks right, it is just wrong to use. Measured: 1 build in 4 decorated
   `configure()` and forgot `results()`, and every test still passed. The
   template's own example decorates both (`src/Workflow.py:29` and `:119`).
-- **`input_python()` requires `st.session_state["advanced"]`**, created only by
-  `parameter_section()` — calling it elsewhere raises `KeyError`.
 - Nothing reachable from `execution()` may touch `st.session_state`. Online
   mode runs it in an RQ worker that has none; worker and UI share state only
   through the workspace filesystem.

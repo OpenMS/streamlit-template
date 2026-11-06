@@ -1,16 +1,18 @@
-# Argo CD Image Updater: deploys every new release of this app. It watches
-# ghcr.io/openms/streamlit-template for release images (`^v[0-9]+(\.[0-9]+)*-full$`; the per-commit,
-# `-simple`, `-amd64`/`-arm64` and moving tags never match), picks the most
-# recently built one, and sets it on the `streamlit-template` Application (write-back
-# `argocd`, so nothing is committed to the repo). Needs Image Updater >= 1.0
-# (the ImageUpdater CRD) installed in the argocd namespace.
+# Argo CD Image Updater: deploys the latest release of this app, without a
+# PR or a pin. It watches ghcr.io/openms/streamlit-template for release
+# images - the `-full` image of every release tag, pre-releases included
+# (`v2.1.0-full`, `v3.0.0-alpha-full`, `v3.0.0-rc.1-full`); the branch,
+# per-commit, `-simple`, `-amd64`/`-arm64` and moving tags never match -
+# picks the most recently built one, and sets it on the `streamlit-template`
+# Application (write-back `argocd`, so nothing is committed to the repo).
+# Needs Image Updater >= 1.0 (the ImageUpdater CRD) in the argocd namespace.
 #
-# Pause: add `ignoreTags: ["*"]` under commonUpdateSettings.
-# If the Application itself is ever synced from git (app-of-apps), the parent
-# must ignore `.spec.source.kustomize.images`, or it undoes every update.
+# `newest-build`, not `semver`: with the `-full` suffix every tag is a semver
+# pre-release, and `2.0.0-rc-full` would sort above `2.0.0-full`.
 #
-# Keep `newTag` in k8s/overlays/prod on the current release (the release-app
-# skill does this), so a re-created Application starts from it.
+# Synced from git by `streamlit-template-argocd`: change this file in a PR.
+# Pause: add `ignoreTags: ["*"]` under commonUpdateSettings. Roll back:
+# narrow allowTags to the release to stay on, e.g. 'regexp:^v2\.0\.0-full$'.
 apiVersion: argocd-image-updater.argoproj.io/v1alpha1
 kind: ImageUpdater
 metadata:
@@ -26,7 +28,7 @@ spec:
           imageName: ghcr.io/openms/streamlit-template
           commonUpdateSettings:
             updateStrategy: newest-build
-            allowTags: 'regexp:^v[0-9]+(\.[0-9]+)*-full$'
+            allowTags: 'regexp:^v[0-9]+(\.[0-9]+)+(-[0-9A-Za-z.]+)?-full$'
           manifestTargets:
             kustomize:
               # The placeholder image name k8s/base uses and the overlay's

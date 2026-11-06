@@ -18,12 +18,13 @@
 
 FROM ubuntu:24.04 AS setup-build-system
 ARG OPENMS_REPO=https://github.com/OpenMS/OpenMS.git
-ARG OPENMS_BRANCH=release/3.5.0
+ARG OPENMS_BRANCH=v3.6.0
 ARG PORT=8501
-# Streamlit app GitHub user name (to download artifact from).
-ARG GITHUB_USER=OpenMS
-# Streamlit app GitHub repository name (to download artifact from).
-ARG GITHUB_REPO=streamlit-template
+# GitHub repository whose latest release supplies the bundled Windows
+# installer. Empty: `github-user` and `repository-name` from settings.json,
+# so every app downloads its own installer without editing this file.
+ARG GITHUB_USER=
+ARG GITHUB_REPO=
 # Python of the app's environment. pyOpenMS 3.6 needs 3.11 or newer.
 ARG PYTHON_VERSION=3.11
 # Apache Arrow/Parquet major version. OpenMS 3.6 needs 23 or newer; it is pinned
@@ -51,11 +52,17 @@ RUN apt-get install -y --no-install-recommends --no-install-suggests qt6-base-de
 
 # Apache Arrow/Parquet from Apache's apt repository, as OpenMS's own image does.
 # Appending Apache's KEYS keeps the repository usable across key rotations.
+# downloads.apache.org sometimes does not answer GitHub's arm64 runners (wget
+# hung until it gave up, exit code 4), so wget gets a timeout and retries and
+# falls back to dist.apache.org, the release tree it mirrors.
 RUN . /etc/os-release \
     && wget -q https://packages.apache.org/artifactory/arrow/ubuntu/apache-arrow-apt-source-latest-${VERSION_CODENAME}.deb \
     && apt-get install -y --no-install-recommends ./apache-arrow-apt-source-latest-${VERSION_CODENAME}.deb \
     && rm apache-arrow-apt-source-latest-${VERSION_CODENAME}.deb \
-    && wget -qO- https://downloads.apache.org/arrow/KEYS >> /usr/share/keyrings/apache-arrow-apt-source.asc \
+    && (wget -q --timeout=30 --tries=3 -O /tmp/arrow-KEYS https://downloads.apache.org/arrow/KEYS \
+        || wget -q --timeout=30 --tries=3 -O /tmp/arrow-KEYS https://dist.apache.org/repos/dist/release/arrow/KEYS) \
+    && cat /tmp/arrow-KEYS >> /usr/share/keyrings/apache-arrow-apt-source.asc \
+    && rm /tmp/arrow-KEYS \
     && printf 'Package: libarrow* libparquet*\nPin: version %s.*\nPin-Priority: 999\n' "${ARROW_VERSION}" > /etc/apt/preferences.d/arrow \
     && apt-get update \
     && apt-get install -y --no-install-recommends --no-install-suggests libarrow-dev libparquet-dev
@@ -192,7 +199,14 @@ RUN cp -r openms-build/lib /openms/lib
 ENV LD_LIBRARY_PATH="/openms/lib/:/root/miniforge3/envs/streamlit-env/lib"
 
 # Copy share folder, add to PATH, remove source directory.
-RUN cp -r OpenMS/share/OpenMS /openms/share
+# From OpenMS 3.6 on the TOPP tool registry (share/OpenMS/TOOLS/*.tsv) is
+# generated into the build directory, not kept in the source tree. Without it
+# every TOPP tool aborts on start ("The TOPP tool registry ... is empty"), so
+# it is copied next to the source share.
+RUN cp -r OpenMS/share/OpenMS /openms/share \
+    && if [ -d openms-build/share/OpenMS/TOOLS ]; then \
+        mkdir -p /openms/share/TOOLS && cp -r openms-build/share/OpenMS/TOOLS/. /openms/share/TOOLS/; \
+    fi
 RUN rm -rf OpenMS
 ENV OPENMS_DATA_PATH="/openms/share/"
 
@@ -202,7 +216,14 @@ RUN rm -rf openms-build
 # Check that pyOpenMS loads and finds its data, and that the TOPP tools run.
 RUN python -c "import pyopenms; print('pyOpenMS', pyopenms.__version__, pyopenms.EmpiricalFormula('C6H12O6').getMonoWeight())" \
     && test -x /openms/bin/FileInfo \
-    && ! ldd /openms/bin/FileInfo | grep 'not found'
+    && ! ldd /openms/bin/FileInfo | grep 'not found' \
+    && for tool in FileInfo FeatureFinderMetabo; do \
+        "$tool" -write_ini "/tmp/$tool.ini" > "/tmp/$tool.log" 2>&1; \
+        if [ ! -s "/tmp/$tool.ini" ]; then \
+            echo "$tool -write_ini failed:"; cat "/tmp/$tool.log"; exit 1; \
+        fi; \
+        rm -f "/tmp/$tool.ini" "/tmp/$tool.log"; \
+    done
 
 # Prepare and run streamlit app.
 FROM compile-openms AS run-app
@@ -218,6 +239,26 @@ RUN apt-get update && apt-get install -y --no-install-recommends redis-server ng
 RUN apt-get update && apt-get install -y --no-install-recommends mono-complete \
     && rm -rf /var/lib/apt/lists/* \
     && mono --version
+
+# Command line tools an app installs from conda-forge (SIRIUS, for example),
+# one package spec per line in its optional conda-requirements.txt. Python
+# packages stay in requirements.txt. The glob lets the file be absent; this
+# step comes after the OpenMS build, so changing the list never rebuilds it.
+COPY requirements.txt conda-requirements.tx[t] /tmp/app-env/
+# A line ending in `# [x86_64]` or `# [aarch64]` is installed only on that
+# machine (`uname -m`), for tools conda-forge builds for one architecture.
+# The env's Python is pinned: a tool's dependencies may otherwise let the
+# solver swap CPython for another build (sirius-ms pulled in GraalPy, whose
+# ssl module pip cannot use).
+RUN touch /tmp/app-env/conda-requirements.txt \
+    && awk -v arch="$(uname -m)" ' \
+        /#[[:space:]]*\[[a-z0-9_]+\][[:space:]]*$/ { tag = $0; sub(/.*\[/, "", tag); sub(/\].*/, "", tag); if (tag != arch) next } \
+        { sub(/#.*/, ""); if ($0 ~ /[^[:space:]]/) print }' \
+        /tmp/app-env/conda-requirements.txt > /tmp/app-env/conda-specs.txt \
+    && if [ -s /tmp/app-env/conda-specs.txt ]; then \
+        py="$(python -c 'import platform; print(platform.python_version())')"; \
+        mamba install -y -n streamlit-env -c conda-forge --file /tmp/app-env/conda-specs.txt "python=${py}=*_cpython"; \
+    fi && rm -rf /tmp/app-env
 
 # Create Redis data directory. Default 0755 root-owned is enough: the docker
 # entrypoint runs as root (can write regardless of mode), and the apptainer
@@ -250,6 +291,7 @@ COPY app.py /app/app.py
 COPY settings.json /app/settings.json
 COPY default-parameters.json /app/default-parameters.json
 COPY presets.json /app/presets.json
+COPY parameter-names.json /app/parameter-names.json
 
 # For streamlit configuration
 COPY .streamlit/ /app/.streamlit/
@@ -294,10 +336,14 @@ RUN jq '.local_data_dir = "/mounted-data"' settings.json > tmp.json && mv tmp.js
 # so it is never written to the image or its build cache. INSTALLER_REFRESH
 # (CI passes the run id) re-runs this step on every build, as the token used to.
 ARG INSTALLER_REFRESH
+# Declared again: a build argument does not reach a later stage on its own.
+ARG GITHUB_USER
+ARG GITHUB_REPO
 RUN --mount=type=secret,id=github_token \
+    repo="${GITHUB_USER:-$(jq -r '."github-user"' settings.json)}/${GITHUB_REPO:-$(jq -r '."repository-name"' settings.json)}"; \
     if [ -s /run/secrets/github_token ]; then \
         echo "GitHub token secret is set, proceeding to download the release asset..."; \
-        GH_TOKEN="$(cat /run/secrets/github_token)" gh release download -R ${GITHUB_USER}/${GITHUB_REPO} -p "*-Setup.exe" -O /app/OpenMS-App-Setup.exe \
+        GH_TOKEN="$(cat /run/secrets/github_token)" gh release download -R "$repo" -p "*-Setup.exe" -O /app/OpenMS-App-Setup.exe \
             || echo "The latest release has no Windows installer, skipping."; \
     else \
         echo "No github_token secret, skipping the release asset download."; \

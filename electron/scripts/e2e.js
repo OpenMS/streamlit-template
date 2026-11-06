@@ -7,6 +7,11 @@
 // exception shown on a page. Each --scenario module then gets the helpers
 // below to run app-specific steps, e.g. a workflow and its viewer:
 //   module.exports = async (t) => { await t.open("Workflow"); ... }
+//
+// It times what a user waits for: the app window, every page until Streamlit
+// has drawn it and its components (OpenMS-Insight, plots) have loaded, and
+// whatever a scenario wraps in t.timed(). The times go to <out>/timings.json
+// and, in GitHub Actions, to the job summary.
 const fs = require("fs");
 const path = require("path");
 
@@ -45,6 +50,7 @@ async function launch(_electron, exe) {
 
 // Streamlit marks its root element with the script state; "notRunning" for a
 // while means the page has finished rendering (fragments may still poll).
+// Returns the milliseconds until the page went quiet (without the quiet time).
 async function settle(page, { timeout = 120000, quiet = 1500 } = {}) {
   const started = Date.now();
   let idleSince = null;
@@ -56,7 +62,7 @@ async function settle(page, { timeout = 120000, quiet = 1500 } = {}) {
       .catch(() => null);
     if (state === "notRunning") {
       idleSince = idleSince || Date.now();
-      if (Date.now() - idleSince >= quiet) return;
+      if (Date.now() - idleSince >= quiet) return idleSince - started;
     } else {
       idleSince = null;
     }
@@ -67,6 +73,42 @@ async function settle(page, { timeout = 120000, quiet = 1500 } = {}) {
 
 async function exceptions(page) {
   return page.locator('[data-testid="stException"]').allInnerTexts();
+}
+
+// Times measured during the run, in seconds: [{ what, seconds }].
+const timings = [];
+function record(what, ms) {
+  const seconds = Math.round(ms / 100) / 10;
+  timings.push({ what, seconds });
+  console.log(`   time: ${what}: ${seconds} s`);
+}
+
+// Waits until every custom component frame (OpenMS-Insight, Vue, plots) has
+// loaded and drawn something; returns the milliseconds that took.
+async function componentsReady(page, { timeout = 180000 } = {}) {
+  const started = Date.now();
+  while (Date.now() - started < timeout) {
+    const frames = page.frames().filter((f) => f !== page.mainFrame() && /\/component\//.test(f.url()));
+    const drawn = await Promise.all(
+      frames.map((f) =>
+        f
+          .evaluate(() => document.readyState === "complete" && document.body && document.body.innerText.trim().length + document.querySelectorAll("canvas, svg").length > 0)
+          .catch(() => false)
+      )
+    );
+    if (drawn.every(Boolean)) return { ms: Date.now() - started, frames: frames.length };
+    await page.waitForTimeout(250);
+  }
+  return { ms: Date.now() - started, frames: -1 };
+}
+
+function writeTimings(out) {
+  fs.writeFileSync(path.join(out, "timings.json"), JSON.stringify(timings, null, 2));
+  const summary = process.env.GITHUB_STEP_SUMMARY;
+  if (!summary || !timings.length) return;
+  const os = { win32: "Windows", darwin: "macOS", linux: "Linux" }[process.platform] || process.platform;
+  const rows = timings.map((r) => `| ${r.what} | ${r.seconds} |`).join("\n");
+  fs.appendFileSync(summary, `### Load times in the app window (${os})\n\n| What | Seconds |\n|---|---|\n${rows}\n\n`);
 }
 
 function makeHelpers(app, page, baseUrl, out) {
@@ -83,12 +125,28 @@ function makeHelpers(app, page, baseUrl, out) {
     // the navigation ("Workflow"); a title shared by several sections needs
     // the URL path. A page that does heavy work on its first draw can pass a
     // longer { timeout } for settling.
+    // Records how long the page took to draw, and its components to load.
     async open(target, opts) {
       const link = page.locator(`[data-testid="stSidebarNav"] a[href$="/${target}"]`);
+      const started = Date.now();
       if ((await link.count()) === 1) await link.click();
       else await page.locator('[data-testid="stSidebarNav"] a', { hasText: target }).first().click();
       await settle(page, opts);
+      const drawn = Date.now() - started - 1500;
+      const comps = await componentsReady(page);
+      record(`page ${target || "home"}`, drawn);
+      if (comps.frames > 0) record(`page ${target || "home"}: ${comps.frames} components loaded`, drawn + comps.ms);
+      else if (comps.frames < 0) t.log(`components of ${target} did not finish loading`);
     },
+
+    // Runs `fn` and records how long it took as `what`.
+    async timed(what, fn) {
+      const started = Date.now();
+      const result = await fn();
+      record(what, Date.now() - started);
+      return result;
+    },
+    record,
 
     async clickTab(name) {
       await page.getByRole("tab", { name }).first().click();
@@ -108,6 +166,9 @@ function makeHelpers(app, page, baseUrl, out) {
         .first();
       const multi = (await widget.getAttribute("data-testid")) === "stMultiSelect";
       await widget.locator('[data-baseweb="select"]').click();
+      // Type the option first: the dropdown lists only the options that fit
+      // the window (none at all in a small one, such as xvfb's 640x480).
+      await widget.locator('[data-baseweb="select"] input').fill(option);
       await page.getByRole("option", { name: option }).first().click();
       // A multiselect stays open after a pick. Escape on a selectbox would
       // clear the value just chosen.
@@ -201,6 +262,7 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   fs.mkdirSync(args.out, { recursive: true });
   const { _electron } = loadPlaywright();
+  const launched = Date.now();
   const app = await launch(_electron, args.exe);
   let failed = false;
   try {
@@ -211,7 +273,9 @@ async function main() {
     await page.waitForURL(/^http:\/\/127\.0\.0\.1:\d+\//, { timeout: 300000 });
     const baseUrl = new URL(page.url()).origin;
     console.log(`App is up at ${baseUrl}`);
+    record("app window shows the app", Date.now() - launched);
     await settle(page);
+    record("first page drawn", Date.now() - launched - 1500);
     const t = makeHelpers(app, page, baseUrl, args.out);
 
     const pages = await navTargets(page);
@@ -237,6 +301,7 @@ async function main() {
     }
   } finally {
     await close(app);
+    writeTimings(args.out);
   }
   if (failed) throw new Error("one or more scenarios failed");
 }

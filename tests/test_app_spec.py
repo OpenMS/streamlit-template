@@ -181,3 +181,33 @@ def test_sync_auto_merge_is_a_boolean(spec):
     bad = copy.deepcopy(spec)
     bad.setdefault("sync", {})["auto_merge"] = "yes"
     assert any("sync/auto_merge" in e for e in app_spec.schema_errors(bad))
+
+
+def test_deploy_images_lists_known_images_only(spec):
+    ok = copy.deepcopy(spec)
+    ok["deploy"]["images"] = ["full-amd64", "simple-amd64", "full-arm64"]
+    assert app_spec.schema_errors(ok) == []
+    ok["deploy"]["images"] = ["simple"]
+    assert app_spec.schema_errors(ok) == []
+    for images in (["simple-riscv64"], [], ["full-amd64", "full-amd64"]):
+        bad = copy.deepcopy(spec)
+        bad["deploy"]["images"] = images
+        assert any("deploy/images" in e for e in app_spec.schema_errors(bad)), images
+
+
+def test_deploy_images_must_build_the_overlay_variant(tmp_path):
+    root = _app_tree(tmp_path)
+    (root / "k8s/overlays/prod/kustomization.yaml").write_text(
+        "namePrefix: myapp-\n"
+        "images:\n  - name: openms-streamlit\n    newName: ghcr.io/openms/myapp\n"
+        "    newTag: v1.0.0-full\n"
+    )
+    s = _spec()
+    s["deploy"] = {"images": ["simple-amd64"]}
+    assert any("deploys the full image" in e for e in app_spec.consistency_errors(s, root))
+    s["deploy"] = {"images": ["full-amd64", "simple-amd64"]}
+    assert not any("deploys the" in e for e in app_spec.consistency_errors(s, root))
+    s["deploy"] = {"images": ["simple"]}
+    assert any("deploys the full image" in e for e in app_spec.consistency_errors(s, root))
+    s["deploy"] = {"images": ["full", "simple"]}
+    assert not any("deploys the" in e for e in app_spec.consistency_errors(s, root))

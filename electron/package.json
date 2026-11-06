@@ -45,7 +45,8 @@
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "license": "../assets/openms_license.rtf"
+      "license": "../assets/openms_license.rtf",
+      "differentialPackage": false
     },
     "mac": {
       "target": "dmg",
@@ -60,7 +61,8 @@
       ]
     },
     "dmg": {
-      "writeUpdateInfo": false
+      "writeUpdateInfo": false,
+      "format": "ULFO"
     },
     "linux": {
       "target": [

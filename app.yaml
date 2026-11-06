@@ -72,6 +72,7 @@ sync:
     - settings.json
     - default-parameters.json
     - presets.json
+    - parameter-names.json
     - README.md
     - content/*
     - src/Workflow.py
@@ -81,3 +82,4 @@ sync:
     - k8s/overlays/*
     - k8s/argocd/*
     - CLAUDE.app.md
+    - conda-requirements.txt

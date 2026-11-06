@@ -6,7 +6,7 @@ import threading
 from pathlib import Path
 from .Logger import Logger
 from .ParameterManager import ParameterManager, bool_param_paths_from_param_xml_ini
-from .settings_io import load_settings, detect_cpu_quota
+from .settings_io import load_settings, detect_cpu_quota, resolve_thread_setting, local_thread_default
 from .vendor_files import vendor_format
 from .progress import RunProgress, read_progress, failure_context, OUTPUT_TAIL
 from collections import deque
@@ -58,6 +58,10 @@ class CommandExecutor:
         remains the fallback for every deployment where no quota is readable:
         bare metal, docker-compose without a cpu limit, a dev box.
 
+        ``"auto"`` (the template default for both keys; ``null`` and ``-1``
+        mean the same) is every usable CPU but one, see
+        settings_io.default_thread_count(). A number pins the budget.
+
         The trade-off, deliberately taken: an operator can no longer
         under-subscribe a container that declares more CPU than it wants used.
         For a Guaranteed pod that is the right call, because the declaration
@@ -74,16 +78,16 @@ class CommandExecutor:
             return self._max_threads
 
         settings = load_settings()
-        max_threads_config = settings.get("max_threads", {"local": 4, "online": 2})
+        max_threads_config = settings.get("max_threads", {})
 
         if settings.get("online_deployment", False):
             quota = detect_cpu_quota()
             if quota is not None:
                 value = quota
             else:
-                value = max_threads_config.get("online", 2)
+                value = resolve_thread_setting(max_threads_config.get("online", "auto"))
         else:
-            default = max_threads_config.get("local", 4)
+            default = local_thread_default(settings)
             params = self.parameter_manager.get_parameters_from_json()
             value = params.get("max_threads", default)
 
@@ -166,7 +170,7 @@ class CommandExecutor:
 
         return all(results)
 
-    def run_command(self, command: list[str], task: tuple = None) -> bool:
+    def run_command(self, command: list[str], task: tuple = None, cwd=None) -> bool:
         """
         Executes a specified shell command and logs its execution details.
 
@@ -176,6 +180,9 @@ class CommandExecutor:
                 progress (see run_topp()). Its start, end and, on failure, exit
                 code and output are recorded there, and a failure is logged
                 with its context ("While running X on file 2 of 3 (a.mzML)").
+            cwd (str | Path, optional): Working directory of the command, for
+                programs that read files next to their executable. Defaults to
+                the app's working directory.
 
         Raises:
             Exception: If the command execution results in any errors.
@@ -184,6 +191,8 @@ class CommandExecutor:
         command = [str(c) for c in command]
 
         # Log the execution start
+        if cwd is not None:
+            self.logger.log(f"Working directory: {cwd}", 1)
         self.logger.log(f"Running command:\n"+' '.join(command)+"\nWaiting for command to finish...", 1)   
         start_time = time.time()
         if task is not None:
@@ -197,7 +206,8 @@ class CommandExecutor:
                 stderr=subprocess.PIPE,
                 text=True,
                 bufsize=1,  # Line buffered
-                universal_newlines=True
+                universal_newlines=True,
+                cwd=cwd,
             )
         except OSError as e:
             # e.g. the tool is not installed: record it, then fail as before
@@ -464,6 +474,9 @@ class CommandExecutor:
                     command += v.split("\n")
                 elif isinstance(v, list):
                     command += [str(x) for x in v]
+                elif isinstance(v, bool):
+                    # OpenMS reads a boolean as "true"/"false", not "True"
+                    command += [str(v).lower()]
                 else:
                     command += [str(v)]
             # Add custom parameters
@@ -481,6 +494,8 @@ class CommandExecutor:
                 command += [f"-{k}"]
                 if isinstance(v, list):
                     command += [str(x) for x in v]
+                elif isinstance(v, bool):
+                    command += [str(v).lower()]
                 else:
                     command += [str(v)]
             # Add threads parameter for TOPP tools

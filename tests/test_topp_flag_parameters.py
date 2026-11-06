@@ -279,6 +279,12 @@ class TestRegularParameters:
         cmd = build_command({TOOL: {"ids": []}})
         assert not has_flag(cmd, "ids")
 
+    def test_bool_value_lowercase(self):
+        """A boolean (non-flag) parameter goes to OpenMS as true/false."""
+        cmd = build_command({TOOL: {"merge": True, "keep": False}})
+        assert values_after(cmd, "merge") == ["true"]
+        assert values_after(cmd, "keep") == ["false"]
+
 
 class TestCustomParameters:
     """custom_params share the flag set and expand non-empty lists."""
@@ -300,6 +306,10 @@ class TestCustomParameters:
     def test_custom_scalar_value(self):
         cmd = build_command(custom_params={"extra": 5})
         assert values_after(cmd, "extra") == ["5"]
+
+    def test_custom_bool_value_lowercase(self):
+        cmd = build_command(custom_params={"merge": True})
+        assert values_after(cmd, "merge") == ["true"]
 
     def test_custom_nonempty_list_expanded(self):
         cmd = build_command(custom_params={"ids": ["a", "b", "c"]})

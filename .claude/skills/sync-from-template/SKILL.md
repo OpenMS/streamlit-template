@@ -58,7 +58,8 @@ PY
 ```
 
 Before an `app.yaml` exists in the app (first sync), treat `app.py`,
-`settings.json`, `default-parameters.json`, `presets.json`, `content/`,
+`settings.json`, `default-parameters.json`, `presets.json`,
+`parameter-names.json`, `content/`,
 `src/Workflow.py` and the app's own workflow classes, `src/python-tools/`,
 `example-data/`, `assets/`, `README.md` and `k8s/overlays/` as app-owned, and
 add `app.yaml` in the same PR (`configure-app-identity`).
@@ -70,7 +71,7 @@ Recurring hot spots:
 | `requirements.txt` | union of both; keep the app's pins where both pin |
 | `settings.json` | keep the app's values, add new template keys with their defaults |
 | `.github/workflows/build-windows-executable-app.yaml` | take the template's, then restore the app's `APP_NAME` and `TOPP_TOOLS` |
-| `Dockerfile*` | take the template's, restore the app's `GITHUB_REPO` and extra build steps |
+| `Dockerfile*` | take the template's; they are template-owned. The installer repository comes from `settings.json`, conda-forge tools go in the app's `conda-requirements.txt`. An app that still owns its Dockerfiles moves its extra steps there and drops them from `sync.app_owned` |
 | `k8s/storage/*`, `k8s/ci-storage/*` | take the template's; they carry no app names. A cluster's two storage values (share type, node subnet) live in the copy the operator applies, not in the app |
 | `.claude/skills/*` | always the template's; an app-specific skill gets its own directory name |
 

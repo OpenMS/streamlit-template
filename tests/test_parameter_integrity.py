@@ -899,7 +899,8 @@ def test_cpu_quota_ignored_in_local_mode(tmp_path, monkeypatch):
         tmp_path,
         monkeypatch,
         {"online_deployment": False, "max_threads": {"local": 9, "online": 2}},
-        params_json={"max_threads": 3},
+        # What the Threads widget writes for a value the user chose.
+        params_json={"max_threads": 3, "_max_threads_user": True},
         cpu_quota=20,
     )
 
@@ -984,3 +985,157 @@ def test_detect_cpu_quota_absent_everywhere(tmp_path, monkeypatch):
     monkeypatch.setitem(g, "CGROUP_V1_CPU_PERIOD", tmp_path / "no-period")
 
     assert detect() is None
+
+
+# ---------------------------------------------------------------------------
+# "auto" thread budget: every usable CPU but one
+# ---------------------------------------------------------------------------
+
+
+def _pin_usable_cpus(monkeypatch, visible, quota=None):
+    """Pin what the auto thread budget sees: CPUs visible to the process and
+    the cgroup quota. Patched in the live settings_io namespace (see
+    _settings_io_ns for why)."""
+    ns = CommandExecutor._get_max_threads.__globals__["resolve_thread_setting"].__globals__
+    fake_os = MagicMock(wraps=ns["os"])
+    fake_os.sched_getaffinity = lambda pid: set(range(visible))
+    monkeypatch.setitem(ns, "os", fake_os)
+    monkeypatch.setitem(ns, "detect_cpu_quota", lambda: quota)
+    return ns
+
+
+@pytest.mark.parametrize("configured", ["auto", "AUTO", None, -1])
+def test_auto_local_threads_are_all_cpus_but_one(tmp_path, monkeypatch, configured):
+    _pin_usable_cpus(monkeypatch, visible=16)
+    executor = _executor_in_worker(
+        tmp_path,
+        monkeypatch,
+        {"online_deployment": False, "max_threads": {"local": configured}},
+    )
+    assert executor._get_max_threads() == 15
+
+
+def test_auto_is_the_default_when_max_threads_is_missing(tmp_path, monkeypatch):
+    _pin_usable_cpus(monkeypatch, visible=8)
+    executor = _executor_in_worker(tmp_path, monkeypatch, {"online_deployment": False})
+    assert executor._get_max_threads() == 7
+
+
+def test_auto_respects_container_cpu_limit(tmp_path, monkeypatch):
+    """A container limited to 4 CPUs on a 64 core host uses 3, not 63."""
+    _pin_usable_cpus(monkeypatch, visible=64, quota=4)
+    executor = _executor_in_worker(
+        tmp_path,
+        monkeypatch,
+        {"online_deployment": False, "max_threads": {"local": "auto"}},
+    )
+    assert executor._get_max_threads() == 3
+
+
+def test_auto_never_goes_below_one(tmp_path, monkeypatch):
+    _pin_usable_cpus(monkeypatch, visible=1)
+    executor = _executor_in_worker(
+        tmp_path,
+        monkeypatch,
+        {"online_deployment": False, "max_threads": {"local": "auto"}},
+    )
+    assert executor._get_max_threads() == 1
+
+
+def test_auto_online_without_quota(tmp_path, monkeypatch):
+    _pin_usable_cpus(monkeypatch, visible=12)
+    executor = _executor_in_worker(
+        tmp_path,
+        monkeypatch,
+        {"online_deployment": True, "max_threads": {"online": "auto"}},
+    )
+    assert executor._get_max_threads() == 11
+
+
+def test_number_still_pins_local_threads(tmp_path, monkeypatch):
+    _pin_usable_cpus(monkeypatch, visible=16)
+    executor = _executor_in_worker(
+        tmp_path,
+        monkeypatch,
+        {"online_deployment": False, "max_threads": {"local": 5}},
+    )
+    assert executor._get_max_threads() == 5
+
+
+def test_template_settings_default_to_auto():
+    settings = json.loads(Path("settings.json").read_text(encoding="utf-8"))
+    assert settings["max_threads"] == {"local": "auto", "online": "auto"}
+
+
+# ---------------------------------------------------------------------------
+# A stored Threads value counts only when the user chose it
+# ---------------------------------------------------------------------------
+
+
+def _pm_ns():
+    return ParameterManager.get_parameters_from_json.__globals__
+
+
+def test_unmarked_stored_threads_are_ignored(tmp_path, monkeypatch):
+    """Earlier versions stored the Threads default (4) on every Configure
+    visit; that value must not pin the workspace."""
+    _pin_usable_cpus(monkeypatch, visible=16)
+    executor = _executor_in_worker(
+        tmp_path,
+        monkeypatch,
+        {"online_deployment": False, "max_threads": {"local": "auto"}},
+        params_json={"max_threads": 4},
+    )
+    assert executor._get_max_threads() == 15
+
+
+def test_marked_stored_threads_are_kept(tmp_path, monkeypatch):
+    _pin_usable_cpus(monkeypatch, visible=16)
+    executor = _executor_in_worker(
+        tmp_path,
+        monkeypatch,
+        {"online_deployment": False, "max_threads": {"local": "auto"}},
+        params_json={"max_threads": 6, "_max_threads_user": True},
+    )
+    assert executor._get_max_threads() == 6
+
+
+def test_threads_saved_only_when_they_differ_from_the_default(monkeypatch):
+    ns = _pm_ns()
+    monkeypatch.setitem(ns, "local_thread_default", lambda settings=None: 7)
+    keep = ns["_keep_threads_only_if_chosen"]
+
+    params = {"max_threads": 7, "_max_threads_user": True, "x": 1}
+    keep(params)
+    assert params == {"x": 1}
+
+    params = {"max_threads": 3}
+    keep(params)
+    assert params == {"max_threads": 3, "_max_threads_user": True}
+
+    params = {"x": 1}
+    keep(params)
+    assert params == {"x": 1}
+
+
+def test_drop_automatic_threads_leaves_other_keys():
+    drop = _pm_ns()["_drop_automatic_threads"]
+    assert drop({"max_threads": 4, "x": 1}) == {"x": 1}
+    assert drop({"max_threads": 4, "_max_threads_user": True}) == {
+        "max_threads": 4,
+        "_max_threads_user": True,
+    }
+
+
+def test_local_threads_pinned_only_for_numbers():
+    from src.workflow.settings_io import local_threads_pinned
+    assert local_threads_pinned({"max_threads": {"local": 6}})
+    assert local_threads_pinned({"max_threads": {"local": "6"}})
+    for value in ("auto", "AUTO", None, -1, "abc", 0):
+        assert not local_threads_pinned({"max_threads": {"local": value}})
+    assert not local_threads_pinned({})
+
+
+def test_invalid_local_setting_falls_back_to_cpu_default():
+    from src.workflow.settings_io import default_thread_count, local_thread_default
+    assert local_thread_default({"max_threads": {"local": "abc"}}) == default_thread_count()

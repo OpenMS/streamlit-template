@@ -49,6 +49,8 @@ class RemoteFile:
     stored_size: Optional[int] = None
     deflate: bool = False
     crc32: Optional[int] = None
+    # Whether the import table ticks it at first (a source may leave out duplicates)
+    preselect: bool = True
 
     @property
     def name(self) -> str:

@@ -114,9 +114,9 @@ Presets allow users to quickly apply optimized parameter configurations. They ar
 1. Choose one of the Dockerfiles depending on your use case:
     - `Dockerfile` builds OpenMS including TOPP tools
     - `Dockerfile_simple` uses pyOpenMS only
-2. Update the Dockerfile:
-    - with the `GITHUB_USER` owning the Streamlit app repository
-    - with the `GITHUB_REPO` name of the Streamlit app repository
+2. The Dockerfiles are template-owned and take the app's values from its own files:
+    - the bundled Windows installer comes from the latest release of `github-user`/`repository-name` in `settings.json`
+    - command line tools from conda-forge (SIRIUS, for example) go one per line into an optional `conda-requirements.txt` (end a line with `# [x86_64]` or `# [aarch64]` to install it on that architecture only)
     - if your main page Python file is not called `app.py`, modify the following line
         ```dockerfile
         RUN echo "mamba run --no-capture-output -n streamlit-env streamlit run app.py" >> /app/entrypoint.sh

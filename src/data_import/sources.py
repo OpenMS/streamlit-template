@@ -1,7 +1,8 @@
 """Turn a link into a list of files.
 
 Each source is a function that recognises its links and lists their files.
-Supported: Zenodo records, Figshare articles, OneDrive and SharePoint sharing
+Supported: PRIDE Archive datasets (by accession), Zenodo records, Figshare
+articles, OneDrive and SharePoint sharing
 links, S3 bucket listings (AWS, CSC Allas, MinIO, Ceph), OpenStack Swift
 container listings (CSC Allas), and any
 single file over HTTP(S), presigned S3 and Swift TempURL links included. An
@@ -63,6 +64,134 @@ def _text(session: requests.Session, url: str, **kwargs) -> requests.Response:
         raise IOError("The listing is too large.")
     response._content = body
     return response
+
+
+# ---------------------------------------------------------------------------
+# PRIDE Archive
+# ---------------------------------------------------------------------------
+
+PRIDE_API = "https://www.ebi.ac.uk/pride/ws/archive/v3"
+PRIDE_PAGE = "https://www.ebi.ac.uk/pride/archive/projects/{accession}"
+PRIDE_PAGE_SIZE = 100
+PRIDE_ACCESSION_RE = re.compile(r"\b(P[XR]D\d{6})\b", re.IGNORECASE)
+# Hosts whose links name a dataset rather than one of its files
+PRIDE_HOSTS = ("www.ebi.ac.uk", "ebi.ac.uk", "proteomecentral.proteomexchange.org",
+               "identifiers.org", "ftp.pride.ebi.ac.uk")
+# Vendor files the converted mzML of the same run makes unnecessary to download
+_PRIDE_VENDOR_SUFFIXES = (".raw", ".d.zip", ".d.tar", ".d.tar.gz", ".wiff", ".wiff.scan")
+# Larger datasets start with nothing ticked, so a click does not start terabytes
+PRIDE_PRESELECT_MAX_BYTES = 50 * 10**9
+
+
+def pride_accession(link: str) -> str:
+    """The PRIDE accession a link or a bare accession names ('' if none).
+
+    Accepts ``PXD000001`` (any case), the PRIDE project page, the
+    ProteomeXchange page, identifiers.org, the DOI ``10.6019/PXD000001`` and
+    the dataset's folder on the PRIDE FTP server. A link to a single file on
+    the FTP server is left to the single-file source.
+    """
+    link = (link or "").strip()
+    match = PRIDE_ACCESSION_RE.fullmatch(link) or re.fullmatch(
+        r"(?:https?://(?:dx\.)?doi\.org/)?10\.6019/(P[XR]D\d{6})", link, re.IGNORECASE)
+    if match:
+        return match.group(1).upper()
+    parts = urlsplit(link if "://" in link else "https://" + link)
+    host = (parts.hostname or "").lower()
+    if PRIDE_ACCESSION_RE.fullmatch(host):
+        return host.upper()  # a bare accession, after normalize() made it a link
+    if host not in PRIDE_HOSTS:
+        return ""
+    if host == "ftp.pride.ebi.ac.uk" and not _looks_like_folder(link):
+        return ""
+    match = PRIDE_ACCESSION_RE.search(unquote(parts.path) + "?" + unquote(parts.query))
+    return match.group(1).upper() if match else ""
+
+
+def _pride_url(entry: dict) -> str:
+    """HTTPS link of a PRIDE file: its FTP server serves the same paths over HTTPS."""
+    for location in entry.get("publicFileLocations") or []:
+        value = location.get("value", "")
+        if value.startswith("ftp://"):
+            return "https://" + value[len("ftp://"):]
+        if value.startswith("https://"):
+            return value
+    return ""
+
+
+def _pride_names(entries) -> List[str]:
+    names = []
+    for entry in entries or []:
+        name = entry.get("name") if isinstance(entry, dict) else entry
+        if name and str(name) not in names:
+            names.append(str(name))
+    return names
+
+
+def _run_name(path: str) -> str:
+    name = PurePosixPath(path).name.lower()
+    for suffix in (".gz", ".zip", ".tar"):
+        name = name.removesuffix(suffix)
+    return name.rsplit(".", 1)[0] if "." in name else name
+
+
+def pride(session, link: str) -> Optional[Listing]:
+    """A PRIDE Archive dataset: its files, with the project's description as notes.
+
+    When a run is there both as mzML and as a vendor file, only the mzML is
+    selected at first.
+    """
+    accession = pride_accession(link)
+    if not accession:
+        return None
+    try:
+        project = _json(session, f"{PRIDE_API}/projects/{accession}")
+    except LookupError:
+        raise LookupError(f"{accession} was not found in PRIDE, or is not public yet.") from None
+    files, page = [], 0
+    while len(files) <= MAX_LISTED_FILES:
+        entries = _json(session, f"{PRIDE_API}/projects/{accession}/files",
+                        params={"pageSize": PRIDE_PAGE_SIZE, "page": page})
+        if isinstance(entries, dict):  # older HAL responses
+            entries = (entries.get("_embedded") or {}).get("files", [])
+        for entry in entries:
+            checksum = (entry.get("checksum") or "").lower()
+            files.append(RemoteFile(
+                path=entry.get("fileName", ""), size=int(entry.get("fileSizeBytes") or 0) or None,
+                url=_pride_url(entry), md5=checksum if re.fullmatch(r"[0-9a-f]{32}", checksum) else "",
+            ))
+        if len(entries) < PRIDE_PAGE_SIZE:
+            break
+        page += 1
+    mzml_runs = {_run_name(f.path) for f in files
+                 if f.path.lower().removesuffix(".gz").endswith(".mzml")}
+    for f in files:
+        if f.path.lower().endswith(_PRIDE_VENDOR_SUFFIXES) and _run_name(f.path) in mzml_runs:
+            f.preselect = False
+
+    notes = []
+    ticked = sum(f.size or 0 for f in files if f.preselect)
+    if ticked > PRIDE_PRESELECT_MAX_BYTES:
+        for f in files:
+            f.preselect = False
+        notes.append(f"The dataset holds {ticked / 1e9:.0f} GB, so no file is ticked at first: "
+                     "tick the runs to reanalyse.")
+    facts = [("Organisms", project.get("organisms")), ("Instruments", project.get("instruments")),
+             ("Modifications", project.get("identifiedPTMStrings")),
+             ("Quantification", project.get("quantificationMethods"))]
+    line = "; ".join(f"{label}: {', '.join(_pride_names(values))}"
+                     for label, values in facts if _pride_names(values))
+    if line:
+        notes.append(line)
+    description = (project.get("projectDescription") or "").strip()
+    if description:
+        notes.append(description if len(description) <= 600 else description[:600].rsplit(" ", 1)[0] + " ...")
+    if mzml_runs and ticked <= PRIDE_PRESELECT_MAX_BYTES and any(not f.preselect for f in files):
+        notes.append("Runs that are in the dataset as mzML too are selected only as mzML; "
+                     "tick their vendor files to download those as well.")
+    title = project.get("title") or accession
+    return Listing(title=f"PRIDE {accession}: {title}", url=PRIDE_PAGE.format(accession=accession),
+                   files=files, notes=notes)
 
 
 # ---------------------------------------------------------------------------
@@ -355,7 +484,7 @@ def single_file(session, link: str) -> Optional[Listing]:
     return Listing(title=file.path, url=link, files=[file])
 
 
-SOURCES: List[Callable] = [zenodo, figshare, onedrive, swift, s3, single_file]
+SOURCES: List[Callable] = [pride, zenodo, figshare, onedrive, swift, s3, single_file]
 
 
 def normalize(link: str) -> str:
@@ -391,6 +520,7 @@ def _open_archives(session, listing: Listing) -> None:
             opened += 1
             for m in members:
                 m.path = f"{f.path}/{m.path}"
+                m.preselect = f.preselect
             expanded.extend(members)
         except Exception as e:  # offer it whole instead
             listing.notes.append(f"{f.path}: could not read its table of contents ({e}); "
@@ -404,12 +534,12 @@ def resolve(session: requests.Session, link: str) -> Listing:
     link = normalize(link)
     if urlsplit(link).hostname in ("doi.org", "dx.doi.org"):
         doi = unquote(urlsplit(link).path.lstrip("/"))
-        for source in (zenodo, figshare):
+        for source in (pride, zenodo, figshare):
             listing = source(session, doi)
             if listing:
                 break
         else:
-            raise LookupError("Only Zenodo and Figshare DOIs can be imported; "
+            raise LookupError("Only PRIDE, Zenodo and Figshare DOIs can be imported; "
                               "for other DOIs, link to the data file.")
     else:
         listing = None
