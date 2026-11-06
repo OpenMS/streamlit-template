@@ -246,6 +246,75 @@ The module is loaded first because the parameter file exists only while `nfsv4` 
 
 `k8s/ci-storage/` is **not** for real clusters. It is what the kind jobs in CI apply instead: one NFS-Ganesha server inside the cluster, publishing a StorageClass with the same name and mount options, because a GitHub runner cannot reach Manila. `assert_storage_class_contract` keeps the two classes in step.
 
+## 3c. S3 storage (optional, `k8s/storage-s3/`)
+
+An alternative to the Manila class for clusters whose storage is offered as S3 object storage only. It is **off by default**: an app keeps the Manila share until its overlay adds the component `k8s/components/storage-s3`, and the app code works the same on both.
+
+The apps cannot use a bucket directly. TOPP tools and pyOpenMS open files by path, a workspace is shared by the Streamlit and worker pods on several nodes, and uploads and logs rely on file locks and atomic renames. This root therefore mounts the bucket as a POSIX file system with [JuiceFS](https://juicefs.com) (Apache 2.0): file data goes to the bucket in chunks, names, directories and locks are kept in a small PostgreSQL database. Every pod still sees `/workspaces-<slug>` as an ordinary directory.
+
+| File | Purpose |
+|------|---------|
+| `kustomization.yaml` | Inflates the `juicefs-csi-driver` chart 0.32.4 into `openms-storage` and adds the files below. |
+| `juicefs-csi-values.yaml` | Helm values: CE mount image `juicedata/mount:ce-v1.4.1`, provisioner on, no chart StorageClasses, no dashboard or webhooks. |
+| `storageclass.yaml` | `openms-juicefs-s3`: provisioner `csi.juicefs.com`, `reclaimPolicy: Retain`, expansion on. `pathPattern: ${.pvc.labels.app}` puts every app in one directory named after its slug, and the claim's size becomes that directory's quota. |
+| `metadata-db.yaml` | PostgreSQL 16 for the JuiceFS metadata, on a 10 Gi RWO volume of the cluster's default class. JuiceFS writes a metadata backup into the bucket every hour. |
+| `s3-gateway.yaml` | `juicefs gateway --multi-buckets` (2 replicas) at `juicefs-s3-gateway.openms-storage.svc:9000`: every app directory is served as an S3 bucket of the same name, one object per file. This is what lets code read workspace files through the S3 API (see below). |
+
+**Secrets.** None is committed. Create them before the first apply. Use URL-safe passwords (`openssl rand -hex 24`), because the database password is part of the `metaurl` URL and `@ : / ?` in it break the URL. The gateway user needs at least 3 characters and its password at least 8, or the gateway pods fail at start.
+
+```bash
+kubectl create namespace openms-storage
+
+# File system and bucket: the JuiceFS volume name, the metadata URL, and the S3 bucket with its credentials.
+kubectl -n openms-storage create secret generic juicefs-meta-db \
+  --from-literal=password=<db-password>
+kubectl -n openms-storage create secret generic juicefs-s3-credentials \
+  --from-literal=name=openms-workspaces \
+  --from-literal=metaurl='postgres://juicefs:<db-password>@juicefs-meta.openms-storage.svc:5432/juicefs?sslmode=disable' \
+  --from-literal=storage=s3 \
+  --from-literal=bucket=https://<s3-endpoint>/<bucket> \
+  --from-literal=access-key=<ec2-access-key> \
+  --from-literal=secret-key=<ec2-secret-key>
+
+# Credentials the S3 gateway accepts, and the same pair for every app namespace that uses it.
+kubectl -n openms-storage create secret generic juicefs-s3-gateway \
+  --from-literal=access-key=<gateway-user> --from-literal=secret-key=<gateway-password>
+kubectl -n openms create secret generic workspaces-s3-gateway \
+  --from-literal=access-key=<gateway-user> --from-literal=secret-key=<gateway-password>
+```
+
+**One trust domain.** The gateway has one credential pair, and it reaches the folder of every app. Each app mounts only its own folder, but any pod with the `WORKSPACES_S3_*` variables can read and write the workspaces of every S3-enabled app through the gateway, and presigned links are signed with that pair. The apps share the `openms` namespace and its secrets anyway, so treat all S3-enabled apps on a cluster as one trust domain for workspace data.
+
+**Install**, once per cluster (Helm on `PATH`, as for `k8s/storage/`):
+
+```bash
+kubectl kustomize --enable-helm k8s/storage-s3/                 # inspect
+kubectl kustomize --enable-helm k8s/storage-s3/ | kubectl apply -f -
+```
+
+The file system is formatted by the CSI driver on first use. Rendering writes the chart into `k8s/storage-s3/charts/`, which is gitignored.
+
+**Test before switching an app**: create a claim of class `openms-juicefs-s3` with an `app: s3-test` label, mount it from two pods on different nodes, and check that a file written on one is read on the other and that `flock` on the same file blocks across the two. Delete the claim and the `s3-test` directory afterwards.
+
+**Switch an app** by adding the component to its overlay:
+
+```yaml
+components:
+  - ../../components/memory-tier-low
+  - ../../components/storage-s3
+```
+
+The component renames the workspace claim to `<slug>-workspaces-s3-pvc` with class `openms-juicefs-s3`, points every Deployment and CronJob at it, and gives the `streamlit`, `rq-worker` and `sync` containers the `WORKSPACES_S3_*` variables for the gateway. Nothing is copied: workspaces expire after seven days, so users simply start on the new volume, and the old Manila claim (annotated `Prune=false`) is deleted by hand once nobody needs it. Removing the component switches back the same way.
+
+**Reading workspace files through the S3 API.** `src/common/storage.py` (no Streamlit) tells code where it runs. `s3_enabled()` is true only when all four `WORKSPACES_S3_ENDPOINT`, `_BUCKET`, `_ACCESS_KEY` and `_SECRET_KEY` are set; then `uri(path)` maps a path under `WORKSPACES_DIR` to `s3://<bucket>/<key>` and `options()` returns polars/object_store `storage_options`. Off S3 both return the local path and `None`, so
+
+```python
+from src.common import storage
+lf = pl.scan_parquet(storage.uri(path), storage_options=storage.options())
+```
+
+works unchanged on either storage. Writes keep going to the mounted path. `presigned_url(path, endpoint=...)` signs a time-limited GET link for a file; the gateway is cluster-internal, so a link meant for a browser needs a public endpoint for it. Reading through the gateway adds a network hop compared with the mount's local cache, so use it where S3 access pays off (large columnar scans with predicate pushdown), not for small files.
+
 ## 4. Fork-and-deploy guide
 
 ### Prerequisites

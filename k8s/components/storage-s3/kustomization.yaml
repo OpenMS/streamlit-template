@@ -1,0 +1,43 @@
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+# Switches this app's workspaces from the Manila share to S3 object storage
+# (JuiceFS, published once per cluster by k8s/storage-s3/). Enable it in the
+# app's overlay once that tier is installed:
+#
+#   components:
+#     - ../../components/memory-tier-low
+#     - ../../components/storage-s3
+#
+# What changes:
+#   - the workspace claim is renamed to `workspaces-s3-pvc` and claims the
+#     class openms-juicefs-s3. A bound claim's class cannot be edited, hence a
+#     new name; kustomize follows the rename into every `claimName`. The
+#     Manila claim is Prune=false, so Argo CD leaves it (and its share) in
+#     place as the rollback until it is deleted by hand. The overlay's size
+#     patch on `workspaces-manila-pvc` keeps applying (kustomize matches the
+#     original name) and becomes the JuiceFS directory quota
+#   - mount path, access mode and pod placement stay the same: the app code
+#     sees the same directory
+#   - streamlit, rq-worker and sync get the WORKSPACES_S3_* variables that
+#     src/common/storage.py reads to hand out s3:// URIs (polars) and
+#     presigned links for files under the workspace directory
+#
+# Nothing is copied: workspaces expire after 7 days and demo workspaces are
+# re-seeded from the image. Workspaces from the last 7 days stay on the old
+# share.
+patches:
+  - target:
+      kind: PersistentVolumeClaim
+      name: workspaces-manila-pvc
+    patch: |
+      - op: replace
+        path: /metadata/name
+        value: workspaces-s3-pvc
+      - op: replace
+        path: /spec/storageClassName
+        value: openms-juicefs-s3
+  - path: s3-env.yaml
+    target:
+      kind: Deployment
+      name: ^(streamlit|rq-worker|sync)$
