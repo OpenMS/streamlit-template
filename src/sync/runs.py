@@ -146,6 +146,7 @@ def start(qm, workspace: Path, workflow: str, target: str, params: dict,
         kwargs={"workflow_dir": str(workflow_dir), "workflow_class": cls,
                 "workflow_module": module, "run_id": run_id},
         job_id=f"workflow-{workspace.name}-{workflow}-{int(time.time())}",
+        timeout=_job_timeout(params),
         description=f"Workflow: {workflow} (from the desktop app)",
     )
     if not job_id:
@@ -154,6 +155,13 @@ def start(qm, workspace: Path, workflow: str, target: str, params: dict,
         raise RuntimeError("the queue did not accept the run")
     qm.store_job_id(workflow_dir, job_id)
     return status(qm, workspace, workflow)
+
+
+def _job_timeout(params: dict) -> int:
+    """The run's time limit, by its input files (src/workflow/job_timeout.py)."""
+    from src.workflow.job_timeout import count_input_files, job_timeout
+    from src.workflow.settings_io import load_settings
+    return job_timeout(count_input_files(params), load_settings().get("queue_settings", {}))
 
 
 _ACTIVE = ("queued", "started", "deferred")

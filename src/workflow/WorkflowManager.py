@@ -124,6 +124,7 @@ class WorkflowManager:
                 "run_id": self.run_id if self.multi_run else None,
             },
             job_id=job_id,
+            timeout=self.job_timeout(),
             description=f"Workflow: {self.name}"
         )
 
@@ -134,6 +135,19 @@ class WorkflowManager:
             # Fallback to local execution if queue submission fails
             st.warning("Queue submission failed, running locally...")
             self._start_workflow_local()
+
+    def job_timeout(self) -> int:
+        """Time limit (s) of a queued run: grows with the run's input files.
+
+        settings.json queue_settings: default_timeout + timeout_per_input per
+        selected input file, at most max_timeout (src/workflow/job_timeout.py).
+        Override for a workflow whose run time follows something else.
+        """
+        from .job_timeout import count_input_files, job_timeout
+        from .settings_io import load_settings
+
+        params = self.parameter_manager.get_parameters_from_json()
+        return job_timeout(count_input_files(params), load_settings().get("queue_settings", {}))
 
     def _start_workflow_local(self) -> None:
         """Start the workflow in a separate Python process (local mode)."""
