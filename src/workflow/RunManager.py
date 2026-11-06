@@ -29,6 +29,8 @@ RUN_FILE = "run.json"
 DESIGN_FILE = "experimental-design.tsv"
 # params.json key naming the run whose settings the next run starts from
 FOLLOW_UP_KEY = "_follow_up"
+# Without run folders: what the last start followed (WorkflowManager.start_from)
+FOLLOW_UP_FILE = "last-follow-up.json"
 MAX_NAME_LENGTH = 100
 # Largest unpacked size import_zip() accepts by default
 MAX_IMPORT_BYTES = 20 * 1024**3

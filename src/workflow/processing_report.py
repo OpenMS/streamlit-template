@@ -281,6 +281,12 @@ def report_for(workflow_dir: Path, run_id: Optional[str] = None, settings: Optio
         params = json.loads(Path(base, "params.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         params = {}
+    if run_id is None and "_follow_up" not in params:
+        # An app without run folders keeps it apart, so the next settings start fresh
+        try:
+            params["_follow_up"] = json.loads(Path(workflow_dir, "last-follow-up.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            pass
     if settings is None:
         try:
             settings = json.loads(Path("settings.json").read_text(encoding="utf-8"))

@@ -185,3 +185,14 @@ def test_apply_settings_starts_from_stored_settings(tmp_path):
         "mzML-files": ["a.mzML"], "Tool": {"a": 1, "b": 2}, "identify": True,
         FOLLOW_UP_KEY: {"name": "a", "note": "with identification"},
     }
+
+
+def test_report_without_run_folders_names_what_the_last_start_followed(tmp_path):
+    _workflow(tmp_path)
+    Path(tmp_path, "params.json").write_text("{}")
+    Path(tmp_path, "last-follow-up.json").write_text(json.dumps({"name": "A", "note": "with identification"}))
+
+    report = report_for(tmp_path, settings={})
+
+    assert report["run"]["follows"] == "A"
+    assert "| Settings from | A (with identification) |" in to_markdown(report)

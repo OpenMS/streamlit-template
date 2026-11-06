@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from typing import Optional
 from .Logger import Logger
@@ -5,7 +6,7 @@ from .ParameterManager import ParameterManager
 from .CommandExecutor import CommandExecutor
 from .StreamlitUI import StreamlitUI
 from .FileManager import FileManager
-from .RunManager import RunManager, FINISHED, FAILED, CANCELLED, RUNNING, FOLLOW_UP_KEY, apply_settings
+from .RunManager import RunManager, FINISHED, FAILED, CANCELLED, RUNNING, FOLLOW_UP_KEY, FOLLOW_UP_FILE, apply_settings
 import multiprocessing
 import streamlit as st
 import shutil
@@ -87,10 +88,24 @@ class WorkflowManager:
         self.parameter_manager.save_parameters()
         if self.multi_run:
             self._new_run()
+        else:
+            self._settle_follow_up()
         if self._queue_manager and self._queue_manager.is_available:
             self._start_workflow_queued()
         else:
             self._start_workflow_local()
+
+    def _settle_follow_up(self) -> None:
+        """Without run folders: the start keeps which result it follows (for the
+        processing report), and the next settings start fresh."""
+        params = self.parameter_manager.get_parameters_from_json()
+        info = params.pop(FOLLOW_UP_KEY, None)
+        sidecar = Path(self.workflow_dir, FOLLOW_UP_FILE)
+        if isinstance(info, dict):
+            sidecar.write_text(json.dumps(info), encoding="utf-8")
+            self.parameter_manager.write_parameters(params)
+        else:
+            sidecar.unlink(missing_ok=True)
 
     def _new_run(self) -> None:
         """Create the run this start writes into, and show it on the results pages."""
