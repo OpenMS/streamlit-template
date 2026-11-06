@@ -14,22 +14,115 @@ developmentMode = false
 files = ["/app/admin-secrets/secrets.toml", "~/.streamlit/secrets.toml", ".streamlit/secrets.toml"]
 
 [server]
+# Serves ./static at app/static/: the self-hosted fonts of the theme below.
+enableStaticServing = true
 address = "0.0.0.0"
 maxUploadSize =  200 #MB
 port = 8501 # should be same as configured in deployment repo
 
 
 [theme]
+# OpenMS "Studio Blue", from the OpenMS corporate design (OpenMS/Assets):
+# Raleway for text, Montserrat Alternates for headings (the logo's face),
+# JetBrains Mono for data, colours from the corporate palette. The layout
+# around it (rounded page sheet, pill navigation) is in src/common/theme.css.
 # Theme settings shared by the light and dark theme go here (font, radius, ...).
 # Do not set "base": a base pins the app to that theme and removes the
 # light/dark choice. With both [theme.light] and [theme.dark] defined, the app
 # follows the operating system's color scheme, and users can switch in the
 # app menu (⋮ → Settings → "Choose app theme").
+font = "Raleway"
+headingFont = "Montserrat Alternates"
+codeFont = "JetBrains Mono"
+baseFontSize = 14
+baseRadius = "12px"
+buttonRadius = "full"
+showWidgetBorder = true
+showSidebarBorder = false
+headingFontWeights = [700, 700, 600, 600, 600, 600]
+# Corporate palette: blue, orange, purple, pink, yellow, deep blue, grey.
+chartCategoricalColors = ["#3157e9", "#ff7501", "#b503ff", "#ff03cb", "#ffb401", "#1436b8", "#76696c"]
+# Warm white through the logo gradient to deep blue.
+chartSequentialColors = ["#fff9ec", "#ffe29e", "#ffcb4f", "#ff7501", "#ff03cb", "#b503ff", "#7f00b4", "#3157e9", "#1436b8", "#0c2171"]
+
+# Self-hosted (static/fonts, SIL Open Font License), so no request goes to Google Fonts.
+[[theme.fontFaces]]
+family = "Raleway"
+url = "app/static/fonts/raleway-latin-400-normal.woff2"
+weight = 400
+
+[[theme.fontFaces]]
+family = "Raleway"
+url = "app/static/fonts/raleway-latin-500-normal.woff2"
+weight = 500
+
+[[theme.fontFaces]]
+family = "Raleway"
+url = "app/static/fonts/raleway-latin-600-normal.woff2"
+weight = 600
+
+[[theme.fontFaces]]
+family = "Raleway"
+url = "app/static/fonts/raleway-latin-700-normal.woff2"
+weight = 700
+
+[[theme.fontFaces]]
+family = "JetBrains Mono"
+url = "app/static/fonts/jetbrains-mono-latin-400-normal.woff2"
+weight = 400
+
+[[theme.fontFaces]]
+family = "JetBrains Mono"
+url = "app/static/fonts/jetbrains-mono-latin-500-normal.woff2"
+weight = 500
+
+[[theme.fontFaces]]
+family = "JetBrains Mono"
+url = "app/static/fonts/jetbrains-mono-latin-600-normal.woff2"
+weight = 600
+
+[[theme.fontFaces]]
+family = "Montserrat Alternates"
+url = "app/static/fonts/montserrat-alternates-latin-500-normal.woff2"
+weight = 500
+
+[[theme.fontFaces]]
+family = "Montserrat Alternates"
+url = "app/static/fonts/montserrat-alternates-latin-600-normal.woff2"
+weight = 600
+
+[[theme.fontFaces]]
+family = "Montserrat Alternates"
+url = "app/static/fonts/montserrat-alternates-latin-700-normal.woff2"
+weight = 700
+
+[[theme.fontFaces]]
+family = "Montserrat Alternates"
+url = "app/static/fonts/montserrat-alternates-latin-800-normal.woff2"
+weight = 800
 
 [theme.light]
-# Primary accent color for interactive elements.
-primaryColor = "#29379b"
+# Deep blue #1436b8 for actions; a blue-tinted canvas around the white page sheet.
+primaryColor = "#1436b8"
+backgroundColor = "#eef1fd"
+secondaryBackgroundColor = "#f3f5fe"
+textColor = "#231f20"
+borderColor = "#d3dbf7"
+linkColor = "#1436b8"
+
+[theme.light.sidebar]
+backgroundColor = "#eef1fd"
+secondaryBackgroundColor = "#f3f5fe"
 
 [theme.dark]
-# Lighter shade of the OpenMS blue, readable on the dark background.
-primaryColor = "#7d8ce8"
+# Lighter blue, readable on the dark background.
+primaryColor = "#7891f1"
+backgroundColor = "#1a1718"
+secondaryBackgroundColor = "#2b2627"
+textColor = "#f9f8f9"
+borderColor = "#3a3335"
+linkColor = "#7891f1"
+
+[theme.dark.sidebar]
+backgroundColor = "#1a1718"
+secondaryBackgroundColor = "#2b2627"

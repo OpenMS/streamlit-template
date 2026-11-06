@@ -82,6 +82,23 @@ def third_party_programs(env: dict | None = None) -> list[Component]:
     return programs
 
 
+FONTS = (
+    ("Raleway", "raleway"),
+    ("Montserrat Alternates", "montserrat-alternates"),
+    ("JetBrains Mono", "jetbrains-mono"),
+)
+
+
+def fonts(root: Path | str = ".") -> list[Component]:
+    """The typefaces the app serves from ``static/fonts``, with their licenses."""
+    found = []
+    for name, slug in FONTS:
+        path = Path(root, "static", "fonts", f"LICENSE-{slug}.txt")
+        if path.is_file():
+            found.append(Component(name=name, license="OFL-1.1", files=[path]))
+    return found
+
+
 def thermo_notice(env: dict | None = None) -> str:
     """Thermo's notice when the app ships RawFileReader, else ""."""
     shipped = any(p.name == THERMO_FOLDER for p in tool_folders(env))

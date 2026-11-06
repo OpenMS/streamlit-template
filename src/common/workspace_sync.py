@@ -729,13 +729,13 @@ def render_sync_sidebar() -> None:
     workspace = Path(st.session_state.workspace)
     if st.session_state.location == "online":
         linked = tokens.active_count(workspace.parent, workspace.name)
-        with st.expander("🔄 **Workspace Sync**", expanded=bool(linked)):
+        with st.expander("**Workspace Sync**", icon=":material/sync:", expanded=bool(linked)):
             _online_panel(workspace)
             st.page_link(_PAGE, label="Open sync" if linked else "Link desktop app",
                          icon="🔄" if linked else "🔗")
         return
     link = client.read_link(workspace)
-    with st.expander("🔄 **Workspace Sync**", expanded=True):
+    with st.expander("**Workspace Sync**", icon=":material/sync:", expanded=True):
         if not link:
             st.caption("Not linked to an online workspace.")
             st.page_link(_PAGE, label="Link workspace", icon="🔗")
