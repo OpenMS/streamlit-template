@@ -1,0 +1,712 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Layout editor</title>
+<style>
+  :root {
+    --primary: #ff4b4b;
+    --bg: #ffffff;
+    --bg2: #f0f2f6;
+    --text: #31333f;
+    --border: rgba(49, 51, 63, 0.2);
+    --muted: rgba(49, 51, 63, 0.6);
+    --danger: #d33;
+    --ok: #21a366;
+    --font: "Source Sans Pro", "Source Sans 3", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: transparent; color: var(--text); font-family: var(--font); font-size: 15px; }
+  body { padding: 2px 2px 8px; user-select: none; -webkit-user-select: none; }
+  button { font: inherit; color: inherit; cursor: pointer; }
+
+  .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
+  .toolbar .spacer { flex: 1 1 auto; }
+  .btn { border: 1px solid var(--border); background: var(--bg); border-radius: 8px; padding: 5px 12px; line-height: 1.4; }
+  .btn:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); }
+  .btn:disabled { opacity: .45; cursor: default; }
+  .btn.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+  .btn.primary:hover:not(:disabled) { color: #fff; filter: brightness(1.08); }
+  .stepper { display: inline-flex; align-items: center; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .stepper button { border: 0; background: var(--bg); padding: 5px 10px; }
+  .stepper button:disabled { opacity: .4; cursor: default; }
+  .stepper span { padding: 0 8px; min-width: 1.5em; text-align: center; font-variant-numeric: tabular-nums; }
+  .label { color: var(--muted); }
+  .toggle { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+
+  .status { font-size: 13px; margin: -4px 0 10px; min-height: 18px; color: var(--muted); }
+  .status.dirty { color: #b7791f; }
+  .status.saved { color: var(--ok); }
+  .status.error { color: var(--danger); }
+
+  .main { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 14px; align-items: start; }
+  @media (max-width: 640px) { .main { grid-template-columns: minmax(0, 1fr); } }
+
+  .palette { border: 1px solid var(--border); background: var(--bg2); border-radius: 10px; padding: 10px; position: sticky; top: 0; }
+  .palette h4 { margin: 0 0 2px; font-size: 14px; }
+  .palette .hint { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+  .palette .group { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 8px 0 4px; }
+  .palette .chips { display: flex; flex-direction: column; gap: 5px; }
+  @media (max-width: 640px) { .palette { position: static; } .palette .chips { flex-direction: row; flex-wrap: wrap; } }
+  .palette.drop-over { outline: 2px dashed var(--danger); outline-offset: -4px; }
+
+  .chip { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; border: 1px solid var(--border); background: var(--bg); border-radius: 7px; padding: 5px 8px; cursor: grab; touch-action: none; font-size: 14px; }
+  .chip:hover { border-color: var(--primary); }
+  .chip .grip { color: var(--muted); font-size: 12px; letter-spacing: -2px; }
+  .chip .label { flex: 1 1 0; min-width: 0; color: inherit; }
+  .chip .req { flex-basis: 100%; padding-left: 16px; font-size: 11px; color: var(--muted); white-space: normal; line-height: 1.3; }
+  .chip.used { opacity: .45; }
+
+  .experiments { display: grid; gap: 12px; }
+  .experiments.side-by-side { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  @media (max-width: 640px) { .experiments.side-by-side { grid-template-columns: minmax(0, 1fr); } }
+  .exp { border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px 10px; background: var(--bg); }
+  .exp.active { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary) inset; }
+  .exp-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .exp-head strong { font-size: 14px; }
+  .exp-head .spacer { flex: 1; }
+  .link { border: 0; background: none; color: var(--muted); font-size: 12px; padding: 2px 4px; }
+  .link:hover { color: var(--danger); }
+
+  .row { display: flex; align-items: stretch; min-height: 54px; }
+  .slot { flex: 0 0 8px; border-radius: 6px; transition: flex-basis .08s; }
+  body.dragging .slot.open { flex-basis: 26px; background: rgba(128,128,128,.10); }
+  .slot.drop-over { flex-basis: 40px !important; background: color-mix(in srgb, var(--primary) 25%, transparent) !important; outline: 2px dashed var(--primary); outline-offset: -2px; }
+  .cell { flex: 1 1 0; min-width: 0; position: relative; display: flex; flex-direction: column; justify-content: center;
+          border: 1px solid var(--border); background: var(--bg2); border-radius: 8px; padding: 8px 28px 8px 10px; cursor: grab; touch-action: none; }
+  .cell:hover { border-color: var(--primary); }
+  .cell .name { font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cell .sub { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cell .sub.bad { color: var(--danger); }
+  .cell.invalid { border-color: var(--danger); }
+  .cell .x { position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; border: 0; border-radius: 50%; background: transparent; color: var(--muted); font-size: 15px; line-height: 1; }
+  .cell .x:hover { background: var(--danger); color: #fff; }
+  .cell.drop-over { outline: 2px dashed var(--primary); outline-offset: -3px; }
+  .cell.source { opacity: .35; }
+
+  .newrow { height: 8px; border-radius: 6px; transition: height .08s; }
+  body.dragging .newrow { height: 18px; }
+  .newrow.last { height: auto; min-height: 40px; display: flex; align-items: center; justify-content: center; border: 1.5px dashed var(--border); color: var(--muted); font-size: 13px; margin-top: 6px; }
+  body.dragging .newrow.last { min-height: 46px; }
+  .newrow.drop-over { background: color-mix(in srgb, var(--primary) 20%, transparent); outline: 2px dashed var(--primary); outline-offset: -2px; height: 30px; }
+  .newrow.last.drop-over { border-color: transparent; color: var(--primary); }
+
+  .ghost { position: fixed; z-index: 1000; pointer-events: none; padding: 6px 10px; border-radius: 7px; background: var(--primary); color: #fff;
+           font-size: 14px; font-weight: 600; box-shadow: 0 6px 18px rgba(0,0,0,.25); transform: translate(-50%, -120%); white-space: nowrap; }
+  body.dragging, body.dragging * { cursor: grabbing !important; }
+
+  .toast { position: fixed; left: 50%; bottom: 12px; transform: translateX(-50%); background: #333; color: #fff; padding: 6px 14px; border-radius: 8px; font-size: 13px;
+           opacity: 0; transition: opacity .15s; pointer-events: none; z-index: 1001; }
+  .toast.show { opacity: .95; }
+  input[type=file] { display: none; }
+
+  /* Views mode: the list of views | the selected view | the components */
+  .main.views { grid-template-columns: 210px minmax(0, 1fr) 210px; }
+  @media (max-width: 760px) { .main.views { grid-template-columns: minmax(0, 1fr); } }
+  .vlist { display: grid; gap: 3px; align-content: start; }
+  .vlist h4, .palette h4 { margin: 0 0 2px; font-size: 14px; }
+  .vitem { display: flex; align-items: center; gap: 6px; border: 1px solid transparent; background: var(--bg2); border-radius: 7px; padding: 5px 6px; cursor: grab; touch-action: none; font-size: 14px; }
+  .vitem.sel { border-color: var(--primary); }
+  .vitem .grip { color: var(--muted); font-size: 12px; letter-spacing: -2px; }
+  .vitem .vname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .vitem .tag { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+  .vitem.drop-over { outline: 2px dashed var(--primary); outline-offset: -2px; }
+  .vitem.source { opacity: .35; }
+  .vitem input { margin: 0; cursor: pointer; }
+  .cut { display: flex; justify-content: space-between; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); border-top: 1px dashed var(--border); margin-top: 6px; padding: 6px 4px 2px; border-radius: 4px; }
+  .cut.drop-over { outline: 2px dashed var(--primary); outline-offset: -2px; color: var(--primary); }
+  .vhead { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 6px; }
+  .vhead input { flex: 1 1 160px; min-width: 0; font: inherit; font-weight: 600; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 7px; padding: 4px 8px; }
+  .vhead strong { flex: 1 1 auto; font-size: 15px; }
+  .startfrom { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 13px; background: var(--bg2); border-radius: 8px; padding: 6px 10px; margin-bottom: 8px; }
+  .startfrom select { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 2px 6px; }
+  .readonly { font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+  .exp.locked .cell { cursor: default; }
+  .search { width: 100%; font: inherit; font-size: 13px; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 7px; padding: 4px 8px; margin-bottom: 4px; }
+  .chip.off { opacity: .45; cursor: default; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="toast" class="toast"></div>
+<input id="file" type="file" accept=".json,application/json">
+<script>
+(function () {
+  'use strict';
+
+  // ---- Streamlit component protocol (what streamlit-component-lib does) ----
+  function send(type, data) {
+    window.parent.postMessage(Object.assign({ isStreamlitMessage: true, type: type }, data), '*');
+  }
+  function setValue(value) { send('streamlit:setComponentValue', { value: value, dataType: 'json' }); }
+  var lastHeight = -1;
+  function syncHeight() {
+    var h = Math.ceil(document.body.scrollHeight);
+    if (h !== lastHeight) { lastHeight = h; send('streamlit:setFrameHeight', { height: h }); }
+  }
+
+  // ---- State ----
+  var cfg = null;          // latest args from Python
+  var byName = {};         // component name -> catalog entry
+  var draft = null;        // { layout: [[[name]]], sideBySide: bool }
+  var revision = null;
+  var active = 0;          // experiment that click-to-add targets
+  var pending = false;     // a save/reset has been sent and not yet reflected
+  var message = null;      // { kind, text } shown in the status line
+
+  function clone(x) { return JSON.parse(JSON.stringify(x)); }
+  function label(name) { return byName[name] ? byName[name].label : name; }
+  // ``requires`` is one component, or a list of which one has to be there
+  function reqs(name) { var r = byName[name] && byName[name].requires; return !r ? [] : (typeof r === 'string' ? [r] : r); }
+  function missingReq(name, names) { var r = reqs(name); return r.length && !r.some(function (x) { return names.indexOf(x) >= 0; }); }
+  function reqLabel(name) { return (byName[name] && byName[name].requires_label) || reqs(name).map(label).join(' or '); }
+  // Wording set by the page: what shows the layout, and what one column of it is called.
+  function target() { return cfg.target || 'the Viewer'; }
+  function expName() { return cfg.experiment_label || 'Experiment'; }
+  function multi() { return cfg.max_experiments > 1; }
+  function viewsMode() { return Array.isArray(cfg.views); }
+  var query = '';           // text of the component search
+  function selView() {
+    return draft.views.filter(function (v) { return v.name === draft.sel; })[0] || draft.views[0];
+  }
+  // The grid edits draft.layout; in views mode that is the selected view's rows
+  function bindView() { if (viewsMode()) { var v = selView(); draft.sel = v.name; draft.layout = [v.rows]; } }
+  function locked() { return viewsMode() && selView().preset; }
+  function uniqueLabel(base) {
+    var taken = {}; draft.views.forEach(function (v) { taken[v.label.toLowerCase()] = true; });
+    if (!taken[base.toLowerCase()]) return base;
+    for (var i = 2; ; i++) if (!taken[(base + ' ' + i).toLowerCase()]) return base + ' ' + i;
+  }
+  function newName() {
+    var n = 1, taken = {}; draft.views.forEach(function (v) { taken[v.name] = true; });
+    while (taken['custom-' + n]) n++;
+    return 'custom-' + n;
+  }
+  function addView(label, rows, after) {
+    var v = { name: newName(), label: uniqueLabel(label), rows: rows, preset: false, in_bar: true };
+    var i = after ? draft.views.indexOf(after) + 1 : draft.views.filter(function (x) { return x.in_bar; }).length;
+    if (after && !after.in_bar) v.in_bar = false;
+    draft.views.splice(i, 0, v); draft.sel = v.name; changed();
+  }
+  function moveView(name, beforeName, inBar) {
+    var from = draft.views.findIndex(function (v) { return v.name === name; });
+    var v = draft.views.splice(from, 1)[0];
+    var to;
+    if (beforeName) { to = draft.views.findIndex(function (x) { return x.name === beforeName; }); v.in_bar = draft.views[to].in_bar; }
+    else { v.in_bar = inBar; to = draft.views.filter(function (x) { return x.in_bar; }).length; }
+    draft.views.splice(to, 0, v); changed();
+  }
+
+  function initDraft() {
+    if (viewsMode()) {
+      draft = { views: clone(cfg.views), sel: cfg.current, experiments: cfg.experiments || 1, sideBySide: !!cfg.side_by_side };
+      // A view just made with +: remember what it started from, so the start can be swapped
+      if (cfg.fresh) {
+        var src = draft.views.filter(function (v) { return v.name === cfg.fresh_from; })[0];
+        draft.fresh = { name: cfg.fresh, from: src ? src.name : '', rows: JSON.stringify(selView().rows), auto: selView().label };
+      }
+      bindView(); active = 0; return;
+    }
+    var src = cfg.saved_layout ? cfg.saved_layout : [cfg.default_layout];
+    draft = { layout: clone(src), sideBySide: !!cfg.side_by_side };
+    active = 0;
+  }
+  function viewsState(views, sel, n, sbs) {
+    return JSON.stringify({ v: views.map(function (v) { return v.preset ? [v.name, v.in_bar] : [v.name, v.in_bar, v.label, v.rows]; }), c: sel, n: n, s: !!sbs && n === 2 });
+  }
+
+  function savedState() {
+    if (viewsMode()) return cfg.fresh ? 'unsaved new view' : viewsState(cfg.views, cfg.current, cfg.experiments || 1, cfg.side_by_side);
+    return cfg.saved_layout ? JSON.stringify({ l: cfg.saved_layout, s: !!cfg.side_by_side && cfg.saved_layout.length === 2 }) : null;
+  }
+  function draftState() {
+    if (viewsMode()) return viewsState(draft.views, draft.sel, draft.experiments, draft.sideBySide);
+    return JSON.stringify({ l: draft.layout, s: draft.sideBySide && draft.layout.length === 2 });
+  }
+
+  // Mirrors validate_layout() in catalog.py so problems show before Save.
+  function problems() {
+    var out = { cells: {}, first: '' };
+    if (viewsMode()) {
+      var seen = {};
+      draft.views.forEach(function (v) {
+        if (v.preset || out.first) return;
+        var lbl = (v.label || '').trim();
+        if (!lbl) out.first = 'Every view needs a name';
+        else if (seen[lbl.toLowerCase()]) out.first = 'Two views are called "' + lbl + '"';
+        else if (![].concat.apply([], v.rows).length) out.first = lbl + ' is empty';
+        seen[lbl.toLowerCase()] = true;
+      });
+      var cur = selView(), names = [].concat.apply([], cur.rows);
+      cur.rows.forEach(function (row, r) {
+        row.forEach(function (name, c) {
+          var why = '';
+          if (!byName[name]) why = 'not available here';
+          else if (missingReq(name, names)) why = 'needs ' + reqLabel(name);
+          if (why) { out.cells['0,' + r + ',' + c] = why; if (!out.first && !cur.preset) out.first = label(name) + ' in ' + cur.label + ' ' + why; }
+        });
+      });
+      return out;
+    }
+    if (!draft.layout.length) out.first = 'Add at least one ' + expName().toLowerCase();
+    draft.layout.forEach(function (exp, e) {
+      var names = [].concat.apply([], exp);
+      if (!names.length && !out.first) out.first = (multi() ? expName() + ' ' + (e + 1) : 'The layout') + ' is empty';
+      exp.forEach(function (row, r) {
+        row.forEach(function (name, c) {
+          var why = '';
+          if (!byName[name]) why = 'not available here';
+          else if (missingReq(name, names)) why = 'needs ' + reqLabel(name);
+          if (why) {
+            out.cells[e + ',' + r + ',' + c] = why;
+            if (!out.first) out.first = label(name) + (multi() ? ' in ' + expName().toLowerCase() + ' ' + (e + 1) : '') + ' ' + why;
+          }
+        });
+      });
+    });
+    return out;
+  }
+
+  // ---- Rendering ----
+  var app = document.getElementById('app');
+  function h(tag, attrs, children) {
+    var el = document.createElement(tag);
+    if (attrs) Object.keys(attrs).forEach(function (k) {
+      if (k === 'class') el.className = attrs[k];
+      else if (k === 'text') el.textContent = attrs[k];
+      else if (k.slice(0, 2) === 'on') el.addEventListener(k.slice(2), attrs[k]);
+      else if (attrs[k] !== false && attrs[k] != null) el.setAttribute(k, attrs[k] === true ? '' : attrs[k]);
+    });
+    (children || []).forEach(function (ch) { if (ch) el.appendChild(typeof ch === 'string' ? document.createTextNode(ch) : ch); });
+    return el;
+  }
+
+  function render() {
+    bindView();
+    var probs = problems();
+    var dirty = draftState() !== savedState();
+    var nExp = draft.layout.length;
+    if (active >= nExp) active = Math.max(0, nExp - 1);
+
+    var toolbar = viewsMode() ? viewsToolbar(probs, dirty) : h('div', { class: 'toolbar' }, [
+      multi() ? h('span', { class: 'label', text: expName() + 's' }) : null,
+      multi() ? h('span', { class: 'stepper' }, [
+        h('button', { title: 'Remove the last one', disabled: nExp <= 1, onclick: function () { draft.layout.pop(); changed(); } }, ['−']),
+        h('span', { text: String(nExp) }),
+        h('button', { title: 'Add one', disabled: nExp >= cfg.max_experiments, onclick: function () {
+          // Start from the previous experiment's arrangement; comparing files usually wants the same one.
+          draft.layout.push(clone(draft.layout[draft.layout.length - 1]));
+          active = draft.layout.length - 1; changed();
+        } }, ['+'])
+      ]) : null,
+      nExp === 2 ? h('label', { class: 'toggle', title: 'Show the two next to each other in ' + target() }, [
+        h('input', { type: 'checkbox', checked: draft.sideBySide, onchange: function (ev) { draft.sideBySide = ev.target.checked; changed(); } }),
+        'Side-by-side'
+      ]) : null,
+      h('span', { class: 'spacer' }),
+      h('button', { class: 'btn', title: 'Load a layout from a JSON file', onclick: function () { document.getElementById('file').click(); } }, ['Import']),
+      h('button', { class: 'btn', title: 'Download this layout as a JSON file', disabled: !!probs.first, onclick: exportLayout }, ['Export']),
+      h('button', { class: 'btn', title: 'Forget the saved layout; ' + target() + ' falls back to its default', onclick: resetLayout }, ['Reset']),
+      h('button', { class: 'btn primary', disabled: !!probs.first || !dirty || pending, onclick: save }, [pending ? 'Saving…' : 'Save'])
+    ]);
+
+    var status;
+    if (message) status = h('div', { class: 'status ' + message.kind, text: message.text });
+    else if (probs.first) status = h('div', { class: 'status error', text: probs.first });
+    else if (dirty && viewsMode()) status = h('div', { class: 'status dirty', text: 'Unsaved changes' });
+    else if (viewsMode()) status = h('div', { class: 'status saved', text: '✓ Saved' });
+    else if (dirty) status = h('div', { class: 'status dirty', text: cfg.saved_layout ? 'Unsaved changes' : 'Not saved yet — ' + target() + ' uses its default layout until you save' });
+    else status = h('div', { class: 'status saved', text: '✓ Saved — ' + target() + ' uses this layout' });
+
+    // Palette
+    var used = {};
+    (draft.layout[active] || []).forEach(function (row) { row.forEach(function (n) { used[n] = true; }); });
+    var groups = [];
+    cfg.components.forEach(function (c) {
+      var g = groups.filter(function (x) { return x.name === c.group; })[0];
+      if (!g) { g = { name: c.group, items: [] }; groups.push(g); }
+      g.items.push(c);
+    });
+    var palette = h('div', { class: 'palette', 'data-drop': locked() ? null : 'palette' }, [
+      h('h4', { text: 'Components' }),
+      h('div', { class: 'hint', text: locked() ? 'Duplicate this view to change it.' : 'Drag into the grid, or click to add' + (multi() && !viewsMode() ? ' to ' + expName().toLowerCase() + ' ' + (active + 1) : '') + '. Drag a placed component back here to remove it.' }),
+      h('input', { class: 'search', type: 'search', id: 'component-search', placeholder: 'Search components', 'aria-label': 'Search components', value: query,
+                   oninput: function (ev) { query = ev.target.value; filterPalette(); } })
+    ]);
+    groups.forEach(function (g) {
+      palette.appendChild(h('div', { class: 'group', 'data-group': g.name || '', text: g.name || '' }));
+      palette.appendChild(h('div', { class: 'chips', 'data-group': g.name || '' }, g.items.map(function (c) {
+        var off = locked();
+        return h('div', { class: 'chip' + (used[c.name] ? ' used' : '') + (off ? ' off' : ''), 'data-drag': off ? null : 'palette', 'data-name': c.name,
+                          'data-search': (c.label + ' ' + (c.group || '') + ' ' + c.name).toLowerCase(),
+                          title: off ? 'Duplicate this view to change it' : used[c.name] ? 'Already placed' : 'Drag or click to add' }, [
+          h('span', { class: 'grip', text: '⋮⋮' }),
+          h('span', { class: 'label', text: c.label }),
+          c.requires ? h('span', { class: 'req', text: '+ ' + reqLabel(c.name) }) : null
+        ]);
+      })));
+    });
+
+    // Experiments
+    var exps = h('div', { class: 'experiments' + (nExp === 2 && draft.sideBySide ? ' side-by-side' : '') });
+    var lock = locked();
+    draft.layout.forEach(function (exp, e) {
+      var box = h('div', { class: 'exp' + (lock ? ' locked' : '') + (e === active && nExp > 1 ? ' active' : ''), onclick: function () { if (active !== e) { active = e; render(); } } }, [
+        viewsMode() ? viewHead() : null,
+        viewsMode() ? null : h('div', { class: 'exp-head' }, [
+          h('strong', { text: multi() ? expName() + ' ' + (e + 1) : 'Layout' }),
+          h('span', { class: 'spacer' }),
+          [].concat.apply([], exp).length ? h('button', { class: 'link', onclick: function () { draft.layout[e] = []; changed(); } }, ['Clear']) : null,
+          nExp > 1 ? h('button', { class: 'link', onclick: function () { draft.layout.splice(e, 1); changed(); } }, ['Remove']) : null
+        ])
+      ]);
+      exp.forEach(function (row, r) {
+        if (r > 0) box.appendChild(h('div', { class: 'newrow', 'data-drop': lock ? null : 'newrow', 'data-exp': e, 'data-row': r }));
+        var rowEl = h('div', { class: 'row' });
+        var open = row.length < cfg.max_columns;
+        for (var c = 0; c <= row.length; c++) {
+          rowEl.appendChild(h('div', { class: 'slot' + (open ? ' open' : ''), 'data-drop': open && !lock ? 'slot' : null, 'data-exp': e, 'data-row': r, 'data-col': c }));
+          if (c === row.length) break;
+          var why = probs.cells[e + ',' + r + ',' + c];
+          var name = row[c];
+          rowEl.appendChild(h('div', { class: 'cell' + (why ? ' invalid' : ''), 'data-drag': lock ? null : 'cell', 'data-drop': lock ? null : 'cell', 'data-exp': e, 'data-row': r, 'data-col': c, title: lock ? '' : 'Drag to move, drop on another component to swap' }, [
+            h('div', { class: 'name', text: label(name) }),
+            why ? h('div', { class: 'sub bad', text: why }) : (byName[name] && byName[name].requires ? h('div', { class: 'sub', text: 'linked to ' + reqLabel(name) }) : null),
+            lock ? null : h('button', { class: 'x', title: 'Remove', 'data-remove': '1', onclick: (function (e, r, c) { return function () { removeAt(e, r, c); changed(); }; })(e, r, c) }, ['×'])
+          ]));
+        }
+        box.appendChild(rowEl);
+      });
+      if (!lock) box.appendChild(h('div', { class: 'newrow last', 'data-drop': 'newrow', 'data-exp': e, 'data-row': exp.length },
+        [exp.length ? 'Drop here for a new row' : 'Drop a component here to start']));
+      exps.appendChild(box);
+    });
+
+    if (viewsMode()) app.replaceChildren(toolbar, status, h('div', { class: 'main views' }, [viewList(), exps, palette]));
+    else app.replaceChildren(toolbar, status, h('div', { class: 'main' }, [palette, exps]));
+    filterPalette();
+    syncHeight();
+  }
+
+  function filterPalette() {
+    var q = query.trim().toLowerCase();
+    var groups = {};
+    app.querySelectorAll('.palette .chip').forEach(function (chip) {
+      var hit = !q || chip.getAttribute('data-search').indexOf(q) >= 0;
+      chip.hidden = !hit;
+      var g = chip.parentNode.getAttribute('data-group');
+      groups[g] = groups[g] || hit;
+    });
+    app.querySelectorAll('.palette [data-group]').forEach(function (el) { el.hidden = !groups[el.getAttribute('data-group')]; });
+  }
+
+  // ---- Views mode: toolbar, the list of views, the selected view's header ----
+  function viewsToolbar(probs, dirty) {
+    var n = draft.experiments;
+    return h('div', { class: 'toolbar' }, [
+      multi() ? h('span', { class: 'label', text: expName() + 's shown' }) : null,
+      multi() ? h('span', { class: 'stepper' }, [
+        h('button', { title: 'Show one less', disabled: n <= 1, onclick: function () { draft.experiments--; changed(); } }, ['−']),
+        h('span', { text: String(n) }),
+        h('button', { title: 'Show one more', disabled: n >= cfg.max_experiments, onclick: function () { draft.experiments++; changed(); } }, ['+'])
+      ]) : null,
+      n === 2 ? h('label', { class: 'toggle', title: 'Show the two next to each other in ' + target() }, [
+        h('input', { type: 'checkbox', checked: draft.sideBySide, onchange: function (ev) { draft.sideBySide = ev.target.checked; changed(); } }),
+        'Side-by-side'
+      ]) : null,
+      h('span', { class: 'spacer' }),
+      h('button', { class: 'btn', title: 'Forget your own views and the order; ' + target() + ' starts again from its ready-made views', onclick: resetLayout }, ['Reset']),
+      h('button', { class: 'btn primary', disabled: !!probs.first || !dirty || pending, onclick: save, title: 'Save and show the selected view' }, [pending ? 'Saving…' : 'Save'])
+    ]);
+  }
+
+  function viewList() {
+    var box = h('div', { class: 'vlist' }, [
+      h('h4', { text: 'Views' }),
+      h('div', { class: 'hint', text: 'Drag to change the order of the bar. Untick to keep a view in More only.' })
+    ]);
+    function item(v) {
+      return h('div', { class: 'vitem' + (v.name === draft.sel ? ' sel' : ''), 'data-drag': 'view', 'data-drop': 'view', 'data-name': v.name, title: v.help || '' }, [
+        h('span', { class: 'grip', text: '⋮⋮' }),
+        h('span', { class: 'vname', text: v.label }),
+        v.preset ? h('span', { class: 'tag', text: 'ready-made' }) : null,
+        h('input', { type: 'checkbox', checked: v.in_bar, title: v.in_bar ? 'In the bar' : 'Only in More', 'aria-label': 'Show ' + v.label + ' in the bar',
+                     onchange: function (ev) { moveView(v.name, null, ev.target.checked); } })
+      ]);
+    }
+    draft.views.filter(function (v) { return v.in_bar; }).forEach(function (v) { box.appendChild(item(v)); });
+    box.appendChild(h('div', { class: 'cut', 'data-drop': 'cut' }, [h('span', { text: 'Only in More' })]));
+    draft.views.filter(function (v) { return !v.in_bar; }).forEach(function (v) { box.appendChild(item(v)); });
+    box.appendChild(h('div', { style: 'margin-top:6px' }, [
+      h('button', { class: 'btn', onclick: function () { addView('New view', []); } }, ['+ New view'])
+    ]));
+    return box;
+  }
+
+  function viewHead() {
+    var v = selView();
+    var others = draft.views.length > 1;
+    if (v.preset) return h('div', null, [
+      h('div', { class: 'vhead' }, [
+        h('strong', { text: v.label }),
+        h('button', { class: 'btn primary', onclick: function () { addView(v.label + ' (copy)', clone(v.rows), v); } }, ['Duplicate to edit'])
+      ]),
+      h('div', { class: 'readonly', text: 'A ready-made view can be reordered or kept out of the bar, but not changed.' + (v.help ? ' ' + v.help : '') })
+    ]);
+    var head = h('div', { class: 'vhead' }, [
+      h('input', { type: 'text', id: 'view-name', value: v.label, 'aria-label': 'Name of the view', onchange: function (ev) { v.label = ev.target.value; changed(); } }),
+      h('button', { class: 'btn', onclick: function () { addView(v.label + ' (copy)', clone(v.rows), v); } }, ['Duplicate']),
+      h('button', { class: 'btn', disabled: !others, onclick: function () {
+        var i = draft.views.indexOf(v); draft.views.splice(i, 1);
+        draft.sel = (draft.views[i] || draft.views[i - 1]).name; changed();
+      } }, ['Delete']),
+      v.rows.length ? h('button', { class: 'link', onclick: function () { v.rows.length = 0; changed(); } }, ['Clear']) : null
+    ]);
+    var f = draft.fresh;
+    if (!f || f.name !== v.name) return head;
+    // Until its components change, a new view can start from another view or from nothing
+    var untouched = JSON.stringify(v.rows) === f.rows;
+    var pick = h('select', { id: 'start-from', 'aria-label': 'Start from', disabled: !untouched, onchange: function (ev) {
+      var src = draft.views.filter(function (x) { return x.name === ev.target.value; })[0];
+      v.rows = src ? clone(src.rows) : [];
+      if (v.label === f.auto) v.label = f.auto = uniqueLabelExcept(src ? src.label + ' (copy)' : 'New view', v);
+      f.from = ev.target.value; f.rows = JSON.stringify(v.rows); changed();
+    } }, [h('option', { value: '', text: 'Empty' })].concat(draft.views.filter(function (x) { return x !== v; }).map(function (x) {
+      return h('option', { value: x.name, text: x.label, selected: x.name === f.from });
+    })));
+    return h('div', null, [head, h('div', { class: 'startfrom' }, [
+      h('span', { text: 'New view, started from' }), pick
+    ])]);
+  }
+  function uniqueLabelExcept(base, self) {
+    var taken = {}; draft.views.forEach(function (v) { if (v !== self) taken[v.label.toLowerCase()] = true; });
+    if (!taken[base.toLowerCase()]) return base;
+    for (var i = 2; ; i++) if (!taken[(base + ' ' + i).toLowerCase()]) return base + ' ' + i;
+  }
+
+  // ---- Edits ----
+  function changed() { message = null; render(); }
+  var toastTimer;
+  function toast(text) {
+    var t = document.getElementById('toast');
+    t.textContent = text; t.classList.add('show');
+    clearTimeout(toastTimer); toastTimer = setTimeout(function () { t.classList.remove('show'); }, 2200);
+  }
+  function prune(exp) { for (var r = exp.length - 1; r >= 0; r--) if (!exp[r].length) exp.splice(r, 1); }
+  function removeAt(e, r, c) { draft.layout[e][r].splice(c, 1); prune(draft.layout[e]); }
+  function contains(e, name) { return draft.layout[e].some(function (row) { return row.indexOf(name) >= 0; }); }
+
+  // src: {kind:'palette', name} | {kind:'cell', e, r, c}
+  // dst: {kind:'slot'|'cell', e, r, c} | {kind:'newrow', e, r} | {kind:'palette'}
+  function drop(src, dst) {
+    var L = draft.layout;
+    var name = src.kind === 'palette' ? src.name : L[src.e][src.r][src.c];
+    if (dst.kind === 'palette') { if (src.kind === 'cell') { removeAt(src.e, src.r, src.c); changed(); } return; }
+    var sameExp = src.kind === 'cell' && src.e === dst.e;
+
+    if (dst.kind === 'cell') {
+      if (src.kind === 'cell' && src.e === dst.e && src.r === dst.r && src.c === dst.c) return;
+      var other = L[dst.e][dst.r][dst.c];
+      if (!sameExp && contains(dst.e, name)) return toast(label(name) + ' is already ' + (multi() ? 'in ' + expName().toLowerCase() + ' ' + (dst.e + 1) : 'placed'));
+      if (src.kind === 'cell') {
+        if (!sameExp && contains(src.e, other)) return toast(label(other) + ' is already ' + (multi() ? 'in ' + expName().toLowerCase() + ' ' + (src.e + 1) : 'placed'));
+        L[src.e][src.r][src.c] = other;
+      }
+      L[dst.e][dst.r][dst.c] = name;
+      return changed();
+    }
+
+    if (!sameExp && contains(dst.e, name)) return toast(label(name) + ' is already ' + (multi() ? 'in ' + expName().toLowerCase() + ' ' + (dst.e + 1) : 'placed'));
+    // Leave a placeholder where the moved cell was so target indices stay valid.
+    var HOLE = {};
+    if (src.kind === 'cell') L[src.e][src.r][src.c] = HOLE;
+    if (dst.kind === 'slot') {
+      var row = L[dst.e][dst.r];
+      var size = row.filter(function (x) { return x !== HOLE; }).length;
+      if (size >= cfg.max_columns) {
+        if (src.kind === 'cell') L[src.e][src.r][src.c] = name;
+        return toast('A row holds at most ' + cfg.max_columns + ' components');
+      }
+      row.splice(dst.c, 0, name);
+    } else if (dst.kind === 'newrow') {
+      L[dst.e].splice(dst.r, 0, [name]);
+    }
+    L.forEach(function (exp) {
+      exp.forEach(function (row, r) { exp[r] = row.filter(function (x) { return x !== HOLE; }); });
+      prune(exp);
+    });
+    active = dst.e;
+    changed();
+  }
+
+  function clickAdd(name) {
+    var exp = draft.layout[active];
+    if (!exp) return;
+    if (contains(active, name)) return toast(label(name) + ' is already ' + (multi() ? 'in ' + expName().toLowerCase() + ' ' + (active + 1) : 'placed'));
+    var last = exp[exp.length - 1];
+    if (last && last.length < cfg.max_columns) last.push(name); else exp.push([name]);
+    changed();
+  }
+
+  // ---- Pointer drag and drop (works for mouse, pen and touch) ----
+  var drag = null;
+  function targetAt(x, y) {
+    var el = document.elementFromPoint(x, y);
+    return el ? el.closest('[data-drop]') : null;
+  }
+  function describe(el) {
+    var kind = el.getAttribute('data-drop');
+    return { kind: kind, e: +el.getAttribute('data-exp'), r: +el.getAttribute('data-row'), c: +el.getAttribute('data-col') };
+  }
+  document.addEventListener('pointerdown', function (ev) {
+    if (ev.button !== 0 || ev.target.closest('[data-remove]') || ev.target.closest('input, button, select')) return;
+    var el = ev.target.closest('[data-drag]');
+    if (!el) return;
+    var kind = el.getAttribute('data-drag');
+    var src = kind === 'view' ? { kind: 'view', name: el.getAttribute('data-name') } : kind === 'palette'
+      ? { kind: 'palette', name: el.getAttribute('data-name') }
+      : { kind: 'cell', e: +el.getAttribute('data-exp'), r: +el.getAttribute('data-row'), c: +el.getAttribute('data-col') };
+    drag = { src: src, el: el, x: ev.clientX, y: ev.clientY, started: false, ghost: null, over: null };
+    ev.preventDefault();
+  });
+  document.addEventListener('pointermove', function (ev) {
+    if (!drag) return;
+    if (!drag.started) {
+      if (Math.abs(ev.clientX - drag.x) + Math.abs(ev.clientY - drag.y) < 5) return;
+      drag.started = true;
+      var name = drag.src.kind === 'view' ? null : drag.src.kind === 'palette' ? drag.src.name : draft.layout[drag.src.e][drag.src.r][drag.src.c];
+      var vw = drag.src.kind === 'view' ? draft.views.filter(function (v) { return v.name === drag.src.name; })[0] : null;
+      drag.ghost = h('div', { class: 'ghost', text: vw ? vw.label : label(name) });
+      document.body.appendChild(drag.ghost);
+      document.body.classList.add('dragging');
+      if (drag.src.kind === 'cell' || drag.src.kind === 'view') drag.el.classList.add('source');
+      syncHeight();
+    }
+    drag.ghost.style.left = ev.clientX + 'px';
+    drag.ghost.style.top = ev.clientY + 'px';
+    var over = targetAt(ev.clientX, ev.clientY);
+    if (over && over.getAttribute('data-drop') === 'palette' && drag.src.kind !== 'cell') over = null;
+    // Views drop on views and the line; components everywhere else
+    if (over) {
+      var dk = over.getAttribute('data-drop'), isView = dk === 'view' || dk === 'cut';
+      if (isView !== (drag.src.kind === 'view')) over = null;
+    }
+    if (over !== drag.over) {
+      if (drag.over) drag.over.classList.remove('drop-over');
+      if (over) over.classList.add('drop-over');
+      drag.over = over;
+    }
+  });
+  function endDrag(commit) {
+    if (!drag) return;
+    var d = drag; drag = null;
+    if (d.ghost) d.ghost.remove();
+    document.body.classList.remove('dragging');
+    if (d.over) d.over.classList.remove('drop-over');
+    if (d.el) d.el.classList.remove('source');
+    if (!d.started) {
+      if (commit && d.src.kind === 'palette') clickAdd(d.src.name);
+      if (commit && d.src.kind === 'view' && draft.sel !== d.src.name) { draft.sel = d.src.name; active = 0; render(); }
+      return;
+    }
+    if (d.src.kind === 'view') {
+      if (commit && d.over) {
+        if (d.over.getAttribute('data-drop') === 'cut') moveView(d.src.name, null, false);
+        else if (d.over.getAttribute('data-name') !== d.src.name) moveView(d.src.name, d.over.getAttribute('data-name'));
+        else render();
+      } else render();
+      return;
+    }
+    if (commit && d.over) drop(d.src, describe(d.over)); else render();
+  }
+  document.addEventListener('pointerup', function () { endDrag(true); });
+  document.addEventListener('pointercancel', function () { endDrag(false); });
+  document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape') endDrag(false); });
+
+  // ---- Save, reset, import, export ----
+  function save() {
+    pending = true; message = null;
+    if (viewsMode()) {
+      setValue({ action: 'save', views: draft.views.map(function (v) {
+        return v.preset ? { name: v.name, in_bar: v.in_bar } : { name: v.name, label: v.label.trim(), rows: v.rows, in_bar: v.in_bar };
+      }), current: draft.sel, experiments: draft.experiments, side_by_side: draft.sideBySide && draft.experiments === 2, nonce: Date.now() + Math.random() });
+      render(); return;
+    }
+    setValue({ action: 'save', layout: draft.layout, side_by_side: draft.sideBySide && draft.layout.length === 2, nonce: Date.now() + Math.random() });
+    render();
+  }
+  function resetLayout() {
+    pending = true;
+    if (viewsMode()) {
+      setValue({ action: 'reset', nonce: Date.now() + Math.random() });
+      message = { kind: 'saved', text: 'Reset — ' + target() + ' shows its ready-made views' };
+      render(); return;
+    }
+    initDraftFrom([cfg.default_layout], false);
+    setValue({ action: 'reset', nonce: Date.now() + Math.random() });
+    message = { kind: 'saved', text: 'Reset — ' + target() + ' uses its default layout' };
+    render();
+  }
+  function initDraftFrom(layout, sbs) { draft = { layout: clone(layout), sideBySide: !!sbs }; active = 0; }
+
+  function exportLayout() {
+    var blob = new Blob([JSON.stringify(draft.layout)], { type: 'application/json' });
+    var a = h('a', { href: URL.createObjectURL(blob), download: cfg.export_filename || 'layout.json' });
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+  }
+  document.getElementById('file').addEventListener('change', function (ev) {
+    var f = ev.target.files[0];
+    ev.target.value = '';
+    if (!f) return;
+    f.text().then(function (txt) {
+      var data = JSON.parse(txt);
+      // Accept the exported list as well as the stored {layout, side_by_side} form.
+      var layout = Array.isArray(data) ? data : data.layout;
+      var ok = Array.isArray(layout) && layout.length && layout.length <= cfg.max_experiments && layout.every(function (exp) {
+        return Array.isArray(exp) && exp.every(function (row) {
+          return Array.isArray(row) && row.length <= cfg.max_columns && row.every(function (n) { return typeof n === 'string'; });
+        });
+      });
+      if (!ok) throw new Error('bad');
+      initDraftFrom(layout.map(function (exp) { return exp.filter(function (row) { return row.length; }); }), !Array.isArray(data) && data.side_by_side);
+      message = { kind: 'dirty', text: 'Imported ' + f.name + ' — press Save to use it' };
+      render();
+    }).catch(function () { toast('Not a layout file'); });
+  });
+
+  // ---- Render events from Streamlit ----
+  window.addEventListener('message', function (ev) {
+    var data = ev.data;
+    if (!data || data.type !== 'streamlit:render') return;
+    var args = data.args;
+    var theme = data.theme;
+    if (theme) {
+      var s = document.documentElement.style;
+      if (theme.primaryColor) s.setProperty('--primary', theme.primaryColor);
+      if (theme.backgroundColor) s.setProperty('--bg', theme.backgroundColor);
+      if (theme.secondaryBackgroundColor) s.setProperty('--bg2', theme.secondaryBackgroundColor);
+      if (theme.textColor) {
+        s.setProperty('--text', theme.textColor);
+        s.setProperty('--border', 'color-mix(in srgb, ' + theme.textColor + ' 20%, transparent)');
+        s.setProperty('--muted', 'color-mix(in srgb, ' + theme.textColor + ' 60%, transparent)');
+      }
+      if (theme.font) s.setProperty('--font', theme.font);
+    }
+    cfg = args;
+    byName = {};
+    cfg.components.forEach(function (c) { byName[c.name] = c; });
+    if (draft === null || args.revision !== revision) { revision = args.revision; initDraft(); }
+    pending = false;
+    if (args.server_error) message = { kind: 'error', text: 'Not saved: ' + args.server_error };
+    else if (message && message.kind === 'error') message = null;
+    if (!drag) render();
+  });
+
+  window.addEventListener('resize', syncHeight);
+  send('streamlit:componentReady', { apiVersion: 1 });
+})();
+</script>
+</body>
+</html>
