@@ -473,7 +473,19 @@ _ALIASES = (
 
 def canonical(license: str) -> str:
     """Spelling-independent form, so PyPI's classifier name and the SPDX id
-    of the same license compare equal."""
+    of the same license compare equal. Each operand of an expression is
+    canonicalized on its own, so ``MPL-2.0 AND GPL-3.0-only`` does not compare
+    equal to ``MPL-2.0``."""
+    parts = re.split(r"\s+(AND|OR|WITH)\s+|\s*;\s*", license.strip())
+    if len(parts) > 1:
+        return " ".join(
+            _canonical_one(p) if i % 2 == 0 else (p or "AND")
+            for i, p in enumerate(parts)
+        )
+    return _canonical_one(license)
+
+
+def _canonical_one(license: str) -> str:
     flat = re.sub(r"[^A-Z0-9]", "", license.upper())
     for pattern, spdx in _ALIASES:
         if re.search(pattern, flat):

@@ -128,6 +128,12 @@ def test_accepted_entries_cover_their_license_only(repo):
     assert not findings["nolicense"].fails
     assert findings["nolicense"].license == "MIT"
 
+    LICENSES["mplpkg"] = "MPL-2.0 AND GPL-3.0-only"
+    try:
+        assert dl.run(repo)[0].fails  # a license added to the expression too
+    finally:
+        LICENSES["mplpkg"] = "Mozilla Public License 2.0 (MPL 2.0)"
+
     LICENSES["mplpkg"] = "GPL-3.0-only"
     try:
         assert dl.run(repo)[0].fails  # a changed license is asked about again
