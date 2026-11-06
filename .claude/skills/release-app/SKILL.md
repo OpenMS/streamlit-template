@@ -49,4 +49,4 @@ back cleanly; do them only when the user asked for the release.
 - [ ] User-facing notes written
 - [ ] GitHub release `<tag>` (`v<version>` or `<AppName>-<version>`) created on the merge commit
 - [ ] Images, SIF and installers published; both workflows green
-- [ ] Overlay pins the new tag
+- [ ] On a cluster without the ImageUpdater, the overlay pins the new tag

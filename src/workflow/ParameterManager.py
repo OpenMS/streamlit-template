@@ -407,10 +407,13 @@ class ParameterManager:
             self.ini_errors[tool] = f"{tool} could not be started: {e}"
             return False
         finally:
+            # Only a file that parses replaces the cached one: a tool that
+            # dies mid-write leaves truncated XML behind.
             if tmp_path.exists():
                 try:
+                    ET.parse(tmp_path)
                     os.replace(tmp_path, ini_path)
-                except OSError:
+                except (OSError, ET.ParseError):
                     tmp_path.unlink(missing_ok=True)
         if ini_path.exists():
             self._merge_bool_params_from_ini(tool)

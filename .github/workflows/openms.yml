@@ -114,8 +114,8 @@ jobs:
           cmake=$(gh api -H "Accept: application/vnd.github.raw" "repos/$repo/contents/CMakeLists.txt?ref=$sha") && break
           sleep $((attempt * 5))
         done
-        major=$(sed -n 's/^set(OPENMS_PACKAGE_VERSION_MAJOR "\([0-9]*\)").*/\1/p' <<<"$cmake")
-        minor=$(sed -n 's/^set(OPENMS_PACKAGE_VERSION_MINOR "\([0-9]*\)").*/\1/p' <<<"$cmake")
+        major=$(sed -nE 's/^[[:space:]]*set[[:space:]]*\([[:space:]]*OPENMS_PACKAGE_VERSION_MAJOR[[:space:]]+"?([0-9]+)"?[[:space:]]*\).*/\1/p' <<<"$cmake")
+        minor=$(sed -nE 's/^[[:space:]]*set[[:space:]]*\([[:space:]]*OPENMS_PACKAGE_VERSION_MINOR[[:space:]]+"?([0-9]+)"?[[:space:]]*\).*/\1/p' <<<"$cmake")
         if [[ -z "$major" || -z "$minor" ]]; then
           echo "::error::could not read the OpenMS version from $repo@$sha's CMakeLists.txt, so the Linux runner is unknown"
           exit 1

@@ -166,7 +166,8 @@ def pride(session, link: str) -> Optional[Listing]:
     mzml_runs = {_run_name(f.path) for f in files
                  if f.path.lower().removesuffix(".gz").endswith(".mzml")}
     for f in files:
-        if f.path.lower().endswith(_PRIDE_VENDOR_SUFFIXES) and _run_name(f.path) in mzml_runs:
+        if (f.path.lower().removesuffix(".gz").endswith(_PRIDE_VENDOR_SUFFIXES)
+                and _run_name(f.path) in mzml_runs):
             f.preselect = False
 
     notes = []

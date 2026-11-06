@@ -83,6 +83,16 @@ def test_missing_invalid_and_changed_file(tmp_path):
     assert pn.display_name("Tool", "a", path=f)["name"] == "Second"
 
 
+def test_replacement_with_the_same_mtime_is_read(tmp_path):
+    """A file copied in with its timestamp kept is still read again."""
+    f = tmp_path / "names.json"
+    f.write_text(json.dumps({"Tool": {"a": "First"}}), encoding="utf-8")
+    mtime_ns = os.stat(f).st_mtime_ns
+    assert pn.display_name("Tool", "a", path=f)["name"] == "First"
+    f.write_text(json.dumps({"Tool": {"a": "A longer name"}}), encoding="utf-8")
+    os.utime(f, ns=(mtime_ns, mtime_ns))
+    assert pn.display_name("Tool", "a", path=f)["name"] == "A longer name"
+
 def test_shipped_file_is_valid():
     """Every entry of the repository's file is a name or a {name, help} object."""
     data = json.loads(open(os.path.join(PROJECT_ROOT, pn.PARAMETER_NAMES_FILE), encoding="utf-8").read())
