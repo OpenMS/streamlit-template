@@ -118,3 +118,53 @@ def test_editor_saves_submitted_layout(tmp_path):
     at.run()
     assert load_layout(path) is None
     assert Path(path).parent.exists()
+
+
+_EXPERIMENTS_APP = """
+import streamlit as st
+from src.layout_manager import render_experiments
+
+picked = render_experiments(
+    st.session_state["layout"], st.session_state["side_by_side"],
+    {"r1": "Run 1", "r2": "Run 2", "c1": "Comparison"},
+    lambda dataset, index: {"plot": lambda: st.markdown(f"plot {dataset} {index}")},
+    key="viewer",
+    buttons=lambda i: st.button("Edit layout") if i == 0 else None,
+)
+st.session_state["picked"] = picked
+"""
+
+
+def test_render_experiments_one_selector_per_experiment():
+    at = AppTest.from_string(_EXPERIMENTS_APP)
+    at.session_state["layout"] = [[["plot"]], [["plot"]], [["plot"]]]
+    at.session_state["side_by_side"] = False
+    at.run()
+    assert not at.exception
+    # Experiment n starts on the n-th dataset; one button, next to the first selector
+    assert [m.value for m in at.markdown] == ["plot r1 0", "plot r2 1", "plot c1 2"]
+    assert len(at.selectbox) == 3 and len(at.button) == 1
+    assert at.selectbox[0].options == ["Run 1", "Run 2", "Comparison"]
+
+    # Picking another dataset redraws only that experiment, and the pick sticks
+    at.selectbox[1].set_value("c1").run()
+    assert [m.value for m in at.markdown] == ["plot r1 0", "plot c1 1", "plot c1 2"]
+    at.run()
+    assert at.session_state["picked"] == ["r1", "c1", "c1"]
+
+
+def test_render_experiments_side_by_side_and_empty():
+    at = AppTest.from_string(_EXPERIMENTS_APP)
+    at.session_state["layout"] = [[["plot"]], [["plot"]]]
+    at.session_state["side_by_side"] = True
+    at.run()
+    assert not at.exception
+    assert len(at.columns) >= 2
+    assert [m.value for m in at.markdown] == ["plot r1 0", "plot r2 1"]
+
+    empty = AppTest.from_string(
+        "import streamlit as st\n"
+        "from src.layout_manager import render_experiments\n"
+        "st.session_state['picked'] = render_experiments([[['plot']]], False, {}, lambda d, i: {}, key='v')\n"
+    ).run()
+    assert not empty.exception and empty.session_state["picked"] == [None]

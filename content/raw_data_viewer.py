@@ -4,9 +4,9 @@ import streamlit as st
 
 from src.common.common import page_setup
 from src import view
-from src.layout_manager import layout_editor, render_layout, resolve_layout
+from src.layout_manager import layout_button, render_layout, resolve_layout
 
-# Components of this page, arranged with the layout editor below
+# Components of this page, arranged with Edit layout
 COMPONENTS = [
     {"name": "peak_map", "label": "Peak map (MS1)", "group": "Plots"},
     {"name": "spectrum", "label": "Spectra (MS1 + MS2)", "group": "Plots"},
@@ -50,9 +50,10 @@ if selected_file:
 
 
     layout_path = Path(st.session_state.workspace, "layouts", "raw_data_viewer.json")
-    with st.expander("Arrange this page", icon="🧩"):
-        layout_editor(
+    with cols[1].container(height="stretch", vertical_alignment="bottom"):
+        layout_button(
             layout_path, COMPONENTS, DEFAULT_LAYOUT, key="raw_data_viewer_layout",
+            help_text="Drag components into the grid (up to 3 per row), then press **Save**.",
             target="this page",
         )
     layout, _ = resolve_layout(layout_path, COMPONENTS, DEFAULT_LAYOUT)

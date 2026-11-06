@@ -6,13 +6,14 @@ script. Python only hears from it when the user presses Save or Reset.
 """
 
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Mapping, Sequence
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence
 
 import streamlit as st
 import streamlit.components.v1 as st_components
 
 from src.layout_manager.layout import (
     MAX_COLUMNS,
+    Layout,
     clear_layout,
     load_layout,
     save_layout,
@@ -107,3 +108,128 @@ def render_layout(
                     st.info(f"{(labels or {}).get(name, name)} is not available here.")
                 else:
                     renderer()
+
+
+def layout_button(
+    path: Path,
+    components: Sequence[Dict[str, Any]],
+    default_layout: List[List[str]],
+    key: str,
+    label: str = "Edit layout",
+    help_text: str = "",
+    **editor_args: Any,
+) -> None:
+    """A button that opens ``layout_editor`` in a dialog over the page.
+
+    Saving or resetting reruns the page, which closes the dialog and shows the
+    new layout. ``editor_args`` go to ``layout_editor`` (``max_experiments``,
+    ``experiment_label``, ...).
+    """
+
+    @st.dialog(label, width="large")
+    def _dialog() -> None:
+        if help_text:
+            st.caption(help_text)
+        layout_editor(path, components, default_layout, key=key, **editor_args)
+
+    if st.button(label, key=f"{key}_open", icon=":material/dashboard_customize:"):
+        _dialog()
+
+
+def _selection_key(key: str, index: int) -> str:
+    return f"{key}_experiment_{index}"
+
+
+def selected_datasets(key: str, count: int) -> List[Optional[str]]:
+    """The dataset ids picked in the selectors of ``render_experiments``."""
+    return [st.session_state.get(_selection_key(key, i)) for i in range(count)]
+
+
+def _selector(
+    key: str,
+    index: int,
+    datasets: Mapping[str, str],
+    label: str,
+    buttons: Optional[Callable[[int], Any]],
+) -> Optional[str]:
+    """The dataset selector of experiment ``index``; returns the picked id."""
+    ids = list(datasets)
+    state = _selection_key(key, index)
+    widget = f"{state}_select"
+    # Keep the pick by id, so a renamed or added dataset does not move it.
+    picked = st.session_state.get(state)
+    if picked not in datasets:
+        picked = ids[index] if index < len(ids) else (ids[0] if ids else None)
+        st.session_state[state] = picked
+    if st.session_state.get(widget) != picked:
+        st.session_state[widget] = picked
+
+    def _changed() -> None:
+        st.session_state[state] = st.session_state.get(widget)
+
+    with st.container(horizontal=True, vertical_alignment="bottom"):
+        st.selectbox(
+            label, ids, key=widget, format_func=lambda i: datasets.get(i, i),
+            on_change=_changed,
+        )
+        if buttons is not None:
+            buttons(index)
+    return st.session_state.get(state)
+
+
+def render_experiments(
+    layout: Layout,
+    side_by_side: bool,
+    datasets: Mapping[str, str],
+    renderers: Callable[[str, int], Mapping[str, Callable[[], Any]]],
+    key: str,
+    labels: Optional[Mapping[str, str]] = None,
+    experiment_label: str = "Experiment",
+    buttons: Optional[Callable[[int], Any]] = None,
+) -> List[Optional[str]]:
+    """Render every experiment of ``layout``, each below its own dataset selector.
+
+    This is FLASHApp's Viewer: one grid per experiment, each showing the dataset
+    (a run, a file, a comparison) picked above it, so users compare datasets by
+    adding experiments in the layout editor. Two experiments marked side by side
+    share the width; any other number are drawn one below the other.
+
+    Args:
+        layout: Experiments as ``resolve_layout`` returns them.
+        side_by_side: Draw two experiments in two columns.
+        datasets: Dataset id -> label, in the order the selectors offer them.
+            Experiment ``n`` starts on the ``n``-th dataset.
+        renderers: ``renderers(dataset_id, index)`` returns the renderers of
+            experiment ``index`` for that dataset (component name -> function).
+            Give each experiment its own widget keys and, with Insight, its own
+            ``StateManager``, so selections in one do not move the other.
+        key: Prefix of the selectors' session keys.
+        labels: Component name -> label, for the notice of a missing renderer.
+        experiment_label: Label of each selector.
+        buttons: ``buttons(index)`` draws buttons right of a selector, such as
+            ``layout_button``.
+
+    Returns:
+        The dataset id picked in each experiment (None without datasets).
+    """
+    if not datasets:
+        return [None] * len(layout)
+
+    def one(index: int, rows: List[List[str]]) -> Optional[str]:
+        dataset = _selector(key, index, datasets, experiment_label, buttons)
+        if dataset is not None:
+            render_layout(rows, renderers(dataset, index), labels)
+        return dataset
+
+    if side_by_side and len(layout) == 2:
+        picked = []
+        for column, (index, rows) in zip(st.columns(2), enumerate(layout)):
+            with column:
+                picked.append(one(index, rows))
+        return picked
+    picked = []
+    for index, rows in enumerate(layout):
+        if index:
+            st.divider()
+        picked.append(one(index, rows))
+    return picked
