@@ -10,6 +10,34 @@ from src.layout_manager import render_layout, request_analysis, resolve_layout, 
 from src.workflow.RunManager import FINISHED as FINISHED_STATUS
 
 
+def merge_feature_tables(tables: list, ppm: float = 10.0, rt_tolerance: float = 30.0):
+    """One consensus feature table from the tables of several runs.
+
+    Each table has ``mz`` and ``rt`` columns followed by one intensity column
+    per file (after ``quality``). A feature of a later table joins the nearest
+    feature of the tables before it within ``ppm`` and ``rt_tolerance``
+    seconds, otherwise it is a feature of its own; a file it was not found in
+    has no intensity (NaN).
+    """
+    merged = tables[0].copy()
+    for table in tables[1:]:
+        files = [c for c in table.columns[4:] if c not in merged.columns]
+        for c in files:
+            merged[c] = float("nan")
+        new_rows = []
+        for index, row in table.iterrows():
+            close = merged[((merged["mz"] - row["mz"]).abs() <= row["mz"] * ppm * 1e-6)
+                           & ((merged["rt"] - row["rt"]).abs() <= rt_tolerance)]
+            if close.empty:
+                new_rows.append(row)
+                continue
+            best = (close["rt"] - row["rt"]).abs().idxmin()
+            merged.loc[best, files] = row[files].values
+        if new_rows:
+            merged = pd.concat([merged, pd.DataFrame(new_rows)])
+    return merged
+
+
 def _no_settings() -> None:
     st.toast("This run recorded no settings to start from.", icon=":material/error:")
 
@@ -210,12 +238,15 @@ class Workflow(WorkflowManager):
             {
                 "label": "Process more files with these settings",
                 "icon": ":material/library_add:",
-                "help": "Opens Configure with this run's settings, to add files.",
+                "help": "Opens Configure with this run's settings, to pick files to add. Only those "
+                        "are processed; the Results page then shows them with this run's files "
+                        "as one experiment.",
                 "on_click": lambda: self.follow_up(
-                    self.run_id, page=configure, note="to add more files") or _no_settings(),
+                    self.run_id, page=configure, note="to add more files",
+                    add_files="mzML-files") or _no_settings(),
             },
         ]
-        others = [r for r in self.runs.list_runs(FINISHED_STATUS)
+        others = [r for r in self.runs.experiments(FINISHED_STATUS)
                   if r["id"] != self.run_id and set(missing) <= self.available(r["id"])]
         if others:
             other = others[0]
@@ -244,8 +275,14 @@ class Workflow(WorkflowManager):
         )
 
     def _feature_table(self):
-        file = Path(self.results_dir, "feature-linking", "feature_matrix.tsv")
-        return pd.read_csv(file, sep="\t", index_col=0) if file.exists() else None
+        """The consensus features of the shown experiment: one run, or a run and
+        the runs that added files to it, their features matched here."""
+        tables = []
+        for run_id in self.runs.experiment(self.run_id) or [self.run_id]:
+            file = Path(self.runs.results_dir(run_id), "feature-linking", "feature_matrix.tsv")
+            if file.exists():
+                tables.append(pd.read_csv(file, sep="\t", index_col=0))
+        return merge_feature_tables(tables) if tables else None
 
     def _features_key(self) -> str:
         """The feature table's widget key, one per run, so a selection never carries over."""

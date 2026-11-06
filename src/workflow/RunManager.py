@@ -10,6 +10,12 @@ A workflow that sets ``multi_run = True`` writes each run into
     runs/<run_id>/results/      everything execution() wrote
     runs/<run_id>/logs/         the run's logs, copied when it ends
 
+A run started to process more files for an earlier run's experiment
+(``restore_settings(..., add_files=...)``) records that run as ``adds_to`` in
+its run.json: the experiment is the earlier run with every finished run that
+adds to it (``experiment``), and the results pages show it as one, computing
+over the files of all of them.
+
 This module must stay importable without Streamlit: the RQ worker
 (``tasks.py``) uses it to mark a queued run finished or failed.
 """
@@ -31,6 +37,8 @@ DESIGN_FILE = "experimental-design.tsv"
 FOLLOW_UP_KEY = "_follow_up"
 # Without run folders: what the last start followed (WorkflowManager.start_from)
 FOLLOW_UP_FILE = "last-follow-up.json"
+# run.json key: the run whose experiment this run adds files to
+ADDS_TO = "adds_to"
 MAX_NAME_LENGTH = 100
 # Largest unpacked size import_zip() accepts by default
 MAX_IMPORT_BYTES = 20 * 1024**3
@@ -109,7 +117,40 @@ class RunManager:
 
     # Writing
 
-    def new_run(self, name: str = "", params_file: Optional[Path] = None) -> str:
+    # Experiments: a run and the runs that add files to it
+
+    def experiment_root(self, run_id: Optional[str]) -> Optional[str]:
+        """The run whose experiment ``run_id`` belongs to (itself, unless it adds files)."""
+        run = self.get(run_id)
+        if run is None:
+            return None
+        root = run.get(ADDS_TO)
+        return root if root and root != run_id and self.get(root) is not None else run_id
+
+    def added_runs(self, run_id: str, status: Optional[str] = FINISHED) -> list[dict]:
+        """The runs that add files to ``run_id``'s experiment, oldest first."""
+        root = self.experiment_root(run_id)
+        if root is None:
+            return []
+        added = [r for r in self.list_runs(status) if r.get(ADDS_TO) == root and r["id"] != root]
+        return sorted(added, key=lambda r: (r.get("created", ""), r["id"]))
+
+    def experiment(self, run_id: Optional[str]) -> list[str]:
+        """The runs of ``run_id``'s experiment, oldest first: the run that
+        started it, then every finished run that added files to it. Empty if
+        there is no such run."""
+        root = self.experiment_root(run_id)
+        if root is None:
+            return []
+        return [root] + [r["id"] for r in self.added_runs(root)]
+
+    def experiments(self, status: Optional[str] = FINISHED) -> list[dict]:
+        """The runs that start an experiment (in ``status``), newest first; a run
+        that adds files is listed under its experiment's first run instead."""
+        return [r for r in self.list_runs(status) if self.experiment_root(r["id"]) == r["id"]]
+
+    def new_run(self, name: str = "", params_file: Optional[Path] = None,
+                adds_to: Optional[str] = None) -> str:
         """
         Create the directory for a new run and return its id.
 
@@ -117,6 +158,7 @@ class RunManager:
             name: Display name. Defaults to "Run <n>".
             params_file: The workflow's params.json, copied into the run so the
                 results can be read with the parameters that produced them.
+            adds_to: A run whose experiment this run adds files to.
         """
         self.runs_dir.mkdir(parents=True, exist_ok=True)
         base = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -126,7 +168,11 @@ class RunManager:
             run_id = f"{base}-{n}"
         self.results_dir(run_id).mkdir(parents=True)
         name = _clean_name(name) or self.default_name()
-        self._write(run_id, {"name": name, "created": _now(), "status": RUNNING})
+        run = {"name": name, "created": _now(), "status": RUNNING}
+        root = self.experiment_root(adds_to) if adds_to else None
+        if root:
+            run[ADDS_TO] = root
+        self._write(run_id, run)
         if params_file is not None and Path(params_file).exists():
             shutil.copy2(params_file, self.params_file(run_id))
         # The experimental design is part of the run's settings too
@@ -136,7 +182,7 @@ class RunManager:
         return run_id
 
     def restore_settings(self, run_id: str, changes: Optional[dict] = None,
-                         note: str = "") -> bool:
+                         note: str = "", add_files: Optional[str] = None) -> bool:
         """Make a run's parameters (and experimental design) the workflow's again.
 
         The next run then starts from exactly the settings ``run_id`` used,
@@ -144,17 +190,36 @@ class RunManager:
         such as one TOPP tool's parameters, is merged into the stored one).
         ``FOLLOW_UP_KEY`` records which run it follows, for the configure page
         and the processing report. False if the run recorded no parameters.
+
+        ``add_files`` (the params.json key of the input files, e.g.
+        ``"mzML-files"``) starts a run that adds files to ``run_id``'s
+        experiment: that key starts empty, so only the files picked now are
+        processed, and the next run is recorded as adding to the experiment.
         """
         run = self.get(run_id)
         params = self.params(run_id)
         if run is None or not isinstance(params, dict) or not params:
             return False
-        apply_settings(self.workflow_dir, params, changes,
-                       {"run": run_id, "name": run.get("name", run_id), "note": note})
+        info = {"run": run_id, "name": run.get("name", run_id), "note": note}
+        if add_files:
+            root = self.experiment_root(run_id)
+            root_run = self.get(root) or run
+            info.update(run=root, name=root_run.get("name", root), adds_to=root,
+                        files_key=add_files, files=self.experiment_files(root, add_files))
+            changes = {**(changes or {}), add_files: []}
+        apply_settings(self.workflow_dir, params, changes, info)
         design = Path(self.run_dir(run_id), DESIGN_FILE)
         if design.exists():
             shutil.copy2(design, Path(self.workflow_dir, DESIGN_FILE))
         return True
+
+    def experiment_files(self, run_id: str, key: str) -> list[str]:
+        """The input files (params.json ``key``) of every run of ``run_id``'s experiment."""
+        files = []
+        for member in self.experiment(run_id):
+            value = self.params(member).get(key) or []
+            files += [value] if isinstance(value, str) else list(value)
+        return list(dict.fromkeys(files))
 
     def finish(self, run_id: Optional[str], status: str) -> None:
         """Record how a run ended and keep a copy of its logs."""
@@ -179,9 +244,22 @@ class RunManager:
         return True
 
     def delete(self, run_id: str) -> bool:
-        """Delete a run and all its files."""
+        """Delete a run and all its files.
+
+        The runs that added files to its experiment then form one of their own,
+        started by the oldest of them.
+        """
         if self.get(run_id) is None:
             return False
+        if self.experiment_root(run_id) == run_id:
+            added = self.added_runs(run_id, status=None)
+            if added:
+                first = added[0]
+                first.pop(ADDS_TO, None)
+                self._write(first["id"], {k: v for k, v in first.items() if k != "id"})
+                for other in added[1:]:
+                    other[ADDS_TO] = first["id"]
+                    self._write(other["id"], {k: v for k, v in other.items() if k != "id"})
         shutil.rmtree(self.run_dir(run_id), ignore_errors=True)
         Path(self.workflow_dir, "downloads", f"{run_id}.zip").unlink(missing_ok=True)
         return True

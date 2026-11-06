@@ -2806,6 +2806,12 @@ class StreamlitUI:
             return
         text = f"These are the settings of the run **{info.get('name', info.get('run', ''))}**"
         text += f", {info['note']}." if info.get("note") else "."
+        if info.get("adds_to"):
+            done = info.get("files") or []
+            text += (f" Pick only the files to add: the {len(done)} "
+                     f"{'file' if len(done) == 1 else 'files'} of that run "
+                     f"{'is' if len(done) == 1 else 'are'} processed already, and the results "
+                     "show them together with the new ones as one experiment.")
         text += " Check them, then start the run on the next page."
         with st.container(border=True, horizontal=True, vertical_alignment="center"):
             st.markdown(f":material/history: {text}", width="stretch")
