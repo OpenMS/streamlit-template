@@ -1132,6 +1132,26 @@ class StreamlitUI:
             self._ensure_fallback(key, upload.get("fallback"))
         options = self._input_file_options(key)
         widget = f"{self.parameter_manager.param_prefix}{key}"
+        done = self._experiment_files(key)
+        if done:
+            # Settings that add files to an experiment: its processed files are
+            # shown apart, and only the files to add can be picked
+            processed = {Path(f).name for f in done}
+            options = [o for o in options if Path(o).name not in processed]
+            current = st.session_state.get(widget)
+            if isinstance(current, list):
+                st.session_state[widget] = [f for f in current if f in options]
+            name = "Files to add"
+            names = list(dict.fromkeys(Path(f).name for f in done))
+            st.multiselect(
+                "In the experiment already",
+                names,
+                default=names,
+                disabled=True,
+                key=f"_experiment-files-{widget}",
+                help="Processed already. The results show them together with the files "
+                "added here, as one experiment.",
+            )
         pending = f"_pending-{widget}"
         if pending in st.session_state:  # chosen in the Browse pop-out
             value = st.session_state.pop(pending)
@@ -1188,6 +1208,14 @@ class StreamlitUI:
             "folders and add new ones.",
         ):
             self._browse_input_files(key, name, multiple, upload)
+
+    def _experiment_files(self, key: str) -> List[str]:
+        """The files the experiment holds already, while the settings add files
+        to it (``WorkflowManager.follow_up(..., add_files=key)``), else none."""
+        info = self.parameter_manager.get_parameters_from_json().get(FOLLOW_UP_KEY)
+        if not isinstance(info, dict) or not info.get("adds_to") or info.get("files_key") != key:
+            return []
+        return [str(f) for f in info.get("files") or []]
 
     def _select_by_folder(self, key: str, options: List[str]) -> None:
         """Buttons that select the files of one folder (see ``upload_widget``)."""
@@ -2812,7 +2840,8 @@ class StreamlitUI:
                      f"{'file' if len(done) == 1 else 'files'} of that run "
                      f"{'is' if len(done) == 1 else 'are'} processed already, and the results "
                      "show them together with the new ones as one experiment.")
-        text += " Check them, then start the run on the next page."
+        text += (" Pick them, then start below." if info.get("adds_to")
+                 else " Check them, then start the run on the next page.")
         with st.container(border=True, horizontal=True, vertical_alignment="center"):
             st.markdown(f":material/history: {text}", width="stretch")
             if st.button("Dismiss", key=f"{self.workflow_dir.name}-follow-up-dismiss"):
@@ -2821,7 +2850,7 @@ class StreamlitUI:
                 self.parameter_manager.write_parameters(params)
                 st.rerun()
 
-    def parameter_section(self, custom_parameter_function) -> None:
+    def parameter_section(self, custom_parameter_function, after_parameters=None) -> None:
         # No "Show advanced parameters" toggle: each TOPP tool's "All N
         # parameters" dialog reaches the advanced ones, and a python tool's
         # sit in an expander. An app can still set this to True itself.
@@ -2856,6 +2885,8 @@ class StreamlitUI:
         self.user_presets()
 
         custom_parameter_function()
+        if after_parameters is not None:
+            after_parameters()
 
         # File Import / Export section       
         st.markdown("---")

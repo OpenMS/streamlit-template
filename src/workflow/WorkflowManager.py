@@ -33,6 +33,10 @@ class WorkflowManager:
     # instead of overwriting <workflow_dir>/results/. Set to True in a subclass
     # to opt in, and read and write results through self.results_dir.
     multi_run = False
+    # The page that shows a running start (its execution section), opened by
+    # the Start button that settings adding files to an experiment draw on the
+    # configure page. None: that button stays on the configure page.
+    run_page = None
 
     # Core workflow logic using the above classes
     def __init__(self, name: str, workspace: str):
@@ -160,6 +164,7 @@ class WorkflowManager:
         note: str = "",
         adds_to: Optional[list] = None,
         files: Optional[list] = None,
+        files_key: Optional[str] = None,
     ) -> None:
         """``follow_up`` for an app without run folders: start from ``params``.
 
@@ -167,11 +172,15 @@ class WorkflowManager:
         app stored them), ``name`` names that result on the configure page.
         ``adds_to`` (the app's ids of earlier results, with their input
         ``files``) is for more files: the next run then adds to them, and
-        ``execution()`` reads them with ``self.follow_up_info()``.
+        ``execution()`` reads them with ``self.follow_up_info()``. ``files_key``
+        (the params.json key of the input files) shows those files apart on the
+        configure page, so only the files to add can be picked there.
         """
         info = {"name": name, "note": note}
         if adds_to:
             info.update(adds_to=list(adds_to), files=list(files or []))
+            if files_key:
+                info["files_key"] = files_key
         apply_settings(self.workflow_dir, params, changes, info)
         self._reload_settings(page)
 
@@ -447,7 +456,33 @@ class WorkflowManager:
         """
         Shows the parameter section of the UI with content defined in self.configure().
         """
-        self.ui.parameter_section(self.configure)
+        self.ui.parameter_section(self.configure, after_parameters=self._add_files_start)
+
+    def _add_files_start(self) -> None:
+        """While the settings add files to an experiment (``follow_up`` or
+        ``start_from`` with more files): a button that starts that run here."""
+        info = self.parameter_manager.get_parameters_from_json().get(FOLLOW_UP_KEY)
+        if not isinstance(info, dict) or not info.get("adds_to"):
+            return
+        running = self.get_workflow_status()["running"]
+        with st.container(border=True):
+            st.markdown(f"**:material/library_add: Add files to {info.get('name', 'the experiment')}**")
+            st.caption("A run is still going: start once it has finished." if running else
+                       "Processes the files picked above with these settings; the results then "
+                       "show them together with the experiment's files.")
+            if st.button("Start analysis", type="primary", icon=":material/play_arrow:",
+                         key=f"{self.workflow_dir.name}-add-files-start", disabled=running):
+                key = info.get("files_key")
+                if key:
+                    picked = st.session_state.get(f"{self.parameter_manager.param_prefix}{key}",
+                                                  self.params.get(key))
+                    if not picked:
+                        st.warning("Pick the files to add first.")
+                        return
+                self.start_workflow()
+                if self.run_page is not None:
+                    st.switch_page(self.run_page)
+                st.rerun()
 
     def show_execution_section(self) -> None:
         """

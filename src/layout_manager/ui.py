@@ -514,8 +514,8 @@ def view_bar(
             shown = []
             for c in components:
                 lacking = missing_analyses([c["name"]], components, available)
-                shown.append(dict(c, unavailable="needs " + join_labels(
-                    [analysis_label(a, analyses) for a in lacking]) + f", not in this {dataset_label}")
+                shown.append(dict(c, unavailable="add " + join_labels(
+                    [analysis_label(a, analyses) for a in lacking]) + f" to this {dataset_label} to use it")
                     if lacking else c)
         if views_editor(path, shown, presets, default_layout, key=f"{key}_editor",
                         new_view=new, default_view=default_view, **editor_args):

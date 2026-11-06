@@ -50,6 +50,7 @@ class Workflow(WorkflowManager):
     # Results page picks which one to show and the Download page renames,
     # downloads and deletes them. Results are read from self.results_dir.
     multi_run = True
+    run_page = Path("content", "topp_workflow_execution.py")
 
     def __init__(self) -> None:
         # Initialize the parent class with the workflow name.
@@ -221,10 +222,16 @@ class Workflow(WorkflowManager):
             found.add("custom-tool")
         return found
 
+    def add_files(self, changes=None) -> None:
+        """Open Configure with this run's settings (and ``changes``), to pick
+        files that are then processed and added to its experiment."""
+        self.follow_up(
+            self.run_id, changes or {}, page=Path("content", "topp_workflow_parameter.py"),
+            note="to add more files", add_files="mzML-files") or _no_settings()
+
     def missing_options(self, missing: list, view) -> list:
         """What the Results page offers for a view whose run lacks ``missing``: processing
         more files with this run's settings and the missing analysis switched on."""
-        configure = Path("content", "topp_workflow_parameter.py")
         changes = {"run-python-script": True} if "custom-tool" in missing else {}
         return [{
             "label": "Process more files with these settings",
@@ -233,9 +240,7 @@ class Workflow(WorkflowManager):
                     + (" and the custom Python tool switched on" if changes else "")
                     + ", to pick files to add. Only those are processed; the Results page then "
                     "shows them with this run's files as one experiment.",
-            "on_click": lambda: self.follow_up(
-                self.run_id, changes, page=configure, note="to add more files",
-                add_files="mzML-files") or _no_settings(),
+            "on_click": lambda: self.add_files(changes),
         }]
 
     @st.fragment
@@ -245,6 +250,8 @@ class Workflow(WorkflowManager):
             layout_path, self.COMPONENTS, self.PRESETS, self.PRESETS[0]["layout"], key="topp-results-view",
             available=self.available(), analyses=self.ANALYSES,
             unavailable_options=self.missing_options, target="the Results page",
+            actions=[{"id": "add-files", "icon": "➕", "label": "Add files", "on_click": self.add_files,
+                      "help": "Process more files with this run's settings and add them to its experiment"}],
         )
         layout, _ = resolve_layout(layout_path, self.COMPONENTS, self.PRESETS[0]["layout"])
         render_layout(
