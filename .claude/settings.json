@@ -10,7 +10,8 @@
     "cannot catch that, so each candidate is tested by whether it prints.",
     "The project venv comes first because on such a machine it is the only",
     "real interpreter present.",
-    "PreToolUse/AskUserQuestion covers what Stop structurally cannot. A Stop hook fires only on a turn that ends in prose; in a build most turns end in a question, and all 34 findings measured across twelve builds sat on those screens. Same script, same catalog, same log."
+    "PreToolUse/AskUserQuestion covers what Stop structurally cannot. A Stop hook fires only on a turn that ends in prose; in a build most turns end in a question, and all 34 findings measured across twelve builds sat on those screens. Same script, same catalog, same log.",
+    "PostToolUse on file edits runs .claude/hooks/dependency_licenses.py: when the edit adds or re-pins a dependency (requirements*.txt, conda-requirements.txt, package.json) it looks up the license and says where to attribute it, and blocks on a license that needs a decision not yet recorded in dependency-licenses.json. CI runs the same check on every pull request."
   ],
   "hooks": {
     "Stop": [
@@ -30,6 +31,18 @@
           {
             "type": "command",
             "command": "for p in \"$CLAUDE_PROJECT_DIR/.venv/Scripts/python.exe\" \"$CLAUDE_PROJECT_DIR/.venv/bin/python\" \"$HOME/.local/bin/python.exe\" \"$HOME/.local/bin/python\" py python3 python; do if [ \"$(\"$p\" -c 'print(1)' 2>/dev/null)\" = \"1\" ]; then \"$p\" \"$CLAUDE_PROJECT_DIR/.claude/hooks/language_check.py\"; exit $?; fi; done; exit 0"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|MultiEdit|Write|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "for p in \"$CLAUDE_PROJECT_DIR/.venv/Scripts/python.exe\" \"$CLAUDE_PROJECT_DIR/.venv/bin/python\" \"$HOME/.local/bin/python.exe\" \"$HOME/.local/bin/python\" py python3 python; do if [ \"$(\"$p\" -c 'print(1)' 2>/dev/null)\" = \"1\" ]; then \"$p\" \"$CLAUDE_PROJECT_DIR/.claude/hooks/dependency_licenses.py\"; exit $?; fi; done; exit 0",
+            "timeout": 120
           }
         ]
       }
