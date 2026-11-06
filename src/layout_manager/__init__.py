@@ -23,8 +23,22 @@ experiments and renders each below its own dataset selector::
             max_experiments=MAX_EXPERIMENTS) if i == 0 else None,
     )
 
-``layout_presets`` adds a selector of ready-made layouts (preset views) next
-to the editor; a layout saved in the editor shows there as Custom.
+A page with ready-made layouts (presets) draws ``view_bar`` instead of a
+layout button: as many views as fit in one row, the rest in More, and ✏️,
+which opens ``views_editor``, where users order the views, keep some out of
+the bar, and make views of their own (presets are duplicated, not changed)::
+
+    view_bar(LAYOUT_PATH, COMPONENTS, PRESETS, DEFAULT_LAYOUT, key="viewer_view")
+    layout, side_by_side = resolve_layout(LAYOUT_PATH, COMPONENTS, DEFAULT_LAYOUT)
+
+The first preset's layout should be ``DEFAULT_LAYOUT``. The bar ends in +,
+which opens the editor on a new view that starts as a copy of the current one.
+
+Give all components of one experiment the same OpenMS-Insight state,
+``experiment_state(key, index, dataset_id)``, so a selection stays when the
+user switches views; side-by-side experiments keep their own.
+
+``layout_presets`` is the earlier, simpler selector of presets.
 
 ``layout.py`` is Streamlit-free; ``ui.py`` holds the editor and the grid.
 Ported from FLASHApp's Layout Manager.
@@ -36,18 +50,25 @@ from src.layout_manager.layout import (
     apply_preset,
     clear_layout,
     load_layout,
+    load_views,
     match_preset,
     resolve_layout,
     save_layout,
+    save_views,
+    select_view,
     validate_layout,
+    validate_views,
 )
 from src.layout_manager.ui import (
+    experiment_state,
     layout_button,
     layout_editor,
     layout_presets,
     render_experiments,
     render_layout,
     selected_datasets,
+    view_bar,
+    views_editor,
 )
 
 __all__ = [
@@ -55,15 +76,22 @@ __all__ = [
     "MAX_EXPERIMENTS",
     "apply_preset",
     "clear_layout",
+    "experiment_state",
     "layout_button",
     "layout_editor",
     "layout_presets",
     "load_layout",
+    "load_views",
     "match_preset",
     "render_experiments",
     "render_layout",
     "resolve_layout",
     "save_layout",
+    "save_views",
+    "select_view",
     "selected_datasets",
     "validate_layout",
+    "validate_views",
+    "view_bar",
+    "views_editor",
 ]

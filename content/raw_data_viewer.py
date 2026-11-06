@@ -4,16 +4,16 @@ import streamlit as st
 
 from src.common.common import page_setup
 from src import view
-from src.layout_manager import layout_button, layout_presets, render_layout, resolve_layout
+from src.layout_manager import render_layout, resolve_layout, view_bar
 
-# Components of this page, arranged with Edit layout
+# Components of this page, arranged in the views of the view bar
 COMPONENTS = [
     {"name": "peak_map", "label": "Peak map (MS1)", "group": "Plots"},
     {"name": "spectrum", "label": "Spectra (MS1 + MS2)", "group": "Plots"},
     {"name": "chromatograms", "label": "Chromatograms (MS1)", "group": "Plots"},
 ]
 DEFAULT_LAYOUT = [["peak_map"], ["spectrum"], ["chromatograms"]]
-# Ready-made layouts, picked with the View selector next to Edit layout
+# Ready-made views; users reorder them and add their own with ✏️
 PRESETS = [
     {"name": "all", "label": "All", "layout": DEFAULT_LAYOUT, "help": "Peak map, spectra and chromatograms."},
     {"name": "peak_map", "label": "Peak map", "layout": [["peak_map"]]},
@@ -31,9 +31,6 @@ params = page_setup()
 
 st.title("View raw MS data")
 
-# File selection can not be in fragment since it influences the subsequent sections
-cols = st.columns(3)
-
 mzML_dir = Path(st.session_state.workspace, "mzML-files")
 # Only mzML files: the directory also holds external_files.txt and, in the
 # shipped demo workspaces, a .gitkeep that pyOpenMS cannot parse.
@@ -47,23 +44,15 @@ if external_files.exists():
         external_files = [f.strip() for f in external_files]
         file_options += external_files
 
-selected_file = cols[0].selectbox(
-    "choose file",
-    file_options,
-    key="view_selected_file"
-)
+selected_file = st.selectbox("choose file", file_options, key="view_selected_file")
 if selected_file:
     view.get_df(Path(st.session_state.workspace, "mzML-files", selected_file))
 
-
     layout_path = Path(st.session_state.workspace, "layouts", "raw_data_viewer.json")
-    with cols[1]:
-        layout_presets(layout_path, COMPONENTS, PRESETS, DEFAULT_LAYOUT, key="raw_data_viewer_view")
-    with cols[2].container(height="stretch", vertical_alignment="bottom"):
-        layout_button(
-            layout_path, COMPONENTS, DEFAULT_LAYOUT, key="raw_data_viewer_layout",
-            help_text="Drag components into the grid (up to 3 per row), then press **Save**.",
-            target="this page",
-        )
+    view_bar(
+        layout_path, COMPONENTS, PRESETS, DEFAULT_LAYOUT, key="raw_data_viewer_view",
+        help_text="Order the views, keep some out of the bar, or make your own, then press **Save**.",
+        target="this page",
+    )
     layout, _ = resolve_layout(layout_path, COMPONENTS, DEFAULT_LAYOUT)
     render_layout(layout[0], RENDERERS, {c["name"]: c["label"] for c in COMPONENTS})

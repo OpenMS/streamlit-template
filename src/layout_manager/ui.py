@@ -17,14 +17,21 @@ from src.layout_manager.layout import (
     apply_preset,
     clear_layout,
     load_layout,
+    load_views,
     match_preset,
     resolve_layout,
     save_layout,
+    save_views,
+    select_view,
     validate_layout,
+    validate_views,
 )
 
 _editor = st_components.declare_component(
     "layout_manager_editor", path=str(Path(__file__).parent / "frontend")
+)
+_view_bar = st_components.declare_component(
+    "layout_manager_view_bar", path=str(Path(__file__).parent / "view_bar")
 )
 
 
@@ -201,6 +208,170 @@ def layout_presets(
     return current
 
 
+def views_editor(
+    path: Path,
+    components: Sequence[Dict[str, Any]],
+    presets: Sequence[Dict[str, Any]],
+    default_layout: List[List[str]],
+    key: str,
+    max_experiments: int = 1,
+    max_columns: int = MAX_COLUMNS,
+    target: str = "the Viewer",
+    experiment_label: str = "Experiment",
+    new_view: bool = False,
+) -> bool:
+    """The editor of a page's views: their order, which are in the bar, their components.
+
+    Ready-made views (``presets``) can be reordered and kept out of the bar but
+    not changed; users duplicate one to change it, or start a new view. Returns
+    True in the run that saved or reset (not after a refused save).
+    ``new_view`` opens the editor on a new view, a copy of the current one; until
+    its components change, a "Start from" choice swaps in another view's.
+    """
+    revision_key = f"{key}_revision"
+    handled_key = f"{key}_handled"
+    st.session_state.setdefault(revision_key, 0)
+    submitted = st.session_state.get(key)
+    error = ""
+    done = False
+    if submitted and submitted.get("nonce") != st.session_state.get(handled_key):
+        st.session_state[handled_key] = submitted.get("nonce")
+        if submitted.get("action") == "save":
+            error = validate_views(submitted, components, presets, default_layout, max_experiments, max_columns)
+            if not error:
+                state = load_views(path, components, presets, default_layout)
+                by_name = {v["name"]: v for v in state["views"]}
+                views = []
+                for sent in submitted["views"]:
+                    view = dict(by_name.get(sent["name"], {}))
+                    if not view.get("preset"):
+                        view.update(name=sent["name"], label=str(sent["label"]).strip(),
+                                    rows=sent["rows"], preset=False)
+                    view["in_bar"] = bool(sent.get("in_bar", True))
+                    views.append(view)
+                save_views(path, {"views": views, "current": submitted["current"],
+                                  "experiments": submitted.get("experiments", 1),
+                                  "side_by_side": submitted.get("side_by_side")})
+                done = True
+        elif submitted.get("action") == "reset":
+            clear_layout(path)
+            st.session_state[revision_key] += 1
+            done = True
+
+    state = load_views(path, components, presets, default_layout)
+    fresh = None
+    if new_view:
+        source = next(v for v in state["views"] if v["name"] == state["current"])
+        taken = {v["name"] for v in state["views"]}
+        number = next(n for n in range(1, len(taken) + 2) if f"custom-{n}" not in taken)
+        labels = {v["label"].lower() for v in state["views"]}
+        base = f"{source['label']} (copy)"
+        label = next(c for c in [base] + [f"{base} {n}" for n in range(2, len(labels) + 3)]
+                     if c.lower() not in labels)
+        fresh = f"custom-{number}"
+        # Right after the view it starts from, or at the end of the bar
+        index = state["views"].index(source) + 1 if source["in_bar"] else sum(v["in_bar"] for v in state["views"])
+        state["views"].insert(index, {"name": fresh, "label": label,
+                                      "rows": [list(r) for r in source["rows"]],
+                                      "preset": False, "in_bar": True})
+        state["current"] = fresh
+    _editor(
+        components=list(components),
+        default_layout=default_layout,
+        saved_layout=None,
+        side_by_side=state["side_by_side"],
+        views=state["views"],
+        current=state["current"],
+        experiments=state["experiments"],
+        fresh=fresh,
+        max_experiments=max_experiments,
+        max_columns=max_columns,
+        revision=f"{st.session_state[revision_key]}-{int(new_view)}",
+        server_error=error,
+        target=target,
+        experiment_label=experiment_label,
+        key=key,
+        default=None,
+    )
+    return done
+
+
+def view_bar(
+    path: Path,
+    components: Sequence[Dict[str, Any]],
+    presets: Sequence[Dict[str, Any]],
+    default_layout: List[List[str]],
+    key: str,
+    actions: Optional[Sequence[Dict[str, Any]]] = None,
+    details: bool = False,
+    label: str = "View",
+    dialog_title: str = "Customize views",
+    help_text: str = "",
+    **editor_args: Any,
+) -> str:
+    """The view bar: as many views as fit, the rest in More, and ✏️ Customize.
+
+    Views are the page's ``presets`` (``{"name", "label", "layout", "help"?}``)
+    and the views users make in the editor, in the order users give them.
+    Picking one stores its components as the layout ``resolve_layout`` reads,
+    so call this before ``resolve_layout``. The bar ends in +, which opens the
+    editor on a new view that starts as a copy of the current one. ``details`` adds the number of components below each
+    name while there is room. ``actions`` are icon
+    buttons drawn after ✏️, ``{"id", "icon", "help", "on_click"}``; their
+    ``on_click`` runs in the rerun after the click (open a dialog there).
+    ``editor_args`` go to ``views_editor`` (``max_experiments``, ...).
+    Returns the name of the current view.
+    """
+    open_key = f"{key}_dialog_open"
+    new_key = f"{key}_dialog_new"
+    handled_key = f"{key}_bar_handled"
+    clicked = None
+    submitted = st.session_state.get(f"{key}_bar")
+    if submitted and submitted.get("nonce") != st.session_state.get(handled_key):
+        st.session_state[handled_key] = submitted.get("nonce")
+        if submitted.get("action") == "pick":
+            select_view(path, submitted.get("view"), components, presets, default_layout)
+        elif submitted.get("action") == "edit":
+            st.session_state[open_key] = True
+            st.session_state[new_key] = bool(submitted.get("new_view"))
+        elif submitted.get("action") == "button":
+            clicked = submitted.get("id")
+
+    state = load_views(path, components, presets, default_layout)
+    _view_bar(
+        views=[{k: v[k] for k in ("name", "label", "rows", "preset", "in_bar", "help") if k in v}
+               for v in state["views"]],
+        current=state["current"],
+        details=details,
+        label=label,
+        customize_help="Customize views",
+        actions=[{k: a[k] for k in ("id", "icon", "label", "help") if k in a} for a in actions or []],
+        key=f"{key}_bar",
+        default=None,
+    )
+
+    def _closed() -> None:
+        st.session_state[open_key] = False
+        st.session_state[new_key] = False
+
+    @st.dialog(dialog_title, width="large", on_dismiss=_closed)
+    def _dialog() -> None:
+        if help_text:
+            st.caption(help_text)
+        new = st.session_state.get(new_key, False)
+        if views_editor(path, components, presets, default_layout, key=f"{key}_editor",
+                        new_view=new, **editor_args):
+            _closed()
+            st.rerun()
+
+    if st.session_state.get(open_key):
+        _dialog()
+    for action in actions or []:
+        if action.get("id") == clicked and action.get("on_click"):
+            action["on_click"]()
+    return state["current"]
+
+
 def _selection_key(key: str, index: int) -> str:
     return f"{key}_experiment_{index}"
 
@@ -298,3 +469,22 @@ def render_experiments(
             st.divider()
         picked.append(one(index, rows))
     return picked
+
+
+def experiment_state(key: str, index: int, dataset_id: Optional[str] = None) -> Any:
+    """The OpenMS-Insight ``StateManager`` all components of one experiment share.
+
+    Keyed by experiment, not by view or component: a protein, peptide or
+    spectrum picked in one view stays picked when the user switches views,
+    and two experiments side by side keep their own selections. Pass the
+    experiment's ``dataset_id`` so that picking another dataset clears the
+    selection. Needs ``openms-insight``, which the template does not install.
+    """
+    from openms_insight import StateManager  # pylint: disable=import-outside-toplevel
+
+    name = f"{key}_state_{index}"
+    shown = f"{name}_dataset"
+    if dataset_id is not None and st.session_state.get(shown) != dataset_id:
+        st.session_state.pop(name, None)
+        st.session_state[shown] = dataset_id
+    return StateManager(name)

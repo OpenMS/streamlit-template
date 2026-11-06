@@ -299,3 +299,136 @@ def test_preset_selector(tmp_path):
     assert at.markdown[0].value == "None: table"
     assert at.session_state["view"] == "_custom"
     assert at.radio(key="view").options == ["All", "Plots", "Custom"]
+
+
+VIEWS = [
+    {"name": "all", "label": "All", "layout": [["table", "detail"], ["plot"]]},
+    {"name": "plots", "label": "Plots", "layout": [["plot"]]},
+]
+# The page's default is its first view
+DEFAULT = [["table", "detail"], ["plot"]]
+
+
+def test_views_round_trip(tmp_path):
+    from src.layout_manager.layout import load_views, save_views, select_view, validate_views
+
+    path = tmp_path / "viewer.json"
+    state = load_views(path, COMPONENTS, VIEWS, DEFAULT)
+    assert [v["name"] for v in state["views"]] == ["all", "plots"]
+    assert state["current"] == "all"
+
+    # A view of one's own, kept out of the bar, and a preset moved last
+    state["views"] = [state["views"][1], state["views"][0],
+                      {"name": "custom-1", "label": "Mine", "rows": [["table"]], "preset": False, "in_bar": False}]
+    state["current"] = "custom-1"
+    assert validate_views(state, COMPONENTS, VIEWS, DEFAULT) == ""
+    save_views(path, state)
+    again = load_views(path, COMPONENTS, VIEWS, DEFAULT)
+    assert [(v["name"], v["in_bar"]) for v in again["views"]] == [("plots", True), ("all", True), ("custom-1", False)]
+    assert again["current"] == "custom-1"
+    # The current view is the layout resolve_layout reads
+    assert resolve_layout(path, COMPONENTS, DEFAULT) == ([[["table"]]], False)
+
+    assert select_view(path, "plots", COMPONENTS, VIEWS, DEFAULT)
+    assert resolve_layout(path, COMPONENTS, DEFAULT) == ([[["plot"]]], False)
+    assert not select_view(path, "nope", COMPONENTS, VIEWS, DEFAULT)
+
+    # Refused: a duplicate label, an empty view, a missing preset
+    bad = load_views(path, COMPONENTS, VIEWS, DEFAULT)
+    bad["views"][2]["label"] = "All"
+    assert validate_views(bad, COMPONENTS, VIEWS, DEFAULT)
+    bad["views"][2].update(label="Mine", rows=[])
+    assert validate_views(bad, COMPONENTS, VIEWS, DEFAULT)
+    bad["views"] = bad["views"][1:]
+    assert validate_views(bad, COMPONENTS, VIEWS, DEFAULT)
+
+
+def test_legacy_layout_becomes_a_view(tmp_path):
+    from src.layout_manager.layout import load_views
+
+    path = tmp_path / "viewer.json"
+    save_layout(path, [[["table"], ["plot"]]])
+    state = load_views(path, COMPONENTS, VIEWS, DEFAULT)
+    mine = next(v for v in state["views"] if not v["preset"])
+    assert mine["label"] == "My layout" and mine["rows"] == [["table"], ["plot"]]
+    assert state["current"] == mine["name"]
+
+
+_BAR_APP = """
+import streamlit as st
+from pathlib import Path
+from src.layout_manager import view_bar, resolve_layout
+
+path = Path(st.session_state["path"])
+clicks = st.session_state.setdefault("clicks", [])
+current = view_bar(path, {components!r}, {presets!r}, {default!r}, key="vb",
+                   actions=[{{"id": "x", "icon": "X", "help": "x", "on_click": lambda: clicks.append(1)}}])
+layout, _ = resolve_layout(path, {components!r}, {default!r})
+st.markdown(current + ":" + " | ".join(",".join(row) for row in layout[0]))
+"""
+
+
+def test_view_bar_pick_new_view_and_action(tmp_path):
+    path = tmp_path / "viewer.json"
+    at = AppTest.from_string(_BAR_APP.format(components=COMPONENTS, presets=VIEWS, default=DEFAULT))
+    at.session_state["path"] = str(path)
+    at.run()
+    assert not at.exception
+    assert at.markdown[0].value == "all:table,detail | plot"
+
+    at.session_state["vb_bar"] = {"action": "pick", "view": "plots", "nonce": 1}
+    at.run()
+    assert at.markdown[0].value == "plots:plot"
+
+    at.session_state["vb_bar"] = {"action": "button", "id": "x", "nonce": 2}
+    at.run()
+    assert at.session_state["clicks"] == [1]
+
+    # + opens the editor on a copy of the current view; saving it makes it current
+    at.session_state["vb_bar"] = {"action": "edit", "new_view": True, "nonce": 3}
+    at.run()
+    assert at.session_state["vb_dialog_new"] is True
+    at.session_state["vb_editor"] = {
+        "action": "save", "nonce": 4, "current": "custom-1", "experiments": 1, "side_by_side": False,
+        "views": [{"name": "all", "in_bar": True}, {"name": "plots", "in_bar": True},
+                  {"name": "custom-1", "label": "Plots (copy)", "rows": [["table"]], "in_bar": True}]}
+    at.run()
+    assert not at.exception
+    assert at.session_state["vb_dialog_open"] is False
+    assert at.markdown[0].value == "custom-1:table"
+
+
+_STATE_APP = """
+import sys, types
+import streamlit as st
+
+class StateManager:
+    def __init__(self, key):
+        self.key = key
+        st.session_state.setdefault(key, {{"selections": {{}}}})
+
+sys.modules["openms_insight"] = types.SimpleNamespace(StateManager=StateManager)
+from src.layout_manager import experiment_state
+
+a = experiment_state("v", 0, st.session_state["dataset"])
+b = experiment_state("v", 1, "other")
+if st.session_state.get("pick"):
+    st.session_state[a.key]["selections"]["protein"] = "P1"
+st.markdown(f"{{a.key}} {{b.key}} {{st.session_state[a.key]['selections']}}")
+"""
+
+
+def test_experiment_state_kept_until_dataset_changes(monkeypatch):
+    import sys
+    # The app swaps in a stand-in for openms-insight; put the real one back afterwards
+    monkeypatch.setitem(sys.modules, "openms_insight", sys.modules.get("openms_insight"))
+    at = AppTest.from_string(_STATE_APP.format())
+    at.session_state["dataset"] = "run1"
+    at.session_state["pick"] = True
+    at.run()
+    at.session_state["pick"] = False
+    at.run()
+    assert at.markdown[0].value == "v_state_0 v_state_1 {'protein': 'P1'}"
+    at.session_state["dataset"] = "run2"
+    at.run()
+    assert at.markdown[0].value == "v_state_0 v_state_1 {}"

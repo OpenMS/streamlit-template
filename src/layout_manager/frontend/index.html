@@ -99,6 +99,31 @@
            opacity: 0; transition: opacity .15s; pointer-events: none; z-index: 1001; }
   .toast.show { opacity: .95; }
   input[type=file] { display: none; }
+
+  /* Views mode: the list of views | the selected view | the components */
+  .main.views { grid-template-columns: 210px minmax(0, 1fr) 210px; }
+  @media (max-width: 760px) { .main.views { grid-template-columns: minmax(0, 1fr); } }
+  .vlist { display: grid; gap: 3px; align-content: start; }
+  .vlist h4, .palette h4 { margin: 0 0 2px; font-size: 14px; }
+  .vitem { display: flex; align-items: center; gap: 6px; border: 1px solid transparent; background: var(--bg2); border-radius: 7px; padding: 5px 6px; cursor: grab; touch-action: none; font-size: 14px; }
+  .vitem.sel { border-color: var(--primary); }
+  .vitem .grip { color: var(--muted); font-size: 12px; letter-spacing: -2px; }
+  .vitem .vname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .vitem .tag { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+  .vitem.drop-over { outline: 2px dashed var(--primary); outline-offset: -2px; }
+  .vitem.source { opacity: .35; }
+  .vitem input { margin: 0; cursor: pointer; }
+  .cut { display: flex; justify-content: space-between; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); border-top: 1px dashed var(--border); margin-top: 6px; padding: 6px 4px 2px; border-radius: 4px; }
+  .cut.drop-over { outline: 2px dashed var(--primary); outline-offset: -2px; color: var(--primary); }
+  .vhead { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 6px; }
+  .vhead input { flex: 1 1 160px; min-width: 0; font: inherit; font-weight: 600; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 7px; padding: 4px 8px; }
+  .vhead strong { flex: 1 1 auto; font-size: 15px; }
+  .startfrom { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 13px; background: var(--bg2); border-radius: 8px; padding: 6px 10px; margin-bottom: 8px; }
+  .startfrom select { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 2px 6px; }
+  .readonly { font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+  .exp.locked .cell { cursor: default; }
+  .search { width: 100%; font: inherit; font-size: 13px; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 7px; padding: 4px 8px; margin-bottom: 4px; }
+  .chip.off { opacity: .45; cursor: default; }
 </style>
 </head>
 <body>
@@ -135,23 +160,90 @@
   function target() { return cfg.target || 'the Viewer'; }
   function expName() { return cfg.experiment_label || 'Experiment'; }
   function multi() { return cfg.max_experiments > 1; }
+  function viewsMode() { return Array.isArray(cfg.views); }
+  var query = '';           // text of the component search
+  function selView() {
+    return draft.views.filter(function (v) { return v.name === draft.sel; })[0] || draft.views[0];
+  }
+  // The grid edits draft.layout; in views mode that is the selected view's rows
+  function bindView() { if (viewsMode()) { var v = selView(); draft.sel = v.name; draft.layout = [v.rows]; } }
+  function locked() { return viewsMode() && selView().preset; }
+  function uniqueLabel(base) {
+    var taken = {}; draft.views.forEach(function (v) { taken[v.label.toLowerCase()] = true; });
+    if (!taken[base.toLowerCase()]) return base;
+    for (var i = 2; ; i++) if (!taken[(base + ' ' + i).toLowerCase()]) return base + ' ' + i;
+  }
+  function newName() {
+    var n = 1, taken = {}; draft.views.forEach(function (v) { taken[v.name] = true; });
+    while (taken['custom-' + n]) n++;
+    return 'custom-' + n;
+  }
+  function addView(label, rows, after) {
+    var v = { name: newName(), label: uniqueLabel(label), rows: rows, preset: false, in_bar: true };
+    var i = after ? draft.views.indexOf(after) + 1 : draft.views.filter(function (x) { return x.in_bar; }).length;
+    if (after && !after.in_bar) v.in_bar = false;
+    draft.views.splice(i, 0, v); draft.sel = v.name; changed();
+  }
+  function moveView(name, beforeName, inBar) {
+    var from = draft.views.findIndex(function (v) { return v.name === name; });
+    var v = draft.views.splice(from, 1)[0];
+    var to;
+    if (beforeName) { to = draft.views.findIndex(function (x) { return x.name === beforeName; }); v.in_bar = draft.views[to].in_bar; }
+    else { v.in_bar = inBar; to = draft.views.filter(function (x) { return x.in_bar; }).length; }
+    draft.views.splice(to, 0, v); changed();
+  }
 
   function initDraft() {
+    if (viewsMode()) {
+      draft = { views: clone(cfg.views), sel: cfg.current, experiments: cfg.experiments || 1, sideBySide: !!cfg.side_by_side };
+      // A view just made with +: remember what it started from, so the start can be swapped
+      if (cfg.fresh) {
+        var src = draft.views[draft.views.findIndex(function (v) { return v.name === cfg.fresh; }) - 1];
+        draft.fresh = { name: cfg.fresh, from: src ? src.name : '', rows: JSON.stringify(selView().rows), auto: selView().label };
+      }
+      bindView(); active = 0; return;
+    }
     var src = cfg.saved_layout ? cfg.saved_layout : [cfg.default_layout];
     draft = { layout: clone(src), sideBySide: !!cfg.side_by_side };
     active = 0;
   }
+  function viewsState(views, sel, n, sbs) {
+    return JSON.stringify({ v: views.map(function (v) { return v.preset ? [v.name, v.in_bar] : [v.name, v.in_bar, v.label, v.rows]; }), c: sel, n: n, s: !!sbs && n === 2 });
+  }
 
   function savedState() {
+    if (viewsMode()) return cfg.fresh ? 'unsaved new view' : viewsState(cfg.views, cfg.current, cfg.experiments || 1, cfg.side_by_side);
     return cfg.saved_layout ? JSON.stringify({ l: cfg.saved_layout, s: !!cfg.side_by_side && cfg.saved_layout.length === 2 }) : null;
   }
   function draftState() {
+    if (viewsMode()) return viewsState(draft.views, draft.sel, draft.experiments, draft.sideBySide);
     return JSON.stringify({ l: draft.layout, s: draft.sideBySide && draft.layout.length === 2 });
   }
 
   // Mirrors validate_layout() in catalog.py so problems show before Save.
   function problems() {
     var out = { cells: {}, first: '' };
+    if (viewsMode()) {
+      var seen = {};
+      draft.views.forEach(function (v) {
+        if (v.preset || out.first) return;
+        var lbl = (v.label || '').trim();
+        if (!lbl) out.first = 'Every view needs a name';
+        else if (seen[lbl.toLowerCase()]) out.first = 'Two views are called "' + lbl + '"';
+        else if (![].concat.apply([], v.rows).length) out.first = lbl + ' is empty';
+        seen[lbl.toLowerCase()] = true;
+      });
+      var cur = selView(), names = [].concat.apply([], cur.rows);
+      cur.rows.forEach(function (row, r) {
+        row.forEach(function (name, c) {
+          var why = '';
+          if (!byName[name]) why = 'not available here';
+          else if (byName[name].requires && names.indexOf(byName[name].requires) < 0) why = 'needs ' + label(byName[name].requires);
+          if (why) { out.cells['0,' + r + ',' + c] = why; if (!out.first && !cur.preset) out.first = label(name) + ' in ' + cur.label + ' ' + why; }
+        });
+      });
+      return out;
+    }
     if (!draft.layout.length) out.first = 'Add at least one ' + expName().toLowerCase();
     draft.layout.forEach(function (exp, e) {
       var names = [].concat.apply([], exp);
@@ -186,12 +278,13 @@
   }
 
   function render() {
+    bindView();
     var probs = problems();
     var dirty = draftState() !== savedState();
     var nExp = draft.layout.length;
     if (active >= nExp) active = Math.max(0, nExp - 1);
 
-    var toolbar = h('div', { class: 'toolbar' }, [
+    var toolbar = viewsMode() ? viewsToolbar(probs, dirty) : h('div', { class: 'toolbar' }, [
       multi() ? h('span', { class: 'label', text: expName() + 's' }) : null,
       multi() ? h('span', { class: 'stepper' }, [
         h('button', { title: 'Remove the last one', disabled: nExp <= 1, onclick: function () { draft.layout.pop(); changed(); } }, ['−']),
@@ -216,6 +309,8 @@
     var status;
     if (message) status = h('div', { class: 'status ' + message.kind, text: message.text });
     else if (probs.first) status = h('div', { class: 'status error', text: probs.first });
+    else if (dirty && viewsMode()) status = h('div', { class: 'status dirty', text: 'Unsaved changes' });
+    else if (viewsMode()) status = h('div', { class: 'status saved', text: '✓ Saved' });
     else if (dirty) status = h('div', { class: 'status dirty', text: cfg.saved_layout ? 'Unsaved changes' : 'Not saved yet — ' + target() + ' uses its default layout until you save' });
     else status = h('div', { class: 'status saved', text: '✓ Saved — ' + target() + ' uses this layout' });
 
@@ -228,15 +323,19 @@
       if (!g) { g = { name: c.group, items: [] }; groups.push(g); }
       g.items.push(c);
     });
-    var palette = h('div', { class: 'palette', 'data-drop': 'palette' }, [
+    var palette = h('div', { class: 'palette', 'data-drop': locked() ? null : 'palette' }, [
       h('h4', { text: 'Components' }),
-      h('div', { class: 'hint', text: 'Drag into the grid, or click to add' + (multi() ? ' to ' + expName().toLowerCase() + ' ' + (active + 1) : '') + '. Drag a placed component back here to remove it.' })
+      h('div', { class: 'hint', text: locked() ? 'Duplicate this view to change it.' : 'Drag into the grid, or click to add' + (multi() && !viewsMode() ? ' to ' + expName().toLowerCase() + ' ' + (active + 1) : '') + '. Drag a placed component back here to remove it.' }),
+      h('input', { class: 'search', type: 'search', id: 'component-search', placeholder: 'Search components', 'aria-label': 'Search components', value: query,
+                   oninput: function (ev) { query = ev.target.value; filterPalette(); } })
     ]);
     groups.forEach(function (g) {
-      palette.appendChild(h('div', { class: 'group', text: g.name || '' }));
-      palette.appendChild(h('div', { class: 'chips' }, g.items.map(function (c) {
-        return h('div', { class: 'chip' + (used[c.name] ? ' used' : ''), 'data-drag': 'palette', 'data-name': c.name,
-                          title: used[c.name] ? 'Already placed' : 'Drag or click to add' }, [
+      palette.appendChild(h('div', { class: 'group', 'data-group': g.name || '', text: g.name || '' }));
+      palette.appendChild(h('div', { class: 'chips', 'data-group': g.name || '' }, g.items.map(function (c) {
+        var off = locked();
+        return h('div', { class: 'chip' + (used[c.name] ? ' used' : '') + (off ? ' off' : ''), 'data-drag': off ? null : 'palette', 'data-name': c.name,
+                          'data-search': (c.label + ' ' + (c.group || '') + ' ' + c.name).toLowerCase(),
+                          title: off ? 'Duplicate this view to change it' : used[c.name] ? 'Already placed' : 'Drag or click to add' }, [
           h('span', { class: 'grip', text: '⋮⋮' }),
           h('span', { text: c.label }),
           c.requires ? h('span', { class: 'req', text: '+ ' + label(c.requires) }) : null
@@ -246,9 +345,11 @@
 
     // Experiments
     var exps = h('div', { class: 'experiments' + (nExp === 2 && draft.sideBySide ? ' side-by-side' : '') });
+    var lock = locked();
     draft.layout.forEach(function (exp, e) {
-      var box = h('div', { class: 'exp' + (e === active && nExp > 1 ? ' active' : ''), onclick: function () { if (active !== e) { active = e; render(); } } }, [
-        h('div', { class: 'exp-head' }, [
+      var box = h('div', { class: 'exp' + (lock ? ' locked' : '') + (e === active && nExp > 1 ? ' active' : ''), onclick: function () { if (active !== e) { active = e; render(); } } }, [
+        viewsMode() ? viewHead() : null,
+        viewsMode() ? null : h('div', { class: 'exp-head' }, [
           h('strong', { text: multi() ? expName() + ' ' + (e + 1) : 'Layout' }),
           h('span', { class: 'spacer' }),
           [].concat.apply([], exp).length ? h('button', { class: 'link', onclick: function () { draft.layout[e] = []; changed(); } }, ['Clear']) : null,
@@ -256,29 +357,128 @@
         ])
       ]);
       exp.forEach(function (row, r) {
-        if (r > 0) box.appendChild(h('div', { class: 'newrow', 'data-drop': 'newrow', 'data-exp': e, 'data-row': r }));
+        if (r > 0) box.appendChild(h('div', { class: 'newrow', 'data-drop': lock ? null : 'newrow', 'data-exp': e, 'data-row': r }));
         var rowEl = h('div', { class: 'row' });
         var open = row.length < cfg.max_columns;
         for (var c = 0; c <= row.length; c++) {
-          rowEl.appendChild(h('div', { class: 'slot' + (open ? ' open' : ''), 'data-drop': open ? 'slot' : null, 'data-exp': e, 'data-row': r, 'data-col': c }));
+          rowEl.appendChild(h('div', { class: 'slot' + (open ? ' open' : ''), 'data-drop': open && !lock ? 'slot' : null, 'data-exp': e, 'data-row': r, 'data-col': c }));
           if (c === row.length) break;
           var why = probs.cells[e + ',' + r + ',' + c];
           var name = row[c];
-          rowEl.appendChild(h('div', { class: 'cell' + (why ? ' invalid' : ''), 'data-drag': 'cell', 'data-drop': 'cell', 'data-exp': e, 'data-row': r, 'data-col': c, title: 'Drag to move, drop on another component to swap' }, [
+          rowEl.appendChild(h('div', { class: 'cell' + (why ? ' invalid' : ''), 'data-drag': lock ? null : 'cell', 'data-drop': lock ? null : 'cell', 'data-exp': e, 'data-row': r, 'data-col': c, title: lock ? '' : 'Drag to move, drop on another component to swap' }, [
             h('div', { class: 'name', text: label(name) }),
             why ? h('div', { class: 'sub bad', text: why }) : (byName[name] && byName[name].requires ? h('div', { class: 'sub', text: 'linked to ' + label(byName[name].requires) }) : null),
-            h('button', { class: 'x', title: 'Remove', 'data-remove': '1', onclick: (function (e, r, c) { return function () { removeAt(e, r, c); changed(); }; })(e, r, c) }, ['×'])
+            lock ? null : h('button', { class: 'x', title: 'Remove', 'data-remove': '1', onclick: (function (e, r, c) { return function () { removeAt(e, r, c); changed(); }; })(e, r, c) }, ['×'])
           ]));
         }
         box.appendChild(rowEl);
       });
-      box.appendChild(h('div', { class: 'newrow last', 'data-drop': 'newrow', 'data-exp': e, 'data-row': exp.length },
+      if (!lock) box.appendChild(h('div', { class: 'newrow last', 'data-drop': 'newrow', 'data-exp': e, 'data-row': exp.length },
         [exp.length ? 'Drop here for a new row' : 'Drop a component here to start']));
       exps.appendChild(box);
     });
 
-    app.replaceChildren(toolbar, status, h('div', { class: 'main' }, [palette, exps]));
+    if (viewsMode()) app.replaceChildren(toolbar, status, h('div', { class: 'main views' }, [viewList(), exps, palette]));
+    else app.replaceChildren(toolbar, status, h('div', { class: 'main' }, [palette, exps]));
+    filterPalette();
     syncHeight();
+  }
+
+  function filterPalette() {
+    var q = query.trim().toLowerCase();
+    var groups = {};
+    app.querySelectorAll('.palette .chip').forEach(function (chip) {
+      var hit = !q || chip.getAttribute('data-search').indexOf(q) >= 0;
+      chip.hidden = !hit;
+      var g = chip.parentNode.getAttribute('data-group');
+      groups[g] = groups[g] || hit;
+    });
+    app.querySelectorAll('.palette [data-group]').forEach(function (el) { el.hidden = !groups[el.getAttribute('data-group')]; });
+  }
+
+  // ---- Views mode: toolbar, the list of views, the selected view's header ----
+  function viewsToolbar(probs, dirty) {
+    var n = draft.experiments;
+    return h('div', { class: 'toolbar' }, [
+      multi() ? h('span', { class: 'label', text: expName() + 's shown' }) : null,
+      multi() ? h('span', { class: 'stepper' }, [
+        h('button', { title: 'Show one less', disabled: n <= 1, onclick: function () { draft.experiments--; changed(); } }, ['−']),
+        h('span', { text: String(n) }),
+        h('button', { title: 'Show one more', disabled: n >= cfg.max_experiments, onclick: function () { draft.experiments++; changed(); } }, ['+'])
+      ]) : null,
+      n === 2 ? h('label', { class: 'toggle', title: 'Show the two next to each other in ' + target() }, [
+        h('input', { type: 'checkbox', checked: draft.sideBySide, onchange: function (ev) { draft.sideBySide = ev.target.checked; changed(); } }),
+        'Side-by-side'
+      ]) : null,
+      h('span', { class: 'spacer' }),
+      h('button', { class: 'btn', title: 'Forget your own views and the order; ' + target() + ' starts again from its ready-made views', onclick: resetLayout }, ['Reset']),
+      h('button', { class: 'btn primary', disabled: !!probs.first || !dirty || pending, onclick: save, title: 'Save and show the selected view' }, [pending ? 'Saving…' : 'Save'])
+    ]);
+  }
+
+  function viewList() {
+    var box = h('div', { class: 'vlist' }, [
+      h('h4', { text: 'Views' }),
+      h('div', { class: 'hint', text: 'Drag to change the order of the bar. Untick to keep a view in More only.' })
+    ]);
+    function item(v) {
+      return h('div', { class: 'vitem' + (v.name === draft.sel ? ' sel' : ''), 'data-drag': 'view', 'data-drop': 'view', 'data-name': v.name, title: v.help || '' }, [
+        h('span', { class: 'grip', text: '⋮⋮' }),
+        h('span', { class: 'vname', text: v.label }),
+        v.preset ? h('span', { class: 'tag', text: 'ready-made' }) : null,
+        h('input', { type: 'checkbox', checked: v.in_bar, title: v.in_bar ? 'In the bar' : 'Only in More', 'aria-label': 'Show ' + v.label + ' in the bar',
+                     onchange: function (ev) { moveView(v.name, null, ev.target.checked); } })
+      ]);
+    }
+    draft.views.filter(function (v) { return v.in_bar; }).forEach(function (v) { box.appendChild(item(v)); });
+    box.appendChild(h('div', { class: 'cut', 'data-drop': 'cut' }, [h('span', { text: 'Only in More' })]));
+    draft.views.filter(function (v) { return !v.in_bar; }).forEach(function (v) { box.appendChild(item(v)); });
+    box.appendChild(h('div', { style: 'margin-top:6px' }, [
+      h('button', { class: 'btn', onclick: function () { addView('New view', []); } }, ['+ New view'])
+    ]));
+    return box;
+  }
+
+  function viewHead() {
+    var v = selView();
+    var others = draft.views.length > 1;
+    if (v.preset) return h('div', null, [
+      h('div', { class: 'vhead' }, [
+        h('strong', { text: v.label }),
+        h('button', { class: 'btn primary', onclick: function () { addView(v.label + ' (copy)', clone(v.rows), v); } }, ['Duplicate to edit'])
+      ]),
+      h('div', { class: 'readonly', text: 'A ready-made view can be reordered or kept out of the bar, but not changed.' + (v.help ? ' ' + v.help : '') })
+    ]);
+    var head = h('div', { class: 'vhead' }, [
+      h('input', { type: 'text', id: 'view-name', value: v.label, 'aria-label': 'Name of the view', onchange: function (ev) { v.label = ev.target.value; changed(); } }),
+      h('button', { class: 'btn', onclick: function () { addView(v.label + ' (copy)', clone(v.rows), v); } }, ['Duplicate']),
+      h('button', { class: 'btn', disabled: !others, onclick: function () {
+        var i = draft.views.indexOf(v); draft.views.splice(i, 1);
+        draft.sel = (draft.views[i] || draft.views[i - 1]).name; changed();
+      } }, ['Delete']),
+      v.rows.length ? h('button', { class: 'link', onclick: function () { v.rows.length = 0; changed(); } }, ['Clear']) : null
+    ]);
+    var f = draft.fresh;
+    if (!f || f.name !== v.name) return head;
+    // Until its components change, a new view can start from another view or from nothing
+    var untouched = JSON.stringify(v.rows) === f.rows;
+    var pick = h('select', { id: 'start-from', 'aria-label': 'Start from', disabled: !untouched, onchange: function (ev) {
+      var src = draft.views.filter(function (x) { return x.name === ev.target.value; })[0];
+      v.rows = src ? clone(src.rows) : [];
+      if (v.label === f.auto) v.label = f.auto = uniqueLabelExcept(src ? src.label + ' (copy)' : 'New view', v);
+      f.from = ev.target.value; f.rows = JSON.stringify(v.rows); changed();
+    } }, [h('option', { value: '', text: 'Empty' })].concat(draft.views.filter(function (x) { return x !== v; }).map(function (x) {
+      return h('option', { value: x.name, text: x.label, selected: x.name === f.from });
+    })));
+    return h('div', null, [head, h('div', { class: 'startfrom' }, [
+      h('span', { text: 'New view, started from' }), pick,
+      untouched ? null : h('span', { class: 'label', text: 'Fixed once its components change' })
+    ])]);
+  }
+  function uniqueLabelExcept(base, self) {
+    var taken = {}; draft.views.forEach(function (v) { if (v !== self) taken[v.label.toLowerCase()] = true; });
+    if (!taken[base.toLowerCase()]) return base;
+    for (var i = 2; ; i++) if (!taken[(base + ' ' + i).toLowerCase()]) return base + ' ' + i;
   }
 
   // ---- Edits ----
@@ -356,10 +556,11 @@
     return { kind: kind, e: +el.getAttribute('data-exp'), r: +el.getAttribute('data-row'), c: +el.getAttribute('data-col') };
   }
   document.addEventListener('pointerdown', function (ev) {
-    if (ev.button !== 0 || ev.target.closest('[data-remove]')) return;
+    if (ev.button !== 0 || ev.target.closest('[data-remove]') || ev.target.closest('input, button, select')) return;
     var el = ev.target.closest('[data-drag]');
     if (!el) return;
-    var src = el.getAttribute('data-drag') === 'palette'
+    var kind = el.getAttribute('data-drag');
+    var src = kind === 'view' ? { kind: 'view', name: el.getAttribute('data-name') } : kind === 'palette'
       ? { kind: 'palette', name: el.getAttribute('data-name') }
       : { kind: 'cell', e: +el.getAttribute('data-exp'), r: +el.getAttribute('data-row'), c: +el.getAttribute('data-col') };
     drag = { src: src, el: el, x: ev.clientX, y: ev.clientY, started: false, ghost: null, over: null };
@@ -370,17 +571,23 @@
     if (!drag.started) {
       if (Math.abs(ev.clientX - drag.x) + Math.abs(ev.clientY - drag.y) < 5) return;
       drag.started = true;
-      var name = drag.src.kind === 'palette' ? drag.src.name : draft.layout[drag.src.e][drag.src.r][drag.src.c];
-      drag.ghost = h('div', { class: 'ghost', text: label(name) });
+      var name = drag.src.kind === 'view' ? null : drag.src.kind === 'palette' ? drag.src.name : draft.layout[drag.src.e][drag.src.r][drag.src.c];
+      var vw = drag.src.kind === 'view' ? draft.views.filter(function (v) { return v.name === drag.src.name; })[0] : null;
+      drag.ghost = h('div', { class: 'ghost', text: vw ? vw.label : label(name) });
       document.body.appendChild(drag.ghost);
       document.body.classList.add('dragging');
-      if (drag.src.kind === 'cell') drag.el.classList.add('source');
+      if (drag.src.kind === 'cell' || drag.src.kind === 'view') drag.el.classList.add('source');
       syncHeight();
     }
     drag.ghost.style.left = ev.clientX + 'px';
     drag.ghost.style.top = ev.clientY + 'px';
     var over = targetAt(ev.clientX, ev.clientY);
     if (over && over.getAttribute('data-drop') === 'palette' && drag.src.kind !== 'cell') over = null;
+    // Views drop on views and the line; components everywhere else
+    if (over) {
+      var dk = over.getAttribute('data-drop'), isView = dk === 'view' || dk === 'cut';
+      if (isView !== (drag.src.kind === 'view')) over = null;
+    }
     if (over !== drag.over) {
       if (drag.over) drag.over.classList.remove('drop-over');
       if (over) over.classList.add('drop-over');
@@ -394,7 +601,19 @@
     document.body.classList.remove('dragging');
     if (d.over) d.over.classList.remove('drop-over');
     if (d.el) d.el.classList.remove('source');
-    if (!d.started) { if (commit && d.src.kind === 'palette') clickAdd(d.src.name); return; }
+    if (!d.started) {
+      if (commit && d.src.kind === 'palette') clickAdd(d.src.name);
+      if (commit && d.src.kind === 'view' && draft.sel !== d.src.name) { draft.sel = d.src.name; active = 0; render(); }
+      return;
+    }
+    if (d.src.kind === 'view') {
+      if (commit && d.over) {
+        if (d.over.getAttribute('data-drop') === 'cut') moveView(d.src.name, null, false);
+        else if (d.over.getAttribute('data-name') !== d.src.name) moveView(d.src.name, d.over.getAttribute('data-name'));
+        else render();
+      } else render();
+      return;
+    }
     if (commit && d.over) drop(d.src, describe(d.over)); else render();
   }
   document.addEventListener('pointerup', function () { endDrag(true); });
@@ -404,11 +623,22 @@
   // ---- Save, reset, import, export ----
   function save() {
     pending = true; message = null;
+    if (viewsMode()) {
+      setValue({ action: 'save', views: draft.views.map(function (v) {
+        return v.preset ? { name: v.name, in_bar: v.in_bar } : { name: v.name, label: v.label.trim(), rows: v.rows, in_bar: v.in_bar };
+      }), current: draft.sel, experiments: draft.experiments, side_by_side: draft.sideBySide && draft.experiments === 2, nonce: Date.now() + Math.random() });
+      render(); return;
+    }
     setValue({ action: 'save', layout: draft.layout, side_by_side: draft.sideBySide && draft.layout.length === 2, nonce: Date.now() + Math.random() });
     render();
   }
   function resetLayout() {
     pending = true;
+    if (viewsMode()) {
+      setValue({ action: 'reset', nonce: Date.now() + Math.random() });
+      message = { kind: 'saved', text: 'Reset — ' + target() + ' shows its ready-made views' };
+      render(); return;
+    }
     initDraftFrom([cfg.default_layout], false);
     setValue({ action: 'reset', nonce: Date.now() + Math.random() });
     message = { kind: 'saved', text: 'Reset — ' + target() + ' uses its default layout' };

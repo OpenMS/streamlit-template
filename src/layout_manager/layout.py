@@ -161,3 +161,193 @@ def apply_preset(path: Path, rows: List[List[str]]) -> None:
     stored = load_layout(path)
     count, side_by_side = (len(stored[0]) or 1, stored[1]) if stored else (1, False)
     save_layout(path, [[list(row) for row in rows] for _ in range(count)], side_by_side)
+
+
+# ---- Views: presets and the user's own layouts, in the order the bar shows them ----
+#
+# A page with presets keeps, next to its layout, the list of views the view bar
+# shows and the one picked::
+#
+#     {"layout": [...], "side_by_side": false,      # what resolve_layout reads
+#      "current": "overview",
+#      "views": [{"name": "overview", "in_bar": true},            # a preset
+#                {"name": "custom-1", "label": "Volcano + PCA",   # the user's own
+#                 "rows": [["volcano", "pca"]], "in_bar": true}]}
+#
+# A preset's rows always come from the page, so a changed preset reaches every
+# workspace; it cannot be edited, only duplicated. A preset the stored list does
+# not name yet (added to the page later) is appended to the bar. The picked
+# view's rows are stored as the layout of every experiment, so pages that only
+# call resolve_layout render it unchanged.
+
+CUSTOM_PREFIX = "custom-"
+
+
+def _presets_or_default(presets: Sequence[Dict[str, Any]], default_layout) -> List[Dict[str, Any]]:
+    if presets:
+        return list(presets)
+    return [{"name": "default", "label": "Default", "layout": default_layout}]
+
+
+def load_views(
+    path: Path,
+    components: Sequence[Dict[str, Any]],
+    presets: Sequence[Dict[str, Any]],
+    default_layout: List[List[str]],
+) -> Dict[str, Any]:
+    """The views of a page: ``{"views", "current", "experiments", "side_by_side"}``.
+
+    Each view is ``{"name", "label", "rows", "preset", "in_bar", "help"?}`` with
+    the rows the page can render. A layout stored before views existed becomes
+    the current view: the preset it matches, else a view of the user's own.
+    """
+    presets = _presets_or_default(presets, default_layout)
+    known = {c["name"] for c in components}
+    by_name = {p["name"]: p for p in presets}
+
+    def preset_view(p: Dict[str, Any], in_bar: bool = True) -> Dict[str, Any]:
+        view = {"name": p["name"], "label": p.get("label", p["name"]),
+                "rows": _known_rows(p["layout"], known), "preset": True, "in_bar": in_bar}
+        if p.get("help"):
+            view["help"] = p["help"]
+        return view
+
+    try:
+        data = json.loads(Path(path).read_text())
+    except (OSError, ValueError):
+        data = None
+    if not isinstance(data, dict):
+        data = {}
+    layout, side_by_side = resolve_layout(path, components, presets[0]["layout"]) if data else (
+        [_known_rows(presets[0]["layout"], known)], False)
+
+    views: List[Dict[str, Any]] = []
+    seen = set()
+    for entry in data.get("views") or []:
+        if not isinstance(entry, dict) or not isinstance(entry.get("name"), str):
+            continue
+        name = entry["name"]
+        if name in seen:
+            continue
+        in_bar = bool(entry.get("in_bar", True))
+        if name in by_name:
+            views.append(preset_view(by_name[name], in_bar))
+        elif name.startswith(CUSTOM_PREFIX) and isinstance(entry.get("rows"), list):
+            rows = _known_rows([r for r in entry["rows"] if isinstance(r, list)], known)
+            if not rows:
+                continue
+            views.append({"name": name, "label": str(entry.get("label") or name), "rows": rows,
+                          "preset": False, "in_bar": in_bar})
+        else:
+            continue
+        seen.add(name)
+    # Presets new to this file go to the end of the bar
+    missing = [p for p in presets if p["name"] not in seen]
+    in_bar_count = sum(v["in_bar"] for v in views)
+    for p in missing:
+        views.insert(in_bar_count, preset_view(p))
+        in_bar_count += 1
+
+    names = [v["name"] for v in views]
+    current = data.get("current")
+    if current not in names:
+        # A file without views: the stored layout is a preset or the user's own
+        current = match_preset(layout, presets, components)
+        if current is None and data.get("layout") is not None:
+            custom = {"name": CUSTOM_PREFIX + "1", "label": "My layout", "rows": layout[0],
+                      "preset": False, "in_bar": True}
+            views.insert(sum(v["in_bar"] for v in views), custom)
+            current = custom["name"]
+        current = current or names[0]
+    return {"views": views, "current": current, "experiments": max(1, len(layout)),
+            "side_by_side": side_by_side}
+
+
+def save_views(path: Path, state: Dict[str, Any]) -> None:
+    """Store ``state`` (as ``load_views`` returns it) and the current view's layout."""
+    views = state["views"]
+    current = next((v for v in views if v["name"] == state["current"]), views[0])
+    experiments = max(1, int(state.get("experiments", 1)))
+    stored = []
+    for v in views:
+        entry: Dict[str, Any] = {"name": v["name"], "in_bar": bool(v.get("in_bar", True))}
+        if not v.get("preset"):
+            entry["label"] = v["label"]
+            entry["rows"] = v["rows"]
+        stored.append(entry)
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    data = {
+        "layout": [[list(r) for r in current["rows"]] for _ in range(experiments)],
+        "side_by_side": bool(state.get("side_by_side")) and experiments == 2,
+        "current": current["name"],
+        "views": stored,
+    }
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(data, indent=1))
+    tmp.replace(path)
+
+
+def validate_views(
+    state: Any,
+    components: Sequence[Dict[str, Any]],
+    presets: Sequence[Dict[str, Any]],
+    default_layout: List[List[str]],
+    max_experiments: int = MAX_EXPERIMENTS,
+    max_columns: int = MAX_COLUMNS,
+) -> str:
+    """Return why the views sent by the editor cannot be saved, or '' if they can.
+
+    Presets are checked by name only: their rows always come from the page.
+    """
+    presets = _presets_or_default(presets, default_layout)
+    preset_names = {p["name"] for p in presets}
+    if not isinstance(state, dict) or not isinstance(state.get("views"), list) or not state["views"]:
+        return "No views"
+    names = set()
+    labels = {p["label"].lower() for p in presets}
+    for view in state["views"]:
+        if not isinstance(view, dict) or not isinstance(view.get("name"), str):
+            return "A view without a name"
+        name = view["name"]
+        if name in names:
+            return 'The view "%s" is listed twice' % name
+        names.add(name)
+        if name in preset_names:
+            continue
+        if not name.startswith(CUSTOM_PREFIX):
+            return 'Unknown view "%s"' % name
+        label = str(view.get("label") or "").strip()
+        if not label:
+            return "Every view needs a name"
+        if label.lower() in labels:
+            return 'Two views are called "%s"' % label
+        labels.add(label.lower())
+        error = validate_layout([view.get("rows")], components, 1, max_columns)
+        if error:
+            return "%s: %s" % (label, error.replace("Experiment 1", "the view").replace(" in experiment 1", ""))
+    missing = preset_names - names
+    if missing:
+        return 'A ready-made view is missing: "%s"' % sorted(missing)[0]
+    if state.get("current") not in names:
+        return "The selected view is not in the list"
+    experiments = state.get("experiments", 1)
+    if not isinstance(experiments, int) or not 1 <= experiments <= max_experiments:
+        return "Between 1 and %d runs can be shown" % max_experiments
+    return ""
+
+
+def select_view(
+    path: Path,
+    name: str,
+    components: Sequence[Dict[str, Any]],
+    presets: Sequence[Dict[str, Any]],
+    default_layout: List[List[str]],
+) -> bool:
+    """Make ``name`` the current view; False if there is no such view."""
+    state = load_views(path, components, presets, default_layout)
+    if name not in {v["name"] for v in state["views"]}:
+        return False
+    state["current"] = name
+    save_views(path, state)
+    return True
