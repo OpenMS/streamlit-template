@@ -46,7 +46,12 @@ if external_files.exists():
 
 selected_file = st.selectbox("choose file", file_options, key="view_selected_file")
 if selected_file:
-    view.get_df(Path(st.session_state.workspace, "mzML-files", selected_file))
+    # Every view switch reruns the page: load the file only when it changed.
+    mzml = Path(st.session_state.workspace, "mzML-files", selected_file)
+    loaded = (str(mzml), mzml.stat().st_mtime_ns if mzml.exists() else None)
+    if st.session_state.get("view_loaded_file") != loaded or "view_spectra" not in st.session_state:
+        view.get_df(mzml)
+        st.session_state["view_loaded_file"] = loaded
 
     layout_path = Path(st.session_state.workspace, "layouts", "raw_data_viewer.json")
     view_bar(

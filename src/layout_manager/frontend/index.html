@@ -203,7 +203,7 @@
       draft = { views: clone(cfg.views), sel: cfg.current, experiments: cfg.experiments || 1, sideBySide: !!cfg.side_by_side };
       // A view just made with +: remember what it started from, so the start can be swapped
       if (cfg.fresh) {
-        var src = draft.views[draft.views.findIndex(function (v) { return v.name === cfg.fresh; }) - 1];
+        var src = draft.views.filter(function (v) { return v.name === cfg.fresh_from; })[0];
         draft.fresh = { name: cfg.fresh, from: src ? src.name : '', rows: JSON.stringify(selView().rows), auto: selView().label };
       }
       bindView(); active = 0; return;

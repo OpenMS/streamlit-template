@@ -269,7 +269,7 @@ def views_editor(
             done = True
 
     state = _views(path, components, presets, default_layout, default_view)
-    fresh = None
+    fresh = fresh_from = None
     if new_view:
         source = next(v for v in state["views"] if v["name"] == state["current"])
         taken = {v["name"] for v in state["views"]}
@@ -285,6 +285,7 @@ def views_editor(
                                       "rows": [list(r) for r in source["rows"]],
                                       "preset": False, "in_bar": True})
         state["current"] = fresh
+        fresh_from = source["name"]
     _editor(
         components=list(components),
         default_layout=default_layout,
@@ -294,6 +295,7 @@ def views_editor(
         current=state["current"],
         experiments=state["experiments"],
         fresh=fresh,
+        fresh_from=fresh_from,
         max_experiments=max_experiments,
         max_columns=max_columns,
         revision=f"{st.session_state[revision_key]}-{int(new_view)}",
