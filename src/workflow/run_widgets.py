@@ -66,7 +66,7 @@ def run_label(run: dict, added: int = 0) -> str:
     """A run's name and start; ``added`` runs that added files to its experiment."""
     label = f"{run.get('name', run['id'])} · {format_time(run.get('created'))}"
     if added:
-        label += f" · {added} added {'run' if added == 1 else 'runs'} of files"
+        label += f" · files added by {added} more {'run' if added == 1 else 'runs'}"
     return label
 
 
