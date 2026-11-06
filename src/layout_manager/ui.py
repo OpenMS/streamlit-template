@@ -130,7 +130,8 @@ def layout_button(
 
     A dialog reruns on its own when its widgets change, so after a save or a
     reset it reruns the whole page, which closes the dialog and shows the new
-    layout. A refused save keeps the dialog open with the editor's message. ``editor_args`` go to ``layout_editor`` (``max_experiments``,
+    layout. A refused save keeps the dialog open with the editor's message.
+    ``editor_args`` go to ``layout_editor`` (``max_experiments``,
     ``experiment_label``, ...).
     """
 

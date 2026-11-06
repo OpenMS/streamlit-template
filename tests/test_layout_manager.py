@@ -128,6 +128,43 @@ def test_editor_saves_submitted_layout(tmp_path):
     assert Path(path).parent.exists()
 
 
+_BUTTON_APP = """
+import streamlit as st
+from pathlib import Path
+from src.layout_manager import layout_button, resolve_layout
+
+path = Path(st.session_state["path"])
+st.session_state["runs"] = st.session_state.get("runs", 0) + 1
+layout_button(path, {components!r}, [["table", "detail"]], key="ed")
+layout, _ = resolve_layout(path, {components!r}, [["table", "detail"]])
+st.markdown(" | ".join(",".join(row) for row in layout[0]))
+"""
+
+
+def test_button_save_redraws_the_page(tmp_path):
+    path = tmp_path / "viewer.json"
+    at = AppTest.from_string(_BUTTON_APP.format(components=COMPONENTS))
+    at.session_state["path"] = str(path)
+    at.run()
+    assert at.markdown[0].value == "table,detail"
+
+    # Save in the open dialog: the page runs again and shows the new layout
+    at.session_state["ed"] = {"action": "save", "layout": [[["plot"]]], "side_by_side": False, "nonce": 1}
+    runs = at.session_state["runs"]
+    at.button(key="ed_open").click().run()
+    assert not at.exception
+    assert load_layout(path) == ([[["plot"]]], False)
+    assert at.session_state["runs"] == runs + 2  # the click, then the rerun after the save
+    assert at.markdown[0].value == "plot"
+
+    # A refused save does not rerun the page
+    at.session_state["ed"] = {"action": "save", "layout": [[["detail"]]], "side_by_side": False, "nonce": 2}
+    runs = at.session_state["runs"]
+    at.button(key="ed_open").click().run()
+    assert at.session_state["runs"] == runs + 1
+    assert at.markdown[0].value == "plot"
+
+
 _EXPERIMENTS_APP = """
 import streamlit as st
 from src.layout_manager import render_experiments
