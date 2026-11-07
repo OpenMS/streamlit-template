@@ -349,7 +349,7 @@ def _write_step(workspace, analysis, kind, file, text, made_from, why) -> dict:
         f"{label} by the AI assistant", [out.name],
         provenance={"kind": "assistant", "program": f"{label} by the AI assistant", "version": "",
                     "params": {}, "by": "assistant", "note": str(why or ""),
-                    "io": command_io({**sources, "out": [str(out)]}, 1)})
+                    "io": command_io({**{k: [list(v)] for k, v in sources.items()}, "out": [str(out)]}, 1)})
     progress.file_started(index, 0)
     out.write_text(text, encoding="utf-8")
     progress.file_finished(index, 0, True)

@@ -185,3 +185,16 @@ def test_show_analysis_opens_the_analysis_page(tools_on_path, workspace):
     assert request["analysis"] == aid and request["page_file"] == "content/assistant_analyses.py"
     assert analysis.shown(analysis.run_dir(workspace, aid))[0] == {
         "file": "f.json", "kind": "plot", "title": "F", "caption": ""}
+
+
+def test_a_figure_from_several_files_is_traced_to_each(tools_on_path, workspace):
+    inputs = Path(workspace, WF, "input-files", "mzML-files")
+    Path(inputs, "b.mzML").write_text("<mzML/>", encoding="utf-8")
+    tools = _tools(workspace)
+    aid = tools.call("begin_analysis", {"name": "Both"})["analysis"]
+    tools.call("save_figure", {"analysis": aid, "file": "both.json", "figure": {"data": []},
+                               "made_from": [f"{WF}/input-files/mzML-files/a.mzML",
+                                             f"{WF}/input-files/mzML-files/b.mzML"]})
+    report = report_for(Path(workspace, analysis.ROOT), aid)
+    assert sorted(i["name"] for i in report["inputs"]) == ["a.mzML", "b.mzML"]
+    assert all([c["tool"] for c in i["calls"]] == ["Figure by the AI assistant"] for i in report["inputs"])
