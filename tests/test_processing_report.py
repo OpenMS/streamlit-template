@@ -221,3 +221,58 @@ def test_execution_reads_which_results_a_start_adds_files_to(tmp_path):
     Path(tmp_path, "last-follow-up.json").write_text(json.dumps(
         {"name": "A", "note": "for more files", "adds_to": ["a_1"], "files": ["a.mzML"]}))
     assert workflow.follow_up_info()["adds_to"] == ["a_1"]
+
+
+def test_an_analysis_added_to_a_run_keeps_its_files_and_names_what_it_reuses(tmp_path):
+    params = Path(tmp_path, "params.json")
+    params.write_text(json.dumps({"mzML-files": ["a.mzML", "b.mzML"], "run-python-script": False}))
+    runs = RunManager(tmp_path)
+    first = runs.new_run("Features", params)
+    runs.finish(first, FINISHED)
+    params.write_text(json.dumps({"mzML-files": ["c.mzML"], "run-python-script": False}))
+
+    assert runs.restore_settings(first, {"run-python-script": True}, note="with the tool",
+                                 same_files="mzML-files", keep=["FeatureFinderMetabo"])
+
+    restored = json.loads(params.read_text())
+    assert restored["mzML-files"] == ["a.mzML", "b.mzML"]  # the run's files, not the current ones
+    assert restored["run-python-script"] is True
+    info = restored[FOLLOW_UP_KEY]
+    assert info["same_files"] == "mzML-files" and info["files"] == ["a.mzML", "b.mzML"]
+    assert info["kept"] == ["FeatureFinderMetabo"] and info["reuses"] == [first]
+    assert "adds_to" not in info  # a run of its own, not more files for the experiment
+
+    # The new run keeps what it follows: execution() and the report read it there
+    second = runs.new_run("With the tool", params)
+    _workflow(Path(runs.run_dir(second)))
+    runs.finish(second, FINISHED)
+    report = report_for(tmp_path, second, settings={})
+    assert "| Results reused | FeatureFinderMetabo, from Features |" in to_markdown(report)
+
+
+def test_execution_reads_the_run_a_start_adds_an_analysis_to(tmp_path):
+    from src.workflow.WorkflowManager import WorkflowManager
+
+    params = Path(tmp_path, "params.json")
+    params.write_text(json.dumps({FOLLOW_UP_KEY: {"name": "A", "same_files": "mzML-files",
+                                                  "files": ["a.mzML"], "kept": ["T"], "reuses": ["r1"]}}))
+    runs = RunManager(tmp_path)
+    run_id = runs.new_run("B", params)
+
+    class Multi(WorkflowManager):
+        multi_run = True
+
+    workflow = object.__new__(Multi)  # as tasks.execute_workflow builds it
+    workflow.workflow_dir = tmp_path
+    workflow.runs = runs
+    workflow.run_id = run_id
+    assert workflow.follow_up_info()["reuses"] == ["r1"]
+
+
+def test_start_from_locks_the_files_of_the_results_it_adds_to(tmp_path):
+    from src.workflow.RunManager import apply_settings, same_files_info
+
+    info = {"name": "a", "note": "with identification", **same_files_info("mzML-files", ["a.mzML"], ["Deconv"], ["a_1"])}
+    written = apply_settings(tmp_path, {"mzML-files": ["b.mzML"]}, {"mzML-files": ["a.mzML"]}, info)
+    assert written["mzML-files"] == ["a.mzML"]
+    assert written[FOLLOW_UP_KEY]["reuses"] == ["a_1"] and written[FOLLOW_UP_KEY]["kept"] == ["Deconv"]
