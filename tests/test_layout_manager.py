@@ -639,8 +639,10 @@ def test_own_missing_text_and_action():
     assert missing_text(["identification"], OWN_ANALYSES, "comparison") == (
         "A comparison spans several runs: show one of them for this.")
     assert missing_action(["identification"], OWN_ANALYSES) == "Show a run"
-    # A mix falls back to the default wording
-    assert missing_action(["identification", "comparison"], OWN_ANALYSES) == "Add one run and Comparison"
+    # What no processing adds comes first
+    assert missing_action(["identification", "comparison"], OWN_ANALYSES) == "Show a run"
+    assert missing_text(["comparison", "identification"], OWN_ANALYSES) == (
+        "A comparison spans several runs: show one of them for this.")
 
 
 def test_own_missing_text_in_note_and_dialog(tmp_path):

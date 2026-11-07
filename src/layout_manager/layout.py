@@ -433,22 +433,33 @@ def _entry(name: str, analyses: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     return entry if isinstance(entry, dict) else {}
 
 
+def own_missing(missing: Sequence[str], analyses: Optional[Dict[str, Any]] = None) -> List[str]:
+    """The analyses of ``missing`` with an own ``missing`` sentence, else all of them."""
+    own = [m for m in missing if _entry(m, analyses).get("missing")]
+    return own or list(missing)
+
+
 def missing_text(missing: Sequence[str], analyses: Optional[Dict[str, Any]] = None,
                  dataset_label: str = "run") -> str:
     """The sentence a note or a locked view shows for the analyses ``missing``.
 
-    Each analysis's own ``missing`` sentence when all of them have one, else
+    The analyses' own ``missing`` sentences when any has one (what no
+    processing adds comes first: the rest may follow from it), else
     "Needs <labels>, which this <dataset_label> was not processed with."
     """
-    own = [_entry(m, analyses).get("missing") for m in missing]
-    if own and all(own):
+    own = [_entry(m, analyses).get("missing") for m in missing if _entry(m, analyses).get("missing")]
+    if own:
         return " ".join(dict.fromkeys(str(o) for o in own))
     needed = join_labels([analysis_label(a, analyses) for a in missing])
     return f"Needs {needed}, which this {dataset_label} was not processed with."
 
 
 def missing_action(missing: Sequence[str], analyses: Optional[Dict[str, Any]] = None) -> str:
-    """What the button of a note offers: the analysis's ``action``, else "Add <labels>"."""
+    """What the button of a note offers: the analysis's ``action``, else "Add <labels>".
+
+    Of analyses with an own ``missing`` sentence, only those count.
+    """
+    missing = own_missing(missing, analyses)
     own = [_entry(m, analyses).get("action") for m in missing]
     if own and all(own) and len(set(own)) == 1:
         return str(own[0])

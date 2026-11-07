@@ -21,6 +21,7 @@ from src.layout_manager.layout import (
     missing_action,
     missing_analyses,
     missing_text,
+    own_missing,
     clear_layout,
     load_layout,
     load_views,
@@ -490,7 +491,7 @@ def view_bar(
             out["missing"] = join_labels([analysis_label(a, analyses) for a in missing_of[v["name"]]])
             out["dataset_label"] = dataset_label
             out["missing_action"] = missing_action(missing_of[v["name"]], analyses)
-            if all(isinstance((analyses or {}).get(m), dict) and analyses[m].get("missing")
+            if any(isinstance((analyses or {}).get(m), dict) and analyses[m].get("missing")
                    for m in missing_of[v["name"]]):
                 out["missing_text"] = missing_text(missing_of[v["name"]], analyses, dataset_label)
         return out
@@ -522,7 +523,7 @@ def view_bar(
             for c in components:
                 lacking = missing_analyses([c["name"]], components, available)
                 if lacking and all(isinstance((analyses or {}).get(m), dict) and analyses[m].get("action")
-                                   for m in lacking):
+                                   for m in own_missing(lacking, analyses)):
                     action = missing_action(lacking, analyses)
                     shown.append(dict(c, unavailable=action[:1].lower() + action[1:] + " to use it"))
                 else:
@@ -549,7 +550,7 @@ def view_bar(
             label_of = {c["name"]: c["label"] for c in components}
             if not view and request.get("component") in label_of:
                 what = f"**{label_of[request['component']]}**"
-            own = all(isinstance((analyses or {}).get(m), dict) and analyses[m].get("missing") for m in missing)
+            own = any(isinstance((analyses or {}).get(m), dict) and analyses[m].get("missing") for m in missing)
             message = (f"{what} is not shown here. {missing_text(missing, analyses, dataset_label)}" if own
                        else f"{what} needs {needed}, which this {dataset_label} was not processed with.")
             details = [analyses[m]["help"] for m in missing
