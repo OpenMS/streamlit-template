@@ -553,7 +553,7 @@ def view_bar(
             own = any(isinstance((analyses or {}).get(m), dict) and analyses[m].get("missing") for m in missing)
             message = (f"{what} is not shown here. {missing_text(missing, analyses, dataset_label)}" if own
                        else f"{what} needs {needed}, which this {dataset_label} was not processed with.")
-            details = [analyses[m]["help"] for m in missing
+            details = [analyses[m]["help"] for m in own_missing(missing, analyses)
                        if isinstance((analyses or {}).get(m), dict) and analyses[m].get("help")]
             if details:
                 message += "\n\n" + "\n\n".join(details)
