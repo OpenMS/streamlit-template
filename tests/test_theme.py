@@ -16,7 +16,7 @@ def _theme_css(css, dark):
 
 
 def test_every_font_face_is_shipped():
-    config = tomllib.loads((ROOT / ".streamlit/config.toml").read_text())
+    config = tomllib.loads((ROOT / ".streamlit/config.toml").read_text(encoding="utf-8"))
     assert config["server"]["enableStaticServing"] is True
     faces = config["theme"]["fontFaces"]
     families = {f["family"] for f in faces}
@@ -27,7 +27,7 @@ def test_every_font_face_is_shipped():
 
 
 def test_theme_defines_light_and_dark_without_base():
-    config = tomllib.loads((ROOT / ".streamlit/config.toml").read_text())
+    config = tomllib.loads((ROOT / ".streamlit/config.toml").read_text(encoding="utf-8"))
     assert "base" not in config["theme"]
     for scheme in ("light", "dark"):
         assert config["theme"][scheme]["primaryColor"].startswith("#")
@@ -42,7 +42,7 @@ def test_dark_blocks_are_kept_for_dark_and_dropped_for_light():
 
 
 def test_shipped_style_sheet_resolves_cleanly():
-    css = (ROOT / "src/common/theme.css").read_text()
+    css = (ROOT / "src/common/theme.css").read_text(encoding="utf-8")
     for dark in (False, True):
         out = _theme_css(css, dark)
         assert "prefers-color-scheme" not in out
