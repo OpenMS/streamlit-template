@@ -99,7 +99,7 @@ def _connect_dialog(workspace: Path) -> None:
         f"and read their results. Workflows it can run here: **{workflows}**."
     )
     if st.session_state.location == "online":
-        issued = _issued()
+        issued = _issued(workspace)
         if not issued or issued["workspace"] != workspace.name:
             st.markdown("Create a connection for this workspace, then add it to your assistant.")
             if st.button("Create connection", type="primary", icon=":material/link:"):
@@ -224,10 +224,13 @@ def follow() -> None:
         _watch(str(workspace))
 
 
-def _issued() -> dict | None:
-    """The connection this session made, or None once it has expired."""
+def _issued(workspace: Path) -> dict | None:
+    """The connection this session made, or None once it has expired or was
+    disconnected (in any session)."""
     issued = st.session_state.get(_ISSUED)
-    if issued and issued.get("expires", 0) <= time.time():
+    if issued and (issued.get("expires", 0) <= time.time()
+                   or tokens.resolve(workspace.parent, issued.get("token", ""),
+                                     tokens.AGENT) != issued.get("workspace")):
         st.session_state.pop(_ISSUED, None)
         return None
     return issued
@@ -238,13 +241,16 @@ def _assistant_may_show(workspace: Path) -> bool:
     locally an assistant starts its own connection, so every one is."""
     if st.session_state.get("location") != "online":
         return True
-    issued = _issued() or {}
+    issued = _issued(workspace) or {}
     return (issued.get("workspace") == workspace.name
             or tokens.active_count(workspace.parent, workspace.name, tokens.AGENT) > 0)
 
 
 @st.fragment(run_every=2.0)
 def _watch(workspace: str) -> None:
+    # The connection can expire or be disconnected while this fragment reruns.
+    if not _assistant_may_show(Path(workspace)):
+        return
     request = show.latest(Path(workspace))
     if not request or request["id"] == st.session_state.get(_SEEN):
         return
