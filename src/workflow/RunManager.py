@@ -190,7 +190,8 @@ class RunManager:
         return run_id
 
     def restore_settings(self, run_id: str, changes: Optional[dict] = None,
-                         note: str = "", add_files: Optional[str] = None) -> bool:
+                         note: str = "", add_files: Optional[str] = None,
+                         same_files: Optional[str] = None, keep: Optional[list] = None) -> bool:
         """Make a run's parameters (and experimental design) the workflow's again.
 
         The next run then starts from exactly the settings ``run_id`` used,
@@ -203,6 +204,12 @@ class RunManager:
         ``"mzML-files"``) starts a run that adds files to ``run_id``'s
         experiment: that key starts empty, so only the files picked now are
         processed, and the next run is recorded as adding to the experiment.
+
+        ``same_files`` (that key) is for an analysis added to ``run_id`` itself:
+        the next run takes exactly its files, which the configure page shows
+        locked, and ``keep`` names the tools (instance names) whose results it
+        reuses, whose settings stay as they were (``follow_up_info()["reuses"]``
+        names the run, for ``execution()``).
         """
         run = self.get(run_id)
         params = self.params(run_id)
@@ -215,6 +222,11 @@ class RunManager:
             info.update(run=root, name=root_run.get("name", root), adds_to=root,
                         files_key=add_files, files=self.experiment_files(root, add_files))
             changes = {**(changes or {}), add_files: []}
+        elif same_files:
+            value = params.get(same_files) or []
+            files = [value] if isinstance(value, str) else list(value)
+            info.update(same_files_info(same_files, files, keep, [run_id]))
+            changes = {**(changes or {}), same_files: files}
         apply_settings(self.workflow_dir, params, changes, info)
         design = Path(self.run_dir(run_id), DESIGN_FILE)
         if design.exists():
@@ -508,6 +520,15 @@ class RunManager:
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(run, f, indent=2)
         tmp.replace(path)
+
+
+def same_files_info(key: str, files: list, keep: Optional[list] = None,
+                    reuses: Optional[list] = None) -> dict:
+    """What ``FOLLOW_UP_KEY`` records for an analysis added to earlier results:
+    the input files (params.json ``key``) stay ``files``, and the tools ``keep``
+    are not run again, their results taken from ``reuses`` (run or result ids)."""
+    return {"same_files": key, "files": [str(f) for f in files],
+            "kept": list(keep or []), "reuses": list(reuses or [])}
 
 
 def apply_settings(workflow_dir: Path, params: dict, changes: Optional[dict] = None,

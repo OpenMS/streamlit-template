@@ -155,3 +155,34 @@ def test_parameter_page_has_no_advanced_toggle(launch):
     # (an expander with an icon is listed as a status block by AppTest)
     blocks = list(launch.expander) + list(launch.status)
     assert [e for e in blocks if e.label == "1 advanced parameter"]
+
+
+@pytest.mark.parametrize("launch", ["content/topp_workflow_parameter.py"], indirect=True)
+def test_an_analysis_added_to_a_run_locks_its_files_and_kept_tools(launch):
+    """Add the custom Python tool to a run: Configure shows the run's files
+    locked and the feature steps as reused, in place of their settings."""
+    launch.run(timeout=30)
+    assert not launch.exception
+    workflow_dir = Path(launch.session_state["workspace"], "topp-workflow")
+    params_file = Path(workflow_dir, "params.json")
+    params = json.loads(params_file.read_text()) if params_file.exists() else {}
+    files = [str(f) for f in Path("example-data", "mzML").glob("*.mzML")][:1]
+    params["_follow_up"] = {
+        "run": "r1", "name": "Features", "note": "with the custom Python tool switched on",
+        "same_files": "mzML-files", "files": files,
+        "kept": ["FeatureFinderMetabo", "FeatureLinkerUnlabeledKD"], "reuses": ["r1"],
+    }
+    params["mzML-files"] = files
+    params_file.write_text(json.dumps(params))
+    try:
+        launch.run(timeout=30)
+        assert not launch.exception
+        locked = [m for m in launch.multiselect if m.disabled and m.value == [Path(files[0]).name]]
+        assert locked, [m.label for m in launch.multiselect]
+        notes = " ".join(i.value for i in launch.info)
+        assert "FeatureFinderMetabo** is not run again" in notes
+        assert "FeatureLinkerUnlabeledKD** is not run again" in notes
+        assert any("Add to Features" in m.value for m in launch.markdown)
+    finally:
+        params.pop("_follow_up", None)
+        params_file.write_text(json.dumps(params))

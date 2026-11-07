@@ -262,6 +262,8 @@ def build_report(
             if isinstance((params or {}).get("_follow_up"), dict) else "",
             "follow_note": ((params or {}).get("_follow_up") or {}).get("note", "")
             if isinstance((params or {}).get("_follow_up"), dict) else "",
+            "reused": list(((params or {}).get("_follow_up") or {}).get("kept") or [])
+            if isinstance((params or {}).get("_follow_up"), dict) else [],
         },
         "generated": datetime.now().strftime("%Y-%m-%d %H:%M"),
         "started": _fmt_time(progress.get("started")),
@@ -347,6 +349,8 @@ def _summary_lines(report: dict) -> List[List[str]]:
         rows.append(["Status", run["status"]])
     if run.get("follows"):
         rows.append(["Settings from", run["follows"] + (f" ({run['follow_note']})" if run.get("follow_note") else "")])
+    if run.get("reused"):
+        rows.append(["Results reused", f"{', '.join(run['reused'])}, from {run.get('follows') or 'the earlier run'}"])
     if report["started"]:
         rows.append(["Started", report["started"]])
     if run["finished"]:

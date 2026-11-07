@@ -1135,8 +1135,10 @@ class StreamlitUI:
             name = f"**{key}**"
         if upload is not None:
             self._ensure_fallback(key, upload.get("fallback"))
-        options = self._input_file_options(key)
         widget = f"{self.parameter_manager.param_prefix}{key}"
+        if self._same_files(key, name, multiple, widget):
+            return
+        options = self._input_file_options(key)
         done = self._experiment_files(key)
         if done:
             # Settings that add files to an experiment: its processed files are
@@ -1213,6 +1215,46 @@ class StreamlitUI:
             "folders and add new ones.",
         ):
             self._browse_input_files(key, name, multiple, upload)
+
+    def _follow_up_info(self) -> dict:
+        info = self.parameter_manager.get_parameters_from_json().get(FOLLOW_UP_KEY)
+        return info if isinstance(info, dict) else {}
+
+    def _same_files(self, key: str, name: str, multiple: bool, widget: str) -> bool:
+        """While the settings add an analysis to earlier results
+        (``WorkflowManager.follow_up(..., same_files=key)``): their files, locked.
+        True when drawn in place of the file selector."""
+        info = self._follow_up_info()
+        if info.get("same_files") != key:
+            return False
+        files = [str(f) for f in info.get("files") or []]
+        st.session_state[widget] = files if multiple else (files[0] if files else None)
+        self.params[key] = st.session_state[widget]
+        names = list(dict.fromkeys(Path(f.rstrip("/\\")).name for f in files))
+        st.multiselect(
+            name,
+            names,
+            default=names,
+            disabled=True,
+            key=f"_same-files-{widget}",
+            help=f"The files of {info.get('name') or 'the earlier run'}: the analysis is added to "
+            "its results, so they stay as they are. Dismiss the note at the top to pick other files.",
+        )
+        return True
+
+    def _kept_tool(self, instance: str) -> bool:
+        """Draw that ``instance``'s results are reused while the settings add an
+        analysis to earlier results (``keep``); True when drawn in place of its
+        parameters."""
+        info = self._follow_up_info()
+        if instance not in (info.get("kept") or []):
+            return False
+        st.info(
+            f"**{instance}** is not run again: its results come from "
+            f"{info.get('name') or 'the earlier run'}, so its settings stay as they were there.",
+            icon=":material/lock:",
+        )
+        return True
 
     def _experiment_files(self, key: str) -> List[str]:
         """The files the experiment holds already, while the settings add files
@@ -1560,6 +1602,8 @@ class StreamlitUI:
                 like the tool's own advanced ones (e.g. output options). A name
                 ending in ":" matches a whole top-level section.
         """
+        if self._kept_tool(tool_instance_name or topp_tool_name):
+            return
         if reactive:
             self._input_TOPP_impl(
                 topp_tool_name, num_cols, exclude_parameters, include_parameters,
@@ -2845,6 +2889,11 @@ class StreamlitUI:
                      f"{'file' if len(done) == 1 else 'files'} of that run "
                      f"{'is' if len(done) == 1 else 'are'} processed already, and the results "
                      "show them together with the new ones as one experiment.")
+        if info.get("same_files"):
+            kept = info.get("kept") or []
+            text += (" Its files stay as they are"
+                     + (f", and the results of {', '.join(kept)} are reused" if kept else "")
+                     + ": only the settings of the steps that follow can be changed.")
         text += " Check them, then start below."
         with st.container(border=True, horizontal=True, vertical_alignment="center"):
             st.markdown(f":material/history: {text}", width="stretch")
