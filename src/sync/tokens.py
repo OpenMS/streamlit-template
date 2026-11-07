@@ -9,6 +9,11 @@ store as a workspace.
 
 The workspace UUID alone is deliberately not a credential: workspace links
 are shared freely, and a shared link should not grant upload access.
+
+Each token has a ``kind``: ``sync`` (the desktop app, the default) or
+``agent`` (an AI assistant connected through ``src/agent_access``). A token
+only opens the service it was issued for, and revoking one kind leaves the
+other in place. Tokens written before kinds existed are sync tokens.
 """
 
 import hashlib
@@ -19,6 +24,8 @@ import time
 from pathlib import Path
 
 TOKEN_DIR = ".sync-tokens"
+SYNC = "sync"
+AGENT = "agent"
 
 
 def _hash(token: str) -> str:
@@ -29,7 +36,7 @@ def _valid_workspace_name(name: str) -> bool:
     return bool(name) and "/" not in name and "\\" not in name and not name.startswith(".")
 
 
-def issue(root: Path, workspace: str, ttl_hours: float) -> tuple[str, float]:
+def issue(root: Path, workspace: str, ttl_hours: float, kind: str = SYNC) -> tuple[str, float]:
     """Create a token for ``workspace``; return (token, expiry as epoch seconds)."""
     if not _valid_workspace_name(workspace):
         raise ValueError(f"invalid workspace name: {workspace!r}")
@@ -38,13 +45,19 @@ def issue(root: Path, workspace: str, ttl_hours: float) -> tuple[str, float]:
     store = Path(root, TOKEN_DIR)
     store.mkdir(parents=True, exist_ok=True)
     Path(store, _hash(token) + ".json").write_text(
-        json.dumps({"workspace": workspace, "expires": expires})
+        json.dumps({"workspace": workspace, "expires": expires, "kind": kind,
+                    "created": time.time()})
     )
     return token, expires
 
 
-def resolve(root: Path, token: str) -> str | None:
-    """Return the workspace a token belongs to, or None if unknown or expired."""
+def _kind(data: dict) -> str:
+    return data.get("kind") or SYNC
+
+
+def resolve(root: Path, token: str, kind: str = SYNC) -> str | None:
+    """Return the workspace a token of ``kind`` belongs to, or None if unknown,
+    expired or issued for the other kind."""
     if not token or len(token) > 256:
         return None
     entry = Path(root, TOKEN_DIR, _hash(token) + ".json")
@@ -54,6 +67,8 @@ def resolve(root: Path, token: str) -> str | None:
         return None
     if data.get("expires", 0) < time.time():
         entry.unlink(missing_ok=True)
+        return None
+    if _kind(data) != kind:
         return None
     workspace = data.get("workspace", "")
     if not _valid_workspace_name(workspace) or not Path(root, workspace).is_dir():
@@ -72,19 +87,19 @@ def _entries(root: Path):
             yield entry, {}
 
 
-def active_count(root: Path, workspace: str) -> int:
+def active_count(root: Path, workspace: str, kind: str = SYNC) -> int:
     now = time.time()
     return sum(
         1 for _, d in _entries(root)
-        if d.get("workspace") == workspace and d.get("expires", 0) >= now
+        if d.get("workspace") == workspace and d.get("expires", 0) >= now and _kind(d) == kind
     )
 
 
-def revoke(root: Path, workspace: str) -> int:
-    """Delete every token of ``workspace``; return how many were removed."""
+def revoke(root: Path, workspace: str, kind: str = SYNC) -> int:
+    """Delete every token of ``kind`` of ``workspace``; return how many were removed."""
     removed = 0
     for entry, data in list(_entries(root)):
-        if data.get("workspace") == workspace:
+        if data.get("workspace") == workspace and _kind(data) == kind:
             entry.unlink(missing_ok=True)
             removed += 1
     return removed

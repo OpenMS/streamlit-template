@@ -56,6 +56,23 @@
         "chunk_mb": 32,
         "workflows": {"topp-workflow": "src.Workflow:Workflow"}
     },
+    "agent_access": {
+        "enabled": true,
+        "token_ttl_hours": 24,
+        "calls_per_minute": 120,
+        "max_upload_mb": 64,
+        "max_import_gb": 20,
+        "public_url": "",
+        "workflows": {
+            "topp-workflow": {
+                "class": "src.Workflow:Workflow",
+                "description": "Detects LC-MS features in each run and links them across runs.",
+                "configure_page": "content/topp_workflow_parameter.py",
+                "run_page": "content/topp_workflow_execution.py",
+                "results_page": "content/topp_workflow_results.py"
+            }
+        }
+    },
     "max_threads": {
         "local": "auto",
         "online": "auto"

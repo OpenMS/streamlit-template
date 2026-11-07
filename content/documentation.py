@@ -20,6 +20,7 @@ pages = [
     "Developers Guide: From Notebook to Web App",
     "Developers Guide: Deployment",
     "Developers Guide: Kubernetes Deployment",
+    "Working with an AI assistant",
 ]
 page = cols[0].selectbox(
     "**Content**",
@@ -117,5 +118,14 @@ if page == pages[7]:
 
 if page == pages[5]:
     with open(Path("docs", "notebook_to_webapp.md"), "r", encoding="utf-8") as f:
+        content = f.read()
+    st.markdown(content)
+
+#############################################################################################
+# Working with an AI assistant
+#############################################################################################
+
+if page == pages[8]:
+    with open(Path("docs", "ai_assistant.md"), "r", encoding="utf-8") as f:
         content = f.read()
     st.markdown(content)

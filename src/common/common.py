@@ -935,6 +935,11 @@ def render_sidebar(page: str = "") -> None:
                 from src.common.workspace_sync import render_sync_sidebar
                 render_sync_sidebar()
 
+            # Connect an AI assistant to this workspace (src/agent_access)
+            if st.session_state.settings.get("agent_access", {}).get("enabled"):
+                from src.agent_access.ui import render_sidebar as render_agent_sidebar
+                render_agent_sidebar()
+
             # Demo workspace loader for online mode
             if st.session_state.location == "online":
                 available_demos = get_available_demo_workspaces()

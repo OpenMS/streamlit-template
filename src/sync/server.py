@@ -11,6 +11,8 @@ on the same image and the same workspaces volume, routed at ``/sync``.
     GET    /sync/runs                        state of the runnable workflows
     POST   /sync/runs/<workflow>             queue a run with the given params
     DELETE /sync/runs/<workflow>             stop it (see runs.py)
+    POST   /sync/mcp                         an AI assistant's MCP requests
+                                             (src/agent_access, its own tokens)
 
 Each PATCH may carry ``Upload-Checksum: sha256 <base64>`` (tus checksum
 extension). A chunk that fails it, or whose connection drops before it is
@@ -43,6 +45,9 @@ except ImportError:     # Windows: the desktop app imports this module, never se
 import tornado.ioloop
 import tornado.web
 
+from src.agent_access import protocol as mcp_protocol
+from src.agent_access.config import agent_settings
+from src.agent_access.tools import Tools
 from src.sync import paths, runs, tokens
 
 logger = logging.getLogger("workspace-sync")
@@ -99,6 +104,9 @@ def _workspace_bytes(workspace: Path) -> int:
 
 
 class SyncHandler(tornado.web.RequestHandler):
+    # The token kinds a handler accepts (see tokens.py).
+    kinds = (tokens.SYNC,)
+
     def initialize(self, root: Path, config: dict):
         self.root = Path(root)
         self.config = config
@@ -116,7 +124,12 @@ class SyncHandler(tornado.web.RequestHandler):
     def workspace(self) -> Path:
         auth = self.request.headers.get("Authorization", "")
         scheme, _, token = auth.partition(" ")
-        name = tokens.resolve(self.root, token.strip()) if scheme.lower() == "bearer" else None
+        name = None
+        if scheme.lower() == "bearer":
+            for kind in self.kinds:
+                name = tokens.resolve(self.root, token.strip(), kind)
+                if name is not None:
+                    break
         if name is None:
             raise tornado.web.HTTPError(401, "missing, unknown or expired sync token")
         return Path(self.root, name)
@@ -422,6 +435,9 @@ class UploadHandler(SyncHandler):
 
 
 class DownloadHandler(SyncHandler):
+    # An AI assistant fetches result files the way the desktop app does.
+    kinds = (tokens.SYNC, tokens.AGENT)
+
     def _target(self) -> Path:
         workspace = self.workspace()
         rel = self.get_query_argument("path", "")
@@ -525,12 +541,91 @@ class RunHandler(SyncHandler):
         self.finish(runs.stop(qm, workspace, workflow))
 
 
-def make_app(root: Path, config: dict, prefix: str = "/sync") -> tornado.web.Application:
+class McpHandler(SyncHandler):
+    """Model Context Protocol over Streamable HTTP (JSON responses, no session).
+
+    The token is an ``agent`` token from the sidebar's AI assistant panel. The
+    tools themselves are in ``src/agent_access/tools.py``.
+    """
+
+    kinds = (tokens.AGENT,)
+    # Tool calls per token in the current minute, on this replica.
+    _calls: dict[str, list[float]] = {}
+
+    def initialize(self, root: Path, config: dict, agent: dict, prefix: str):
+        super().initialize(root, config)
+        self.agent = agent
+        self.prefix = prefix
+
+    def set_default_headers(self):
+        self.set_header("Cache-Control", "no-store")
+
+    def write_error(self, status_code, **kwargs):
+        if status_code == 401:
+            self.set_header("WWW-Authenticate", 'Bearer realm="openms-app"')
+        super().write_error(status_code, **kwargs)
+
+    def _rate_limit(self) -> None:
+        auth = self.request.headers.get("Authorization", "")
+        key = hashlib.sha256(auth.encode()).hexdigest()
+        now = time.monotonic()
+        calls = [t for t in self._calls.get(key, []) if now - t < 60]
+        if len(calls) >= int(self.agent["calls_per_minute"]):
+            self.set_header("Retry-After", "30")
+            raise tornado.web.HTTPError(429, "too many requests; wait a minute")
+        calls.append(now)
+        self._calls[key] = calls
+        if len(self._calls) > 10000:  # forget idle tokens
+            for k in [k for k, v in self._calls.items() if now - v[-1] > 60]:
+                del self._calls[k]
+
+    def _tools(self, workspace: Path) -> Tools:
+        origin = f"{self.request.protocol}://{self.request.host}"
+        app_url = (self.agent["public_url"] or origin).rstrip("/")
+        return Tools(Path.cwd(), workspace, self.agent, app_url=app_url,
+                     download_url=f"{origin}{self.prefix}/download", sync_cfg=self.config)
+
+    async def post(self):
+        workspace = self.workspace()
+        self._rate_limit()
+        limit = int(self.agent["max_upload_mb"] * 1024 ** 2 * 4 / 3) + 1024 ** 2
+        if len(self.request.body) > limit:
+            raise tornado.web.HTTPError(413, "request too large; send files in parts")
+        try:
+            message = json.loads(self.request.body or b"null")
+        except ValueError:
+            self.finish(mcp_protocol._error(None, mcp_protocol.PARSE_ERROR, "not JSON"))
+            return
+        tools = self._tools(workspace)
+        answer = await tornado.ioloop.IOLoop.current().run_in_executor(
+            None, mcp_protocol.handle, message, tools)
+        if answer is None:
+            self.set_status(202)
+            self.finish()
+            return
+        self.set_header("Content-Type", "application/json")
+        self.finish(json.dumps(answer, default=str))
+
+    def get(self):
+        # No server-to-client stream: every answer comes with its request.
+        self.set_header("Allow", "POST")
+        raise tornado.web.HTTPError(405, "this server sends no event stream")
+
+    def delete(self):
+        self.set_header("Allow", "POST")
+        raise tornado.web.HTTPError(405, "this server keeps no session")
+
+
+def make_app(root: Path, config: dict, prefix: str = "/sync",
+             agent: dict | None = None) -> tornado.web.Application:
     kw = {"root": Path(root), "config": config}
+    routes = [(rf"{prefix}/health", HealthHandler, kw)]
+    if agent and agent.get("enabled"):
+        routes.append((rf"{prefix}/mcp/?", McpHandler, {**kw, "agent": agent, "prefix": prefix}))
     if not config["enabled"]:
-        return tornado.web.Application([(rf"{prefix}/health", HealthHandler, kw)])
-    return tornado.web.Application([
-        (rf"{prefix}/health", HealthHandler, kw),
+        return tornado.web.Application(routes)
+    return tornado.web.Application(routes + [
+
         (rf"{prefix}/manifest", ManifestHandler, kw),
         (rf"{prefix}/files/?", UploadsHandler, kw),
         (rf"{prefix}/files/([0-9a-f]+)", UploadHandler, kw),
@@ -554,10 +649,15 @@ def main(argv=None) -> int:
     # Kubernetes sidecar stays Ready instead of crash-looping on exit 0.
     config["enabled"] = bool(config["enabled"] and settings.get("online_deployment"))
     if not config["enabled"]:
-        logger.info("workspace sync disabled in %s; serving health only", args.settings)
+        logger.info("workspace sync disabled in %s", args.settings)
+    agent = agent_settings(settings)
+    # An assistant reaches the online app here; the local app has the stdio server.
+    agent["enabled"] = bool(agent["enabled"] and settings.get("online_deployment"))
+    if agent["enabled"]:
+        logger.info("AI assistants connect at /sync/mcp")
     root = Path(os.environ.get("WORKSPACES_DIR", "/workspaces-streamlit-template"))
     root.mkdir(parents=True, exist_ok=True)
-    make_app(root, config).listen(
+    make_app(root, config, agent=agent).listen(
         args.port, args.address, max_body_size=MAX_REQUEST_BYTES, xheaders=True
     )
     if config["enabled"]:
