@@ -623,6 +623,9 @@ def make_app(root: Path, config: dict, prefix: str = "/sync",
     if agent and agent.get("enabled"):
         routes.append((rf"{prefix}/mcp/?", McpHandler, {**kw, "agent": agent, "prefix": prefix}))
     if not config["enabled"]:
+        if agent and agent.get("enabled"):
+            # The links read_result and list_results return point here.
+            routes.append((rf"{prefix}/download", DownloadHandler, kw))
         return tornado.web.Application(routes)
     return tornado.web.Application(routes + [
 

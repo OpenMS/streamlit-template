@@ -304,3 +304,53 @@ def test_run_command_matches_workflow_manager():
     value = next(node.value for node in tree.body if isinstance(node, ast.Assign)
                  and any(getattr(t, "id", "") == "_RUN_WORKFLOW" for t in node.targets))
     assert ast.literal_eval(value) == runner._RUN_WORKFLOW
+
+
+def test_download_of_a_linked_result(mcp, tmp_path):
+    # Demo workspaces link their results into the demo's source, outside the workspace.
+    source = tmp_path / "demo-source" / "linked.tsv"
+    source.parent.mkdir()
+    source.write_text("a\tb\n1\t2\n")
+    results = next(mcp["ws"].glob(f"{WF}/runs/*/results/feature-linking"))
+    (results / "linked.tsv").symlink_to(source)
+    info = _call(mcp, "read_result", workflow=WF, path="feature-linking/linked.tsv")["structuredContent"]
+    assert info["download"]
+    r = requests.get(info["download"], headers={"Authorization": f"Bearer {mcp['token']}"}, timeout=10)
+    assert r.status_code == 200 and r.content == b"a\tb\n1\t2\n"
+
+
+def _routes(app) -> list[str]:
+    return [rule.matcher.regex.pattern for rule in app.wildcard_router.rules]
+
+
+def test_download_route_without_workspace_sync(tmp_path):
+    agent = agent_settings(SETTINGS)
+    routes = _routes(server.make_app(tmp_path, server.sync_settings({}), agent=agent))
+    assert sum("download" in r for r in routes) == 1 and any("mcp" in r for r in routes)
+    both = _routes(server.make_app(tmp_path, server.sync_settings({"workspace_sync": {"enabled": True}}),
+                                   agent=agent))
+    assert sum("download" in r for r in both) == 1
+    assert not any("download" in r for r in _routes(server.make_app(tmp_path, server.sync_settings({}))))
+
+
+def test_stdio_with_a_relative_settings_path(tmp_path, monkeypatch):
+    from src.agent_access import stdio
+    app = tmp_path / "app"
+    app.mkdir()
+    (app / "settings.json").write_text(json.dumps({**SETTINGS, "online_deployment": False}))
+    seen = {}
+    monkeypatch.setattr(stdio, "serve", lambda tools: seen.setdefault("tools", tools))
+    monkeypatch.chdir(tmp_path)
+    assert stdio.main(["--settings", "app/settings.json", "--workspaces-dir", str(tmp_path / "ws"),
+                       "--workspace", "w1"]) == 0
+    assert Path.cwd() == app.resolve() and (tmp_path / "ws" / "w1").is_dir()
+    assert seen["tools"].workspace == tmp_path / "ws" / "w1"
+
+
+def test_local_snippets_set_pythonpath(tmp_path):
+    from src.agent_access.ui import local_snippets
+    snippets = local_snippets(agent_settings(SETTINGS), tmp_path / "default", "")
+    root = str(Path("settings.json").resolve().parent)
+    assert f"-e PYTHONPATH={root} --" in snippets["Claude Code"]
+    config = json.loads(snippets["Other MCP clients (JSON)"])
+    assert next(iter(config["mcpServers"].values()))["env"] == {"PYTHONPATH": root}

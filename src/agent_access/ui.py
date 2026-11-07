@@ -57,15 +57,19 @@ def online_snippets(cfg: dict, url: str, token: str) -> dict:
 def local_snippets(cfg: dict, workspace: Path, app_url: str) -> dict:
     name = _server_name(cfg)
     settings = str(Path("settings.json").resolve())
+    app_root = str(Path(settings).parent)
+    # The client starts the server in a folder of its own; PYTHONPATH lets
+    # it find the app's src package from there.
     args = ["-m", "src.agent_access.stdio", "--settings", settings,
             "--workspaces-dir", str(workspace.parent.resolve()), "--workspace", workspace.name]
     if app_url:
         args += ["--app-url", app_url]
     return {
-        "Claude Code": f"claude mcp add {name} -- "
+        "Claude Code": f"claude mcp add {name} -e {shlex.quote('PYTHONPATH=' + app_root)} -- "
                        + " ".join(shlex.quote(a) for a in [sys.executable, *args]),
         "Other MCP clients (JSON)": json.dumps(
-            {"mcpServers": {name: {"command": sys.executable, "args": args}}}, indent=2),
+            {"mcpServers": {name: {"command": sys.executable, "args": args,
+                                   "env": {"PYTHONPATH": app_root}}}}, indent=2),
     }
 
 
@@ -133,7 +137,9 @@ _LABELS = {
 }
 
 
-@st.fragment(run_every=10.0)
+# No run_every: a timer firing during a page switch crashes the frontend
+# (see _resource_panels in common.py).
+@st.fragment
 def _activity(workspace: Path) -> None:
     seen = set()
     shown = 0

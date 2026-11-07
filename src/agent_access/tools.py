@@ -337,7 +337,11 @@ class Tools:
     def _download_link(self, workflow_dir: Path, path: Path) -> str:
         if not self.online:
             return str(path.resolve())
-        rel = path.resolve().relative_to(self.workspace.resolve()).as_posix()
+        # Not resolve(): a demo workspace's results are often links into the
+        # demo's source, which lies outside the workspace.
+        rel = Path(os.path.relpath(path.absolute(), self.workspace.absolute())).as_posix()
+        if rel.startswith("../"):
+            return ""
         return f"{self.download_url}?{urlencode({'path': rel})}" if self.download_url else ""
 
     def _page_link(self, page_file: str) -> str:

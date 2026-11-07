@@ -61,9 +61,10 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, stream=sys.stderr,
                         format="%(asctime)s agent-access %(message)s")
-    app_root = Path(args.settings).resolve().parent
+    settings_path = Path(args.settings).resolve()
+    app_root = settings_path.parent
     os.chdir(app_root)
-    settings = json.loads(Path(args.settings).read_text(encoding="utf-8"))
+    settings = json.loads(settings_path.read_text(encoding="utf-8"))
     cfg = agent_settings(settings)
     if not cfg["enabled"]:
         print("agent_access is not enabled in settings.json", file=sys.stderr)
