@@ -107,6 +107,11 @@ def call_tool(params: dict, tools: Tools) -> dict:
     except ToolError as e:
         # A tool error is the assistant's to read and act on, not a protocol error.
         return {"content": [{"type": "text", "text": str(e)}], "isError": True}
+    # Pictures (plots drawn as PNG) go to the assistant as image content.
+    images = result.pop("_images", []) if isinstance(result, dict) else []
     text = json.dumps(result, indent=1, default=str)
-    return {"content": [{"type": "text", "text": text}], "structuredContent": result,
-            "isError": False}
+    content = [{"type": "text", "text": text}]
+    for number, image in enumerate(images, start=1):
+        content.append({"type": "text", "text": f"Image {number}: {image['title']}"})
+        content.append({"type": "image", "data": image["data"], "mimeType": "image/png"})
+    return {"content": content, "structuredContent": result, "isError": False}

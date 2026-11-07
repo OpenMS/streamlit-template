@@ -58,6 +58,7 @@
     },
     "agent_access": {
         "enabled": true,
+        "developer_only": true,
         "token_ttl_hours": 24,
         "calls_per_minute": 120,
         "max_upload_mb": 64,

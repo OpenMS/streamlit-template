@@ -4,6 +4,9 @@ import re
 
 DEFAULTS = {
     "enabled": False,
+    # Only a session in developer mode (Settings -> Developer password) sees
+    # the AI assistant panel and follows the assistant.
+    "developer_only": True,
     # How long a token from the sidebar works.
     "token_ttl_hours": 24,
     # Tool calls per token and minute (per sync service replica).

@@ -6,9 +6,16 @@ follow the run and read the results. Everything it does happens in the same
 workspace you see in the browser, so you can open the workflow's pages at any
 time and carry on where it stopped.
 
+The assistant sees each table and plot of a run's Results page the way you do.
+It looks at all of them, talks the findings over with you in its own chat, and
+opens in the app the view that shows what it is talking about.
+
+For now this is a developer feature: the **AI assistant** panel shows once
+developer mode is unlocked (⚙️ Settings, **Developer password**).
+
 ## Connect
 
-Open **AI assistant** in the sidebar and click **Connect an AI assistant**.
+Unlock developer mode, open **AI assistant** in the sidebar and click **Connect an AI assistant**.
 
 - **Online**, click **Create connection**. You get the server address and a
   ready-made command or configuration for your assistant. The connection
@@ -30,8 +37,9 @@ summarize the results".
 | Look around | the app's workflows, their inputs, settings, presets and each tool's parameters |
 | Add data | upload files, import from a link (PRIDE accessions, Zenodo, Figshare, S3 or Swift folders, OneDrive, any file URL), remove files |
 | Run | change settings, apply presets, start a run with chosen files, follow it, read its log, stop it |
-| Results | list runs and result files, read tables page by page, download files, read the processing report |
-| Show you | bring the configure, run or results page up in the app you have open, with a run picked and a note on what to look at |
+| Look at results | every table and plot of a run's Results page as you see it: a table's size, columns, value ranges and first rows, a plot's axes and data (and the picture where the server can draw one), and what a plot shows for rows picked in a table |
+| Result files | list runs and result files, read tables page by page, download files, read the processing report |
+| Show you | open the configure, run or results page in the app you have open, with a run picked, a view of the Results page (a ready-made one, or one it puts together from the tables and plots it talks about) and a note on what to look at |
 | Hand over | give you a link that opens the workspace on the configure, run or results page |
 
 ## Follow along
@@ -39,7 +47,9 @@ summarize the results".
 Keep the app open in the workspace while the assistant works. Whenever it has
 something to show you (the settings it chose, the run it started, the result it
 is talking about) the app opens that page by itself, picks that run and shows
-the assistant's note. It shows only what the assistant decides to show; the
+the assistant's note. A view it puts together is added to the Results page's
+view bar as **From the assistant**, so you can come back to it and change it
+like your own. It shows only what the assistant decides to show; the
 rest of its work stays out of your way. Turn **Follow the assistant** off in
 the sidebar's **AI assistant** panel to keep the page you are on.
 
@@ -68,6 +78,7 @@ serves the same tools over stdio.
 ```json
 "agent_access": {
     "enabled": true,
+    "developer_only": true,
     "token_ttl_hours": 24,
     "calls_per_minute": 120,
     "max_upload_mb": 64,
@@ -93,5 +104,16 @@ serves the same tools over stdio.
   browser, and writes the settings as it does for a person.
 - The pages give the links that `get_app_link`, `start_run` and
   `get_run_status` return.
+- `developer_only` (default `true`) shows the panel, and lets the app follow
+  the assistant, only in a session that unlocked developer mode.
+- A Results page built from components lets the assistant look at it:
+  `COMPONENTS`, `PRESETS` and `renderers()` (name -> function that draws the
+  component) on the workflow class, and optionally `ANALYSES`, `available()`
+  and `RESULTS_LAYOUT` (the view file, default `layouts/results.json`), as in
+  `src/Workflow.py`. `look_at_results` runs the renderers in a Streamlit test
+  session in a process of its own and reports what they drew; components that
+  only a browser draws (Insight components) are named with a pointer to the
+  run's files. Plots come as pictures where plotly can write images (kaleido
+  installed), else as their data.
 - Tokens are stored hashed with the sync tokens, as `kind: agent`, and open
   only `/sync/mcp` and result downloads.

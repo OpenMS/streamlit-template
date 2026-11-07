@@ -277,9 +277,20 @@ class Workflow(WorkflowManager):
             "on_click": lambda: self.add_analysis(changes),
         }]
 
+    # Where the Results page keeps its views, below the workflow folder. With
+    # COMPONENTS, PRESETS, available() and renderers() it lets an AI assistant
+    # look at every component of a run and show the person a view of its own
+    # (src/agent_access).
+    RESULTS_LAYOUT = "layouts/results.json"
+
+    def renderers(self) -> dict:
+        """The function that draws each component of COMPONENTS."""
+        return {"features": self._features, "intensities": self._intensities,
+                "top_features": self._top_features}
+
     @st.fragment
     def results(self) -> None:
-        layout_path = Path(self.workflow_dir, "layouts", "results.json")
+        layout_path = Path(self.workflow_dir, self.RESULTS_LAYOUT)
         view_bar(
             layout_path, self.COMPONENTS, self.PRESETS, self.PRESETS[0]["layout"], key="topp-results-view",
             available=self.available(), analyses=self.ANALYSES,
@@ -290,7 +301,7 @@ class Workflow(WorkflowManager):
         layout, _ = resolve_layout(layout_path, self.COMPONENTS, self.PRESETS[0]["layout"])
         render_layout(
             layout[0],
-            {"features": self._features, "intensities": self._intensities, "top_features": self._top_features},
+            self.renderers(),
             components=self.COMPONENTS, available=self.available(), analyses=self.ANALYSES,
             on_missing=lambda missing, name: request_analysis("topp-results-view", missing, component=name),
         )

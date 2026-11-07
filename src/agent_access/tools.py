@@ -23,7 +23,7 @@ import shutil
 from pathlib import Path, PurePosixPath
 from urllib.parse import quote, urlencode
 
-from . import activity, describe, runner, show
+from . import activity, describe, look, runner, show
 
 logger = logging.getLogger("agent-access")
 
@@ -165,18 +165,47 @@ DEFINITIONS = [
      _schema({"workflow": WORKFLOW,
               "page": {"type": "string", "enum": ["configure", "run", "results"]}}),
      READ_ONLY),
+    ("list_result_views", "Result views",
+     "The Results page of a workflow as components (tables, plots) and the views that "
+     "arrange them, for one run: what each component shows, whether the run has what it "
+     "needs, and which view the person has open. Look at components with "
+     "look_at_results; show a view with show_in_app.",
+     _schema({"workflow": WORKFLOW, "run_id": RUN_ID}, ("workflow",)), READ_ONLY),
+    ("look_at_results", "Look at results",
+     "Draw components of the Results page for a run, as the person would see them, and "
+     "get what they show: tables (row count, columns, min/median/mean/max of each number "
+     "column, first rows), plots (title, axes, every trace's points, and an image where "
+     "the server can draw one), metrics and messages. Leave components out to look at "
+     "every component the run can fill. A table that can be selected gives its "
+     "select_key; pass select={select_key: [row numbers]} to see what the components "
+     "that follow a selection draw for those rows. Look at everything before you tell "
+     "the person what the results say.",
+     _schema({"workflow": WORKFLOW, "run_id": RUN_ID,
+              "components": {"type": "array", "items": {"type": "string"},
+                             "description": "Component names from list_result_views."},
+              "select": {"type": "object", "description": "select_key -> list of row numbers.",
+                         "additionalProperties": {"type": "array", "items": {"type": "integer"}}},
+              "rows": {"type": "integer", "default": 20, "minimum": 1, "maximum": 200,
+                       "description": "First rows of each table."}},
+             ("workflow",)), READ_ONLY),
     ("show_in_app", "Show in the app",
-     "Bring a workflow's configure, run or results page up in the app the person has open "
-     "in this workspace, with a run picked and a short note on what to look at. Call it "
-     "whenever there is something worth seeing: the settings you chose, a run you started, "
-     "the result you are describing. The app follows unless the person turned that off; "
-     "the returned link opens the same page.",
+     "Bring a page up in the app the person has open in this workspace, with a run picked "
+     "and a short note on what to look at. On the results page, show exactly the "
+     "components that answer what you discuss: a view from list_result_views, or your own "
+     "arrangement as components (rows of up to three names, e.g. [[\"features\", "
+     "\"intensities\"]]), which becomes the view \"From the assistant\". Show only what "
+     "matters for the conversation, after you looked at it yourself. The app follows "
+     "unless the person turned that off; the returned link opens the same page.",
      _schema({"workflow": WORKFLOW,
               "page": {"type": "string", "enum": ["configure", "run", "results"],
                        "default": "results"},
               "run_id": {"type": "string",
                          "description": "The run to pick, from list_runs. Default: the newest "
                                         "finished run."},
+              "view": {"type": "string", "description": "A view from list_result_views."},
+              "components": {"type": "array", "description": "Rows of component names.",
+                             "items": {"type": "array", "items": {"type": "string"},
+                                       "minItems": 1, "maxItems": 3}},
               "note": {"type": "string", "maxLength": 500,
                        "description": "One or two sentences on what the person sees."}},
              ("workflow",)), WRITES),
@@ -231,10 +260,14 @@ class Tools:
             f"You are connected to one workspace of {self.server_title()}, an OpenMS web app "
             f"for mass spectrometry data analysis. Workflows: {names}. Call get_app_info, then "
             "describe_workflow; add input files with upload_file or import_from_link, start "
-            "the workflow with start_run, follow it with get_run_status and read its results "
-            "with list_results and read_result. The person watches in the app: call "
-            "show_in_app with a short note whenever there is something to see (the settings, "
-            "the running workflow, a result), and only then; get_app_link gives them the link."
+            "the workflow with start_run and follow it with get_run_status. To understand a "
+            "run, call list_result_views and look_at_results: it shows you every table and "
+            "plot of the Results page as a person sees them (select rows of a table to see "
+            "what follows a selection). Look at all of them before you answer; list_results "
+            "and read_result give the files behind them. Discuss what you found with the "
+            "person in your chat. Then call show_in_app with a short note to open in the app "
+            "what is worth seeing: a view, or the components you choose; get_app_link gives "
+            "them the link. Show only what they asked for or what your answer is about."
         )
 
     def definitions(self) -> list[dict]:
@@ -753,7 +786,111 @@ class Tools:
         page_file = entry.get(f"{page}_page") or ""
         return {"link": self._page_link(page_file), "page": page if page_file else "home"}
 
-    def _show_in_app(self, workflow, page="results", run_id=None, note="") -> dict:
+    # -- results as components ---------------------------------------------------
+
+    ASSISTANT_VIEW = "custom-assistant"
+
+    def _catalog(self, entry: dict) -> dict:
+        cat = look.catalog(entry)
+        if cat is None:
+            raise ToolError("This workflow's results page is not built from components; "
+                            "use list_results and read_result.")
+        return cat
+
+    def _list_result_views(self, workflow, run_id=None) -> dict:
+        from src.layout_manager.layout import load_views, missing_analyses
+        workflow, entry, workflow_dir = self._workflow(workflow)
+        cat = self._catalog(entry)
+        _, run_id = self._results_dir(workflow_dir, entry, run_id)
+        have = look.available(cat["class"], workflow_dir, run_id)
+        components = []
+        for c in cat["components"]:
+            item = {k: c[k] for k in ("name", "label", "group") if k in c}
+            if c.get("requires"):
+                item["shown_with"] = c["requires"]
+            missing = missing_analyses([c["name"]], cat["components"], have) if have is not None else []
+            item["run_has_it"] = not missing
+            if missing:
+                item["needs"] = [str((cat["analyses"].get(m) or {}).get("label", m))
+                                 if isinstance(cat["analyses"].get(m), dict) else m for m in missing]
+            components.append(item)
+        default = cat["presets"][0]["layout"] if cat["presets"] else [[c["name"]] for c in cat["components"]]
+        state = load_views(Path(workflow_dir, cat["layout"]), cat["components"], cat["presets"], default)
+        views = [{"name": v["name"], "label": v["label"], "components": v["rows"],
+                  "ready_made": bool(v.get("preset")), **({"help": v["help"]} if v.get("help") else {})}
+                 for v in state["views"]]
+        return {"run_id": run_id, "components": components, "views": views,
+                "open_view": state["current"]}
+
+    def _look_at_results(self, workflow, run_id=None, components=None, select=None, rows=20) -> dict:
+        from src.layout_manager.layout import missing_analyses
+        workflow, entry, workflow_dir = self._workflow(workflow)
+        cat = self._catalog(entry)
+        _, run_id = self._results_dir(workflow_dir, entry, run_id)
+        known = {c["name"]: c for c in cat["components"]}
+        have = look.available(cat["class"], workflow_dir, run_id)
+        if components is None:
+            components = [n for n in known
+                          if have is None or not missing_analyses([n], cat["components"], have)]
+        if not isinstance(components, list) or not components:
+            raise ToolError("Name at least one component (see list_result_views).")
+        unknown = [c for c in components if c not in known]
+        if unknown:
+            raise ToolError(f"Unknown components {unknown}. Components: {', '.join(known)}.")
+        if select is not None and not (isinstance(select, dict) and all(
+                isinstance(v, list) and all(isinstance(i, int) for i in v) for v in select.values())):
+            raise ToolError("select maps a select_key to a list of row numbers.")
+        rows = max(1, min(int(rows), 200))
+        drawn = look.look(self.app_root, self.workspace, workflow, entry["class"], run_id,
+                          components, self.online, rows=rows, select=select or {})
+        if drawn.get("error"):
+            raise ToolError(drawn["error"])
+        images, out = [], {}
+        for name in components:
+            items = drawn.get("components", {}).get(name, [])
+            for item in items:
+                png = item.pop("image_png_base64", None)
+                if png:
+                    images.append({"title": f"{known[name].get('label', name)}: {item.get('title') or 'plot'}",
+                                   "data": png})
+                    item["image"] = len(images)
+            if have is not None and missing_analyses([name], cat["components"], have):
+                items = [{"type": "note", "text": "This run lacks what the component needs."}]
+            out[name] = {"label": known[name].get("label", name), "shows": items}
+        result = {"run_id": run_id, "components": out}
+        if drawn.get("exception"):
+            result["page_errors"] = drawn["exception"]
+        if images:
+            result["_images"] = images
+        return result
+
+    def _set_view(self, workflow_dir: Path, entry: dict, view, components) -> str:
+        from src.layout_manager.layout import load_views, save_views, validate_layout
+        cat = self._catalog(entry)
+        default = cat["presets"][0]["layout"] if cat["presets"] else [[c["name"]] for c in cat["components"]]
+        path = Path(workflow_dir, cat["layout"])
+        state = load_views(path, cat["components"], cat["presets"], default)
+        if view is not None:
+            if view not in {v["name"] for v in state["views"]}:
+                raise ToolError(f"No view {view!r}. See list_result_views.")
+            state["current"] = view
+        else:
+            if isinstance(components, list) and components and all(isinstance(c, str) for c in components):
+                components = [[c] for c in components]
+            problem = validate_layout([components], cat["components"])
+            if problem:
+                raise ToolError(f"Cannot show these components: {problem}.")
+            mine = {"name": self.ASSISTANT_VIEW, "label": "From the assistant",
+                    "rows": [list(r) for r in components], "preset": False, "in_bar": True}
+            state["views"] = [v for v in state["views"] if v["name"] != self.ASSISTANT_VIEW]
+            state["views"].insert(sum(v.get("in_bar", True) for v in state["views"]), mine)
+            state["current"] = self.ASSISTANT_VIEW
+            view = self.ASSISTANT_VIEW
+        save_views(path, state)
+        return view
+
+    def _show_in_app(self, workflow, page="results", run_id=None, note="", view=None,
+                     components=None) -> dict:
         workflow, entry, workflow_dir = self._workflow(workflow)
         if page not in ("configure", "run", "results"):
             raise ToolError("page must be configure, run or results.")
@@ -767,10 +904,15 @@ class Tools:
                 raise ToolError(f"No run {run_id!r}. See list_runs.")
         if not isinstance(note, str):
             raise ToolError("note must be text.")
+        shown_view = None
+        if view is not None or components is not None:
+            if page != "results":
+                raise ToolError("view and components are for the results page.")
+            shown_view = self._set_view(workflow_dir, entry, view, components)
         request = show.write(self.workspace, {"workflow": workflow, "page": page,
                                               "page_file": page_file, "run_id": run_id,
                                               "note": note.strip()[:500]})
-        return {"shown": True, "page": page, "run_id": run_id, "id": request["id"],
+        return {"shown": True, "page": page, "run_id": run_id, "view": shown_view, "id": request["id"],
                 "link": self._page_link(page_file)}
 
 

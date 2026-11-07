@@ -27,7 +27,7 @@ from src.sync import server, tokens  # noqa: E402
 WF = "topp-workflow"
 SETTINGS = {
     "app-name": "Test App", "version": "1.2.3", "online_deployment": True,
-    "agent_access": {"enabled": True, "calls_per_minute": 1000, "workflows": {
+    "agent_access": {"enabled": True, "developer_only": False, "calls_per_minute": 1000, "workflows": {
         WF: {"class": "src.Workflow:Workflow",
              "configure_page": "content/topp_workflow_parameter.py",
              "run_page": "content/topp_workflow_execution.py",
@@ -148,7 +148,7 @@ def test_http_handshake_and_errors(mcp):
     assert note.status_code == 202
 
     tools = _rpc(mcp, "tools/list").json()["result"]["tools"]
-    assert len(tools) == 18
+    assert len(tools) == 20
     assert {"upload_file", "start_run", "read_result"} <= {t["name"] for t in tools}
 
     assert _rpc(mcp, "nope").json()["error"]["code"] == protocol.METHOD_NOT_FOUND
@@ -411,3 +411,117 @@ def test_app_opens_what_the_assistant_shows(tmp_path):
     key = run_widgets.selected_run_key(RunManager(ws / WF))
     assert at.session_state[key] == run_id
     assert [t.value for t in at.toast] == ["Look at the features."]
+
+
+def _feature_matrix(ws: Path) -> str:
+    """A consensus feature table in the latest run, as the workflow writes it."""
+    from src.workflow.RunManager import RunManager
+    run_id = RunManager(ws / WF).latest()
+    out = RunManager(ws / WF).results_dir(run_id) / "feature-linking" / "feature_matrix.tsv"
+    out.write_text("id\tcharge\tmz\tRT\tquality\tA.mzML\tB.mzML\n" + "".join(
+        f"{i}\t1\t{100 + i}\t{i * 2}\t0.5\t{1000 * (i + 1)}\t{500 * (i + 1)}\n" for i in range(12)))
+    return run_id
+
+
+def test_result_views_and_components(tmp_path):
+    from src.agent_access.tools import ToolError
+    ws = _workspace(tmp_path)
+    run_id = _feature_matrix(ws)
+    tools = Tools(Path.cwd(), ws, agent_settings(SETTINGS))
+    views = tools.call("list_result_views", {"workflow": WF})
+    assert views["run_id"] == run_id and views["open_view"] == "features"
+    by_name = {c["name"]: c for c in views["components"]}
+    assert by_name["features"]["run_has_it"]
+    assert by_name["intensities"]["shown_with"] == "features"
+    # The run was processed without the custom Python tool
+    assert not by_name["top_features"]["run_has_it"]
+    assert by_name["top_features"]["needs"] == ["the custom Python tool"]
+    assert [v["name"] for v in views["views"]] == ["features", "top", "all"]
+
+    seen = tools.call("look_at_results", {"workflow": WF, "rows": 3})
+    assert set(seen["components"]) == {"features", "intensities"}
+    shows = seen["components"]["features"]["shows"]
+    assert {"type": "metric", "label": "number of consensus features", "value": "12",
+            "delta": None} in shows
+    table = next(i for i in shows if i["type"] == "table")
+    assert table["rows"] == 12 and len(table["first_rows"]) == 3
+    assert table["numbers"]["mz"]["max"] == 111
+    key = table["select_key"]
+    assert seen["components"]["intensities"]["shows"][0]["type"] == "info"
+
+    # Rows picked in the table: the plot that follows the selection
+    picked = tools.call("look_at_results", {"workflow": WF, "components": ["features", "intensities"],
+                                             "select": {key: [0, 2]}})
+    plot = picked["components"]["intensities"]["shows"][0]
+    assert plot["type"] == "plot" and plot["y_axis"] == "intensity"
+    assert [t["name"] for t in plot["traces"]] == ["A.mzML", "B.mzML"]
+    assert plot["traces"][0]["y"] == [1000, 3000]
+    with pytest.raises(ToolError, match="Unknown components"):
+        tools.call("look_at_results", {"workflow": WF, "components": ["nope"]})
+    with pytest.raises(ToolError, match="select maps"):
+        tools.call("look_at_results", {"workflow": WF, "select": {key: "0"}})
+
+
+def test_show_a_view_the_assistant_composed(tmp_path):
+    from src.agent_access.tools import ToolError
+    from src.layout_manager.layout import load_views
+    from src.Workflow import Workflow
+    ws = _workspace(tmp_path)
+    tools = Tools(Path.cwd(), ws, agent_settings(SETTINGS))
+    path = ws / WF / Workflow.RESULTS_LAYOUT
+
+    def state():
+        return load_views(path, Workflow.COMPONENTS, Workflow.PRESETS, Workflow.PRESETS[0]["layout"])
+
+    out = tools.call("show_in_app", {"workflow": WF, "view": "all", "note": "Everything."})
+    assert out["view"] == "all" and state()["current"] == "all"
+    out = tools.call("show_in_app", {"workflow": WF, "components": ["features", "intensities"]})
+    assert out["view"] == "custom-assistant"
+    views = {v["name"]: v for v in state()["views"]}
+    assert state()["current"] == "custom-assistant"
+    assert views["custom-assistant"]["label"] == "From the assistant"
+    assert views["custom-assistant"]["rows"] == [["features"], ["intensities"]]
+    # A second view replaces the first
+    tools.call("show_in_app", {"workflow": WF, "components": [["features", "intensities"]]})
+    assert [v["name"] for v in state()["views"]].count("custom-assistant") == 1
+    assert {v["name"]: v for v in state()["views"]}["custom-assistant"]["rows"] == [["features", "intensities"]]
+    with pytest.raises(ToolError, match="needs Consensus features"):
+        tools.call("show_in_app", {"workflow": WF, "components": [["intensities"]]})
+    with pytest.raises(ToolError, match="No view"):
+        tools.call("show_in_app", {"workflow": WF, "view": "nope"})
+    with pytest.raises(ToolError, match="results page"):
+        tools.call("show_in_app", {"workflow": WF, "page": "configure", "view": "all"})
+
+
+def test_plots_reach_the_assistant_as_images():
+    class Fake:
+        def has(self, name):
+            return True
+
+        def call(self, name, arguments):
+            return {"components": {}, "_images": [{"title": "Plot", "data": "UE5H"}]}
+
+    out = protocol.call_tool({"name": "look_at_results", "arguments": {}}, Fake())
+    assert "_images" not in out["structuredContent"]
+    assert out["content"][1:] == [{"type": "text", "text": "Image 1: Plot"},
+                                  {"type": "image", "data": "UE5H", "mimeType": "image/png"}]
+
+
+def _panel_page():
+    import streamlit as st
+    from src.agent_access import ui
+    st.write("assistant" if ui.enabled() else "hidden")
+
+
+def test_assistant_is_a_developer_feature(tmp_path):
+    from streamlit.testing.v1 import AppTest
+    settings = {**SETTINGS, "agent_access": {**SETTINGS["agent_access"], "developer_only": True}}
+    at = AppTest.from_function(_panel_page)
+    at.session_state.settings = settings
+    at.session_state["developer-mode"] = False
+    at.run()
+    assert at.markdown[0].value == "hidden"
+    at.session_state["developer-mode"] = True
+    at.run()
+    assert at.markdown[0].value == "assistant"
+    assert agent_settings({"agent_access": {"enabled": True}})["developer_only"] is True

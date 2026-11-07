@@ -26,8 +26,13 @@ _NOTE = "agent-access-note"
 
 
 def enabled() -> bool:
+    """Whether this session shows the assistant (``developer_only``: after unlocking)."""
     settings = st.session_state.get("settings") or {}
-    return bool(agent_settings(settings)["enabled"])
+    cfg = agent_settings(settings)
+    if not cfg["enabled"]:
+        return False
+    from src.common.developer import is_developer
+    return not cfg["developer_only"] or is_developer()
 
 
 def _cfg() -> dict:
@@ -138,7 +143,8 @@ _LABELS = {
     "get_run_log": "read the log", "stop_run": "stopped the run", "list_runs": "listed the runs",
     "list_results": "listed results", "read_result": "read a result",
     "get_processing_report": "read the processing report", "get_app_link": "linked here",
-    "show_in_app": "showed you a page",
+    "show_in_app": "showed you a page", "list_result_views": "listed the result views",
+    "look_at_results": "looked at the results",
 }
 
 
