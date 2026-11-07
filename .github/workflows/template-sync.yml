@@ -138,7 +138,7 @@ jobs:
           python - <<'PY'
           import fnmatch, os, yaml
           default = ["app.yaml", "app.py", "settings.json", "default-parameters.json",
-                     "presets.json", "parameter-names.json", "README.md", "content/*",
+                     "presets.json", "parameter-names.json", "contributors.json", "README.md", "content/*",
                      "src/Workflow.py",
                      "src/python-tools/*", "example-data/*", "assets/*", "k8s/overlays/*",
                      "k8s/argocd/*"]

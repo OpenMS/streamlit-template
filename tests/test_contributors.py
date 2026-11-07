@@ -107,3 +107,16 @@ def test_refresh_rebuilds_github_groups_only():
     assert out["groups"][0]["people"] == ["alice", "bob", "zed"]
     assert out["groups"][1]["people"] == ["kept"]
     assert out["names"] == {"alice": "Alice (kept)", "bob": "Bob B."}
+
+
+def test_every_build_ships_the_app_contributors_file():
+    # contributors.json sits in the repository root, which no build copies
+    # whole; a build that leaves it out shows only the framework group.
+    dockerfiles = sorted(Path(".").glob("Dockerfile*"))
+    assert dockerfiles
+    for dockerfile in dockerfiles:
+        text = dockerfile.read_text(encoding="utf-8")
+        assert "COPY contributors.json /app/contributors.json" in text, dockerfile.name
+    desktop = Path(".github/workflows/build-desktop-app.yaml").read_text(encoding="utf-8")
+    copy_line = next(l for l in desktop.splitlines() if "cp -R src utils" in l)
+    assert " contributors.json " in copy_line
