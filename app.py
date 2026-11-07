@@ -50,8 +50,21 @@ if __name__ == '__main__':
             st.Page(Path("content", "workspace_sync.py"), title="Workspace Sync", icon="🔄")
         )
 
+    # What an AI assistant analysed in this workspace (src/agent_access), a
+    # developer feature: the menu entry shows only in developer mode.
+    agent = st.session_state.settings.get("agent_access", {}).get("enabled")
+    if agent:
+        pages["Others Topics"].append(
+            st.Page(Path("content", "assistant_analyses.py"), title="Assistant analyses", icon="🤖")
+        )
+
     pg = st.navigation(pages)
     if sync:
         st.html('<style>[data-testid="stSidebarNav"] li:has(a[href$="/workspace_sync"])'
                 '{display: none;}</style>')
+    if agent:
+        from src.agent_access.ui import enabled as agent_enabled
+        if not agent_enabled():
+            st.html('<style>[data-testid="stSidebarNav"] li:has(a[href$="/assistant_analyses"])'
+                    '{display: none;}</style>')
     pg.run()

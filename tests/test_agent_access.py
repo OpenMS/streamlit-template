@@ -148,7 +148,7 @@ def test_http_handshake_and_errors(mcp):
     assert note.status_code == 202
 
     tools = _rpc(mcp, "tools/list").json()["result"]["tools"]
-    assert len(tools) == 20
+    assert len(tools) == 29
     assert {"upload_file", "start_run", "read_result"} <= {t["name"] for t in tools}
 
     assert _rpc(mcp, "nope").json()["error"]["code"] == protocol.METHOD_NOT_FOUND
