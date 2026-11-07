@@ -112,9 +112,11 @@ def test_refresh_rebuilds_github_groups_only():
 def test_every_build_ships_the_app_contributors_file():
     # contributors.json sits in the repository root, which no build copies
     # whole; a build that leaves it out shows only the framework group.
-    for dockerfile in ("Dockerfile", "Dockerfile.arm", "Dockerfile_simple", "Dockerfile_simple.arm"):
-        text = Path(dockerfile).read_text(encoding="utf-8")
-        assert "COPY contributors.json /app/contributors.json" in text, dockerfile
+    dockerfiles = sorted(Path(".").glob("Dockerfile*"))
+    assert dockerfiles
+    for dockerfile in dockerfiles:
+        text = dockerfile.read_text(encoding="utf-8")
+        assert "COPY contributors.json /app/contributors.json" in text, dockerfile.name
     desktop = Path(".github/workflows/build-desktop-app.yaml").read_text(encoding="utf-8")
     copy_line = next(l for l in desktop.splitlines() if "cp -R src utils" in l)
     assert " contributors.json " in copy_line
