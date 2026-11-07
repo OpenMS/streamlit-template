@@ -165,7 +165,7 @@ jobs:
     # Bump v1 when the build or packaging below changes what a package holds.
     - name: Restore a package of this commit
       id: package
-      uses: actions/cache/restore@v4
+      uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: openms-out
         key: openms-package-v1-${{ matrix.platform }}-${{ needs.resolve.outputs.repository }}-${{ needs.resolve.outputs.sha }}
@@ -176,7 +176,7 @@ jobs:
       # At the workspace root, as OpenMS's own CI does: vcpkg's build trees are
       # deep, and Windows paths are limited to 260 characters.
       if: steps.package.outputs.cache-hit != 'true'
-      uses: actions/checkout@v4
+      uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       with:
         repository: ${{ needs.resolve.outputs.repository }}
         ref: ${{ needs.resolve.outputs.sha }}
@@ -218,7 +218,7 @@ jobs:
     - name: Restore the ccache cache
       if: steps.package.outputs.cache-hit != 'true'
       id: ccache
-      uses: actions/cache/restore@v4
+      uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: .ccache
         key: openms-ccache-${{ matrix.platform }}-${{ needs.resolve.outputs.repository }}-${{ needs.resolve.outputs.sha }}
@@ -231,7 +231,7 @@ jobs:
     ##########################################################################
     - name: Set up a Visual Studio shell
       if: steps.package.outputs.cache-hit != 'true' && runner.os == 'Windows'
-      uses: egor-tensin/vs-shell@v2
+      uses: egor-tensin/vs-shell@7710434f30f873ff4ab78184b74cc576a10726d6 # v2.2.3
       with:
         arch: x64
 
@@ -323,7 +323,7 @@ jobs:
     - name: Restore the vcpkg binary cache
       if: steps.package.outputs.cache-hit != 'true' && steps.route.outputs.route == 'vcpkg'
       id: vcpkg-cache
-      uses: actions/cache/restore@v4
+      uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: .vcpkg-cache
         key: openms-${{ runner.os == 'Windows' && 'win' || matrix.platform }}-vcpkg-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'vcpkg-overlays/**') }}-${{ steps.vcpkg.outputs.rev }}
@@ -384,7 +384,7 @@ jobs:
     # a complete cache.
     - name: Save the vcpkg binary cache
       if: always() && (steps.vcpkg-configure.outcome == 'success' || steps.vcpkg-configure.outcome == 'failure') && steps.vcpkg-cache.outputs.cache-hit != 'true'
-      uses: actions/cache/save@v4
+      uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: .vcpkg-cache
         key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}${{ steps.vcpkg-configure.outcome == 'failure' && format('-partial-{0}-{1}', github.run_id, github.run_attempt) || '' }}
@@ -429,7 +429,7 @@ jobs:
     ##########################################################################
     - name: Install Qt
       if: steps.package.outputs.cache-hit != 'true' && steps.route.outputs.route == 'contrib'
-      uses: jurplel/install-qt-action@v4
+      uses: jurplel/install-qt-action@b344308e4483fc892e0d27b3cd1b173ebdd95f06 # v4.5.0
       with:
         version: '6.8.3'    # built with win64_msvc2022_64, which must match the compiler
         arch: 'win64_msvc2022_64'
@@ -569,20 +569,20 @@ jobs:
     - name: Save the ccache cache
       # Also after a failed build, so the next attempt does not start cold.
       if: always() && steps.package.outputs.cache-hit != 'true' && (steps.cibuild.outcome != 'skipped' || steps.vcpkg-build.outcome != 'skipped')
-      uses: actions/cache/save@v4
+      uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: .ccache
         key: ${{ steps.ccache.outputs.cache-primary-key }}-${{ github.run_id }}-${{ github.run_attempt }}
 
     - name: Save the package
       if: steps.package.outputs.cache-hit != 'true'
-      uses: actions/cache/save@v4
+      uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: openms-out
         key: ${{ steps.package.outputs.cache-primary-key }}
 
     - name: Upload the package
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
       with:
         name: openms-${{ matrix.platform }}
         path: openms-out/*

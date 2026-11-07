@@ -21,7 +21,7 @@ jobs:
       packages: write
     steps:
       - name: Delete old commit-tagged images (keep semver + main + latest)
-        uses: snok/container-retention-policy@v3.1.0
+        uses: snok/container-retention-policy@d3bdcf5ce9b05f685154e4a16c39233b245e3d53 # v3.1.0
         with:
           account: ${{ github.repository_owner }}
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -32,7 +32,7 @@ jobs:
           dry-run: ${{ github.event.inputs.dry-run || 'false' }}
 
       - name: Delete untagged app image manifests
-        uses: snok/container-retention-policy@v3.1.0
+        uses: snok/container-retention-policy@d3bdcf5ce9b05f685154e4a16c39233b245e3d53 # v3.1.0
         with:
           account: ${{ github.repository_owner }}
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -47,7 +47,7 @@ jobs:
       packages: write
     steps:
       - name: Delete untagged buildx cache manifests
-        uses: snok/container-retention-policy@v3.1.0
+        uses: snok/container-retention-policy@d3bdcf5ce9b05f685154e4a16c39233b245e3d53 # v3.1.0
         with:
           account: ${{ github.repository_owner }}
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -62,7 +62,7 @@ jobs:
       packages: write
     steps:
       - name: Delete old commit-tagged SIFs (keep semver + main + latest)
-        uses: snok/container-retention-policy@v3.1.0
+        uses: snok/container-retention-policy@d3bdcf5ce9b05f685154e4a16c39233b245e3d53 # v3.1.0
         with:
           account: ${{ github.repository_owner }}
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -73,7 +73,7 @@ jobs:
           dry-run: ${{ github.event.inputs.dry-run || 'false' }}
 
       - name: Delete untagged SIF manifests
-        uses: snok/container-retention-policy@v3.1.0
+        uses: snok/container-retention-policy@d3bdcf5ce9b05f685154e4a16c39233b245e3d53 # v3.1.0
         with:
           account: ${{ github.repository_owner }}
           token: ${{ secrets.GITHUB_TOKEN }}
