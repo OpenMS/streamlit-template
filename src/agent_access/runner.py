@@ -2,30 +2,21 @@
 
 Online, a run goes to the RQ queue exactly as the Run button or the desktop
 app puts it there (``src/sync/runs.py``), so the workflow's Run page shows it
-too. In the local app it runs in its own interpreter, as the Run page starts
-it (``WorkflowManager._start_workflow_local``), with its pid in
-``<workflow>/pids/`` so the Run page shows it running and can stop it.
+too. In the local app it starts through ``src/workflow/start.py``, as the Run
+button starts it: the same run folder and workflow process, its pid in
+``<workflow>/pids/`` so the Run page shows it running and can stop it, and so
+the same processing report.
 """
 
 import os
 import shutil
 import signal
-import subprocess
-import sys
 from pathlib import Path
 
 from src.workflow._log_status import classify_log_outcome
 
 from . import describe
 
-
-# Kept equal to WorkflowManager._RUN_WORKFLOW, which needs Streamlit to import.
-_RUN_WORKFLOW = (
-    "import sys\n"
-    "sys.path.insert(0, sys.argv[1])\n"
-    "from src.workflow.tasks import execute_workflow\n"
-    "execute_workflow(*sys.argv[2:])\n"
-)
 
 
 class RunError(RuntimeError):
@@ -148,28 +139,19 @@ def start(app_root: Path, workspace: Path, workflow: str, target: str, params: d
 
     if _local_running(workflow_dir):
         raise RunError(f"{workflow} is already running. Wait for it to end, or stop it with stop_run.")
+    # The same start as the Run button's (src/workflow/start.py): the run
+    # folder, the run it follows, the workflow process; the processing report
+    # then records the run as it records any other.
+    from src.workflow.start import launch_local, prepare
     describe.write_params(workflow_dir, params)
-    shutil.rmtree(Path(workflow_dir, "logs"), ignore_errors=True)
     module, _, cls = target.partition(":")
-    args = [str(workflow_dir), cls, module]
-    if multi_run:
-        args.append(_runs(workflow_dir).new_run(name, Path(workflow_dir, "params.json")))
-    # Its own session, and no inherited stdout: over stdio, stdout is the
-    # protocol stream, and the run outlives the assistant's connection.
-    proc = subprocess.Popen(
-        [sys.executable, "-c", _RUN_WORKFLOW, str(Path(app_root).resolve()), *args],
-        cwd=app_root, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL, start_new_session=True,
-    )
-    _children.append(proc)
-    pid_dir = Path(workflow_dir, "pids")
-    pid_dir.mkdir(exist_ok=True)
-    try:
-        Path(pid_dir, str(proc.pid)).touch()
-    except FileNotFoundError:
-        pass
-    if proc.poll() is not None:
-        shutil.rmtree(pid_dir, ignore_errors=True)
+    run_id = prepare(workflow_dir, multi_run, name)
+    # Its own session, and no stdout: over stdio, stdout is the protocol
+    # stream, and the run outlives the assistant's connection.
+    proc = launch_local(workflow_dir, cls, module, run_id,
+                        app_root=str(Path(app_root).resolve()), detach=True)
+    if proc is not None:
+        _children.append(proc)
     return status(workspace, workflow, online)
 
 

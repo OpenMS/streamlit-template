@@ -46,7 +46,7 @@ SCRIPT = r'''
 import json, sys
 from pathlib import Path
 from streamlit.testing.v1 import AppTest
-request = json.loads(sys.argv[1])
+request = json.loads(sys.stdin.read())
 at = AppTest.from_string(request["harness"], default_timeout=request["timeout"])
 settings = json.loads(Path("settings.json").read_text(encoding="utf-8"))
 settings["test"] = True
@@ -122,11 +122,12 @@ def look(app_root: Path, workspace: Path, workflow: str, class_name: str, run_id
                "location": "online" if online else "local", "timeout": timeout,
                "rows": rows, "images": images, "select": select or {}}
     try:
-        proc = subprocess.run([sys.executable, "-c", SCRIPT, json.dumps(request)], cwd=app_root,
-                              capture_output=True, text=True, timeout=timeout + 30,
-                              stdin=subprocess.DEVNULL)
+        proc = subprocess.run([sys.executable, "-c", SCRIPT], cwd=app_root, input=json.dumps(request),
+                              capture_output=True, text=True, timeout=timeout + 30)
     except subprocess.TimeoutExpired:
         return {"error": "Drawing the components took too long."}
+    except OSError as e:
+        return {"error": f"The components could not be drawn: {e}"}
     try:
         return json.loads(proc.stdout.strip().splitlines()[-1])
     except (ValueError, IndexError):

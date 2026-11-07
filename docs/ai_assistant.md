@@ -49,12 +49,15 @@ something to show you (the settings it chose, the run it started, the result it
 is talking about) the app opens that page by itself, picks that run and shows
 the assistant's note. A view it puts together is added to the Results page's
 view bar as **From the assistant**, so you can come back to it and change it
-like your own. It shows only what the assistant decides to show; the
+like your own. The assistant's next view replaces it, so copy it with **+**
+before you change it if you want to keep it. It shows only what the assistant decides to show; the
 rest of its work stays out of your way. Turn **Follow the assistant** off in
 the sidebar's **AI assistant** panel to keep the page you are on.
 
-The sidebar panel lists what an assistant did lately. A run it starts shows on
-the workflow's Run page like one you start yourself. Settings it changes show
+The sidebar panel lists what an assistant did lately. A run it starts is
+started the way the Run button starts it, so it shows on the workflow's Run
+page like one you start yourself, and its processing report records the files,
+tools and settings of that run as for any other run. Settings it changes show
 on the configure page once you reload it.
 
 ## Limits
@@ -64,6 +67,11 @@ neither run commands on the server nor read other workspaces. Uploads, the
 workspace size and the run time have the same limits as in the browser; one
 upload call takes up to 64 MB, so larger files are sent in parts or imported
 from a link.
+
+Looking at the tables and plots needs a Results page built from components (see
+below); for other workflows the assistant reads the result files. Without an
+image engine on the server it sees at most 60 points per plot axis and the
+first rows of a table, so for exact numbers it reads the result files.
 
 ## For app developers
 

@@ -135,9 +135,9 @@ def start(qm, workspace: Path, workflow: str, target: str, params: dict,
 
     # The log shown for this run is its own, as when the Run page starts it locally.
     shutil.rmtree(Path(workflow_dir, "logs"), ignore_errors=True)
-    run_id = None
-    if is_multi_run(target):
-        run_id = _runs(workflow_dir).new_run(name, Path(workflow_dir, "params.json"))
+    # The same start as the Run button's (src/workflow/start.py).
+    from src.workflow.start import prepare
+    run_id = prepare(workflow_dir, is_multi_run(target), name)
 
     from src.workflow.tasks import execute_workflow
     module, _, cls = target.partition(":")

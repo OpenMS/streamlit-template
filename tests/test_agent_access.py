@@ -298,12 +298,30 @@ def test_stdio_transport(tmp_path):
     assert answers[2]["error"]["code"] == protocol.PARSE_ERROR
 
 
-def test_run_command_matches_workflow_manager():
-    import ast
-    tree = ast.parse(Path("src/workflow/WorkflowManager.py").read_text())
-    value = next(node.value for node in tree.body if isinstance(node, ast.Assign)
-                 and any(getattr(t, "id", "") == "_RUN_WORKFLOW" for t in node.targets))
-    assert ast.literal_eval(value) == runner._RUN_WORKFLOW
+def test_an_assistant_starts_a_run_as_the_run_button_does(tmp_path, monkeypatch):
+    """One start for all (src/workflow/start.py): the run folder keeps the
+    settings and the run they follow, so the processing report reads the same."""
+    from src.workflow import start
+    from src.workflow.RunManager import RunManager
+    from src.workflow.processing_report import report_for
+
+    launched = []
+    monkeypatch.setattr(start, "launch_local", lambda *a, **k: launched.append((a, k)))
+    workflow_dir = Path(tmp_path, "wf")
+    workflow_dir.mkdir()
+    params = {"mzML-files": ["a.mzML"], "_follow_up": {"run": "r0", "name": "First run",
+                                                        "note": "noise threshold 500"}}
+    runner.start(Path.cwd(), tmp_path, "wf", "src.Workflow:Workflow", params,
+                 "By the assistant", online=False, multi_run=True)
+    runs = RunManager(workflow_dir)
+    (run_id,) = [r["id"] for r in runs.list_runs()]
+    assert runs.get(run_id)["name"] == "By the assistant"
+    assert launched[0][0][1:] == ("Workflow", "src.Workflow", run_id)
+    assert launched[0][1]["detach"] is True
+    # The next settings start fresh; the run keeps which run it follows
+    assert "_follow_up" not in json.loads(Path(workflow_dir, "params.json").read_text())
+    assert runs.params(run_id)["_follow_up"]["name"] == "First run"
+    assert report_for(workflow_dir, run_id)["run"]["follows"] == "First run"
 
 
 def test_download_of_a_linked_result(mcp, tmp_path):

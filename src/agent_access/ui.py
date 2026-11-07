@@ -9,6 +9,7 @@ import json
 import re
 import shlex
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -98,7 +99,7 @@ def _connect_dialog(workspace: Path) -> None:
         f"and read their results. Workflows it can run here: **{workflows}**."
     )
     if st.session_state.location == "online":
-        issued = st.session_state.get(_ISSUED)
+        issued = _issued()
         if not issued or issued["workspace"] != workspace.name:
             st.markdown("Create a connection for this workspace, then add it to your assistant.")
             if st.button("Create connection", type="primary", icon=":material/link:"):
@@ -223,12 +224,21 @@ def follow() -> None:
         _watch(str(workspace))
 
 
+def _issued() -> dict | None:
+    """The connection this session made, or None once it has expired."""
+    issued = st.session_state.get(_ISSUED)
+    if issued and issued.get("expires", 0) <= time.time():
+        st.session_state.pop(_ISSUED, None)
+        return None
+    return issued
+
+
 def _assistant_may_show(workspace: Path) -> bool:
     """Online, only a workspace with a live assistant connection is watched;
     locally an assistant starts its own connection, so every one is."""
     if st.session_state.get("location") != "online":
         return True
-    issued = st.session_state.get(_ISSUED) or {}
+    issued = _issued() or {}
     return (issued.get("workspace") == workspace.name
             or tokens.active_count(workspace.parent, workspace.name, tokens.AGENT) > 0)
 

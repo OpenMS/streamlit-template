@@ -19,9 +19,12 @@ FILE = ".agent-show.json"
 def write(workspace: Path, request: dict) -> dict:
     request = {**request, "id": uuid.uuid4().hex, "t": time.time()}
     path = Path(workspace, FILE)
-    tmp = path.with_name(f"{FILE}.{os.getpid()}.tmp")
-    tmp.write_text(json.dumps(request), encoding="utf-8")
-    os.replace(tmp, path)
+    tmp = path.with_name(f"{FILE}.{request['id']}.tmp")
+    try:
+        tmp.write_text(json.dumps(request), encoding="utf-8")
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
     return request
 
 

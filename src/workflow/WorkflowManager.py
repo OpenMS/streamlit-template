@@ -6,6 +6,7 @@ from .ParameterManager import ParameterManager
 from .CommandExecutor import CommandExecutor
 from .StreamlitUI import StreamlitUI
 from .FileManager import FileManager
+from .start import APP_ROOT, RUN_WORKFLOW, launch_local, prepare as prepare_start
 from .RunManager import RunManager, FINISHED, FAILED, CANCELLED, RUNNING, FOLLOW_UP_KEY, FOLLOW_UP_FILE, apply_settings, same_files_info
 import multiprocessing
 import streamlit as st
@@ -15,18 +16,10 @@ import sys
 import time
 import traceback
 
-# The app folder, which holds src/. Put first on sys.path in the workflow
-# process (see _start_workflow_local).
-_APP_ROOT = str(Path(__file__).resolve().parents[2])
-
-# Runs one workflow in its own interpreter: argv is the app folder, then the
-# arguments of execute_workflow, the function the queue worker runs.
-_RUN_WORKFLOW = (
-    "import sys\n"
-    "sys.path.insert(0, sys.argv[1])\n"
-    "from src.workflow.tasks import execute_workflow\n"
-    "execute_workflow(*sys.argv[2:])\n"
-)
+# The workflow process every start runs (src/workflow/start.py, shared with
+# the desktop sync and an AI assistant).
+_APP_ROOT = APP_ROOT
+_RUN_WORKFLOW = RUN_WORKFLOW
 
 class WorkflowManager:
     # Keep every run as its own named result set in <workflow_dir>/runs/<id>/
@@ -102,27 +95,14 @@ class WorkflowManager:
     def _settle_follow_up(self) -> None:
         """Without run folders: the start keeps which result it follows (for the
         processing report), and the next settings start fresh."""
-        params = self.parameter_manager.get_parameters_from_json()
-        info = params.pop(FOLLOW_UP_KEY, None)
-        sidecar = Path(self.workflow_dir, FOLLOW_UP_FILE)
-        if isinstance(info, dict):
-            sidecar.write_text(json.dumps(info), encoding="utf-8")
-            self.parameter_manager.write_parameters(params)
-        else:
-            sidecar.unlink(missing_ok=True)
+        prepare_start(self.workflow_dir, multi_run=False)
 
     def _new_run(self) -> None:
         """Create the run this start writes into, and show it on the results pages."""
         from .run_widgets import run_name_key, set_selected_run
 
         name = st.session_state.pop(run_name_key(self.runs), "")
-        params = self.parameter_manager.get_parameters_from_json()
-        info = params.get(FOLLOW_UP_KEY)
-        adds_to = info.get("adds_to") if isinstance(info, dict) else None
-        self.run_id = self.runs.new_run(name, Path(self.workflow_dir, "params.json"), adds_to=adds_to)
-        # The run keeps which run it follows; the next settings start fresh
-        if params.pop(FOLLOW_UP_KEY, None) is not None:
-            self.parameter_manager.write_parameters(params)
+        self.run_id = prepare_start(self.workflow_dir, multi_run=True, name=name)
         self._use_run(self.run_id)
         set_selected_run(self.runs, self.run_id)
 
@@ -291,31 +271,16 @@ class WorkflowManager:
             # Windows only, where multiprocessing starts a fresh interpreter.
             workflow_process = multiprocessing.Process(target=self.workflow_process)
             workflow_process.start()
+            self.executor.pid_dir.mkdir(exist_ok=True)
+            try:
+                Path(self.executor.pid_dir, str(workflow_process.pid)).touch()
+            except FileNotFoundError:
+                return
+            if not workflow_process.is_alive():
+                shutil.rmtree(self.executor.pid_dir, ignore_errors=True)
         else:
-            args = [str(self.workflow_dir), self.__class__.__name__, self.__class__.__module__]
-            if self.multi_run:
-                args.append(self.run_id)
-            workflow_process = subprocess.Popen(
-                [sys.executable, "-c", _RUN_WORKFLOW, _APP_ROOT, *args],
-                stdin=subprocess.DEVNULL,
-            )
-        # Add workflow process id to pid dir
-        self.executor.pid_dir.mkdir(exist_ok=True)
-        try:
-            Path(self.executor.pid_dir, str(workflow_process.pid)).touch()
-        except FileNotFoundError:
-            # The workflow already ended (e.g. no input files) and removed the
-            # pid dir; there is nothing left to track.
-            return
-        ended = (
-            workflow_process.poll() is not None
-            if isinstance(workflow_process, subprocess.Popen)
-            else not workflow_process.is_alive()
-        )
-        if ended:
-            # It ended before its pid was written: the pid dir made above
-            # would otherwise show the workflow as running forever.
-            shutil.rmtree(self.executor.pid_dir, ignore_errors=True)
+            launch_local(self.workflow_dir, self.__class__.__name__, self.__class__.__module__,
+                         self.run_id if self.multi_run else None)
 
     def workflow_process(self) -> None:
         """
