@@ -557,7 +557,7 @@ from src.layout_manager import render_layout, request_analysis, view_bar, resolv
 picked = st.session_state.setdefault("picked", [])
 available = set(st.session_state.get("available", []))
 current = view_bar(Path(st.session_state["path"]), {components!r}, {views!r}, {default!r}, key="vb",
-                   available=available, analyses={analyses!r},
+                   available=available, analyses={analyses!r}, default_view=st.session_state.get("default_view"),
                    unavailable_options=lambda missing, view: [
                        {{"label": "Run identification", "on_click": lambda: picked.append((missing, view and view["name"]))}}])
 layout, _ = resolve_layout(Path(st.session_state["path"]), {components!r}, {default!r})
@@ -621,3 +621,59 @@ def test_component_draws_a_note_where_no_view_can_be_filled(tmp_path):
     assert "Needs Identification, which this run was not processed with." in texts
     at.button(key="grid_missing_ids").click().run()
     assert at.session_state["vb_missing"]["component"] == "ids"
+
+
+# A view of one run while a comparison of several is shown: nothing to process,
+# so the messages say what the view needs and the button what to do
+OWN_ANALYSES = dict(ANALYSES, identification={
+    "label": "one run", "missing": "A comparison spans several runs: show one of them for this.",
+    "action": "Show a run"})
+
+
+def test_own_missing_text_and_action():
+    from src.layout_manager.layout import missing_action, missing_text
+
+    assert missing_text(["identification"], ANALYSES) == (
+        "Needs Identification, which this run was not processed with.")
+    assert missing_action(["identification", "comparison"], ANALYSES) == "Add Identification and Comparison"
+    assert missing_text(["identification"], OWN_ANALYSES, "comparison") == (
+        "A comparison spans several runs: show one of them for this.")
+    assert missing_action(["identification"], OWN_ANALYSES) == "Show a run"
+    # A mix falls back to the default wording
+    assert missing_action(["identification", "comparison"], OWN_ANALYSES) == "Add one run and Comparison"
+
+
+def test_own_missing_text_in_note_and_dialog(tmp_path):
+    only_ids = [{"name": "ids", "label": "IDs", "layout": [["table", "ids"]]}]
+    at = AppTest.from_string(_NEEDS_APP.format(components=NEEDS, views=only_ids, default=[["table", "ids"]],
+                                               analyses=OWN_ANALYSES))
+    at.session_state["path"] = str(tmp_path / "viewer.json")
+    at.session_state["available"] = []
+    at.run()
+    texts = " ".join(m.value for m in at.markdown)
+    assert "A comparison spans several runs: show one of them for this." in texts
+    assert "was not processed with" not in texts
+    assert at.button(key="grid_missing_ids").label == "Show a run…"
+
+    at.session_state["vb_bar"] = {"action": "unavailable", "view": "ids", "nonce": 1}
+    at.run()
+    texts = " ".join(m.value for m in at.markdown)
+    assert "The view **IDs** is not shown here. A comparison spans several runs" in texts
+
+
+def test_locked_current_view_falls_back_to_the_default_view(tmp_path):
+    views = NEEDS_VIEWS
+    path = tmp_path / "viewer.json"
+    at = AppTest.from_string(_NEEDS_APP.format(components=NEEDS, views=views, default=DEFAULT,
+                                               analyses=ANALYSES))
+    at.session_state["path"] = str(path)
+    at.session_state["available"] = ["identification"]
+    at.session_state["vb_bar"] = {"action": "pick", "view": "ids", "nonce": 1}
+    at.run()
+    assert "current:ids" in [m.value for m in at.markdown]
+
+    # The shown dataset cannot fill IDs: its default view, not the first one
+    at.session_state["available"] = []
+    at.session_state["default_view"] = "plots"
+    at.run()
+    assert "current:plots" in [m.value for m in at.markdown]

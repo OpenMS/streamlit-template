@@ -18,7 +18,9 @@ from src.layout_manager.layout import (
     analysis_label,
     apply_preset,
     join_labels,
+    missing_action,
     missing_analyses,
+    missing_text,
     clear_layout,
     load_layout,
     load_views,
@@ -158,11 +160,10 @@ def missing_note(label: str, missing: Sequence[str], analyses: Optional[Dict[str
     ``render_layout`` draws it; an app with a grid renderer of its own calls it
     the same way. The button calls ``on_missing(missing, name)``.
     """
-    needed = join_labels([analysis_label(a, analyses) for a in missing])
     with st.container(border=True):
-        st.markdown(f"**{label}**  \n:gray[Needs {needed}, which this {dataset_label} was not processed with.]")
+        st.markdown(f"**{label}**  \n:gray[{missing_text(missing, analyses, dataset_label)}]")
         if on_missing is not None:
-            st.button(f"Add {needed}…", key=key, icon=":material/add_circle:",
+            st.button(f"{missing_action(missing, analyses)}…", key=key, icon=":material/add_circle:",
                       on_click=on_missing, args=(list(missing), name))
 
 
@@ -474,9 +475,11 @@ def view_bar(
     state = _views(path, components, presets, default_layout, default_view)
     missing_of = {v["name"]: missing_analyses(v["rows"], components, available) for v in state["views"]}
     # A view the shown dataset cannot fill is locked, the current one too: show
-    # the first view it can fill instead (left as it is when none can be)
+    # the default view instead when it can fill that one, else the first view
+    # it can fill (left as it is when none can be)
     if missing_of.get(state["current"]):
-        fallback = next((v["name"] for v in state["views"] if not missing_of[v["name"]]), None)
+        fillable = [v["name"] for v in state["views"] if not missing_of[v["name"]]]
+        fallback = default_view if default_view in fillable else next(iter(fillable), None)
         if fallback is not None:
             state["current"] = fallback
             save_views(path, state)
@@ -486,6 +489,10 @@ def view_bar(
         if missing_of.get(v["name"]):
             out["missing"] = join_labels([analysis_label(a, analyses) for a in missing_of[v["name"]]])
             out["dataset_label"] = dataset_label
+            out["missing_action"] = missing_action(missing_of[v["name"]], analyses)
+            if all(isinstance((analyses or {}).get(m), dict) and analyses[m].get("missing")
+                   for m in missing_of[v["name"]]):
+                out["missing_text"] = missing_text(missing_of[v["name"]], analyses, dataset_label)
         return out
 
     _view_bar(
@@ -514,9 +521,14 @@ def view_bar(
             shown = []
             for c in components:
                 lacking = missing_analyses([c["name"]], components, available)
-                shown.append(dict(c, unavailable="add " + join_labels(
-                    [analysis_label(a, analyses) for a in lacking]) + f" to this {dataset_label} to use it")
-                    if lacking else c)
+                if lacking and all(isinstance((analyses or {}).get(m), dict) and analyses[m].get("action")
+                                   for m in lacking):
+                    action = missing_action(lacking, analyses)
+                    shown.append(dict(c, unavailable=action[:1].lower() + action[1:] + " to use it"))
+                else:
+                    shown.append(dict(c, unavailable="add " + join_labels(
+                        [analysis_label(a, analyses) for a in lacking]) + f" to this {dataset_label} to use it")
+                        if lacking else c)
         if views_editor(path, shown, presets, default_layout, key=f"{key}_editor",
                         new_view=new, default_view=default_view, **editor_args):
             _closed()
@@ -537,13 +549,15 @@ def view_bar(
             label_of = {c["name"]: c["label"] for c in components}
             if not view and request.get("component") in label_of:
                 what = f"**{label_of[request['component']]}**"
-            message = f"{what} needs {needed}, which this {dataset_label} was not processed with."
+            own = all(isinstance((analyses or {}).get(m), dict) and analyses[m].get("missing") for m in missing)
+            message = (f"{what} is not shown here. {missing_text(missing, analyses, dataset_label)}" if own
+                       else f"{what} needs {needed}, which this {dataset_label} was not processed with.")
             details = [analyses[m]["help"] for m in missing
                        if isinstance((analyses or {}).get(m), dict) and analyses[m].get("help")]
             if details:
                 message += "\n\n" + "\n\n".join(details)
             options = list(unavailable_options(missing, view) if unavailable_options else [])
-            missing_analysis_dialog(key, f"Add {needed}", message, options)
+            missing_analysis_dialog(key, missing_action(missing, analyses), message, options)
     for action in actions or []:
         if action.get("id") == clicked and action.get("on_click"):
             action["on_click"]()

@@ -380,6 +380,13 @@ def select_view(
 # ``needs`` may be a list, all of which are needed. The page tells which
 # analyses a dataset has (``available``); a view needing one it lacks is shown
 # disabled in the view bar, and the component in a layout draws a note instead.
+#
+# An analysis is named in ``analyses`` (``{"identification": "Identification"}``
+# or ``{"identification": {"label", "help"?, "missing"?, "action"?}}``). By
+# default the messages say the dataset "was not processed with" it and offer
+# to "Add" it. Something no processing adds, such as a view of one run while a
+# comparison of several is shown, says so with ``missing`` (the sentence shown
+# instead) and ``action`` (the button, e.g. "Show a run").
 
 
 def needs(component: Dict[str, Any]) -> List[str]:
@@ -419,6 +426,33 @@ def analysis_label(name: str, analyses: Optional[Dict[str, Any]] = None) -> str:
     if isinstance(entry, dict):
         return str(entry.get("label") or name)
     return str(entry or name)
+
+
+def _entry(name: str, analyses: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    entry = (analyses or {}).get(name)
+    return entry if isinstance(entry, dict) else {}
+
+
+def missing_text(missing: Sequence[str], analyses: Optional[Dict[str, Any]] = None,
+                 dataset_label: str = "run") -> str:
+    """The sentence a note or a locked view shows for the analyses ``missing``.
+
+    Each analysis's own ``missing`` sentence when all of them have one, else
+    "Needs <labels>, which this <dataset_label> was not processed with."
+    """
+    own = [_entry(m, analyses).get("missing") for m in missing]
+    if own and all(own):
+        return " ".join(dict.fromkeys(str(o) for o in own))
+    needed = join_labels([analysis_label(a, analyses) for a in missing])
+    return f"Needs {needed}, which this {dataset_label} was not processed with."
+
+
+def missing_action(missing: Sequence[str], analyses: Optional[Dict[str, Any]] = None) -> str:
+    """What the button of a note offers: the analysis's ``action``, else "Add <labels>"."""
+    own = [_entry(m, analyses).get("action") for m in missing]
+    if own and all(own) and len(set(own)) == 1:
+        return str(own[0])
+    return "Add " + join_labels([analysis_label(a, analyses) for a in missing])
 
 
 def join_labels(labels: Sequence[str]) -> str:
