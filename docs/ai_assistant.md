@@ -1,6 +1,6 @@
 # Working with an AI assistant
 
-An AI assistant that speaks the Model Context Protocol (MCP), such as Claude,
+Any AI assistant that speaks the Model Context Protocol (MCP), such as Claude,
 can work in your workspace: add input files, set up and start a workflow,
 follow the run and read the results. Everything it does happens in the same
 workspace you see in the browser, so you can open the workflow's pages at any
@@ -31,7 +31,17 @@ summarize the results".
 | Add data | upload files, import from a link (PRIDE accessions, Zenodo, Figshare, S3 or Swift folders, OneDrive, any file URL), remove files |
 | Run | change settings, apply presets, start a run with chosen files, follow it, read its log, stop it |
 | Results | list runs and result files, read tables page by page, download files, read the processing report |
+| Show you | bring the configure, run or results page up in the app you have open, with a run picked and a note on what to look at |
 | Hand over | give you a link that opens the workspace on the configure, run or results page |
+
+## Follow along
+
+Keep the app open in the workspace while the assistant works. Whenever it has
+something to show you (the settings it chose, the run it started, the result it
+is talking about) the app opens that page by itself, picks that run and shows
+the assistant's note. It shows only what the assistant decides to show; the
+rest of its work stays out of your way. Turn **Follow the assistant** off in
+the sidebar's **AI assistant** panel to keep the page you are on.
 
 The sidebar panel lists what an assistant did lately. A run it starts shows on
 the workflow's Run page like one you start yourself. Settings it changes show

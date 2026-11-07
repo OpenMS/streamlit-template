@@ -16,10 +16,13 @@ import streamlit as st
 
 from src.sync import tokens
 
-from . import activity
+from . import activity, show
 from .config import agent_settings
 
 _ISSUED = "agent-access-issued"
+FOLLOW = "agent-access-follow"
+_SEEN = "agent-access-shown"
+_NOTE = "agent-access-note"
 
 
 def enabled() -> bool:
@@ -79,7 +82,8 @@ def _snippets(snippets: dict) -> None:
             st.code(text, language="json" if text.startswith("{") else "bash", wrap_lines=True)
 
 
-@st.dialog("Connect an AI assistant", width="large")
+# on_dismiss: the page reruns, so a connection created here starts follow().
+@st.dialog("Connect an AI assistant", width="large", on_dismiss="rerun")
 def _connect_dialog(workspace: Path) -> None:
     cfg = _cfg()
     workflows = ", ".join(cfg["workflows"]) or "none"
@@ -134,6 +138,7 @@ _LABELS = {
     "get_run_log": "read the log", "stop_run": "stopped the run", "list_runs": "listed the runs",
     "list_results": "listed results", "read_result": "read a result",
     "get_processing_report": "read the processing report", "get_app_link": "linked here",
+    "show_in_app": "showed you a page",
 }
 
 
@@ -172,6 +177,13 @@ def render_sidebar() -> None:
             st.caption("Let an AI assistant run this app's workflows in this workspace.")
         if recent:
             _activity(workspace)
+        if recent or connected:
+            # A key of its own: widget state does not survive a page switch.
+            st.toggle("Follow the assistant", key=f"{FOLLOW}-toggle",
+                      value=st.session_state.get(FOLLOW, True),
+                      on_change=lambda: st.session_state.update(
+                          {FOLLOW: st.session_state[f"{FOLLOW}-toggle"]}),
+                      help="Open the pages and runs the assistant shows you, as it shows them.")
         if st.button("Connect an AI assistant", key="agent-access-connect",
                      icon=":material/add_link:", width="stretch"):
             _connect_dialog(workspace)
@@ -181,3 +193,59 @@ def render_sidebar() -> None:
             tokens.revoke(workspace.parent, workspace.name, tokens.AGENT)
             st.session_state.pop(_ISSUED, None)
             st.rerun()
+
+
+def follow() -> None:
+    """Open what the assistant shows (``show_in_app``), on every page of the session.
+
+    Called by ``page_setup()`` in the page's main area. The note of the
+    request that opened this page is shown first; then, while the person
+    follows, a fragment checks for a new request every two seconds. It draws
+    nothing, so a check that fires during a page switch sends no elements
+    to the page being left (see ``_resource_panels`` in common.py).
+    """
+    if not enabled() or "workspace" not in st.session_state:
+        return
+    note = st.session_state.pop(_NOTE, None)
+    if note:
+        st.toast(note, icon=":material/smart_toy:")
+    workspace = Path(st.session_state.workspace)
+    if _SEEN not in st.session_state:
+        # What was shown before this session opened is not news.
+        st.session_state[_SEEN] = (show.latest(workspace) or {}).get("id")
+    if st.session_state.get(FOLLOW, True) and _assistant_may_show(workspace):
+        _watch(str(workspace))
+
+
+def _assistant_may_show(workspace: Path) -> bool:
+    """Online, only a workspace with a live assistant connection is watched;
+    locally an assistant starts its own connection, so every one is."""
+    if st.session_state.get("location") != "online":
+        return True
+    issued = st.session_state.get(_ISSUED) or {}
+    return (issued.get("workspace") == workspace.name
+            or tokens.active_count(workspace.parent, workspace.name, tokens.AGENT) > 0)
+
+
+@st.fragment(run_every=2.0)
+def _watch(workspace: str) -> None:
+    request = show.latest(Path(workspace))
+    if not request or request["id"] == st.session_state.get(_SEEN):
+        return
+    st.session_state[_SEEN] = request["id"]
+    open_request(Path(workspace), request)
+
+
+def open_request(workspace: Path, request: dict) -> None:
+    """Pick the request's run, keep its note for the page, and open the page."""
+    from src.workflow import run_widgets
+    from src.workflow.RunManager import RunManager
+
+    workflow = str(request.get("workflow") or "")
+    if request.get("run_id") and workflow in _cfg()["workflows"]:
+        run_widgets.set_selected_run(RunManager(Path(workspace, workflow)), request["run_id"])
+    st.session_state[_NOTE] = request.get("note") or "The assistant opened this page."
+    page = request.get("page_file")
+    if page and Path(page).is_file():
+        st.switch_page(page)
+    st.rerun(scope="app")

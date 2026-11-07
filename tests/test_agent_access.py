@@ -148,7 +148,7 @@ def test_http_handshake_and_errors(mcp):
     assert note.status_code == 202
 
     tools = _rpc(mcp, "tools/list").json()["result"]["tools"]
-    assert len(tools) == 17
+    assert len(tools) == 18
     assert {"upload_file", "start_run", "read_result"} <= {t["name"] for t in tools}
 
     assert _rpc(mcp, "nope").json()["error"]["code"] == protocol.METHOD_NOT_FOUND
@@ -354,3 +354,60 @@ def test_local_snippets_set_pythonpath(tmp_path):
     assert f"-e PYTHONPATH={root} --" in snippets["Claude Code"]
     config = json.loads(snippets["Other MCP clients (JSON)"])
     assert next(iter(config["mcpServers"].values()))["env"] == {"PYTHONPATH": root}
+
+
+def test_show_in_app(tmp_path):
+    from src.agent_access import show
+    from src.agent_access.tools import ToolError
+    from src.workflow.RunManager import RunManager
+    ws = _workspace(tmp_path)
+    tools = Tools(Path.cwd(), ws, agent_settings(SETTINGS), app_url="https://app.example")
+    run_id = RunManager(ws / WF).latest()
+    out = tools.call("show_in_app", {"workflow": WF, "run_id": run_id,
+                                     "note": "  The features of the first run.  "})
+    assert out["link"] == "https://app.example/topp_workflow_results?workspace=ws-agent"
+    request = show.latest(ws)
+    assert request["id"] == out["id"]
+    assert request["page_file"] == "content/topp_workflow_results.py"
+    assert request["run_id"] == run_id and request["note"] == "The features of the first run."
+    with pytest.raises(ToolError, match="No run"):
+        tools.call("show_in_app", {"workflow": WF, "run_id": "nope"})
+    with pytest.raises(ToolError, match="page must be"):
+        tools.call("show_in_app", {"workflow": WF, "page": "elsewhere"})
+    assert any(t["name"] == "show_in_app" for t in tools.definitions())
+
+
+def _follow_page():
+    import streamlit as st
+    from src.agent_access import ui
+    ui.follow()
+    st.write("page")
+
+
+def test_app_opens_what_the_assistant_shows(tmp_path):
+    from streamlit.testing.v1 import AppTest
+    from src.agent_access import activity, show, ui
+    from src.workflow import run_widgets
+    from src.workflow.RunManager import RunManager
+    ws = _workspace(tmp_path)
+    run_id = RunManager(ws / WF).latest()
+    activity.record(ws, "get_app_info")
+    show.write(ws, {"workflow": WF, "page": "results", "page_file": "", "run_id": None,
+                    "note": "old"})
+
+    at = AppTest.from_function(_follow_page)
+    at.session_state.settings = {**SETTINGS, "online_deployment": False}
+    at.session_state.workspace = ws
+    at.session_state.location = "local"
+    at.run()
+    assert not at.exception and not at.toast
+    # What was shown before the session opened is not opened again.
+    assert at.session_state[ui._SEEN] == show.latest(ws)["id"]
+
+    show.write(ws, {"workflow": WF, "page": "results", "page_file": "", "run_id": run_id,
+                    "note": "Look at the features."})
+    at.run()  # the page's own rerun: the watcher sees the new request
+    assert not at.exception
+    key = run_widgets.selected_run_key(RunManager(ws / WF))
+    assert at.session_state[key] == run_id
+    assert [t.value for t in at.toast] == ["Look at the features."]

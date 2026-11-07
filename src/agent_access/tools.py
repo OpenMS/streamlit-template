@@ -23,7 +23,7 @@ import shutil
 from pathlib import Path, PurePosixPath
 from urllib.parse import quote, urlencode
 
-from . import activity, describe, runner
+from . import activity, describe, runner, show
 
 logger = logging.getLogger("agent-access")
 
@@ -165,6 +165,21 @@ DEFINITIONS = [
      _schema({"workflow": WORKFLOW,
               "page": {"type": "string", "enum": ["configure", "run", "results"]}}),
      READ_ONLY),
+    ("show_in_app", "Show in the app",
+     "Bring a workflow's configure, run or results page up in the app the person has open "
+     "in this workspace, with a run picked and a short note on what to look at. Call it "
+     "whenever there is something worth seeing: the settings you chose, a run you started, "
+     "the result you are describing. The app follows unless the person turned that off; "
+     "the returned link opens the same page.",
+     _schema({"workflow": WORKFLOW,
+              "page": {"type": "string", "enum": ["configure", "run", "results"],
+                       "default": "results"},
+              "run_id": {"type": "string",
+                         "description": "The run to pick, from list_runs. Default: the newest "
+                                        "finished run."},
+              "note": {"type": "string", "maxLength": 500,
+                       "description": "One or two sentences on what the person sees."}},
+             ("workflow",)), WRITES),
 ]
 
 
@@ -217,8 +232,9 @@ class Tools:
             f"for mass spectrometry data analysis. Workflows: {names}. Call get_app_info, then "
             "describe_workflow; add input files with upload_file or import_from_link, start "
             "the workflow with start_run, follow it with get_run_status and read its results "
-            "with list_results and read_result. The person can follow every step in the app: "
-            "get_app_link gives them the link."
+            "with list_results and read_result. The person watches in the app: call "
+            "show_in_app with a short note whenever there is something to see (the settings, "
+            "the running workflow, a result), and only then; get_app_link gives them the link."
         )
 
     def definitions(self) -> list[dict]:
@@ -736,6 +752,26 @@ class Tools:
         workflow, entry, _ = self._workflow(workflow)
         page_file = entry.get(f"{page}_page") or ""
         return {"link": self._page_link(page_file), "page": page if page_file else "home"}
+
+    def _show_in_app(self, workflow, page="results", run_id=None, note="") -> dict:
+        workflow, entry, workflow_dir = self._workflow(workflow)
+        if page not in ("configure", "run", "results"):
+            raise ToolError("page must be configure, run or results.")
+        page_file = entry.get(f"{page}_page") or ""
+        if not page_file:
+            raise ToolError(f"This app names no {page} page for {workflow}.")
+        if run_id is not None:
+            if not self._multi_run(entry):
+                raise ToolError("This workflow keeps one result set; leave run_id out.")
+            if not isinstance(run_id, str) or runner._runs(workflow_dir).get(run_id) is None:
+                raise ToolError(f"No run {run_id!r}. See list_runs.")
+        if not isinstance(note, str):
+            raise ToolError("note must be text.")
+        request = show.write(self.workspace, {"workflow": workflow, "page": page,
+                                              "page_file": page_file, "run_id": run_id,
+                                              "note": note.strip()[:500]})
+        return {"shown": True, "page": page, "run_id": run_id, "id": request["id"],
+                "link": self._page_link(page_file)}
 
 
 def _coerce(value, typ: str):

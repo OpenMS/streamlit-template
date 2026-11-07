@@ -849,6 +849,12 @@ def page_setup(page: str = "") -> dict[str, Any]:
         # Apply captcha by calling the captcha_control function
         captcha_control(privacy_policy_url=get_legal_links()["privacy"])
 
+    # Open what an AI assistant shows the person (src/agent_access); after
+    # the captcha, which stops a page that has not passed it.
+    if st.session_state.settings.get("agent_access", {}).get("enabled"):
+        from src.agent_access.ui import follow as follow_agent
+        follow_agent()
+
     return params
 
 
