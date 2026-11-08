@@ -621,3 +621,206 @@ def test_component_draws_a_note_where_no_view_can_be_filled(tmp_path):
     assert "Needs Identification, which this run was not processed with." in texts
     at.button(key="grid_missing_ids").click().run()
     assert at.session_state["vb_missing"]["component"] == "ids"
+
+
+# --- Zoom and selection kept with a view -------------------------------------
+
+
+def test_capture_and_clean_defaults():
+    from src.layout_manager.layout import capture_defaults, clean_defaults, has_defaults, zoom_identifier
+
+    selections = {
+        "protein": "P1",
+        "row@table": 3,
+        "table_page": {"page": 2},            # pagination is never kept
+        "spectrum": None,                      # nothing selected
+        zoom_identifier("plot"): {"x": [900, 400]},
+        zoom_identifier("map"): {"xRange": [1, 2], "yRange": [-1, -1]},
+        zoom_identifier("other"): {"xRange": [-1, -1], "yRange": [-1, -1]},
+        "odd": {1, 2},                          # not JSON: left out
+    }
+    entry = capture_defaults(selections, dataset="run1")
+    assert entry == {
+        "dataset": "run1",
+        "selection": {"protein": "P1", "row@table": 3},
+        "zoom": {"plot": {"x": [400.0, 900.0]}, "map": {"x": [1.0, 2.0]}},
+    }
+    assert capture_defaults({"table_page": 1}) == {}
+
+    cleaned = clean_defaults([entry, {}, {"selection": {"a_page": 1}, "zoom": {"p": {"x": [1, 1]}}}])
+    assert cleaned == [entry]  # trailing entries without anything to apply are dropped
+    assert clean_defaults([{}, entry]) == [{}, entry]
+    assert len(clean_defaults([entry] * 9)) == 5
+    assert clean_defaults("nope") == []
+    assert has_defaults({"defaults": cleaned}) and not has_defaults({"defaults": [{}]})
+
+
+def test_apply_and_compare_defaults():
+    from src.layout_manager.layout import apply_defaults, differs_from_defaults
+
+    class State:
+        def __init__(self, sel):
+            self.sel = dict(sel)
+
+        def get_all_selections(self):
+            return dict(self.sel)
+
+        def get_selection(self, identifier):
+            return self.sel.get(identifier)
+
+        def set_selection(self, identifier, value):
+            changed = self.sel.get(identifier) != value
+            self.sel[identifier] = value
+            return changed
+
+        def clear_selection(self, identifier):
+            return self.sel.pop(identifier, None) is not None
+
+    entry = {"dataset": "run1", "selection": {"protein": "P1"}, "zoom": {"plot": {"x": [1.0, 2.0]}}}
+    state = State({"protein": "P9", "peptide": "PEP", "zoom@map": {"x": [5, 6]}})
+    assert differs_from_defaults(state.get_all_selections(), entry, "run1")
+    assert apply_defaults(state, entry, "run1")
+    # Saved values set, a zoom the view does not name back to the full view, the rest kept
+    assert state.sel == {"protein": "P1", "peptide": "PEP", "zoom@plot": {"x": [1.0, 2.0]}}
+    assert not differs_from_defaults(state.get_all_selections(), entry, "run1")
+    assert not apply_defaults(state, entry, "run1")
+
+    # Another dataset shown: the zoom is applied, the selection is not
+    other = State({"protein": "Q2"})
+    apply_defaults(other, entry, "run2")
+    assert other.sel == {"protein": "Q2", "zoom@plot": {"x": [1.0, 2.0]}}
+
+
+def test_view_extras_and_defaults_round_trip(tmp_path):
+    from src.layout_manager.layout import load_views, save_views, set_view_defaults
+
+    path = tmp_path / "viewer.json"
+    state = load_views(path, COMPONENTS, VIEWS, DEFAULT)
+    state["views"].append({
+        "name": "custom-1", "label": "Assistant view", "rows": [["plot"]], "preset": False, "in_bar": True,
+        "by": "assistant", "runs": ["run1"], "explanation": ["One.", "Two."], "question": "Why?",
+        "created": "2026-11-08T10:00:00", "unknown": "dropped",
+        "defaults": [{"selection": {"protein": "P1", "x_page": 1}}],
+    })
+    save_views(path, state)
+    view = next(v for v in load_views(path, COMPONENTS, VIEWS, DEFAULT)["views"] if v["name"] == "custom-1")
+    assert view["by"] == "assistant" and view["runs"] == ["run1"] and view["question"] == "Why?"
+    assert view["explanation"] == ["One.", "Two."] and view["created"] == "2026-11-08T10:00:00"
+    assert "unknown" not in view
+    assert view["defaults"] == [{"selection": {"protein": "P1"}}]
+
+    # Ready-made views keep no defaults; a view of one's own does, and can lose them again
+    assert not set_view_defaults(path, "all", [{"selection": {"a": 1}}], COMPONENTS, VIEWS, DEFAULT)
+    assert not set_view_defaults(path, "nope", [{"selection": {"a": 1}}], COMPONENTS, VIEWS, DEFAULT)
+    assert set_view_defaults(path, "custom-1", [{"zoom": {"plot": {"x": [3, 4]}}}], COMPONENTS, VIEWS, DEFAULT)
+    view = next(v for v in load_views(path, COMPONENTS, VIEWS, DEFAULT)["views"] if v["name"] == "custom-1")
+    assert view["defaults"] == [{"zoom": {"plot": {"x": [3.0, 4.0]}}}]
+    assert set_view_defaults(path, "custom-1", None, COMPONENTS, VIEWS, DEFAULT)
+    view = next(v for v in load_views(path, COMPONENTS, VIEWS, DEFAULT)["views"] if v["name"] == "custom-1")
+    assert "defaults" not in view
+
+
+_DEFAULTS_APP = """
+import sys
+import streamlit as st
+from pathlib import Path
+sys.path.insert(0, {tests!r})
+from test_layout_manager import _FakeStateManager
+from src.layout_manager import view_bar
+
+path = Path(st.session_state["path"])
+states = lambda i: _FakeStateManager(f"exp_state_{{i}}")
+current = view_bar(path, {components!r}, {presets!r}, {default!r}, key="vb", states=states,
+                   datasets=lambda i: "run1")
+st.markdown(current + " " + repr(sorted(states(0).get_all_selections().items())))
+"""
+
+
+def test_view_bar_saves_and_restores_zoom_and_selection(tmp_path):
+    from src.layout_manager.layout import load_views, save_views
+
+    path = tmp_path / "viewer.json"
+    state = load_views(path, COMPONENTS, VIEWS, DEFAULT)
+    state["views"].append({"name": "custom-1", "label": "Mine", "rows": [["plot"]], "preset": False, "in_bar": True})
+    save_views(path, state)
+
+    at = AppTest.from_string(_DEFAULTS_APP.format(
+        tests=str(Path(__file__).parent), components=COMPONENTS, presets=VIEWS, default=DEFAULT))
+    at.session_state["path"] = str(path)
+    at.run()
+    assert not at.exception
+
+    # On the view of one's own: select and zoom, then 📌 and Save
+    at.session_state["vb_bar"] = {"action": "pick", "view": "custom-1", "nonce": 1}
+    at.run()
+    at.session_state["exp_state_0"] = {"selections": {"protein": "P1", "zoom@plot": {"x": [1, 2]}, "t_page": 3}}
+    at.session_state["vb_bar"] = {"action": "button", "id": "_save_view_defaults", "nonce": 2}
+    at.run()
+    assert not at.exception
+    at.button(key="vb_defaults_save").click().run()
+    assert not at.exception
+    view = next(v for v in load_views(path, COMPONENTS, VIEWS, DEFAULT)["views"] if v["name"] == "custom-1")
+    assert view["defaults"] == [{"dataset": "run1", "selection": {"protein": "P1"},
+                                 "zoom": {"plot": {"x": [1.0, 2.0]}}}]
+
+    # Changed afterwards, ↺ brings the saved state back
+    at.session_state["exp_state_0"] = {"selections": {"protein": "P7", "zoom@plot": {"x": [5, 9]}}}
+    at.session_state["vb_bar"] = {"action": "button", "id": "_restore_view_defaults", "nonce": 3}
+    at.run()
+    assert at.markdown[-1].value == "custom-1 [('protein', 'P1'), ('zoom@plot', {'x': [1.0, 2.0]})]"
+
+    # Another view and back: opening the view applies its defaults
+    at.session_state["vb_bar"] = {"action": "pick", "view": "plots", "nonce": 4}
+    at.run()
+    at.session_state["exp_state_0"] = {"selections": {"protein": "P8"}}
+    at.run()
+    at.session_state["vb_bar"] = {"action": "pick", "view": "custom-1", "nonce": 5}
+    at.run()
+    assert at.markdown[-1].value == "custom-1 [('protein', 'P1'), ('zoom@plot', {'x': [1.0, 2.0]})]"
+
+
+def test_zoom_is_shared_by_a_private_state():
+    from src.layout_manager.ui import _private_state
+
+    class Base:
+        def __init__(self, session_key):
+            self.values = {"protein": "P1", "row@table": 2, "row@other": 7, "zoom@plot": {"x": [1, 2]}}
+
+        def get_all_selections(self):
+            return dict(self.values)
+
+    state = _private_state(Base)("s", {"row": "row@table"})
+    assert state.get_all_selections() == {"protein": "P1", "row": 2, "zoom@plot": {"x": [1, 2]}}
+
+
+def test_annotations_kept_and_applied_only_for_their_dataset():
+    from src.layout_manager.layout import (annotations_identifier, apply_defaults, capture_defaults,
+                                           clean_defaults, differs_from_defaults)
+
+    points = {"17": {"highlight": True, "annotation": "b2 1+"}}
+    entry = clean_defaults([{"dataset": "run1", "annotations": {"spectrum": points, "bad": "x"},
+                             "selection": {"spectrum": 5}}])[0]
+    assert entry == {"dataset": "run1", "selection": {"spectrum": 5}, "annotations": {"spectrum": points}}
+    assert capture_defaults({annotations_identifier("spectrum"): points}) == {"annotations": {"spectrum": points}}
+
+    class State(dict):
+        def get_all_selections(self):
+            return dict(self)
+
+        def get_selection(self, identifier):
+            return self.get(identifier)
+
+        def set_selection(self, identifier, value):
+            self[identifier] = value
+            return True
+
+        def clear_selection(self, identifier):
+            return self.pop(identifier, None) is not None
+
+    shown = State({"annotations@other": {"1": {"highlight": True}}})
+    apply_defaults(shown, entry, "run1")
+    assert shown == {"spectrum": 5, "annotations@spectrum": points}
+    assert not differs_from_defaults(dict(shown), entry, "run1")
+    elsewhere = State()
+    apply_defaults(elsewhere, entry, "run2")
+    assert elsewhere == {}
