@@ -104,11 +104,12 @@ def fonts(root: Path | str = ".") -> list[Component]:
 
 LICENSES_DIR = Path(__file__).resolve().parents[2] / "static" / "licenses"
 
-# Qt's core library as OpenMS ships it: in the desktop payload (bin/ on
-# Windows, lib/ elsewhere, a framework on macOS), bundled into the pyOpenMS
-# wheel, or from the system's packages in the full Docker image.
+# Qt's core library as OpenMS ships it: in the desktop payload (openms/bin on
+# Windows, openms/lib elsewhere, a dylib or framework on macOS), bundled into
+# the pyOpenMS wheel, or from the system's packages in the full Docker image.
 _QT_CORE = ("Qt6Core*.dll", "Qt5Core*.dll", "libQt6Core.so*", "libQt5Core.so*",
-            "libQt6Core-*.so*", "libQt5Core-*.so*", "QtCore.framework")
+            "libQt6Core-*.so*", "libQt5Core-*.so*", "libQt6Core*.dylib",
+            "libQt5Core*.dylib", "QtCore.framework")
 _QT_MAJOR = re.compile(r"Qt([56])Core")
 
 
@@ -126,11 +127,15 @@ def _system_qt_dirs() -> list[Path]:
 
 
 def _qt_dirs(env: dict) -> list[Path]:
+    """Folders next to the OpenMS installation that OPENMS_DATA_PATH names:
+    an OpenMS install (bin, lib, Frameworks) or the desktop payload, which
+    keeps share/OpenMS beside openms/bin and openms/lib."""
     dirs: list[Path] = []
     data_path = env.get("OPENMS_DATA_PATH")
     if data_path:
         root = Path(data_path).parent.parent
         dirs += [root / "bin", root / "lib", root / "Frameworks"]
+        dirs += [root / "openms" / "bin", root / "openms" / "lib"]
     return dirs + _system_qt_dirs()
 
 
