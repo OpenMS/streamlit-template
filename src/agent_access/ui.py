@@ -164,7 +164,7 @@ def _connect_dialog(workspace: Path) -> None:
             st.code(snippets["Claude Code, Codex, Gemini CLI"], language=None, wrap_lines=True)
         with science:
             st.caption("Add a connector with these fields. Claude Science runs it in its "
-                       f"sandbox; give it read and write access to `{workspace}` if the "
+                       f"sandbox; give it read and write access to `{workspace.resolve()}` if the "
                        "assistant says it cannot write to the workspace.")
             st.code(snippets["Claude Science"], language=None, wrap_lines=True)
         with other:
