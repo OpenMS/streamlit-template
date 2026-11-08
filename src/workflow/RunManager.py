@@ -231,6 +231,9 @@ class RunManager:
         design = Path(self.run_dir(run_id), DESIGN_FILE)
         if design.exists():
             shutil.copy2(design, Path(self.workflow_dir, DESIGN_FILE))
+        else:
+            # The run had no design: one left from another run must not describe its files
+            Path(self.workflow_dir, DESIGN_FILE).unlink(missing_ok=True)
         return True
 
     def experiment_files(self, run_id: str, key: str) -> list[str]:

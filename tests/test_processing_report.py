@@ -187,6 +187,18 @@ def test_restore_settings_makes_a_runs_parameters_the_next_ones(tmp_path):
     assert not runs.restore_settings("no-such-run")
 
 
+def test_restore_settings_drops_a_design_the_run_did_not_have(tmp_path):
+    """A design left from another run must not describe the restored run's files."""
+    params = Path(tmp_path, "params.json")
+    params.write_text(json.dumps({"mzML-files": ["a.mzML"]}))
+    runs = RunManager(tmp_path)
+    run_id = runs.new_run("No design", params)
+    Path(tmp_path, DESIGN_FILE).write_text("design of a later run")
+
+    assert runs.restore_settings(run_id)
+    assert not Path(tmp_path, DESIGN_FILE).exists()
+
+
 def test_apply_settings_starts_from_stored_settings(tmp_path):
     """An app without run folders starts a follow-up from the settings it stored itself."""
     from src.workflow.RunManager import apply_settings
