@@ -276,3 +276,39 @@ def test_start_from_locks_the_files_of_the_results_it_adds_to(tmp_path):
     written = apply_settings(tmp_path, {"mzML-files": ["b.mzML"]}, {"mzML-files": ["a.mzML"]}, info)
     assert written["mzML-files"] == ["a.mzML"]
     assert written[FOLLOW_UP_KEY]["reuses"] == ["a_1"] and written[FOLLOW_UP_KEY]["kept"] == ["Deconv"]
+
+
+def test_a_kept_report_stays_when_the_next_start_writes_over_the_logs(tmp_path):
+    from src.workflow.processing_report import keep_report
+
+    wf = Path(tmp_path, "topp-workflow")
+    _workflow(wf)
+    Path(wf, "params.json").write_text(json.dumps({"topp-workflow-param-mode": "fast"}))
+    Path(wf, "last-follow-up.json").write_text(json.dumps({"name": "Earlier result", "note": "to add files"}))
+    Path(wf, "ini").mkdir()
+    Path(wf, "ini", "FeatureFinderMetabo.ini").write_text("<PARAMETERS/>")
+    Path(wf, "ini", "Unused.ini").write_text("<PARAMETERS/>")
+    kept = Path(tmp_path, "cache", "files", "A_20261108-101500", "processing-report")
+    assert keep_report(wf, kept)
+    # Only the tools the start ran
+    assert sorted(p.name for p in Path(kept, "ini").iterdir()) == ["FeatureFinderMetabo.ini"]
+
+    # The next start records something else
+    Path(wf, "logs", "progress.json").unlink()
+    progress = RunProgress(wf)
+    _step(progress, "FileFilter", command_io({"in": ["/d/C.mzML"], "out": ["/r/C.mzML"]}, 1))
+    Path(wf, "params.json").write_text(json.dumps({"topp-workflow-param-mode": "slow"}))
+
+    report = report_for(kept)
+    assert report["workflow"] == "topp-workflow"
+    assert [s["tool"] for s in report["steps"]] == ["FeatureFinderMetabo", "FeatureLinkerUnlabeledKD", "export.py"]
+    assert report["settings"] == {"mode": "fast"}
+    assert report["run"]["follows"] == "Earlier result"
+    assert [s["tool"] for s in report_for(wf)["steps"]] == ["FileFilter"]
+
+
+def test_nothing_is_kept_without_a_recorded_start(tmp_path):
+    from src.workflow.processing_report import keep_report
+
+    assert not keep_report(Path(tmp_path, "wf"), Path(tmp_path, "kept"))
+    assert not Path(tmp_path, "kept").exists()
