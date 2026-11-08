@@ -634,7 +634,10 @@
     pending = true; message = null;
     if (viewsMode()) {
       setValue({ action: 'save', views: draft.views.map(function (v) {
-        return v.preset ? { name: v.name, in_bar: v.in_bar } : { name: v.name, label: v.label.trim(), rows: v.rows, in_bar: v.in_bar };
+        if (v.preset) return { name: v.name, in_bar: v.in_bar };
+        var sent = { name: v.name, label: v.label.trim(), rows: v.rows, in_bar: v.in_bar };
+        if (v.copy_of) sent.copy_of = v.copy_of;
+        return sent;
       }), current: draft.sel, experiments: draft.experiments, side_by_side: draft.sideBySide && draft.experiments === 2, nonce: Date.now() + Math.random() });
       render(); return;
     }

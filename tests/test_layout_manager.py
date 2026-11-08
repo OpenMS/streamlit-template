@@ -1,6 +1,9 @@
 """Tests for the layout manager's Streamlit-free part and its grid renderer."""
 
+import pytest
+
 import json
+import os
 from pathlib import Path
 
 from streamlit.testing.v1 import AppTest
@@ -451,6 +454,44 @@ def test_duplicate_keeps_the_defaults_of_its_source(tmp_path):
     assert views["custom-2"]["defaults"] == defaults
     assert "by" not in views["custom-2"]
     assert views["custom-1"]["defaults"] == defaults
+
+
+
+def test_duplicate_in_the_editor_sends_its_source(tmp_path):
+    """The editor's own Save carries ``copy_of``, so the server can copy the defaults."""
+    sync_api = pytest.importorskip("playwright.sync_api")
+    import json
+    from pathlib import Path
+    from src.layout_manager.layout import load_views
+
+    page_file = Path(__file__).parent.parent / "src" / "layout_manager" / "frontend" / "index.html"
+    views = load_views(tmp_path / "viewer.json", COMPONENTS, VIEWS, DEFAULT)["views"]
+    views.append({"name": "custom-1", "label": "Assistant view", "rows": [["plot"]], "preset": True,
+                  "in_bar": True, "by": "assistant"})
+    args = {"components": COMPONENTS, "default_layout": DEFAULT, "saved_layout": None, "side_by_side": False,
+            "views": views, "current": "custom-1", "experiments": 1, "fresh": None, "fresh_from": None,
+            "max_experiments": 1, "max_columns": 3, "revision": "0-0", "server_error": None,
+            "target": "the Viewer", "experiment_label": "Experiment"}
+    with sync_api.sync_playwright() as p:
+        try:
+            browser = p.chromium.launch(executable_path=os.environ.get("CHROMIUM_PATH") or None)
+        except Exception as exc:  # no browser on this machine
+            pytest.skip(f"no Chromium: {exc}")
+        page = browser.new_page()
+        page.add_init_script("""window.__sent = [];
+            window.addEventListener('message', e => {
+              if (e.data && e.data.type === 'streamlit:setComponentValue') window.__sent.push(e.data.value);
+            });""")
+        page.goto(page_file.as_uri())
+        page.evaluate("a => window.postMessage({type: 'streamlit:render', args: a}, '*')", args)
+        page.get_by_role("button", name="Duplicate to edit").click()
+        page.get_by_role("button", name="Save", exact=True).click()
+        page.wait_for_function("window.__sent.length > 0", timeout=5000)
+        sent = page.evaluate("window.__sent")
+        browser.close()
+    saved = json.loads(json.dumps(sent[-1]))
+    copies = [v for v in saved["views"] if v["name"] not in {"all", "plots", "custom-1"}]
+    assert len(copies) == 1 and copies[0]["copy_of"] == "custom-1"
 
 
 _STATE_APP = """
