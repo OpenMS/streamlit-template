@@ -348,6 +348,11 @@ class Workflow(WorkflowManager):
             st.warning("No consensus feature file found. Please run workflow first.")
             return
         st.metric("number of consensus features", df.shape[0])
+        # Detected per sample: a feature missing from a sample has intensity 0 there
+        samples = df.columns[4:]
+        if len(samples):
+            for col, sample in zip(st.columns(min(len(samples), 6)), samples[:6]):
+                col.metric(f"features in {Path(str(sample)).stem}", int((df[sample] > 0).sum()))
         st.dataframe(df, selection_mode="multi-row", on_select="rerun", key=self._features_key())
 
     def _intensities(self) -> None:
