@@ -26,6 +26,18 @@ from src.agent_access.tools import Tools  # noqa: E402
 from src.sync import server, tokens  # noqa: E402
 
 WF = "topp-workflow"
+
+def _has_example():
+    try:
+        import src.Workflow as example
+    except Exception:  # an app may need packages these tests do not install
+        return False
+    return hasattr(example, "Workflow")
+
+
+# Tests that run the template's example workflow and pages: an app made from
+# the template replaces those, so they are skipped there.
+example_app = pytest.mark.skipif(not _has_example(), reason="needs the template's example workflow")
 SETTINGS = {
     "app-name": "Test App", "version": "1.2.3", "online_deployment": True,
     "agent_access": {"enabled": True, "developer_only": False, "calls_per_minute": 1000, "workflows": {
@@ -222,6 +234,7 @@ def test_upload_in_parts_and_list(mcp):
     assert json.loads(log[-1])["tool"] == "list_files"
 
 
+@example_app
 def test_describe_and_settings(tmp_path):
     ws = _workspace(tmp_path)
     tools = Tools(Path.cwd(), ws, agent_settings({**SETTINGS, "online_deployment": False}))
@@ -253,6 +266,7 @@ def test_describe_and_settings(tmp_path):
         tools.call("describe_workflow", {"workflow": "other"})
 
 
+@example_app
 def test_start_run_needs_files(tmp_path):
     ws = _workspace(tmp_path)
     tools = Tools(Path.cwd(), ws, agent_settings({**SETTINGS, "online_deployment": False}))
@@ -263,6 +277,7 @@ def test_start_run_needs_files(tmp_path):
         tools.call("start_run", {"workflow": WF, "inputs": {"mzML-files": ["missing.mzML"]}})
 
 
+@example_app
 def test_read_results_and_download(mcp):
     listed = _call(mcp, "list_results", workflow=WF)["structuredContent"]["files"]
     paths = {f["path"] for f in listed}
@@ -325,6 +340,7 @@ def test_an_assistant_starts_a_run_as_the_run_button_does(tmp_path, monkeypatch)
     assert report_for(workflow_dir, run_id)["run"]["follows"] == "First run"
 
 
+@example_app
 def test_download_of_a_linked_result(mcp, tmp_path):
     # Demo workspaces link their results into the demo's source, outside the workspace.
     source = tmp_path / "demo-source" / "linked.tsv"
@@ -375,6 +391,7 @@ def test_local_snippets_set_pythonpath(tmp_path):
     assert next(iter(config["mcpServers"].values()))["env"] == {"PYTHONPATH": root}
 
 
+@example_app
 def test_show_in_app(tmp_path):
     from src.agent_access import show
     from src.agent_access.tools import ToolError
@@ -442,6 +459,7 @@ def _feature_matrix(ws: Path) -> str:
     return run_id
 
 
+@example_app
 def test_result_views_and_components(tmp_path):
     from src.agent_access.tools import ToolError
     ws = _workspace(tmp_path)
@@ -481,6 +499,7 @@ def test_result_views_and_components(tmp_path):
         tools.call("look_at_results", {"workflow": WF, "select": {key: "0"}})
 
 
+@example_app
 def test_assistant_views(tmp_path):
     from src.agent_access.tools import ToolError
     from src.layout_manager.layout import load_views
@@ -613,6 +632,7 @@ def _assistant_tools(tmp_path, monkeypatch):
     return tools, runs, base, launched
 
 
+@example_app
 def test_every_assistant_run_says_why(tmp_path, monkeypatch):
     from src.agent_access.tools import ToolError
     from src.workflow.processing_report import report_for, to_markdown
@@ -637,6 +657,7 @@ def test_every_assistant_run_says_why(tmp_path, monkeypatch):
     assert listed[0]["purpose"]["why"] == "First pass, defaults"
 
 
+@example_app
 def test_follow_up_changes_settings(tmp_path, monkeypatch):
     from src.workflow.processing_report import report_for
     tools, runs, base, _ = _assistant_tools(tmp_path, monkeypatch)
@@ -653,6 +674,7 @@ def test_follow_up_changes_settings(tmp_path, monkeypatch):
     assert report["purpose"]["why"] == "The noise floor of these runs is about 8e3"
 
 
+@example_app
 def test_follow_up_adds_files_or_an_analysis(tmp_path, monkeypatch):
     from src.agent_access.tools import ToolError
     tools, runs, base, _ = _assistant_tools(tmp_path, monkeypatch)
@@ -710,6 +732,7 @@ def test_connect_claude_desktop_keeps_other_servers(tmp_path):
     assert path.read_text() == "[1, 2]"
 
 
+@example_app
 def test_configure_page_shown_once_even_after_the_upload_page(tmp_path, monkeypatch):
     """The upload page writes params.json (its file selection) and an empty ini
     folder; the workflow's settings still have to come from its configure page."""
@@ -732,6 +755,7 @@ def test_configure_page_shown_once_even_after_the_upload_page(tmp_path, monkeypa
     assert time.monotonic() - started < 5
 
 
+@example_app
 def test_sync_sidebar_needs_no_page_registry(tmp_path):
     """The assistant shows a configure page on its own (no navigation); with
     developer mode on, the sync panel's links must not break that page."""
@@ -753,6 +777,7 @@ def test_sync_sidebar_needs_no_page_registry(tmp_path):
     assert not at.exception, at.exception[0].message if at.exception else ""
 
 
+@example_app
 def test_results_kept_elsewhere_through_a_results_store(tmp_path, monkeypatch):
     """An app that keeps its results in a cache of datasets, not run folders,
     lists them as runs through the class's results_store."""
