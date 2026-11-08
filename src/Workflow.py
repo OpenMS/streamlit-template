@@ -52,6 +52,7 @@ class Workflow(WorkflowManager):
     # downloads and deletes them. Results are read from self.results_dir.
     multi_run = True
     run_page = Path("content", "topp_workflow_execution.py")
+    configure_page = Path("content", "topp_workflow_parameter.py")
 
     def __init__(self) -> None:
         # Initialize the parent class with the workflow name.

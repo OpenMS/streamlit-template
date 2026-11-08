@@ -343,3 +343,49 @@ def test_deleting_the_first_run_keeps_finished_additions_selectable(tmp_path):
     # The finished addition starts the experiment, so the picker still lists it
     assert [r["id"] for r in runs.experiments()] == [done]
     assert runs.experiment_root(failed) == done
+
+
+def _reuse_script(workflow_dir: str):
+    import json
+    from pathlib import Path
+
+    import streamlit as st
+
+    from src.workflow.RunManager import RunManager
+    from src.workflow.run_widgets import run_manager_section
+
+    runs = RunManager(Path(workflow_dir))
+
+    def reuse(run_id):
+        # What WorkflowManager.reuse_settings does, without switching pages
+        runs.restore_settings(run_id)
+        st.session_state["reused"] = run_id
+
+    run_manager_section(runs, on_reuse=reuse)
+    st.write(json.dumps(st.session_state.get("reused")))
+
+
+def test_run_manager_starts_from_a_runs_settings(tmp_path):
+    Path(tmp_path, "params.json").write_text(json.dumps({"mzML-files": ["a.mzML"], "threshold": 5}))
+    runs = RunManager(tmp_path)
+    run_id = runs.new_run("earlier", Path(tmp_path, "params.json"))
+    runs.finish(run_id, FINISHED)
+    Path(tmp_path, "params.json").write_text(json.dumps({"threshold": 9}))
+    slug = Path(tmp_path).name
+
+    at = AppTest.from_function(_reuse_script, args=(str(tmp_path),)).run(timeout=30)
+    assert not at.exception
+    at.button(key=f"runs-{slug}-reuse-{run_id}").click().run(timeout=30)
+    assert not at.exception
+    assert at.session_state["reused"] == run_id
+    params = json.loads(Path(tmp_path, "params.json").read_text())
+    assert params["_follow_up"]["run"] == run_id
+    assert params["threshold"] == 5 and params["mzML-files"] == ["a.mzML"]
+
+
+def test_run_manager_without_reuse_has_no_button(tmp_path):
+    runs = RunManager(tmp_path)
+    run_id = _finished_run(runs, "earlier")
+    at = AppTest.from_function(_manager_script, args=(str(tmp_path),)).run(timeout=30)
+    assert not at.exception
+    assert not [b for b in at.button if b.key == f"runs-{Path(tmp_path).name}-reuse-{run_id}"]

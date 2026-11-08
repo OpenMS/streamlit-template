@@ -37,6 +37,9 @@ class WorkflowManager:
     # the Start button that settings adding files to an experiment draw on the
     # configure page. None: that button stays on the configure page.
     run_page = None
+    # The configure page (its parameter section). Set, the run list offers
+    # every run's settings as the start of a new run, opening this page.
+    configure_page = None
 
     # Core workflow logic using the above classes
     def __init__(self, name: str, workspace: str):
@@ -667,7 +670,8 @@ class WorkflowManager:
     def show_run_manager_section(self, exclude: list[str] | None = None) -> None:
         """
         Multi-run workflows: list every run with buttons to show, rename,
-        download (ZIP of results, parameters and logs) and delete it.
+        download (ZIP of results, parameters and logs) and delete it, and, with
+        ``configure_page`` set, to start a new run from its settings.
         """
         from .run_widgets import run_manager_section
 
@@ -675,7 +679,13 @@ class WorkflowManager:
             self.runs,
             workflow_running=self.get_workflow_status()["running"],
             exclude=exclude,
+            on_reuse=self.reuse_settings if self.configure_page is not None else None,
         )
+
+    def reuse_settings(self, run_id: str) -> None:
+        """Open the configure page with ``run_id``'s settings and input files, for a new run."""
+        if not self.follow_up(run_id, page=self.configure_page):
+            st.warning("This run recorded no settings to start from.")
 
     def show_results_download_section(self, exclude: list[str] | None = None) -> None:
         """

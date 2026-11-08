@@ -9,7 +9,7 @@ widgets that are not drawn on the current page.
 """
 
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 import streamlit as st
 
@@ -146,15 +146,20 @@ def run_manager_section(
     runs: RunManager,
     workflow_running: bool = False,
     exclude: Optional[list[str]] = None,
+    on_reuse: Optional[Callable[[str], None]] = None,
 ) -> None:
     """
     One row per run with its name, start time and status, and buttons to show
-    it, rename it, download it as a ZIP and delete it.
+    it, rename it, start a new run from its settings, download it as a ZIP and
+    delete it.
 
     Args:
         runs: The workflow's RunManager.
         workflow_running: True while a run executes; its row cannot be deleted.
         exclude: Names left out of the ZIP downloads (e.g. caches).
+        on_reuse: Called with a run's id when its "start from these settings"
+            button is clicked (usually ``WorkflowManager.follow_up``, which opens
+            the configure page). Without it the button is not drawn.
     """
     run_import(runs)
     all_runs = runs.list_runs()
@@ -169,7 +174,8 @@ def run_manager_section(
         run_id = run["id"]
         status = run_status(run, workflow_running)
         row = st.container(border=True)
-        c_name, c_status, c_actions = row.columns([4, 1.6, 2.6], vertical_alignment="center")
+        c_name, c_status, c_actions = row.columns(
+            [4, 1.6, 3.1 if on_reuse else 2.6], vertical_alignment="center")
         shown = " &nbsp;`shown`" if run_id == selected else ""
         root = runs.experiment_root(run_id)
         adds = (f" · adds files to **{(runs.get(root) or {}).get('name', root)}**"
@@ -180,7 +186,17 @@ def run_manager_section(
         )
         c_status.write(STATUS_LABELS.get(status, status))
 
-        b_show, b_rename, b_report, b_download, b_delete = c_actions.columns(5, gap="small")
+        buttons = iter(c_actions.columns(6 if on_reuse else 5, gap="small"))
+        b_show, b_rename = next(buttons), next(buttons)
+        b_reuse = next(buttons) if on_reuse else None
+        b_report, b_download, b_delete = next(buttons), next(buttons), next(buttons)
+        if b_reuse is not None and b_reuse.button(
+            "🔁", key=f"runs-{slug}-reuse-{run_id}", width="stretch",
+            help="Start a new run from this run's settings and input files: opens the "
+                 "configure page with them, to change what needs changing",
+            disabled=status == RUNNING or not runs.params(run_id),
+        ):
+            on_reuse(run_id)
 
         if b_show.button(
             "👁️", key=f"runs-{slug}-show-{run_id}", help="Show this run on the results pages",
