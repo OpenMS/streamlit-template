@@ -1,0 +1,90 @@
+# The JuiceFS file system over the S3 API (`juicefs gateway`).
+#
+# --multi-buckets serves every top-level directory as a bucket, so each app's
+# workspace directory (named after its slug, see storageclass.yaml) is the
+# bucket of the same name and every file is one object. Apps reach it at
+# http://juicefs-s3-gateway.openms-storage.svc:9000 for polars scans and
+# presigned links (src/common/storage.py). It reads the same metadata and
+# chunks as the mounts, so a file is visible on both sides at once.
+#
+# The gateway's own access key is in the Secret `juicefs-s3-gateway` (keys
+# `access-key`, `secret-key`); each app namespace gets a copy named
+# `workspaces-s3-gateway` (docs/kubernetes-deployment.md).
+apiVersion: v1
+kind: Service
+metadata:
+  name: juicefs-s3-gateway
+  labels:
+    app: juicefs-s3-gateway
+spec:
+  selector:
+    app: juicefs-s3-gateway
+  ports:
+    - name: s3
+      port: 9000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: juicefs-s3-gateway
+spec:
+  # Stateless; any replica serves any request.
+  replicas: 2
+  selector:
+    matchLabels:
+      app: juicefs-s3-gateway
+  template:
+    metadata:
+      labels:
+        app: juicefs-s3-gateway
+    spec:
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: juicefs-s3-gateway
+      containers:
+        - name: gateway
+          image: juicedata/mount:ce-v1.4.1
+          command:
+            - sh
+            - -c
+            - exec juicefs gateway --multi-buckets --cache-dir /var/jfsCache --cache-size 4096 "$METAURL" 0.0.0.0:9000
+          env:
+            - name: METAURL
+              valueFrom:
+                secretKeyRef:
+                  name: juicefs-s3-credentials
+                  key: metaurl
+            - name: MINIO_ROOT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: juicefs-s3-gateway
+                  key: access-key
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: juicefs-s3-gateway
+                  key: secret-key
+          ports:
+            - name: s3
+              containerPort: 9000
+          readinessProbe:
+            tcpSocket:
+              port: 9000
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              memory: 2Gi
+          volumeMounts:
+            - name: cache
+              mountPath: /var/jfsCache
+      volumes:
+        - name: cache
+          emptyDir:
+            sizeLimit: 5Gi

@@ -1,0 +1,12 @@
+# Cluster-wide storage infrastructure for the S3 tier, shared by every app.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: openms-storage
+  annotations:
+    # Argo CD: the metadata database lives here; never prune it.
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false
+  labels:
+    app.kubernetes.io/part-of: openms-streamlit
+    # The CSI node plugin and the mount pods need host mounts and privileges.
+    pod-security.kubernetes.io/enforce: privileged

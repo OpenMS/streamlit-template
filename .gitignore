@@ -24,6 +24,7 @@ docs/superpowers/
 # copy silently outranks the version pin the chart is deliberately held at.
 k8s/storage/charts/
 k8s/ci-storage/charts/
+k8s/storage-s3/charts/
 
 # notebook-to-webapp capture scratch (holds staged mzML/FASTA, executed notebooks)
 .capture-baseline/
