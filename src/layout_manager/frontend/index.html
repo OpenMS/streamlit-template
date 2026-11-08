@@ -157,6 +157,7 @@
   var message = null;      // { kind, text } shown in the status line
 
   function clone(x) { return JSON.parse(JSON.stringify(x)); }
+  function byAssistant(v) { return v.by === 'assistant'; }
   function label(name) { return byName[name] ? byName[name].label : name; }
   // ``requires`` is one component, or a list of which one has to be there
   function reqs(name) { var r = byName[name] && byName[name].requires; return !r ? [] : (typeof r === 'string' ? [r] : r); }
@@ -418,7 +419,7 @@
         'Side-by-side'
       ]) : null,
       h('span', { class: 'spacer' }),
-      h('button', { class: 'btn', title: 'Forget your own views and the order; ' + target() + ' starts again from its ready-made views', onclick: resetLayout }, ['Reset']),
+      h('button', { class: 'btn', title: 'Forget your own views' + (draft.views.some(byAssistant) ? ', the assistant\'s views' : '') + ' and the order; ' + target() + ' starts again from its ready-made views', onclick: resetLayout }, ['Reset']),
       h('button', { class: 'btn primary', disabled: !!probs.first || !dirty || pending, onclick: save, title: 'Save and show the selected view' }, [pending ? 'Saving…' : 'Save'])
     ]);
   }
@@ -432,7 +433,7 @@
       return h('div', { class: 'vitem' + (v.name === draft.sel ? ' sel' : ''), 'data-drag': 'view', 'data-drop': 'view', 'data-name': v.name, title: v.help || '' }, [
         h('span', { class: 'grip', text: '⋮⋮' }),
         h('span', { class: 'vname', text: v.label }),
-        v.preset ? h('span', { class: 'tag', text: 'ready-made' }) : null,
+        v.preset ? h('span', { class: 'tag', text: byAssistant(v) ? 'by the assistant' : 'ready-made' }) : null,
         h('input', { type: 'checkbox', checked: v.in_bar, title: v.in_bar ? 'In the bar' : 'Only in More', 'aria-label': 'Show ' + v.label + ' in the bar',
                      onchange: function (ev) { moveView(v.name, null, ev.target.checked); } })
       ]);
@@ -454,7 +455,7 @@
         h('strong', { text: v.label }),
         h('button', { class: 'btn primary', onclick: function () { addView(v.label + ' (copy)', clone(v.rows), v); } }, ['Duplicate to edit'])
       ]),
-      h('div', { class: 'readonly', text: 'A ready-made view can be reordered or kept out of the bar, but not changed.' + (v.help ? ' ' + v.help : '') })
+      h('div', { class: 'readonly', text: (byAssistant(v) ? 'A view made by the assistant can be reordered or kept out of the bar, but not changed. Reset removes it.' : 'A ready-made view can be reordered or kept out of the bar, but not changed.') + (v.help ? ' ' + v.help : '') })
     ]);
     var head = h('div', { class: 'vhead' }, [
       h('input', { type: 'text', id: 'view-name', value: v.label, 'aria-label': 'Name of the view', onchange: function (ev) { v.label = ev.target.value; changed(); } }),
