@@ -6,9 +6,6 @@ Either way it lists what assistants did here lately (``activity.py``).
 """
 
 import json
-import re
-import shlex
-import sys
 import time
 from datetime import datetime
 from pathlib import Path
@@ -17,7 +14,7 @@ import streamlit as st
 
 from src.sync import tokens
 
-from . import activity, show
+from . import activity, install, show
 from .config import agent_settings
 
 _ISSUED = "agent-access-issued"
@@ -49,7 +46,7 @@ def _origin() -> str:
 
 
 def _server_name(cfg: dict) -> str:
-    return re.sub(r"[^a-z0-9]+", "-", (cfg["app_name"] or "openms-app").lower()).strip("-")
+    return install.server_name(cfg["app_name"])
 
 
 def online_snippets(cfg: dict, url: str, token: str) -> dict:
@@ -64,21 +61,13 @@ def online_snippets(cfg: dict, url: str, token: str) -> dict:
 
 
 def local_snippets(cfg: dict, workspace: Path, app_url: str) -> dict:
+    """The install prompt for agents with a command line, and the JSON for the rest."""
     name = _server_name(cfg)
-    settings = str(Path("settings.json").resolve())
-    app_root = str(Path(settings).parent)
-    # The client starts the server in a folder of its own; PYTHONPATH lets
-    # it find the app's src package from there.
-    args = ["-m", "src.agent_access.stdio", "--settings", settings,
-            "--workspaces-dir", str(workspace.parent.resolve()), "--workspace", workspace.name]
-    if app_url:
-        args += ["--app-url", app_url]
+    entry = install.server_entry(workspace, Path("settings.json"), app_url)
     return {
-        "Claude Code": f"claude mcp add {name} -e {shlex.quote('PYTHONPATH=' + app_root)} -- "
-                       + " ".join(shlex.quote(a) for a in [sys.executable, *args]),
-        "Other MCP clients (JSON)": json.dumps(
-            {"mcpServers": {name: {"command": sys.executable, "args": args,
-                                   "env": {"PYTHONPATH": app_root}}}}, indent=2),
+        "Claude Code, Codex, Gemini CLI": install.install_prompt(cfg["app_name"], workspace.name, name, entry),
+        "Claude Code": install.cli_commands(name, entry)["Claude Code"],
+        "Other MCP clients (JSON)": install.mcp_json(name, entry),
     }
 
 
@@ -86,6 +75,31 @@ def _snippets(snippets: dict) -> None:
     for tab, (label, text) in zip(st.tabs(list(snippets)), snippets.items()):
         with tab:
             st.code(text, language="json" if text.startswith("{") else "bash", wrap_lines=True)
+
+
+def _claude_desktop(cfg: dict, workspace: Path) -> None:
+    """Write the server into Claude Desktop's configuration, after the person's OK."""
+    name = _server_name(cfg)
+    entry = install.server_entry(workspace, Path("settings.json"), _origin())
+    path = install.desktop_config_path()
+    if install.desktop_connected(name, entry, path):
+        st.success(f"Claude Desktop is connected to the workspace **{workspace.name}**. "
+                   "Restart Claude Desktop if it does not list the server yet.",
+                   icon=":material/check_circle:")
+        return
+    st.markdown(f"Adds the server **{name}** to Claude Desktop's configuration "
+                f"(`{path}`), next to the servers it has; the file as it was is kept as `.bak`.")
+    with st.expander("What will be added"):
+        st.code(install.mcp_json(name, entry), language="json", wrap_lines=True)
+    if st.button("Connect Claude Desktop", type="primary", icon=":material/link:",
+                 key="agent-access-desktop"):
+        try:
+            install.connect_claude_desktop(name, entry, path)
+        except (OSError, ValueError) as e:
+            st.error(str(e))
+            return
+        st.success("Done. Quit and reopen Claude Desktop, then ask it about your data.",
+                   icon=":material/check_circle:")
 
 
 # on_dismiss: the page reruns, so a connection created here starts follow().
@@ -122,11 +136,20 @@ def _connect_dialog(workspace: Path) -> None:
         )
     else:
         st.markdown(
-            "Your assistant starts the connection itself, on this computer. Add it with "
-            "the command or the configuration below; it works in the workspace "
-            f"**{workspace.name}**."
+            "Your assistant starts the connection itself, on this computer, and works in "
+            f"the workspace **{workspace.name}**. It processes your data only with this "
+            "app's workflows, and shows its answer as a view on the Results page."
         )
-        _snippets(local_snippets(cfg, workspace, _origin()))
+        desktop, cli, other = st.tabs(["Claude Desktop", "Claude Code, Codex, Gemini CLI",
+                                       "Other MCP clients"])
+        snippets = local_snippets(cfg, workspace, _origin())
+        with desktop:
+            _claude_desktop(cfg, workspace)
+        with cli:
+            st.caption("Paste this prompt into the agent; it connects itself.")
+            st.code(snippets["Claude Code, Codex, Gemini CLI"], language=None, wrap_lines=True)
+        with other:
+            st.code(snippets["Other MCP clients (JSON)"], language="json", wrap_lines=True)
         st.caption("The connection uses this app's files on this computer; nothing leaves it.")
 
 
@@ -140,7 +163,7 @@ _LABELS = {
     "list_files": "listed the files", "upload_file": "uploaded a file",
     "import_from_link": "imported from a link", "get_import_status": "checked the import",
     "delete_file": "deleted a file", "update_settings": "changed settings",
-    "start_run": "started a run", "get_run_status": "checked the run",
+    "start_run": "started a run", "follow_up": "started a follow-up run", "get_run_status": "checked the run",
     "get_run_log": "read the log", "stop_run": "stopped the run", "list_runs": "listed the runs",
     "list_results": "listed results", "read_result": "read a result",
     "get_processing_report": "read the processing report", "get_app_link": "linked here",

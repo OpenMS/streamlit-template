@@ -628,3 +628,35 @@ def test_follow_up_adds_files_or_an_analysis(tmp_path, monkeypatch):
     assert info["kept"] == ["FeatureFinderMetabo"] and info["reuses"] == [base]
     with pytest.raises(ToolError, match="No run"):
         tools.call("follow_up", {**q, "run_id": "nope", "why": "x"})
+
+
+def test_install_prompt_names_each_agent(tmp_path):
+    from src.agent_access import install
+    entry = install.server_entry(tmp_path / "default", Path("settings.json"))
+    prompt = install.install_prompt("Test App", "default", "test-app", entry)
+    assert "claude mcp add --scope user test-app" in prompt
+    assert "codex mcp add test-app --env PYTHONPATH=" in prompt and " -- " in prompt
+    assert "~/.gemini/settings.json" in prompt
+    assert "get_app_info" in prompt and '"default"' in prompt
+    assert entry["args"][-2:] == ["--workspace", "default"]
+
+
+def test_connect_claude_desktop_keeps_other_servers(tmp_path):
+    from src.agent_access import install
+    path = tmp_path / "Claude" / "claude_desktop_config.json"
+    entry = install.server_entry(tmp_path / "default", Path("settings.json"))
+    assert not install.desktop_connected("test-app", entry, path)
+    install.connect_claude_desktop("test-app", entry, path)
+    assert install.desktop_connected("test-app", entry, path)
+    data = json.loads(path.read_text())
+    data["mcpServers"]["other"] = {"command": "x"}
+    data["theme"] = "dark"
+    path.write_text(json.dumps(data))
+    install.connect_claude_desktop("test-app", entry, path)
+    data = json.loads(path.read_text())
+    assert set(data["mcpServers"]) == {"test-app", "other"} and data["theme"] == "dark"
+    assert json.loads(path.with_name(path.name + ".bak").read_text())["theme"] == "dark"
+    path.write_text("[1, 2]")
+    with pytest.raises(ValueError):
+        install.connect_claude_desktop("test-app", entry, path)
+    assert path.read_text() == "[1, 2]"
