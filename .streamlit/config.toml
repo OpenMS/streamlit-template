@@ -7,6 +7,12 @@ toolbarMode = "minimal"
 
 [global]
 developmentMode = false
+# The browser drops a large message it keeps once this many script runs have
+# ended since it was used, and timed fragments (the AI assistant's follow
+# check every two seconds) count as runs. With the default of 2 a full rerun
+# after a few checks referred to messages the browser had already dropped
+# ("Cached ForwardMsg MISS", a connection error).
+maxCachedMessageAge = 1000
 
 [secrets]
 # Kubernetes mounts the optional `streamlit-secrets` Secret at /app/admin-secrets/;
