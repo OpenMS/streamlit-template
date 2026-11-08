@@ -208,6 +208,9 @@
       }, true);
     } catch (e) { /* not reachable: clicks inside the frame still close it */ }
   }
+  // A click into another component's frame (an Insight plot below the bar)
+  // takes the focus from this frame: close the menu so it does not cover it
+  window.addEventListener('blur', function () { if (menuOpen) { menuOpen = false; render(); } });
 
   window.addEventListener('message', function (ev) {
     var data = ev.data;
