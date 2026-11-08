@@ -607,17 +607,36 @@ def theme_css(css: str, dark: bool) -> str:
         i = j
 
 
+THEME_STYLE_ID = "openms-theme-css"
+
+
 def apply_theme_css() -> None:
-    """Add the layout part of the OpenMS theme (src/common/theme.css) to the page."""
+    """Add the layout part of the OpenMS theme (src/common/theme.css) to the page.
+
+    The style sheet goes into the page twice. Inline, so the first render is
+    styled. And as a ``<style>`` in the document head, which outlives the page:
+    when the user opens another page in the menu, Streamlit removes the old
+    page's elements before the new page has drawn its own, and without the copy
+    in the head the page would show Streamlit's own look for that moment.
+    """
     try:
         dark = st.context.theme.type == "dark"
     except Exception:
         dark = False
     try:
-        css = THEME_CSS.read_text(encoding="utf-8")
+        css = theme_css(THEME_CSS.read_text(encoding="utf-8"), dark)
     except OSError:
         return
-    st.html(f"<style>{theme_css(css, dark)}</style>")
+    # "</" would end the script element early.
+    css_js = json.dumps(css).replace("</", "<\\/")
+    style_id = json.dumps(THEME_STYLE_ID)
+    st.html(
+        f"<style>{css}</style><script>(function(){{"
+        f"var d=document,s=d.getElementById({style_id});"
+        f"if(!s){{s=d.createElement('style');s.id={style_id};d.head.appendChild(s);}}"
+        f"s.textContent={css_js};}})();</script>",
+        unsafe_allow_javascript=True,
+    )
 
 
 def page_setup(page: str = "") -> dict[str, Any]:

@@ -12,6 +12,8 @@
 [data-testid="stMain"] { padding: 12px 12px 12px 0; }
 [data-testid="stMainBlockContainer"] {
   background: #ffffff; border-radius: 22px; margin-top: 12px; padding: 2.2rem 2.6rem !important;
+  /* Full height, so the sheet does not shrink while the next page draws */
+  min-height: calc(100vh - 48px);
   box-shadow: 0 0 0 1px rgba(35, 31, 32, .05), 0 8px 30px -12px rgba(35, 31, 32, .16);
 }
 @media (prefers-color-scheme: dark) {
@@ -19,7 +21,7 @@
 }
 @media (max-width: 640px) {
   [data-testid="stMain"] { padding: 0; }
-  [data-testid="stMainBlockContainer"] { border-radius: 0; margin-top: 0; padding: 1.5rem 1rem !important; }
+  [data-testid="stMainBlockContainer"] { border-radius: 0; margin-top: 0; padding: 1.5rem 1rem !important; min-height: 0; }
 }
 
 /* Navigation: section names in the heading face, the current page as a blue pill */
