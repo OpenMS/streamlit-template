@@ -153,3 +153,62 @@ def test_run_button_without_sticky_bar(tmp_path):
         wf.show_run_button("content/run.py", sticky=False, summary="ignored")
     st.html.assert_not_called()
     st.caption.assert_not_called()
+
+
+def test_named_run_button_keeps_the_name_for_the_start(tmp_path):
+    wf = _workflow(tmp_path)
+    wf.name_runs = True
+    wf.parameter_manager.get_parameters_from_json.return_value = {"a": 1}
+    st = mock.MagicMock()
+    st.session_state = {"my-workflow-run-button-name": "  Liver, day 3 "}
+    st.button.return_value = True
+    with mock.patch.object(wm_module, "st", st):
+        wf.show_run_button("content/run.py", name_label="Experiment name")
+    assert st.text_input.call_args.args[0] == "Experiment name"
+    assert st.text_input.call_args.kwargs["key"] == "my-workflow-run-button-name"
+    wf.parameter_manager.write_parameters.assert_called_once_with({"a": 1, "_run_name": "Liver, day 3"})
+    st.switch_page.assert_called_once_with("content/run.py")
+
+
+def test_run_button_draws_no_name_field_unless_asked(tmp_path):
+    wf = _workflow(tmp_path)
+    st = mock.MagicMock()
+    st.session_state = {}
+    st.button.return_value = True
+    with mock.patch.object(wm_module, "st", st):
+        wf.show_run_button("content/run.py")
+    st.text_input.assert_not_called()
+    wf.parameter_manager.write_parameters.assert_not_called()
+
+
+def test_start_without_run_folders_keeps_its_name_apart(tmp_path):
+    wf = _workflow(tmp_path)
+    wf.workflow_dir.mkdir(parents=True)
+    wf.parameter_manager.get_parameters_from_json.return_value = {"a": 1, "_run_name": "Liver"}
+    wf._settle_follow_up()
+    wf.parameter_manager.write_parameters.assert_called_once_with({"a": 1})
+    assert wf.run_name() == "Liver"
+    # The next start without a name has none
+    wf.parameter_manager.get_parameters_from_json.return_value = {"a": 1}
+    wf.parameter_manager.write_parameters.reset_mock()
+    wf._settle_follow_up()
+    wf.parameter_manager.write_parameters.assert_not_called()
+    assert wf.run_name() == ""
+
+
+def test_run_folders_take_the_name_given_beside_the_run_button(tmp_path):
+    from src.workflow import run_widgets
+    from src.workflow.RunManager import RunManager
+
+    wf = _workflow(tmp_path)
+    wf.multi_run = True
+    wf.runs = RunManager(Path(tmp_path, "my-workflow"))
+    wf.parameter_manager.get_parameters_from_json.return_value = {"a": 1, "_run_name": "Liver"}
+    wf._use_run = lambda run_id: setattr(wf, "run_id", run_id)
+    st = mock.MagicMock()
+    st.session_state = {}
+    with mock.patch.object(wm_module, "st", st), mock.patch.object(run_widgets, "st", st):
+        wf._new_run()
+    assert wf.runs.get(wf.run_id)["name"] == "Liver"
+    assert wf.run_name() == "Liver"
+    wf.parameter_manager.write_parameters.assert_called_once_with({"a": 1})

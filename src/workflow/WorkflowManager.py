@@ -6,7 +6,7 @@ from .ParameterManager import ParameterManager
 from .CommandExecutor import CommandExecutor
 from .StreamlitUI import StreamlitUI
 from .FileManager import FileManager
-from .RunManager import RunManager, FINISHED, FAILED, CANCELLED, RUNNING, FOLLOW_UP_KEY, FOLLOW_UP_FILE, apply_settings, same_files_info
+from .RunManager import RunManager, FINISHED, FAILED, CANCELLED, RUNNING, FOLLOW_UP_KEY, FOLLOW_UP_FILE, RUN_NAME_KEY, RUN_NAME_FILE, MAX_NAME_LENGTH, apply_settings, same_files_info
 import multiprocessing
 import streamlit as st
 import shutil
@@ -37,6 +37,10 @@ class WorkflowManager:
     # the Start button that settings adding files to an experiment draw on the
     # configure page. None: that button stays on the configure page.
     run_page = None
+    # Draw a name field beside the Run button of the configure page
+    # (show_run_button). Run folders always offer it; a workflow without them
+    # sets this to True and reads the name in execution() with run_name().
+    name_runs = False
 
     # Core workflow logic using the above classes
     def __init__(self, name: str, workspace: str):
@@ -101,22 +105,52 @@ class WorkflowManager:
 
     def _settle_follow_up(self) -> None:
         """Without run folders: the start keeps which result it follows (for the
-        processing report), and the next settings start fresh."""
+        processing report) and the name it was given, and the next settings
+        start fresh."""
         params = self.parameter_manager.get_parameters_from_json()
         info = params.pop(FOLLOW_UP_KEY, None)
+        name = params.pop(RUN_NAME_KEY, None)
         sidecar = Path(self.workflow_dir, FOLLOW_UP_FILE)
         if isinstance(info, dict):
             sidecar.write_text(json.dumps(info), encoding="utf-8")
-            self.parameter_manager.write_parameters(params)
         else:
             sidecar.unlink(missing_ok=True)
+        name_file = Path(self.workflow_dir, RUN_NAME_FILE)
+        if isinstance(name, str) and name.strip():
+            name_file.write_text(name.strip(), encoding="utf-8")
+        else:
+            name_file.unlink(missing_ok=True)
+        if info is not None or name is not None:
+            self.parameter_manager.write_parameters(params)
+
+    def run_name(self) -> str:
+        """The name the running start was given, for ``execution()``; empty
+        when none was given. A run keeps it as its name (its default name when
+        none was given)."""
+        if self.multi_run and getattr(self, "run_id", None):
+            return (self.runs.get(self.run_id) or {}).get("name", "")
+        try:
+            return Path(self.workflow_dir, RUN_NAME_FILE).read_text(encoding="utf-8").strip()
+        except OSError:
+            return ""
+
+    def run_name_placeholder(self) -> str:
+        """Shown in the empty name field beside the Run button."""
+        if self.multi_run:
+            return self.runs.default_name()
+        return "Name (optional)"
 
     def _new_run(self) -> None:
         """Create the run this start writes into, and show it on the results pages."""
         from .run_widgets import run_name_key, set_selected_run
 
-        name = st.session_state.pop(run_name_key(self.runs), "")
         params = self.parameter_manager.get_parameters_from_json()
+        # The name typed on the Run page, else the one given beside the Run
+        # button of the configure page
+        given = params.pop(RUN_NAME_KEY, None)
+        name = st.session_state.pop(run_name_key(self.runs), "") or (given if isinstance(given, str) else "")
+        if given is not None:
+            self.parameter_manager.write_parameters(params)
         info = params.get(FOLLOW_UP_KEY)
         adds_to = info.get("adds_to") if isinstance(info, dict) else None
         self.run_id = self.runs.new_run(name, Path(self.workflow_dir, "params.json"), adds_to=adds_to)
@@ -518,6 +552,7 @@ class WorkflowManager:
         key: str = "",
         sticky: bool = True,
         summary: Optional[str] = None,
+        name_label: str = "Run name",
     ) -> None:
         """A primary button that opens the Run page and starts the workflow there.
 
@@ -530,6 +565,10 @@ class WorkflowManager:
         window while the page scrolls, with ``summary`` (a short line on what
         will run) beside it; call it last on the page. ``sticky=False`` draws
         the button alone where it is called.
+
+        A workflow with run folders (or ``name_runs``) gets a name field
+        beside the button, labelled ``name_label``: the start is given that
+        name (``run_name()`` in ``execution()``).
         """
         running = self.get_workflow_status().get("running", False)
         if running:
@@ -552,9 +591,18 @@ class WorkflowManager:
             st.html(_run_bar_css(f"{key}-bar"))
         else:
             bar = st.container()
+        named = (self.multi_run or self.name_runs) and not running
         with bar:
             if sticky and summary:
                 st.caption(summary, width="stretch")
+            if named:
+                st.text_input(
+                    name_label, key=f"{key}-name", max_chars=MAX_NAME_LENGTH,
+                    placeholder=self.run_name_placeholder(), width=240,
+                    label_visibility="collapsed" if sticky else "visible",
+                    help=f"{name_label}: how the results of this analysis are listed. "
+                    "Leave it empty for the default name.",
+                )
             clicked = st.button(label, type="primary", icon=icon, help=help, key=key)
         if clicked:
             if not running and self._follow_up_files_missing(info):
@@ -562,8 +610,25 @@ class WorkflowManager:
                 return
             if not running:
                 self.parameter_manager.save_parameters()
+                if named:
+                    self._give_next_run_name(st.session_state.get(f"{key}-name", ""))
                 st.session_state[self._autostart_key()] = True
             st.switch_page(run_page)
+
+    def _give_next_run_name(self, name: str) -> None:
+        """Keep the name typed beside the Run button for the start it opens."""
+        name = (name or "").strip()[:MAX_NAME_LENGTH]
+        params = self.parameter_manager.get_parameters_from_json()
+        if name:
+            params[RUN_NAME_KEY] = name
+        elif params.pop(RUN_NAME_KEY, None) is None:
+            return
+        self.parameter_manager.write_parameters(params)
+        if self.multi_run:
+            from .run_widgets import run_name_key
+
+            # The Run page shows it in its own name field
+            st.session_state[run_name_key(self.runs)] = name
 
     def show_execution_section(
         self,

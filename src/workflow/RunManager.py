@@ -37,6 +37,10 @@ DESIGN_FILE = "experimental-design.tsv"
 FOLLOW_UP_KEY = "_follow_up"
 # Without run folders: what the last start followed (WorkflowManager.start_from)
 FOLLOW_UP_FILE = "last-follow-up.json"
+# params.json key: the name given on the configure page for the next start
+RUN_NAME_KEY = "_run_name"
+# Without run folders: the name of the last start (WorkflowManager.run_name)
+RUN_NAME_FILE = "last-run-name.txt"
 # run.json key: the run whose experiment this run adds files to
 ADDS_TO = "adds_to"
 MAX_NAME_LENGTH = 100
