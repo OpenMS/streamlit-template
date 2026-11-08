@@ -598,7 +598,7 @@ class WorkflowManager:
             if named:
                 st.text_input(
                     name_label, key=f"{key}-name", max_chars=MAX_NAME_LENGTH,
-                    placeholder=self.run_name_placeholder(), width=240,
+                    placeholder=self.run_name_placeholder(), width=320,
                     label_visibility="collapsed" if sticky else "visible",
                     help=f"{name_label}: how the results of this analysis are listed. "
                     "Leave it empty for the default name.",
