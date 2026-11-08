@@ -189,6 +189,8 @@
     var v = { name: newName(), label: uniqueLabel(label), rows: rows, preset: false, in_bar: true };
     var i = after ? draft.views.indexOf(after) + 1 : draft.views.filter(function (x) { return x.in_bar; }).length;
     if (after && !after.in_bar) v.in_bar = false;
+    // A duplicate keeps the zoom and selection saved with its source; the server copies them
+    if (after) v.copy_of = after.name;
     draft.views.splice(i, 0, v); draft.sel = v.name; changed();
   }
   function moveView(name, beforeName, inBar) {

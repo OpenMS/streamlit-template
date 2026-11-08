@@ -5,6 +5,7 @@ JavaScript with no build step), so arranging components never reruns the
 script. Python only hears from it when the user presses Save or Reset.
 """
 
+import copy
 import functools
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence
@@ -368,6 +369,10 @@ def views_editor(
                     if not view.get("preset"):
                         view.update(name=sent["name"], label=str(sent["label"]).strip(),
                                     rows=sent["rows"], preset=False)
+                    source = by_name.get(sent.get("copy_of")) if sent["name"] not in by_name else None
+                    if source and source.get("defaults") and not view.get("defaults"):
+                        # A duplicate keeps the zoom and selection saved with the view it copies
+                        view["defaults"] = copy.deepcopy(source["defaults"])
                     view["in_bar"] = bool(sent.get("in_bar", True))
                     views.append(view)
                 save_views(path, {"views": views, "current": submitted["current"],

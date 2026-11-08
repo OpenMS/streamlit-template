@@ -424,6 +424,35 @@ def test_assistant_view_is_read_only_in_the_editor(tmp_path):
         assert view["in_bar"] is sent["in_bar"]
 
 
+def test_duplicate_keeps_the_defaults_of_its_source(tmp_path):
+    from src.layout_manager.layout import load_views, save_views
+
+    path = tmp_path / "viewer.json"
+    defaults = [{"selection": {"protein": "P1"}, "zoom": {"plot": {"x": [1.0, 2.0]}}}]
+    state = load_views(path, COMPONENTS, VIEWS, DEFAULT)
+    state["views"].append({"name": "custom-1", "label": "Assistant view", "rows": [["plot"]], "preset": False,
+                           "in_bar": True, "by": "assistant", "defaults": defaults})
+    save_views(path, state)
+    at = AppTest.from_string(_BAR_APP.format(components=COMPONENTS, presets=VIEWS, default=DEFAULT))
+    at.session_state["path"] = str(path)
+    at.run()
+    at.session_state["vb_bar"] = {"action": "edit", "nonce": 1}
+    at.run()
+    # Duplicate to edit: a new view whose source is named, with no defaults of its own in the payload
+    at.session_state["vb_editor"] = {
+        "action": "save", "nonce": 2, "current": "custom-2", "experiments": 1, "side_by_side": False,
+        "views": [{"name": "all", "in_bar": True}, {"name": "plots", "in_bar": True},
+                  {"name": "custom-1", "in_bar": True},
+                  {"name": "custom-2", "label": "Assistant view (copy)", "rows": [["plot"]], "in_bar": True,
+                   "copy_of": "custom-1"}]}
+    at.run()
+    assert not at.exception
+    views = {v["name"]: v for v in load_views(path, COMPONENTS, VIEWS, DEFAULT)["views"]}
+    assert views["custom-2"]["defaults"] == defaults
+    assert "by" not in views["custom-2"]
+    assert views["custom-1"]["defaults"] == defaults
+
+
 _STATE_APP = """
 import sys, types
 import streamlit as st
