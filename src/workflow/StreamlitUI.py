@@ -3096,7 +3096,10 @@ class StreamlitUI:
 
                 if job_status != "queued":
                     self._show_run_progress()
+                else:
+                    st.empty()  # keeps the place of the progress panel
                 with st.spinner(spinner_text):
+                    log_slot = st.empty()
                     if log_exists:
                         with open(log_path, "r", encoding="utf-8") as f:
                             lines = f.readlines()
@@ -3104,7 +3107,7 @@ class StreamlitUI:
                             display_lines = lines
                         else:
                             display_lines = lines[-st.session_state.log_lines_count:]
-                        st.code(
+                        log_slot.code(
                             "".join(display_lines),
                             language="neon",
                             line_numbers=False,
@@ -3156,12 +3159,22 @@ class StreamlitUI:
 
     def _show_run_progress(self) -> None:
         """Progress of the running workflow: per sample when the run records
-        its samples, else per file of the running tool; elapsed times."""
+        its samples, else per file of the running tool; elapsed times.
+
+        The panel is redrawn every second and the page ends each redraw with
+        st.rerun(), which never clears elements a redraw left out: the panel
+        always takes one element on the page, and inside it every part
+        (progress bar, tool progress, file list, caption) has a fixed slot,
+        filled or left empty. A part drawn only sometimes would otherwise
+        shift the parts after it and leave the last one of the previous
+        redraw on the page, a second, outdated list of samples or files.
+        """
+        panel = st.empty()
         state = read_progress(self.workflow_dir)
         if not state:
             return
         if len(state.get("samples") or []) > 1:
-            self._show_sample_progress(state)
+            self._show_sample_progress(state, panel)
             return
         if not state.get("steps"):
             return
@@ -3171,8 +3184,9 @@ class StreamlitUI:
         n = len(files)
         finished = sum(f["status"] in (DONE, FAILED) for f in files)
         active = [i for i, f in enumerate(files) if f["status"] == RUNNING]
-        with st.container(border=True):
-            st.markdown(
+        with panel.container(border=True):
+            head, bar, tool, file_list, caption = self._progress_slots()
+            head.markdown(
                 f"**Elapsed {format_duration(now - state['started'])}** · "
                 f"step {len(state['steps'])}: **{step['tool']}**"
                 + ("" if step["ended"] is None else " finished")
@@ -3197,9 +3211,9 @@ class StreamlitUI:
                     f"{threads} thread{'s' if threads > 1 else ''}"
                     + (f" × {parallel} in parallel" if parallel > 1 else "")
                 )
-                st.progress(finished / n if n else 0.0, text=text)
+                bar.progress(finished / n if n else 0.0, text=text)
                 if len(active) == 1:
-                    self._show_tool_progress()
+                    self._show_tool_progress(tool)
             if n > 1 or step["ended"] is not None:
                 lines = []
                 for f in files:
@@ -3211,26 +3225,34 @@ class StreamlitUI:
                         lines.append(f":blue[:material/progress_activity:] **{f['name']}** :gray[{format_duration(now - f['started'])}]")
                     else:
                         lines.append(f":gray[:material/radio_button_unchecked: {f['name']}]")
-                st.markdown("  \n".join(lines))
+                file_list.markdown("  \n".join(lines))
             earlier = state["steps"][:-1]
             if earlier:
-                st.caption("Done: " + " · ".join(self._step_summary(s) for s in earlier))
+                caption.caption("Done: " + " · ".join(self._step_summary(s) for s in earlier))
 
-    def _show_tool_progress(self) -> None:
-        """The running tool's own progress ("loading spectra 42 %"), if it reports any."""
+    @staticmethod
+    def _progress_slots() -> tuple:
+        """The fixed parts of the progress panel: heading, progress bar, tool
+        progress, list of samples or files, caption (see _show_run_progress)."""
+        return tuple(st.empty() for _ in range(5))
+
+    def _show_tool_progress(self, slot) -> None:
+        """The running tool's own progress ("loading spectra 42 %"), if it
+        reports any, in ``slot``."""
         found = tool_progress(Path(self.workflow_dir, "logs", "all.log"))
         if found:
             label, fraction = found
-            st.progress(fraction, text=f":gray[{label} · {fraction:.0%}]")
+            slot.progress(fraction, text=f":gray[{label} · {fraction:.0%}]")
 
-    def _show_sample_progress(self, state: dict) -> None:
+    def _show_sample_progress(self, state: dict, panel) -> None:
         """One line per sample: waiting, running (with its tool), done or failed."""
         now = time.time()
         samples = state["samples"]
         n = len(samples)
         counts = sample_counts(state)
         running = [i for i, s in enumerate(samples) if s["status"] == RUNNING]
-        with st.container(border=True):
+        with panel.container(border=True):
+            heading, bar, tool, sample_list, _caption = self._progress_slots()
             head = f"**Elapsed {format_duration(now - state['started'])}**"
             # A step outside every sample, e.g. one over all of them at the end
             shared = None
@@ -3242,11 +3264,11 @@ class StreamlitUI:
                 head += f" · sample {i + 1} of {n}: **{samples[i]['name']}**"
             elif shared is not None:
                 head += f" · **{shared['tool']}**"
-            st.markdown(head)
+            heading.markdown(head)
             text = f"{counts[DONE]} of {n} samples done"
             if counts[FAILED]:
                 text += f" · :red[{counts[FAILED]} failed]"
-            st.progress((counts[DONE] + counts[FAILED]) / n, text=text)
+            bar.progress((counts[DONE] + counts[FAILED]) / n, text=text)
             step = shared
             if running:
                 step = current_step(state, samples[running[0]]["name"])
@@ -3256,8 +3278,8 @@ class StreamlitUI:
                 and file_counts(step)[RUNNING] == 1
             )
             if one_command:
-                self._show_tool_progress()
-            st.markdown("  \n".join(self._sample_lines(state, now)))
+                self._show_tool_progress(tool)
+            sample_list.markdown("  \n".join(self._sample_lines(state, now)))
 
     @staticmethod
     def _sample_lines(state: dict, now: float) -> list:
