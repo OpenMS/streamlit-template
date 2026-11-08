@@ -23,14 +23,9 @@ import shutil
 from pathlib import Path, PurePosixPath
 from urllib.parse import quote, urlencode
 
-from . import activity, analysis, describe, look, runner, show
+from . import activity, describe, look, runner, show
 
 logger = logging.getLogger("agent-access")
-
-
-def analysis_mod():
-    """The analysis module (the tools' own argument named ``analysis`` hides it)."""
-    return analysis
 
 EXTERNAL_FILES = "external_files.txt"
 _SAFE_NAME = re.compile(r"^[^/\\\x00]{1,200}$")
@@ -55,7 +50,6 @@ def _schema(properties: dict, required: tuple = ()) -> dict:
 WORKFLOW = {"type": "string", "description": "The workflow, as get_app_info lists it."}
 RUN_ID = {"type": "string", "description": "A run from list_runs. Default: the newest finished run."}
 KEY = {"type": "string", "description": "The input, as describe_workflow lists it (e.g. mzML-files)."}
-ANALYSIS = {"type": "string", "description": "An analysis from begin_analysis or list_analyses."}
 
 READ_ONLY = {"readOnlyHint": True, "openWorldHint": False}
 WRITES = {"readOnlyHint": False, "destructiveHint": False, "openWorldHint": False}
@@ -150,24 +144,21 @@ DEFINITIONS = [
      "The runs of a workflow with their names, states and times, newest first.",
      _schema({"workflow": WORKFLOW}, ("workflow",)), READ_ONLY),
     ("list_results", "List result files",
-     "The result files of a run (workflow and run_id) or of an analysis, with sizes and "
-     "download links.",
-     _schema({"workflow": WORKFLOW, "run_id": RUN_ID, "analysis": ANALYSIS}), READ_ONLY),
+     "The result files of a run, with sizes and download links.",
+     _schema({"workflow": WORKFLOW, "run_id": RUN_ID}, ("workflow",)), READ_ONLY),
     ("read_result", "Read a result file",
-     "Read a result file of a run (workflow and run_id) or of an analysis: a table (TSV, CSV, Parquet) as rows, with offset and limit for "
+     "Read a result file: a table (TSV, CSV, Parquet) as rows, with offset and limit for "
      "paging, a text file as text. Other files get a download link.",
      _schema({"workflow": WORKFLOW, "run_id": RUN_ID,
               "path": {"type": "string", "description": "As list_results gives it."},
               "offset": {"type": "integer", "default": 0, "minimum": 0},
               "limit": {"type": "integer", "default": 50, "minimum": 1, "maximum": MAX_ROWS},
-              "columns": {"type": "array", "items": {"type": "string"}},
-              "analysis": ANALYSIS},
-             ("path",)), READ_ONLY),
+              "columns": {"type": "array", "items": {"type": "string"}}},
+             ("workflow", "path")), READ_ONLY),
     ("get_processing_report", "Processing report",
      "What a run did, per input file: every tool, its version and the parameters that "
-     "differ from the defaults, as Markdown. Cite it in a methods section. For an analysis: "
-     "every step you took, with why, back to the input files.",
-     _schema({"workflow": WORKFLOW, "run_id": RUN_ID, "analysis": ANALYSIS}), READ_ONLY),
+     "differ from the defaults, as Markdown. Cite it in a methods section.",
+     _schema({"workflow": WORKFLOW, "run_id": RUN_ID}, ("workflow",)), READ_ONLY),
     ("get_app_link", "Link to the app",
      "A link that opens this workspace in the browser, on a workflow's configure, run or "
      "results page, for the person to look at what you did.",
@@ -218,74 +209,6 @@ DEFINITIONS = [
               "note": {"type": "string", "maxLength": 500,
                        "description": "One or two sentences on what the person sees."}},
              ("workflow",)), WRITES),
-    # -- the assistant's own analysis (analysis.py) --
-    ("list_analyses", "List analyses",
-     "Your analyses in this workspace, newest first: name, question, state and summary.",
-     _schema({}), READ_ONLY),
-    ("begin_analysis", "Begin an analysis",
-     "Start your own analysis of the data, to answer a question: the app records every step "
-     "you take (each TOPP tool with its version and parameters, each figure and table you "
-     "write, and why) so its processing report says how each result was made. Build on a "
-     "run of a workflow (workflow and run_id) to start from its results and its recorded "
-     "steps, or on the input files alone. Returns the files you can use.",
-     _schema({"name": {"type": "string", "maxLength": 100},
-              "question": {"type": "string", "description": "What the analysis answers."},
-              "workflow": WORKFLOW, "run_id": RUN_ID}, ("name",)),
-     {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": False}),
-    ("describe_tool", "Describe a TOPP tool",
-     "An OpenMS (TOPP) tool's input and output file parameters and its parameters, with types, "
-     "defaults, allowed values and descriptions. Read it before run_tool.",
-     _schema({"tool": {"type": "string"},
-              "include_advanced": {"type": "boolean", "default": False}}, ("tool",)), READ_ONLY),
-    ("run_tool", "Run a TOPP tool",
-     "Run an OpenMS (TOPP) tool as a step of an analysis. `inputs` and `outputs` map the "
-     "tool's file parameters (e.g. in, out) to files: inputs are paths relative to the "
-     "analysis's results or to the workspace (as begin_analysis lists them), outputs are file "
-     "names in the analysis's results. A list runs the tool once per file. `params` are the "
-     "tool's parameters (path: value), `why` one sentence the report keeps. Waits up to `wait` "
-     "seconds; a longer step goes on, follow it with get_step.",
-     _schema({"analysis": ANALYSIS, "tool": {"type": "string"},
-              "inputs": {"type": "object"}, "outputs": {"type": "object"},
-              "params": {"type": "object"}, "why": {"type": "string"},
-              "wait": {"type": "number", "default": 60, "minimum": 0, "maximum": 600}},
-             ("analysis", "tool", "outputs")),
-     {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": False}),
-    ("get_step", "Follow a step",
-     "The outcome of a step of an analysis: whether it worked, the files it wrote and the end "
-     "of its log. Waits up to `wait` seconds while it runs.",
-     _schema({"analysis": ANALYSIS, "step": {"type": "integer", "minimum": 1},
-              "wait": {"type": "number", "default": 30, "minimum": 0, "maximum": 600}},
-             ("analysis", "step")), READ_ONLY),
-    ("save_figure", "Save a figure",
-     "Write a Plotly figure you made (its JSON: data and layout) into an analysis's results, "
-     "as a step: `made_from` names the files its numbers come from, `why` what it shows.",
-     _schema({"analysis": ANALYSIS, "file": {"type": "string", "description": "e.g. volcano.json"},
-              "figure": {"type": "object"},
-              "made_from": {"type": "array", "items": {"type": "string"}},
-              "why": {"type": "string"}}, ("analysis", "file", "figure")),
-     {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": False}),
-    ("save_table", "Save a table",
-     "Write a table you put together into an analysis's results (TSV), as a step: `made_from` "
-     "names the files its values come from, `why` what it holds.",
-     _schema({"analysis": ANALYSIS, "file": {"type": "string", "description": "e.g. top-features.tsv"},
-              "columns": {"type": "array", "items": {"type": "string"}},
-              "rows": {"type": "array", "items": {"type": "array"}},
-              "made_from": {"type": "array", "items": {"type": "string"}},
-              "why": {"type": "string"}}, ("analysis", "file", "columns", "rows")),
-     {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": False}),
-    ("show_analysis", "Show an analysis",
-     "Open an analysis on the app's Assistant analyses page for the person, with the result "
-     "files you choose, in order: figures (.json), tables, images and text, each with a title "
-     "and a caption, and a short note. The page also offers its processing report.",
-     _schema({"analysis": ANALYSIS,
-              "items": {"type": "array", "items": {"type": "object", "properties": {
-                  "file": {"type": "string"}, "title": {"type": "string"},
-                  "caption": {"type": "string"}}, "required": ["file"]}},
-              "note": {"type": "string", "maxLength": 500}}, ("analysis", "items")), WRITES),
-    ("finish_analysis", "Finish an analysis",
-     "Mark an analysis done, with a summary of what it found (kept in its report).",
-     _schema({"analysis": ANALYSIS, "summary": {"type": "string"},
-              "failed": {"type": "boolean", "default": False}}, ("analysis",)), WRITES),
 ]
 
 
@@ -335,19 +258,16 @@ class Tools:
         names = ", ".join(self.cfg["workflows"]) or "none"
         return (
             f"You are connected to one workspace of {self.server_title()}, an OpenMS web app "
-            f"for mass spectrometry data analysis. Workflows: {names}. Answer the person's "
-            "question with an analysis of your own: begin_analysis (on a workflow's run, or on "
-            "the input files alone), then run the OpenMS tools you need with run_tool "
-            "(describe_tool lists a tool's files and parameters), read what they wrote with "
-            "list_results and read_result, and write the figures and tables that answer the "
-            "question with save_figure and save_table. Give every step a `why`: the app records "
-            "each step with its tool, version, parameters and files, so the analysis's "
-            "processing report (get_processing_report) says how each result was made. A whole "
-            "workflow is one step away too: start_run, then build an analysis on its run. "
-            "Discuss what you found with the person in your chat; show_analysis opens the "
-            "figures and tables that matter in their app, and show_in_app a workflow's own "
-            "Results views. finish_analysis records your summary. Add input files with "
-            "upload_file or import_from_link."
+            f"for mass spectrometry data analysis. Workflows: {names}. Call get_app_info, then "
+            "describe_workflow; add input files with upload_file or import_from_link, start "
+            "the workflow with start_run and follow it with get_run_status. To understand a "
+            "run, call list_result_views and look_at_results: it shows you every table and "
+            "plot of the Results page as a person sees them (select rows of a table to see "
+            "what follows a selection). Look at all of them before you answer; list_results "
+            "and read_result give the files behind them. Discuss what you found with the "
+            "person in your chat. Then call show_in_app with a short note to open in the app "
+            "what is worth seeing: a view, or the components you choose; get_app_link gives "
+            "them the link. Show only what they asked for or what your answer is about."
         )
 
     def definitions(self) -> list[dict]:
@@ -368,15 +288,11 @@ class Tools:
         except runner.RunError as e:
             error = str(e)
             raise ToolError(error) from e
-        except analysis.AnalysisError as e:
-            error = str(e)
-            raise ToolError(error) from e
         except ToolError as e:
             error = str(e)
             raise
         finally:
-            activity.record(self.workspace, name, arguments.get("workflow") or
-                            (analysis.ROOT if arguments.get("analysis") else None), error)
+            activity.record(self.workspace, name, arguments.get("workflow"), error)
 
     # -- helpers ---------------------------------------------------------------
 
@@ -815,19 +731,9 @@ class Tools:
             {k: r.get(k) for k in ("id", "name", "status", "created", "finished", "adds_to") if r.get(k)}
             for r in runs.list_runs()[:200]]}
 
-    def _where(self, workflow, run_id, analysis_id) -> tuple[Path, Path, str | None]:
-        """(folder for links and reports, results folder, run id) of a run or an analysis."""
-        if analysis_id is not None:
-            return (Path(self.workspace, analysis.ROOT),
-                    analysis.results_dir(self.workspace, analysis_id), analysis_id)
-        if workflow is None:
-            raise ToolError("Name a workflow (and run_id) or an analysis.")
+    def _list_results(self, workflow, run_id=None) -> dict:
         workflow, entry, workflow_dir = self._workflow(workflow)
         results, run_id = self._results_dir(workflow_dir, entry, run_id)
-        return workflow_dir, results, run_id
-
-    def _list_results(self, workflow=None, run_id=None, analysis=None) -> dict:
-        workflow_dir, results, run_id = self._where(workflow, run_id, analysis)
         files = []
         if results.is_dir():
             for p in sorted(results.rglob("*")):
@@ -842,9 +748,9 @@ class Tools:
                                     "header as this connection.")
         return out
 
-    def _read_result(self, path, workflow=None, run_id=None, offset=0, limit=50, columns=None,
-                     analysis=None) -> dict:
-        workflow_dir, results, run_id = self._where(workflow, run_id, analysis)
+    def _read_result(self, workflow, path, run_id=None, offset=0, limit=50, columns=None) -> dict:
+        workflow, entry, workflow_dir = self._workflow(workflow)
+        results, run_id = self._results_dir(workflow_dir, entry, run_id)
         rel = PurePosixPath(path) if isinstance(path, str) else None
         if rel is None or rel.is_absolute() or ".." in rel.parts or not rel.parts:
             raise ToolError(f"Not a result path: {path!r}.")
@@ -864,11 +770,11 @@ class Tools:
             return {**info, "text": text, "truncated": info["size"] > offset + len(text)}
         return {**info, "note": "Not a table or text; fetch it from the download link."}
 
-    def _get_processing_report(self, workflow=None, run_id=None, analysis=None) -> dict:
+    def _get_processing_report(self, workflow, run_id=None) -> dict:
         from src.workflow import processing_report
-        workflow_dir, _, run_id = self._where(workflow, run_id, analysis)
-        report = processing_report.report_for(workflow_dir, run_id,
-                                              workflow="" if analysis is None else "AI assistant")
+        workflow, entry, workflow_dir = self._workflow(workflow)
+        _, run_id = self._results_dir(workflow_dir, entry, run_id)
+        report = processing_report.report_for(workflow_dir, run_id)
         if not report:
             raise ToolError("This run recorded no processing steps.")
         return {"run_id": run_id, "markdown": processing_report.to_markdown(report)}
@@ -1008,80 +914,6 @@ class Tools:
                                               "note": note.strip()[:500]})
         return {"shown": True, "page": page, "run_id": run_id, "view": shown_view, "id": request["id"],
                 "link": self._page_link(page_file)}
-
-
-    # -- the assistant's own analysis ----------------------------------------------
-
-    ANALYSIS_PAGE = "content/assistant_analyses.py"
-
-    def _list_analyses(self) -> dict:
-        return {"analyses": analysis.list_analyses(self.workspace)[:200]}
-
-    def _usable_files(self, based_on: Path | None) -> dict:
-        """Paths (relative to the workspace) a step can read."""
-        out = {"inputs": {}}
-        for name in self.cfg["workflows"]:
-            folder = Path(self.workspace, name, "input-files")
-            if folder.is_dir():
-                for key_dir in sorted(d for d in folder.iterdir() if d.is_dir()):
-                    paths = [Path(name, "input-files", key_dir.name, f["name"]).as_posix()
-                             if not f.get("referenced") else
-                             str(self._file_path(Path(self.workspace, name), key_dir.name, f["name"]))
-                             for f in self._files(Path(self.workspace, name), key_dir.name)]
-                    if paths:
-                        out["inputs"][f"{name}/{key_dir.name}"] = paths[:MAX_LISTED]
-        if based_on is not None:
-            results = Path(based_on, "results")
-            if results.is_dir():
-                out["run_results"] = [p.relative_to(self.workspace).as_posix()
-                                      for p in sorted(results.rglob("*")) if p.is_file()][:MAX_LISTED]
-        return out
-
-    def _begin_analysis(self, name, question="", workflow=None, run_id=None) -> dict:
-        if not isinstance(name, str) or not name.strip():
-            raise ToolError("Give the analysis a name.")
-        based_on, based_name = None, ""
-        if workflow is not None:
-            workflow, entry, workflow_dir = self._workflow(workflow)
-            results, run_id = self._results_dir(workflow_dir, entry, run_id)
-            based_on = results.parent
-            run = runner._runs(workflow_dir).get(run_id) if run_id else None
-            based_name = (run or {}).get("name") or f"the last run of {workflow}"
-        analysis_id = analysis.begin(self.workspace, name.strip()[:100], question, based_on, based_name)
-        return {"analysis": analysis_id, "based_on": based_name or None,
-                "files": self._usable_files(based_on),
-                "note": "Paths are relative to the workspace; outputs are file names in the "
-                        "analysis's results, which later steps read by that name."}
-
-    def _describe_tool(self, tool, include_advanced=False) -> dict:
-        return analysis.describe_tool(self.workspace, tool, bool(include_advanced))
-
-    def _run_tool(self, analysis, tool, outputs, inputs=None, params=None, why="", wait=60) -> dict:
-        step = analysis_mod().tool_step(self.workspace, analysis, tool, inputs or {}, outputs, params, why)
-        number = analysis_mod().submit(self.workspace, analysis, step, self.app_root)
-        return analysis_mod().step_result(self.workspace, analysis, number, wait)
-
-    def _get_step(self, analysis, step, wait=30) -> dict:
-        return analysis_mod().step_result(self.workspace, analysis, step, wait)
-
-    def _save_figure(self, analysis, file, figure, made_from=None, why="") -> dict:
-        return analysis_mod().save_figure(self.workspace, analysis, file, figure, made_from, why)
-
-    def _save_table(self, analysis, file, columns, rows, made_from=None, why="") -> dict:
-        return analysis_mod().save_table(self.workspace, analysis, file, columns, rows, made_from, why)
-
-    def _show_analysis(self, analysis, items, note="") -> dict:
-        chosen = analysis_mod().show(self.workspace, analysis, items)
-        if not isinstance(note, str):
-            raise ToolError("note must be text.")
-        request = show.write(self.workspace, {"workflow": "", "page": "analysis",
-                                              "page_file": self.ANALYSIS_PAGE, "analysis": analysis,
-                                              "note": note.strip()[:500]})
-        return {"shown": len(chosen), "id": request["id"], "link": self._page_link(self.ANALYSIS_PAGE)}
-
-    def _finish_analysis(self, analysis, summary="", failed=False) -> dict:
-        run = analysis_mod().finish(self.workspace, analysis, summary, bool(failed))
-        return {"analysis": analysis, "status": run["status"]}
 
 
 def _coerce(value, typ: str):

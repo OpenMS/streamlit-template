@@ -264,9 +264,6 @@ def open_request(workspace: Path, request: dict) -> None:
     from src.workflow.RunManager import RunManager
 
     workflow = str(request.get("workflow") or "")
-    if request.get("analysis"):
-        st.session_state["agent-analysis-selected"] = request["analysis"]
-        st.session_state.pop("agent-analysis-pick", None)
     if request.get("run_id") and workflow in _cfg()["workflows"]:
         run_widgets.set_selected_run(RunManager(Path(workspace, workflow)), request["run_id"])
     st.session_state[_NOTE] = request.get("note") or "The assistant opened this page."

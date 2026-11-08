@@ -202,7 +202,7 @@ def build_report(
         version = prov.get("version") or ""
         if prov.get("kind") == "python":
             version = version or "Python script"
-        if program and prov and prov.get("kind") != "assistant":
+        if program and prov:
             software.setdefault(program, version)
         entry = {
             "number": number,
@@ -216,8 +216,6 @@ def build_report(
             "duration": _duration(step.get("started"), step.get("ended")),
             "commands": len(files),
             "recorded": bool(prov),
-            "by_assistant": prov.get("by") == "assistant",
-            "note": prov.get("note") or "",
         }
         steps.append(entry)
         for index, io in enumerate(prov.get("io") or []):
@@ -266,9 +264,6 @@ def build_report(
             if isinstance((params or {}).get("_follow_up"), dict) else "",
             "reused": list(((params or {}).get("_follow_up") or {}).get("kept") or [])
             if isinstance((params or {}).get("_follow_up"), dict) else [],
-            "question": run.get("question", ""),
-            "summary": run.get("summary", ""),
-            "by_assistant": run.get("by") == "assistant",
         },
         "generated": datetime.now().strftime("%Y-%m-%d %H:%M"),
         "started": _fmt_time(progress.get("started")),
@@ -318,10 +313,6 @@ def report_for(workflow_dir: Path, run_id: Optional[str] = None, settings: Optio
         except (OSError, ValueError):
             settings = {}
     prefix = f"{workflow_dir.name}-param-"
-    based_on = (run or {}).get("based_on") or {}
-    if isinstance(based_on, dict) and based_on.get("path"):
-        # An analysis built on a workflow's run keeps that workflow's settings
-        prefix = f"{Path(based_on['path']).parts[0]}-param-"
     return build_report(
         progress,
         app_name=settings.get("app-name", ""),
@@ -356,10 +347,6 @@ def _summary_lines(report: dict) -> List[List[str]]:
         rows.append(["Run", run["name"]])
     if run["status"]:
         rows.append(["Status", run["status"]])
-    if run.get("by_assistant"):
-        rows.append(["Done by", "the AI assistant, step by step (each step says why)"])
-    if run.get("question"):
-        rows.append(["Question", run["question"]])
     if run.get("follows"):
         rows.append(["Settings from", run["follows"] + (f" ({run['follow_note']})" if run.get("follow_note") else "")])
     if run.get("reused"):
@@ -388,8 +375,6 @@ def to_markdown(report: dict) -> str:
     md = [f"# {report['title']}", ""]
     md += _table(["", ""], _summary_lines(report))
     md.append("")
-    if report["run"].get("summary"):
-        md += ["## Summary", "", report["run"]["summary"], ""]
     if not report["steps"]:
         md += ["No tool calls were recorded for this run.", ""]
         return "\n".join(md)
@@ -428,11 +413,9 @@ def to_markdown(report: dict) -> str:
         if step["duration"]:
             facts.append(f"Time: {step['duration']}")
         md += [" · ".join(facts), ""]
-        if step.get("note"):
-            md += [f"_{'The AI assistant: ' if step.get('by_assistant') else ''}{step['note']}_", ""]
         if step["params"]:
             md += _table(["Parameter", "Value"], [[k, v] for k, v in step["params"].items()])
-        elif step["recorded"] and step["kind"] != "assistant":
+        elif step["recorded"]:
             md += ["All parameters at their defaults."]
         else:
             md += ["Parameters were not recorded for this call."]
@@ -483,8 +466,6 @@ def to_pdf(report: dict) -> Optional[bytes]:
 
     story = [Paragraph(escape(report["title"]), styles["Title"]),
              table(None, _summary_lines(report), [0.25, 0.75]), Spacer(1, 6 * mm)]
-    if report["run"].get("summary"):
-        story += [Paragraph("Summary", styles["Heading2"]), p(report["run"]["summary"])]
     if not report["steps"]:
         story.append(p("No tool calls were recorded for this run."))
     else:
@@ -516,11 +497,9 @@ def to_pdf(report: dict) -> Optional[bytes]:
                 facts.append(f"Time: {step['duration']}")
             part = [Paragraph(escape(f"Step {step['number']}: {step['tool']}"), styles["Heading3"]),
                     p(" · ".join(facts), small)]
-            if step.get("note"):
-                part.append(p(("The AI assistant: " if step.get("by_assistant") else "") + step["note"], small))
             if step["params"]:
                 part.append(table(["Parameter", "Value"], [[k, v] for k, v in step["params"].items()], [0.45, 0.55]))
-            elif step["kind"] != "assistant":
+            else:
                 part.append(p("All parameters at their defaults." if step["recorded"]
                               else "Parameters were not recorded for this call.", small))
             story.append(KeepTogether(part[:2]))
