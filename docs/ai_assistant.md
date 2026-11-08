@@ -74,8 +74,7 @@ view, but you can duplicate it (✏️, **Duplicate to edit**) or delete it. The
 views of the newest answer are in the bar; those of earlier questions move to
 **More**. An assistant changes or deletes only views it saved itself.
 It shows only what the assistant decides to show; the
-rest of its work stays out of your way. Turn **Follow the assistant** off in
-the sidebar's **AI assistant** panel to keep the page you are on.
+rest of its work stays out of your way.
 
 The sidebar panel lists what an assistant did lately. A run it starts is
 started the way the Run button starts it, so it shows on the workflow's Run

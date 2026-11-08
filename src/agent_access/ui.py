@@ -18,7 +18,6 @@ from . import activity, install, show
 from .config import agent_settings
 
 _ISSUED = "agent-access-issued"
-FOLLOW = "agent-access-follow"
 _SEEN = "agent-access-shown"
 _NOTE = "agent-access-note"
 
@@ -227,13 +226,6 @@ def render_sidebar() -> None:
             st.caption("Let an AI assistant run this app's workflows in this workspace.")
         if recent:
             _activity(workspace)
-        if recent or connected:
-            # A key of its own: widget state does not survive a page switch.
-            st.toggle("Follow the assistant", key=f"{FOLLOW}-toggle",
-                      value=st.session_state.get(FOLLOW, True),
-                      on_change=lambda: st.session_state.update(
-                          {FOLLOW: st.session_state[f"{FOLLOW}-toggle"]}),
-                      help="Open the pages and runs the assistant shows you, as it shows them.")
         if st.button("Connect an AI assistant", key="agent-access-connect",
                      icon=":material/add_link:", width="stretch"):
             _connect_dialog(workspace)
@@ -249,8 +241,7 @@ def follow() -> None:
     """Open what the assistant shows (``show_in_app``), on every page of the session.
 
     Called by ``page_setup()`` in the page's main area. The note of the
-    request that opened this page is shown first; then, while the person
-    follows, a fragment checks for a new request every two seconds. It draws
+    request that opened this page is shown first; then a fragment checks for a new request every two seconds. It draws
     nothing, so a check that fires during a page switch sends no elements
     to the page being left (see ``_resource_panels`` in common.py).
     """
@@ -263,7 +254,7 @@ def follow() -> None:
     if _SEEN not in st.session_state:
         # What was shown before this session opened is not news.
         st.session_state[_SEEN] = (show.latest(workspace) or {}).get("id")
-    if st.session_state.get(FOLLOW, True) and _assistant_may_show(workspace):
+    if _assistant_may_show(workspace):
         _watch(str(workspace))
 
 
