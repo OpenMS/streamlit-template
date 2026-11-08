@@ -60,10 +60,29 @@
   function send(type, data) { window.parent.postMessage(Object.assign({ isStreamlitMessage: true, type: type }, data), '*'); }
   function setValue(value) { send('streamlit:setComponentValue', { value: Object.assign({ nonce: Date.now() + Math.random() }, value), dataType: 'json' }); }
   var lastHeight = -1;
+  // The page's iframe element, when the component is served from the app's own
+  // origin (it is): the More menu then lies over the components below instead
+  // of making the frame taller and pushing them down.
+  var frame = null;
+  try { frame = window.frameElement; } catch (e) { frame = null; }
+  function overlay(extra) {
+    if (!frame) return false;
+    var box = frame.parentElement, on = extra > 0;
+    // Streamlit keeps the frame as tall as the bar; the menu hangs below it
+    frame.style.height = on ? (lastHeight + extra) + 'px' : '';
+    frame.style.marginBottom = on ? (-extra) + 'px' : '';
+    frame.style.position = on ? 'relative' : '';
+    frame.style.zIndex = on ? '1000' : '';
+    if (box) { box.style.position = on ? 'relative' : ''; box.style.zIndex = on ? '1000' : ''; box.style.overflow = on ? 'visible' : ''; }
+    return true;
+  }
   function syncHeight() {
     var menu = app.querySelector('.menu');
-    var h = Math.ceil(app.getBoundingClientRect().height + 2 + (menu ? menu.getBoundingClientRect().height + 6 : 0));
+    var bar = Math.ceil(app.getBoundingClientRect().height + 2);
+    var extra = menu ? Math.ceil(menu.getBoundingClientRect().height + 16) : 0;  // room for its shadow
+    var h = frame ? bar : bar + extra;
     if (h !== lastHeight) { lastHeight = h; send('streamlit:setFrameHeight', { height: h }); }
+    overlay(extra);
   }
   function h(tag, attrs, children) {
     var el = document.createElement(tag);
@@ -181,6 +200,17 @@
 
   document.addEventListener('click', function (ev) { if (menuOpen && !ev.target.closest('.more')) { menuOpen = false; render(); } });
   document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape' && menuOpen) { menuOpen = false; render(); } });
+  // A click on the page around the frame closes the menu too
+  if (frame) {
+    try {
+      frame.ownerDocument.addEventListener('mousedown', function (ev) {
+        if (menuOpen && ev.target !== frame) { menuOpen = false; render(); }
+      }, true);
+    } catch (e) { /* not reachable: clicks inside the frame still close it */ }
+  }
+  // A click into another component's frame (an Insight plot below the bar)
+  // takes the focus from this frame: close the menu so it does not cover it
+  window.addEventListener('blur', function () { if (menuOpen) { menuOpen = false; render(); } });
 
   window.addEventListener('message', function (ev) {
     var data = ev.data;
