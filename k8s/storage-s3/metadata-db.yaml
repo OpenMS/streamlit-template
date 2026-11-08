@@ -1,0 +1,80 @@
+# PostgreSQL for the JuiceFS metadata: directory tree, file attributes, locks.
+#
+# Small (MB) but essential: without it the chunks in the bucket cannot be put
+# back together. JuiceFS writes a metadata backup into the bucket every hour
+# (`juicefs mount --backup-meta`, default 1h), from which `juicefs load`
+# restores it. The volume is the cluster's default StorageClass (ReadWriteOnce
+# is enough: one pod); if its node fails, the pod restarts elsewhere once the
+# volume reattaches, and mounts block (not fail) in the meantime.
+#
+# The password is in the Secret `juicefs-meta-db` (key `password`), created by
+# hand together with juicefs-s3-credentials.
+apiVersion: v1
+kind: Service
+metadata:
+  name: juicefs-meta
+  labels:
+    app: juicefs-meta
+spec:
+  selector:
+    app: juicefs-meta
+  ports:
+    - name: postgres
+      port: 5432
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: juicefs-meta
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false
+spec:
+  serviceName: juicefs-meta
+  replicas: 1
+  selector:
+    matchLabels:
+      app: juicefs-meta
+  template:
+    metadata:
+      labels:
+        app: juicefs-meta
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16.10
+          env:
+            - name: POSTGRES_USER
+              value: juicefs
+            - name: POSTGRES_DB
+              value: juicefs
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: juicefs-meta-db
+                  key: password
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          ports:
+            - name: postgres
+              containerPort: 5432
+          readinessProbe:
+            exec:
+              command: [pg_isready, -U, juicefs, -d, juicefs]
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 1Gi
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests:
+            storage: 10Gi
