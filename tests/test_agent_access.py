@@ -4,6 +4,7 @@ Tool calls go over HTTP to the sync service's /sync/mcp route as raw JSON-RPC,
 the way an MCP client sends them, and over the stdio transport.
 """
 
+import time
 import asyncio
 import base64
 import io
@@ -148,7 +149,7 @@ def test_http_handshake_and_errors(mcp):
     assert note.status_code == 202
 
     tools = _rpc(mcp, "tools/list").json()["result"]["tools"]
-    assert len(tools) == 21
+    assert len(tools) == 23
     assert {"upload_file", "start_run", "read_result"} <= {t["name"] for t in tools}
 
     assert _rpc(mcp, "nope").json()["error"]["code"] == protocol.METHOD_NOT_FOUND
@@ -480,31 +481,78 @@ def test_result_views_and_components(tmp_path):
         tools.call("look_at_results", {"workflow": WF, "select": {key: "0"}})
 
 
-def test_show_a_view_the_assistant_composed(tmp_path):
+def test_assistant_views(tmp_path):
     from src.agent_access.tools import ToolError
     from src.layout_manager.layout import load_views
+    from src.workflow.RunManager import FINISHED, RunManager
     from src.Workflow import Workflow
     ws = _workspace(tmp_path)
     tools = Tools(Path.cwd(), ws, agent_settings(SETTINGS))
     path = ws / WF / Workflow.RESULTS_LAYOUT
+    runs = RunManager(ws / WF)
+    first = runs.latest()
+    second = runs.new_run("Higher noise threshold")
+    runs.finish(second, FINISHED)
 
     def state():
         return load_views(path, Workflow.COMPONENTS, Workflow.PRESETS, Workflow.PRESETS[0]["layout"])
 
     out = tools.call("show_in_app", {"workflow": WF, "view": "all", "note": "Everything."})
     assert out["view"] == "all" and state()["current"] == "all"
-    out = tools.call("show_in_app", {"workflow": WF, "components": ["features", "intensities"]})
-    assert out["view"] == "custom-assistant"
+    question = "Does the noise threshold change the features?"
+    saved = tools.call("save_view", {
+        "workflow": WF, "label": "Threshold compared", "components": ["features", "intensities"],
+        "runs": [first, second], "side_by_side": True, "question": question,
+        "explanation": ["Run 2 keeps 8 of the 10 features of run 1."],
+        "defaults": [{"selection": {"feature": 3}, "zoom": {"intensities": {"x": [0, 5]}}}, {}]})
+    name = saved["view"]
+    assert name == "custom-assistant-1"
+    st_ = state()
+    view = {v["name"]: v for v in st_["views"]}[name]
+    assert st_["current"] == name and st_["experiments"] == 2 and st_["side_by_side"]
+    assert view["by"] == "assistant" and view["runs"] == [first, second]
+    assert view["rows"] == [["features"], ["intensities"]] and view["question"] == question
+    assert view["defaults"] == [{"dataset": first, "selection": {"feature": 3},
+                                 "zoom": {"intensities": {"x": [0.0, 5.0]}}}]
+    listed = {v["name"]: v for v in tools.call("list_result_views", {"workflow": WF})["views"]}
+    assert listed[name]["saved_by_you"] and listed[name]["explanation"]
+    # Changing it keeps its name; a second view of the same answer stays in the bar
+    tools.call("save_view", {"workflow": WF, "name": name, "label": "Threshold compared",
+                             "components": [["features", "intensities"]], "runs": [first, second],
+                             "question": question, "explanation": ["Point one.", "Point two."]})
+    other = tools.call("save_view", {"workflow": WF, "label": "Run 2 alone", "components": ["features"],
+                                     "runs": [second], "question": question,
+                                     "explanation": ["Run 2 alone."]})["view"]
     views = {v["name"]: v for v in state()["views"]}
-    assert state()["current"] == "custom-assistant"
-    assert views["custom-assistant"]["label"] == "From the assistant"
-    assert views["custom-assistant"]["rows"] == [["features"], ["intensities"]]
-    # A second view replaces the first
-    tools.call("show_in_app", {"workflow": WF, "components": [["features", "intensities"]]})
-    assert [v["name"] for v in state()["views"]].count("custom-assistant") == 1
-    assert {v["name"]: v for v in state()["views"]}["custom-assistant"]["rows"] == [["features", "intensities"]]
-    with pytest.raises(ToolError, match="needs Consensus features"):
-        tools.call("show_in_app", {"workflow": WF, "components": [["intensities"]]})
+    assert views[name]["rows"] == [["features", "intensities"]] and views[name]["in_bar"]
+    assert views[other]["in_bar"]
+    # A new question moves the earlier answer's views to More
+    newer = tools.call("save_view", {"workflow": WF, "label": "Another answer", "components": ["features"],
+                                     "runs": [first], "question": "Something else?",
+                                     "explanation": ["One point."]})["view"]
+    views = {v["name"]: v for v in state()["views"]}
+    assert not views[name]["in_bar"] and not views[other]["in_bar"] and views[newer]["in_bar"]
+    # show_in_app picks the view's first run
+    out = tools.call("show_in_app", {"workflow": WF, "view": name, "note": "Both runs."})
+    assert out["run_id"] == first and state()["current"] == name and state()["experiments"] == 2
+    for bad, match in [
+        ({"components": [["intensities"]]}, "needs Consensus features"),
+        ({"runs": [first, first]}, "different runs"),
+        ({"runs": [first], "side_by_side": True}, "exactly two"),
+        ({"runs": ["nope"]}, "No run"),
+        ({"explanation": ["a"] * 6}, "one to 5"),
+        ({"explanation": ["x" * 301]}, "one sentence"),
+        ({"label": "All"}, "called"),
+        ({"name": "all"}, "not a view you saved"),
+    ]:
+        args = {"workflow": WF, "label": "Bad", "components": ["features"], "runs": [first],
+                "question": question, "explanation": ["One point."], **bad}
+        with pytest.raises(ToolError, match=match):
+            tools.call("save_view", args)
+    with pytest.raises(ToolError, match="not a view you saved"):
+        tools.call("delete_view", {"workflow": WF, "name": "all"})
+    assert tools.call("delete_view", {"workflow": WF, "name": name}) == {"deleted": name}
+    assert name not in {v["name"] for v in state()["views"]} and state()["experiments"] == 1
     with pytest.raises(ToolError, match="No view"):
         tools.call("show_in_app", {"workflow": WF, "view": "nope"})
     with pytest.raises(ToolError, match="results page"):
@@ -660,3 +708,25 @@ def test_connect_claude_desktop_keeps_other_servers(tmp_path):
     with pytest.raises(ValueError):
         install.connect_claude_desktop("test-app", entry, path)
     assert path.read_text() == "[1, 2]"
+
+
+def test_configure_page_shown_once_even_after_the_upload_page(tmp_path, monkeypatch):
+    """The upload page writes params.json (its file selection) and an empty ini
+    folder; the workflow's settings still have to come from its configure page."""
+    calls = []
+    monkeypatch.setattr(describe, "prepare", lambda *a, **k: calls.append(a) or "")
+    ws = tmp_path / "ws"
+    wf = ws / WF
+    (wf / "ini").mkdir(parents=True)
+    (wf / "input-files" / "mzML-files").mkdir(parents=True)
+    describe.write_params(wf, {"mzML-files": []})
+    tools = Tools(Path.cwd(), ws, agent_settings({**SETTINGS, "online_deployment": False}))
+    tools.call("describe_workflow", {"workflow": WF})
+    assert len(calls) == 1
+    (wf / "ini" / "FeatureFinderMetabo.ini").write_text(INI)
+    tools.call("describe_workflow", {"workflow": WF})
+    assert len(calls) == 1
+    # Nothing running: the wait ends at once
+    started = time.monotonic()
+    assert tools.call("get_run_status", {"workflow": WF, "wait": 30})["running"] is False
+    assert time.monotonic() - started < 5

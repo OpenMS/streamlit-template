@@ -167,7 +167,8 @@ _LABELS = {
     "get_run_log": "read the log", "stop_run": "stopped the run", "list_runs": "listed the runs",
     "list_results": "listed results", "read_result": "read a result",
     "get_processing_report": "read the processing report", "get_app_link": "linked here",
-    "show_in_app": "showed you a page", "list_result_views": "listed the result views",
+    "show_in_app": "showed you a page", "save_view": "saved a view for you",
+    "delete_view": "deleted a view it saved", "list_result_views": "listed the result views",
     "look_at_results": "looked at the results",
 }
 

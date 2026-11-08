@@ -58,6 +58,7 @@ Ported from FLASHApp's Layout Manager.
 
 from src.layout_manager.layout import (
     ANNOTATIONS_PREFIX,
+    ASSISTANT,
     MAX_COLUMNS,
     MAX_EXPERIMENTS,
     VIEW_EXTRAS,
@@ -65,9 +66,11 @@ from src.layout_manager.layout import (
     annotations_identifier,
     apply_defaults,
     apply_preset,
+    by_assistant,
     capture_defaults,
     clean_defaults,
     differs_from_defaults,
+    explanation,
     has_defaults,
     clear_layout,
     load_layout,
@@ -76,6 +79,7 @@ from src.layout_manager.layout import (
     missing_analyses,
     needs,
     normalize_zoom,
+    read_only,
     resolve_layout,
     save_layout,
     save_views,
@@ -83,6 +87,7 @@ from src.layout_manager.layout import (
     set_view_defaults,
     validate_layout,
     validate_views,
+    view_runs,
     zoom_identifier,
 )
 from src.layout_manager.ui import (
@@ -102,6 +107,7 @@ from src.layout_manager.ui import (
 
 __all__ = [
     "ANNOTATIONS_PREFIX",
+    "ASSISTANT",
     "MAX_COLUMNS",
     "MAX_EXPERIMENTS",
     "VIEW_EXTRAS",
@@ -109,11 +115,13 @@ __all__ = [
     "annotations_identifier",
     "apply_defaults",
     "apply_preset",
+    "by_assistant",
     "capture_defaults",
     "clean_defaults",
     "clear_layout",
     "differs_from_defaults",
     "experiment_state",
+    "explanation",
     "has_defaults",
     "layout_button",
     "layout_editor",
@@ -126,6 +134,7 @@ __all__ = [
     "missing_note",
     "needs",
     "normalize_zoom",
+    "read_only",
     "render_experiments",
     "render_layout",
     "request_analysis",
@@ -138,6 +147,7 @@ __all__ = [
     "validate_layout",
     "validate_views",
     "view_bar",
+    "view_runs",
     "views_editor",
     "zoom_identifier",
 ]

@@ -7,7 +7,8 @@ from pathlib import Path
 import pandas as pd
 import plotly.express as px
 from src.common.common import show_fig
-from src.layout_manager import render_layout, request_analysis, resolve_layout, view_bar
+from src.layout_manager import (load_views, render_layout, request_analysis, resolve_layout, view_bar,
+                                view_runs)
 
 
 def merge_feature_tables(tables: list, ppm: float = 10.0, rt_tolerance: float = 30.0):
@@ -291,16 +292,35 @@ class Workflow(WorkflowManager):
     @st.fragment
     def results(self) -> None:
         layout_path = Path(self.workflow_dir, self.RESULTS_LAYOUT)
+        default = self.PRESETS[0]["layout"]
+        names = {r["id"]: r.get("name") or r["id"] for r in self.runs.list_runs()}
         view_bar(
-            layout_path, self.COMPONENTS, self.PRESETS, self.PRESETS[0]["layout"], key="topp-results-view",
+            layout_path, self.COMPONENTS, self.PRESETS, default, key="topp-results-view",
             available=self.available(), analyses=self.ANALYSES,
-            unavailable_options=self.missing_options, target="the Results page",
+            unavailable_options=self.missing_options, target="the Results page", run_names=names,
             actions=[{"id": "add-files", "icon": "➕", "label": "Add files", "on_click": self.add_files,
                       "help": "Process more files with this run's settings and add them to its experiment"}],
         )
-        layout, _ = resolve_layout(layout_path, self.COMPONENTS, self.PRESETS[0]["layout"])
+        layout, side_by_side = resolve_layout(layout_path, self.COMPONENTS, default)
+        views = load_views(layout_path, self.COMPONENTS, self.PRESETS, default)
+        current = next((v for v in views["views"] if v["name"] == views["current"]), None)
+        # A view of the AI assistant shows the runs it names, one experiment each
+        runs = [r for r in view_runs(current) if r in names]
+        if len(runs) < 2:  # one run: the one picked above (show_in_app picks the view's)
+            self._draw(layout[0])
+            return
+        shown = self.run_id
+        places = st.columns(2) if side_by_side and len(runs) == 2 else [st.container() for _ in runs]
+        for place, run in zip(places, runs):
+            with place:
+                self._use_run(run)
+                st.markdown(f"##### {names[run]}")
+                self._draw(layout[0])
+        self._use_run(shown)
+
+    def _draw(self, rows) -> None:
         render_layout(
-            layout[0],
+            rows,
             self.renderers(),
             components=self.COMPONENTS, available=self.available(), analyses=self.ANALYSES,
             on_missing=lambda missing, name: request_analysis("topp-results-view", missing, component=name),

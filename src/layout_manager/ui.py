@@ -20,8 +20,10 @@ from src.layout_manager.layout import (
     analysis_label,
     apply_defaults,
     apply_preset,
+    by_assistant,
     capture_defaults,
     differs_from_defaults,
+    explanation,
     has_defaults,
     join_labels,
     missing_analyses,
@@ -36,6 +38,7 @@ from src.layout_manager.layout import (
     set_view_defaults,
     validate_layout,
     validate_views,
+    view_runs,
 )
 
 _editor = st_components.declare_component(
@@ -353,14 +356,19 @@ def views_editor(
     if submitted and submitted.get("nonce") != st.session_state.get(handled_key):
         st.session_state[handled_key] = submitted.get("nonce")
         if submitted.get("action") == "save":
+            state = load_views(path, components, presets, default_layout)
+            by_name = {v["name"]: v for v in state["views"]}
+            # The assistant's views come back by name only, like ready-made ones
+            submitted = dict(submitted, views=[
+                dict(sent, label=by_name[sent["name"]]["label"], rows=by_name[sent["name"]]["rows"])
+                if isinstance(sent, dict) and by_assistant(by_name.get(sent.get("name"))) else sent
+                for sent in submitted.get("views") or []])
             error = validate_views(submitted, components, presets, default_layout, max_experiments, max_columns)
             if not error:
-                state = load_views(path, components, presets, default_layout)
-                by_name = {v["name"]: v for v in state["views"]}
                 views = []
                 for sent in submitted["views"]:
                     view = dict(by_name.get(sent["name"], {}))
-                    if not view.get("preset"):
+                    if not view.get("preset") and not by_assistant(view):
                         view.update(name=sent["name"], label=str(sent["label"]).strip(),
                                     rows=sent["rows"], preset=False)
                     view["in_bar"] = bool(sent.get("in_bar", True))
@@ -397,7 +405,7 @@ def views_editor(
         default_layout=default_layout,
         saved_layout=None,
         side_by_side=state["side_by_side"],
-        views=state["views"],
+        views=[_editor_view(v) for v in state["views"]],
         current=state["current"],
         experiments=state["experiments"],
         fresh=fresh,
@@ -412,6 +420,36 @@ def views_editor(
         default=None,
     )
     return done
+
+
+def _editor_view(view: Dict[str, Any]) -> Dict[str, Any]:
+    """A view as the editor gets it: the assistant's are read-only, like ready-made ones."""
+    out = {k: view[k] for k in ("name", "label", "rows", "preset", "in_bar", "help") if k in view}
+    if by_assistant(view):
+        out.update(preset=True, assistant=True, label=_ASSISTANT_ICON + " " + view["label"])
+        if view.get("question"):
+            out["help"] = "Made by the AI assistant for: " + view["question"]
+    return out
+
+
+_ASSISTANT_ICON = "🤖"
+
+
+def explanation_panel(view: Optional[Dict[str, Any]], run_names: Optional[Dict[str, str]] = None) -> None:
+    """The question and the points an assistant's view explains itself with, if it has any."""
+    points = explanation(view)
+    if not points:
+        return
+    with st.expander(view["label"], expanded=True, icon=":material/smart_toy:"):
+        if view.get("question"):
+            st.markdown(f"**Question:** {view['question']}")
+        st.markdown("\n".join(f"- {p}" for p in points))
+        runs = view_runs(view)
+        if runs:
+            names = [(run_names or {}).get(r, r) for r in runs]
+            st.caption("From the AI assistant · " + ("Run: " if len(names) == 1 else "Runs: ") + ", ".join(names))
+        else:
+            st.caption("From the AI assistant")
 
 
 def view_bar(
@@ -432,6 +470,7 @@ def view_bar(
     dataset_label: str = "run",
     states: Optional[Callable[[int], Any]] = None,
     datasets: Optional[Callable[[int], Optional[str]]] = None,
+    run_names: Optional[Dict[str, str]] = None,
     **editor_args: Any,
 ) -> str:
     """The view bar: as many views as fit, the rest in More, and ✏️ Customize.
@@ -468,6 +507,12 @@ def view_bar(
     zoom and selection shown as its defaults (📌), opening it applies them,
     and ↺ brings them back after the user changed them. Components keep their
     zoom in the state only when given ``zoom_identifier=zoom_identifier(name)``.
+
+    **Views of an AI assistant** (``"by": "assistant"``, ``src/agent_access``)
+    carry 🤖, are read-only like ready-made views (Duplicate to edit, or
+    delete), and may name the ``runs`` they show; the page renders one
+    experiment per run (``layout.view_runs``). Their question and explanation
+    are drawn below the bar, the runs by their names in ``run_names``.
     Returns the name of the current view.
     """
     open_key = f"{key}_dialog_open"
@@ -515,7 +560,7 @@ def view_bar(
         builtin = _defaults_actions(current_view, states, datasets, experiments)
 
     def _bar_view(v: Dict[str, Any]) -> Dict[str, Any]:
-        out = {k: v[k] for k in ("name", "label", "rows", "preset", "in_bar", "help") if k in v}
+        out = _editor_view(v)
         if missing_of.get(v["name"]):
             out["missing"] = join_labels([analysis_label(a, analyses) for a in missing_of[v["name"]]])
             out["dataset_label"] = dataset_label
@@ -531,6 +576,7 @@ def view_bar(
         key=f"{key}_bar",
         default=None,
     )
+    explanation_panel(current_view, run_names)
 
     def _closed() -> None:
         st.session_state[open_key] = False

@@ -20,6 +20,7 @@ import logging
 import os
 import re
 import shutil
+import time
 from pathlib import Path, PurePosixPath
 from urllib.parse import quote, urlencode
 
@@ -158,8 +159,12 @@ DEFINITIONS = [
       "openWorldHint": False}),
     ("get_run_status", "Run status",
      "Whether the workflow's last run is queued, running, finished, failed or cancelled, "
-     "its current step and the last lines of its log.",
-     _schema({"workflow": WORKFLOW}, ("workflow",)), READ_ONLY),
+     "its current step and the last lines of its log. Pass wait to return as soon as the "
+     "run ends, or after that many seconds.",
+     _schema({"workflow": WORKFLOW,
+              "wait": {"type": "integer", "minimum": 0, "maximum": 60, "default": 0,
+                       "description": "Seconds to wait for the run to end."}},
+             ("workflow",)), READ_ONLY),
     ("get_run_log", "Run log",
      "The end of the last run's log: minimal (the steps), commands (every command with its "
      "run time) or all (everything the tools printed).",
@@ -218,24 +223,58 @@ DEFINITIONS = [
               "rows": {"type": "integer", "default": 20, "minimum": 1, "maximum": 200,
                        "description": "First rows of each table."}},
              ("workflow",)), READ_ONLY),
+    ("save_view", "Save a view of your answer",
+     "Save the view your answer rests on to the workflow's Results page: the components "
+     "that show it (rows of up to three names from list_result_views), the runs it shows "
+     "(one to five, side by side when two, else one below the other), the zoom, selection "
+     "and point annotations each run opens with, and an explanation of at most five short "
+     "points shown above the components. Write the points scientifically and concisely, "
+     "and use only numbers the person can find in the view. The view carries the "
+     "assistant's icon, the person can only duplicate it, and it becomes the open view; "
+     "views of an earlier question move to More. Pass name to change a view you saved. "
+     "Then call show_in_app with the view.",
+     _schema({"workflow": WORKFLOW,
+              "label": {"type": "string", "maxLength": 60,
+                        "description": "The view's name in the bar, e.g. \"Treatment vs Control\"."},
+              "components": {"type": "array", "description": "Rows of component names.",
+                             "items": {"type": "array", "items": {"type": "string"},
+                                       "minItems": 1, "maxItems": 3}},
+              "runs": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 5,
+                       "description": "Finished runs from list_runs, in the order shown."},
+              "side_by_side": {"type": "boolean", "default": False,
+                               "description": "Two runs next to each other instead of one below the other."},
+              "question": QUESTION,
+              "explanation": {"type": "array", "items": {"type": "string", "maxLength": 300},
+                              "minItems": 1, "maxItems": 5,
+                              "description": "At most five points, each one sentence."},
+              "defaults": {"type": "array", "maxItems": 5,
+                           "description": "Per run, in the order of runs: what it opens with. "
+                                          "selection maps an identifier to a value, zoom a "
+                                          "component to {\"x\": [lo, hi], \"y\": [lo, hi]}, "
+                                          "annotations a component to {point id: "
+                                          "{\"highlight\": true, \"annotation\": text}}.",
+                           "items": {"type": "object", "properties": {
+                               "selection": {"type": "object"}, "zoom": {"type": "object"},
+                               "annotations": {"type": "object"}}}},
+              "name": {"type": "string", "description": "A view you saved before, to change it."}},
+             ("workflow", "label", "components", "question", "explanation")), WRITES),
+    ("delete_view", "Delete a view you saved",
+     "Delete a view you saved with save_view. Views the person made and ready-made views "
+     "cannot be deleted.",
+     _schema({"workflow": WORKFLOW, "name": {"type": "string"}}, ("workflow", "name")),
+     {"readOnlyHint": False, "destructiveHint": True, "idempotentHint": True}),
     ("show_in_app", "Show in the app",
      "Bring a page up in the app the person has open in this workspace, with a run picked "
-     "and a short note on what to look at. On the results page, show exactly the "
-     "components that answer what you discuss: a view from list_result_views, or your own "
-     "arrangement as components (rows of up to three names, e.g. [[\"features\", "
-     "\"intensities\"]]), which becomes the view \"From the assistant\". Show only what "
-     "matters for the conversation, after you looked at it yourself. The app follows "
-     "unless the person turned that off; the returned link opens the same page.",
+     "and a short note on what to look at. On the results page, open the view your answer "
+     "rests on: one you saved with save_view, or a view from list_result_views. The app "
+     "follows unless the person turned that off; the returned link opens the same page.",
      _schema({"workflow": WORKFLOW,
               "page": {"type": "string", "enum": ["configure", "run", "results"],
                        "default": "results"},
               "run_id": {"type": "string",
-                         "description": "The run to pick, from list_runs. Default: the newest "
-                                        "finished run."},
-              "view": {"type": "string", "description": "A view from list_result_views."},
-              "components": {"type": "array", "description": "Rows of component names.",
-                             "items": {"type": "array", "items": {"type": "string"},
-                                       "minItems": 1, "maxItems": 3}},
+                         "description": "The run to pick, from list_runs. Default: the first "
+                                        "run of the view, else the newest finished run."},
+              "view": {"type": "string", "description": "A view from save_view or list_result_views."},
               "note": {"type": "string", "maxLength": 500,
                        "description": "One or two sentences on what the person sees."}},
              ("workflow",)), WRITES),
@@ -300,12 +339,15 @@ class Tools:
             "import_from_link). Every run takes the person's question and one line on why "
             "it was started; the processing report names both. Tell the person in the chat "
             "what you add and why before you start it.\n"
-            "4. Follow a run with get_run_status. Read its results with list_result_views, "
+            "4. Follow a run with get_run_status (wait up to 60 s per call). Read its results with list_result_views, "
             "look_at_results, list_results and read_result before you answer.\n"
             "5. Write scientifically and concisely. State only numbers the person can find "
             "in the results you show them.\n"
-            "Then call show_in_app with a short note to open in the app what your answer is "
-            "about; get_app_link gives them the link."
+            "6. Show the person what your answer rests on: save_view with the components, "
+            "the runs (several side by side or one below the other), the zoom, selection and "
+            "annotations they open with, and at most five points of explanation; then "
+            "show_in_app with the view and a short note. One answer may save several views. "
+            "Change or delete only views you saved. get_app_link gives the person the link."
         )
 
     def definitions(self) -> list[dict]:
@@ -404,8 +446,15 @@ class Tools:
                         f"{', '.join(f['name'] for f in self._files(workflow_dir, key)) or 'none'}.")
 
     def _ensure_described(self, entry: dict, workflow_dir: Path) -> str:
-        """Show the configure page once if this workspace never did."""
-        if describe.read_params(workflow_dir) and Path(workflow_dir, "ini").is_dir():
+        """Show the configure page once if this workspace never did.
+
+        Other pages write params.json too (the upload page its file selection)
+        and make an empty ini folder; only the configure page writes the
+        settings and the tools' .ini files.
+        """
+        params = describe.read_params(workflow_dir)
+        settings = set(params) - set(self._input_keys(entry, workflow_dir, params))
+        if settings or any(Path(workflow_dir, "ini").glob("*.ini")):
             return ""
         return describe.prepare(self.app_root, self.workspace, entry["configure_page"], self.online)
 
@@ -812,9 +861,15 @@ class Tools:
         state["link"] = self._page_link(entry["run_page"])
         return state
 
-    def _get_run_status(self, workflow) -> dict:
+    def _get_run_status(self, workflow, wait=0) -> dict:
         workflow, entry, _ = self._workflow(workflow)
+        if isinstance(wait, bool) or not isinstance(wait, (int, float)):
+            raise ToolError("wait is a number of seconds.")
+        until = time.monotonic() + max(0, min(float(wait), 60))
         state = runner.status(self.workspace, workflow, self.online)
+        while state.get("status") in ("queued", "running") and time.monotonic() < until:
+            time.sleep(min(2.0, max(0.1, until - time.monotonic())))
+            state = runner.status(self.workspace, workflow, self.online)
         state["link"] = self._page_link(entry["run_page"])
         return state
 
@@ -898,7 +953,7 @@ class Tools:
 
     # -- results as components ---------------------------------------------------
 
-    ASSISTANT_VIEW = "custom-assistant"
+    ASSISTANT_VIEW = "custom-assistant"  # name prefix of the views save_view makes
 
     def _catalog(self, entry: dict) -> dict:
         cat = look.catalog(entry)
@@ -908,7 +963,8 @@ class Tools:
         return cat
 
     def _list_result_views(self, workflow, run_id=None) -> dict:
-        from src.layout_manager.layout import load_views, missing_analyses
+        from src.layout_manager.layout import (by_assistant, explanation, load_views,
+                                               missing_analyses, view_runs)
         workflow, entry, workflow_dir = self._workflow(workflow)
         cat = self._catalog(entry)
         _, run_id = self._results_dir(workflow_dir, entry, run_id)
@@ -926,9 +982,16 @@ class Tools:
             components.append(item)
         default = cat["presets"][0]["layout"] if cat["presets"] else [[c["name"]] for c in cat["components"]]
         state = load_views(Path(workflow_dir, cat["layout"]), cat["components"], cat["presets"], default)
-        views = [{"name": v["name"], "label": v["label"], "components": v["rows"],
-                  "ready_made": bool(v.get("preset")), **({"help": v["help"]} if v.get("help") else {})}
-                 for v in state["views"]]
+        views = []
+        for v in state["views"]:
+            item = {"name": v["name"], "label": v["label"], "components": v["rows"],
+                    "ready_made": bool(v.get("preset"))}
+            if v.get("help"):
+                item["help"] = v["help"]
+            if by_assistant(v):
+                item.update(saved_by_you=True, runs=view_runs(v), question=v.get("question", ""),
+                            explanation=explanation(v))
+            views.append(item)
         return {"run_id": run_id, "components": components, "views": views,
                 "open_view": state["current"]}
 
@@ -974,33 +1037,130 @@ class Tools:
             result["_images"] = images
         return result
 
-    def _set_view(self, workflow_dir: Path, entry: dict, view, components) -> str:
-        from src.layout_manager.layout import load_views, save_views, validate_layout
+    def _views_state(self, workflow_dir: Path, entry: dict):
+        from src.layout_manager.layout import load_views
         cat = self._catalog(entry)
         default = cat["presets"][0]["layout"] if cat["presets"] else [[c["name"]] for c in cat["components"]]
         path = Path(workflow_dir, cat["layout"])
-        state = load_views(path, cat["components"], cat["presets"], default)
-        if view is not None:
-            if view not in {v["name"] for v in state["views"]}:
-                raise ToolError(f"No view {view!r}. See list_result_views.")
-            state["current"] = view
-        else:
-            if isinstance(components, list) and components and all(isinstance(c, str) for c in components):
-                components = [[c] for c in components]
-            problem = validate_layout([components], cat["components"])
-            if problem:
-                raise ToolError(f"Cannot show these components: {problem}.")
-            mine = {"name": self.ASSISTANT_VIEW, "label": "From the assistant",
-                    "rows": [list(r) for r in components], "preset": False, "in_bar": True}
-            state["views"] = [v for v in state["views"] if v["name"] != self.ASSISTANT_VIEW]
-            state["views"].insert(sum(v.get("in_bar", True) for v in state["views"]), mine)
-            state["current"] = self.ASSISTANT_VIEW
-            view = self.ASSISTANT_VIEW
-        save_views(path, state)
-        return view
+        return cat, path, load_views(path, cat["components"], cat["presets"], default)
 
-    def _show_in_app(self, workflow, page="results", run_id=None, note="", view=None,
-                     components=None) -> dict:
+    def _save_view(self, workflow, label, components, question, explanation, runs=None,
+                   side_by_side=False, defaults=None, name=None) -> dict:
+        from src.layout_manager.layout import (ASSISTANT, MAX_POINTS, by_assistant, clean_defaults,
+                                               missing_analyses, save_views, validate_layout)
+        workflow, entry, workflow_dir = self._workflow(workflow)
+        cat, path, state = self._views_state(workflow_dir, entry)
+        label = " ".join(str(label or "").split())
+        if not label or len(label) > 60:
+            raise ToolError("label is one to 60 characters.")
+        if not isinstance(question, str) or not question.strip():
+            raise ToolError("question is the person's question, in their words.")
+        if isinstance(explanation, str):
+            explanation = [explanation]
+        if (not isinstance(explanation, list) or not 1 <= len(explanation) <= MAX_POINTS
+                or not all(isinstance(p, str) and p.strip() for p in explanation)):
+            raise ToolError(f"explanation is a list of one to {MAX_POINTS} points.")
+        if any(len(p) > 300 for p in explanation):
+            raise ToolError("Keep each point of the explanation to one sentence (300 characters).")
+        if isinstance(components, list) and components and all(isinstance(c, str) for c in components):
+            components = [[c] for c in components]
+        problem = validate_layout([components], cat["components"])
+        if problem:
+            raise ToolError(f"Cannot show these components: {problem.replace('Experiment 1', 'The view')}.")
+        rows = [list(r) for r in components]
+
+        if self._multi_run(entry):
+            if runs is None:
+                runs = [runner._runs(workflow_dir).latest()] if runner._runs(workflow_dir).latest() else []
+            if (not isinstance(runs, list) or not 1 <= len(runs) <= 5
+                    or not all(isinstance(r, str) for r in runs) or len(set(runs)) != len(runs)):
+                raise ToolError("runs lists one to five different runs from list_runs.")
+            manager = runner._runs(workflow_dir)
+            for run in runs:
+                info = manager.get(run)
+                if info is None:
+                    raise ToolError(f"No run {run!r}. See list_runs.")
+                if info.get("status") != "finished":
+                    raise ToolError(f"Run {run!r} is {info.get('status')}; show finished runs only.")
+                have = look.available(cat["class"], workflow_dir, run)
+                lacking = missing_analyses([n for r in rows for n in r], cat["components"], have)
+                if lacking:
+                    raise ToolError(f"Run {run!r} was not processed with {', '.join(lacking)}, "
+                                    "which these components need; add it with follow_up.")
+        elif runs:
+            raise ToolError("This workflow keeps one result set; leave runs out.")
+        else:
+            runs = []
+        if side_by_side and len(runs) != 2:
+            raise ToolError("side_by_side shows exactly two runs.")
+        if defaults is not None:
+            if not isinstance(defaults, list) or len(defaults) > max(1, len(runs)):
+                raise ToolError("defaults has one entry per run, in the order of runs.")
+            defaults = [dict(d, dataset=runs[i]) if isinstance(d, dict) and runs else d
+                        for i, d in enumerate(defaults)]
+            defaults = clean_defaults(defaults)
+
+        views = state["views"]
+        if name is not None:
+            mine = next((v for v in views if v["name"] == name), None)
+            if mine is None or not by_assistant(mine):
+                raise ToolError(f"{name!r} is not a view you saved. See list_result_views.")
+        else:
+            taken = {v["name"] for v in views}
+            name = next(f"{self.ASSISTANT_VIEW}-{n}" for n in range(1, len(taken) + 2)
+                        if f"{self.ASSISTANT_VIEW}-{n}" not in taken)
+            mine = None
+        if label.lower() in {v["label"].lower() for v in views if v["name"] != name}:
+            raise ToolError(f"A view is called {label!r} already; give this one another label.")
+        question = " ".join(question.split())[:500]
+        view = {"name": name, "label": label, "rows": rows, "preset": False, "in_bar": True,
+                "by": ASSISTANT, "question": question,
+                "explanation": [" ".join(p.split()) for p in explanation],
+                "created": time.strftime("%Y-%m-%dT%H:%M:%S")}
+        if runs:
+            view["runs"] = list(runs)
+        if defaults:
+            view["defaults"] = defaults
+        # Views of an earlier question go to More; this answer's stay in the bar
+        for v in views:
+            if by_assistant(v) and v["name"] != name and v.get("question") != question:
+                v["in_bar"] = False
+        if mine is not None:
+            views[views.index(mine)] = view
+        else:
+            views.insert(sum(v.get("in_bar", True) for v in views), view)
+        state.update(current=name, experiments=max(1, len(runs)), side_by_side=bool(side_by_side))
+        save_views(path, state)
+        return {"view": name, "label": label, "runs": list(runs), "components": rows,
+                "note": "Open it with show_in_app(view=...)."}
+
+    def _delete_view(self, workflow, name) -> dict:
+        from src.layout_manager.layout import by_assistant, save_views
+        workflow, entry, workflow_dir = self._workflow(workflow)
+        _, path, state = self._views_state(workflow_dir, entry)
+        mine = next((v for v in state["views"] if v["name"] == name), None)
+        if mine is None or not by_assistant(mine):
+            raise ToolError(f"{name!r} is not a view you saved; only those can be deleted.")
+        state["views"].remove(mine)
+        if state["current"] == name:
+            state.update(current=state["views"][0]["name"], experiments=1, side_by_side=False)
+        save_views(path, state)
+        return {"deleted": name}
+
+    def _open_view(self, workflow_dir: Path, entry: dict, view: str) -> dict:
+        from src.layout_manager.layout import save_views
+        _, path, state = self._views_state(workflow_dir, entry)
+        chosen = next((v for v in state["views"] if v["name"] == view), None)
+        if chosen is None:
+            raise ToolError(f"No view {view!r}. See list_result_views.")
+        runs = chosen.get("runs") or []
+        state.update(current=view, experiments=max(1, len(runs)) if runs else 1)
+        if not runs:
+            state["side_by_side"] = False
+        save_views(path, state)
+        return chosen
+
+    def _show_in_app(self, workflow, page="results", run_id=None, note="", view=None) -> dict:
         workflow, entry, workflow_dir = self._workflow(workflow)
         if page not in ("configure", "run", "results"):
             raise ToolError("page must be configure, run or results.")
@@ -1014,17 +1174,17 @@ class Tools:
                 raise ToolError(f"No run {run_id!r}. See list_runs.")
         if not isinstance(note, str):
             raise ToolError("note must be text.")
-        shown_view = None
-        if view is not None or components is not None:
+        if view is not None:
             if page != "results":
-                raise ToolError("view and components are for the results page.")
-            shown_view = self._set_view(workflow_dir, entry, view, components)
+                raise ToolError("view is for the results page.")
+            chosen = self._open_view(workflow_dir, entry, view)
+            if run_id is None and chosen.get("runs"):
+                run_id = chosen["runs"][0]
         request = show.write(self.workspace, {"workflow": workflow, "page": page,
                                               "page_file": page_file, "run_id": run_id,
                                               "note": note.strip()[:500]})
-        return {"shown": True, "page": page, "run_id": run_id, "view": shown_view, "id": request["id"],
+        return {"shown": True, "page": page, "run_id": run_id, "view": view, "id": request["id"],
                 "link": self._page_link(page_file)}
-
 
 def _coerce(value, typ: str):
     if typ == "bool":

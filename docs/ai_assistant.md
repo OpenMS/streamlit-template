@@ -39,7 +39,7 @@ summarize the results".
 | Run | change settings, apply presets, start a run with chosen files, follow it, read its log, stop it |
 | Look at results | every table and plot of a run's Results page as you see it: a table's size, columns, value ranges and first rows, a plot's axes and data (and the picture where the server can draw one), and what a plot shows for rows picked in a table |
 | Result files | list runs and result files, read tables page by page, download files, read the processing report |
-| Show you | open the configure, run or results page in the app you have open, with a run picked, a view of the Results page (a ready-made one, or one it puts together from the tables and plots it talks about) and a note on what to look at |
+| Show you | save views of the Results page that show what its answer rests on (the tables and plots, up to five runs side by side or one below the other, what each opens zoomed to, selected and annotated, and up to five points of explanation), and open the configure, run or results page in the app you have open with a note on what to look at |
 | Hand over | give you a link that opens the workspace on the configure, run or results page |
 
 ## Follow along
@@ -47,10 +47,17 @@ summarize the results".
 Keep the app open in the workspace while the assistant works. Whenever it has
 something to show you (the settings it chose, the run it started, the result it
 is talking about) the app opens that page by itself, picks that run and shows
-the assistant's note. A view it puts together is added to the Results page's
-view bar as **From the assistant**, so you can come back to it and change it
-like your own. The assistant's next view replaces it, so copy it with **+**
-before you change it if you want to keep it. It shows only what the assistant decides to show; the
+the assistant's note.
+
+The views an assistant saves for an answer are added to the Results page's
+view bar with 🤖. Above its tables and plots a view shows your question and
+the assistant's explanation, and each run it compares is drawn under its name.
+The view opens with the zoom, selection and annotations the assistant chose;
+↺ brings them back after you changed them. You cannot change an assistant's
+view, but you can duplicate it (✏️, **Duplicate to edit**) or delete it. The
+views of the newest answer are in the bar; those of earlier questions move to
+**More**. An assistant changes or deletes only views it saved itself.
+It shows only what the assistant decides to show; the
 rest of its work stays out of your way. Turn **Follow the assistant** off in
 the sidebar's **AI assistant** panel to keep the page you are on.
 

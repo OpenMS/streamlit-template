@@ -824,3 +824,46 @@ def test_annotations_kept_and_applied_only_for_their_dataset():
     elsewhere = State()
     apply_defaults(elsewhere, entry, "run2")
     assert elsewhere == {}
+
+
+def test_assistant_views_are_read_only_and_explain_themselves(tmp_path):
+    from src.layout_manager.layout import by_assistant, explanation, load_views, read_only, save_views, view_runs
+    path = tmp_path / "viewer.json"
+    state = load_views(path, COMPONENTS, VIEWS, DEFAULT)
+    mine = {"name": "custom-assistant-1", "label": "Compared", "rows": [["plot"]], "preset": False,
+            "in_bar": True, "by": "assistant", "runs": ["r1", "r2", "r1"], "question": "Which is larger?",
+            "explanation": ["Run r1 has 12 features.", "Run r2 has 9."]}
+    state["views"].append(mine)
+    state.update(current=mine["name"], experiments=2)
+    save_views(path, state)
+    view = {v["name"]: v for v in load_views(path, COMPONENTS, VIEWS, DEFAULT)["views"]}[mine["name"]]
+    assert by_assistant(view) and read_only(view) and view_runs(view) == ["r1", "r2"]
+    assert explanation(view) == mine["explanation"]
+
+    at = AppTest.from_string(_BAR_APP.format(components=COMPONENTS, presets=VIEWS, default=DEFAULT))
+    at.session_state["path"] = str(path)
+    at.run()
+    assert not at.exception
+    assert at.markdown[0].value == "**Question:** Which is larger?"
+    assert at.markdown[1].value == "- Run r1 has 12 features.\n- Run r2 has 9."
+    assert at.caption[-1].value == "From the AI assistant · Runs: r1, r2"
+    # The editor sends an assistant's view back by name only; it stays as it was
+    at.session_state["vb_bar"] = {"action": "edit", "nonce": 1}
+    at.run()
+    at.session_state["vb_editor"] = {
+        "action": "save", "nonce": 2, "current": "all", "experiments": 1, "side_by_side": False,
+        "views": [{"name": "all", "in_bar": True}, {"name": "plots", "in_bar": True},
+                  {"name": "custom-assistant-1", "in_bar": False}]}
+    at.run()
+    assert not at.exception
+    view = {v["name"]: v for v in load_views(path, COMPONENTS, VIEWS, DEFAULT)["views"]}[mine["name"]]
+    assert view["rows"] == [["plot"]] and view["by"] == "assistant" and not view["in_bar"]
+    # ... and the person may delete it
+    at.session_state["vb_bar"] = {"action": "edit", "nonce": 3}
+    at.run()
+    at.session_state["vb_editor"] = {
+        "action": "save", "nonce": 4, "current": "all", "experiments": 1, "side_by_side": False,
+        "views": [{"name": "all", "in_bar": True}, {"name": "plots", "in_bar": True}]}
+    at.run()
+    assert not at.exception
+    assert mine["name"] not in {v["name"] for v in load_views(path, COMPONENTS, VIEWS, DEFAULT)["views"]}

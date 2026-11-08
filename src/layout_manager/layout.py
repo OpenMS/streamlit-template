@@ -203,6 +203,44 @@ CUSTOM_PREFIX = "custom-"
 # the AI assistant carry them ("by": "assistant", the runs shown, ...)
 VIEW_EXTRAS = ("by", "runs", "explanation", "question", "created")
 
+# A view an AI assistant saved (``"by": "assistant"``): read-only for the
+# person, like a ready-made view, and it may show several runs and an
+# explanation of at most MAX_POINTS points.
+ASSISTANT = "assistant"
+MAX_POINTS = 5
+
+
+def by_assistant(view: Optional[Dict[str, Any]]) -> bool:
+    """Whether ``view`` is one an AI assistant saved."""
+    return bool(view) and view.get("by") == ASSISTANT
+
+
+def read_only(view: Optional[Dict[str, Any]]) -> bool:
+    """Whether the person can only duplicate ``view``: a ready-made or an assistant's view."""
+    return bool(view) and (bool(view.get("preset")) or by_assistant(view))
+
+
+def view_runs(view: Optional[Dict[str, Any]]) -> List[str]:
+    """The runs ``view`` shows ([] for a view of whatever run is picked)."""
+    runs = (view or {}).get("runs")
+    if not isinstance(runs, list):
+        return []
+    out: List[str] = []
+    for run in runs:
+        if isinstance(run, str) and run and run not in out:
+            out.append(run)
+    return out[:MAX_EXPERIMENTS]
+
+
+def explanation(view: Optional[Dict[str, Any]]) -> List[str]:
+    """The points ``view`` explains itself with ([] for none)."""
+    points = (view or {}).get("explanation")
+    if isinstance(points, str):
+        points = [points]
+    if not isinstance(points, list):
+        return []
+    return [str(p).strip() for p in points if str(p).strip()][:MAX_POINTS]
+
 
 def _presets_or_default(presets: Sequence[Dict[str, Any]], default_layout) -> List[Dict[str, Any]]:
     if presets:

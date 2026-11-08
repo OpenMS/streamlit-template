@@ -432,7 +432,7 @@
       return h('div', { class: 'vitem' + (v.name === draft.sel ? ' sel' : ''), 'data-drag': 'view', 'data-drop': 'view', 'data-name': v.name, title: v.help || '' }, [
         h('span', { class: 'grip', text: '⋮⋮' }),
         h('span', { class: 'vname', text: v.label }),
-        v.preset ? h('span', { class: 'tag', text: 'ready-made' }) : null,
+        v.preset ? h('span', { class: 'tag', text: v.assistant ? 'from the assistant' : 'ready-made' }) : null,
         h('input', { type: 'checkbox', checked: v.in_bar, title: v.in_bar ? 'In the bar' : 'Only in More', 'aria-label': 'Show ' + v.label + ' in the bar',
                      onchange: function (ev) { moveView(v.name, null, ev.target.checked); } })
       ]);
@@ -452,9 +452,15 @@
     if (v.preset) return h('div', null, [
       h('div', { class: 'vhead' }, [
         h('strong', { text: v.label }),
-        h('button', { class: 'btn primary', onclick: function () { addView(v.label + ' (copy)', clone(v.rows), v); } }, ['Duplicate to edit'])
+        h('button', { class: 'btn primary', onclick: function () { addView(v.label.replace(/^\u{1F916} /u, '') + ' (copy)', clone(v.rows), v); } }, ['Duplicate to edit']),
+        v.assistant ? h('button', { class: 'btn', disabled: !others, onclick: function () {
+          var i = draft.views.indexOf(v); draft.views.splice(i, 1);
+          draft.sel = (draft.views[i] || draft.views[i - 1]).name; changed();
+        } }, ['Delete']) : null
       ]),
-      h('div', { class: 'readonly', text: 'A ready-made view can be reordered or kept out of the bar, but not changed.' + (v.help ? ' ' + v.help : '') })
+      h('div', { class: 'readonly', text: v.assistant
+        ? 'The AI assistant made this view. It can be reordered, kept out of the bar or deleted; duplicate it to change it.' + (v.help ? ' ' + v.help + '.' : '')
+        : 'A ready-made view can be reordered or kept out of the bar, but not changed.' + (v.help ? ' ' + v.help : '') })
     ]);
     var head = h('div', { class: 'vhead' }, [
       h('input', { type: 'text', id: 'view-name', value: v.label, 'aria-label': 'Name of the view', onchange: function (ev) { v.label = ev.target.value; changed(); } }),
