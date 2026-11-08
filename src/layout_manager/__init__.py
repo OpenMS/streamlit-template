@@ -48,7 +48,10 @@ with the same offer for such a component in a view of the user's own.
 Pass ``view_bar(states=lambda i: experiment_state(...))`` and give each
 Insight plot ``zoom_identifier=zoom_identifier(name)``: a view of the user's
 own then keeps the zoom and selection of each experiment as its defaults
-(📌 stores them, ↺ brings them back, opening the view applies them).
+(📌 stores them, ↺ brings them back, opening the view applies them). Only
+plots of an openms-insight whose constructor takes ``zoom_identifier`` keep
+their zoom there; check the signature before passing it. A preset may ship
+``defaults`` of its own.
 
 ``layout_presets`` is the earlier, simpler selector of presets.
 

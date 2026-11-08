@@ -353,10 +353,15 @@ def views_editor(
     if submitted and submitted.get("nonce") != st.session_state.get(handled_key):
         st.session_state[handled_key] = submitted.get("nonce")
         if submitted.get("action") == "save":
+            state = load_views(path, components, presets, default_layout)
+            by_name = {v["name"]: v for v in state["views"]}
+            for sent in submitted.get("views") or []:
+                # A view the assistant made is read-only like a ready-made one: its stored label and rows count
+                stored = by_name.get(sent.get("name")) if isinstance(sent, dict) else None
+                if stored and stored.get("by") == "assistant":
+                    sent.update(label=stored["label"], rows=stored["rows"])
             error = validate_views(submitted, components, presets, default_layout, max_experiments, max_columns)
             if not error:
-                state = load_views(path, components, presets, default_layout)
-                by_name = {v["name"]: v for v in state["views"]}
                 views = []
                 for sent in submitted["views"]:
                     view = dict(by_name.get(sent["name"], {}))
@@ -397,7 +402,8 @@ def views_editor(
         default_layout=default_layout,
         saved_layout=None,
         side_by_side=state["side_by_side"],
-        views=state["views"],
+        # The assistant's views are locked like ready-made ones (Duplicate to edit)
+        views=[dict(v, preset=True) if v.get("by") == "assistant" else v for v in state["views"]],
         current=state["current"],
         experiments=state["experiments"],
         fresh=fresh,
@@ -616,7 +622,7 @@ def _defaults_actions(view: Optional[Dict[str, Any]], states: Callable[[int], An
     actions: List[Dict[str, Any]] = []
     if has_defaults(view):
         changed = any(
-            entry and differs_from_defaults(states(i).get_all_selections(), entry, _dataset_of(datasets, i))
+            entry and differs_from_defaults(_stored(states(i)), entry, _dataset_of(datasets, i))
             for i, entry in enumerate((view.get("defaults") or [])[:experiments]))
         actions.append({
             "id": _RESTORE_DEFAULTS, "icon": "↺",
@@ -665,7 +671,7 @@ def _defaults_dialog(key: str, path: Path, view: Dict[str, Any], components, pre
     @st.dialog("Zoom and selection of this view", on_dismiss=_closed)
     def _dialog() -> None:
         labels = {c["name"]: c["label"] for c in components}
-        captured = [capture_defaults(states(i).get_all_selections(), _dataset_of(datasets, i))
+        captured = [capture_defaults(_stored(states(i)), _dataset_of(datasets, i))
                     for i in range(experiments)]
         st.markdown(f"Opening **{view['label']}** will show this again; ↺ in the bar brings it back "
                     "after you change it.")
@@ -841,6 +847,12 @@ def experiment_state(
     return _private_state(StateManager)(name, {i: f"{i}@{owner}" for i in private})
 
 
+def _stored(state: Any) -> Dict[str, Any]:
+    """All of an experiment's selections, those a component keeps apart (``row@table``) too."""
+    stored = getattr(state, "stored_selections", None)
+    return stored() if callable(stored) else state.get_all_selections()
+
+
 def _private_state(base: type) -> type:
     """A ``StateManager`` that keeps some identifiers apart under other names."""
 
@@ -872,6 +884,10 @@ def _private_state(base: type) -> type:
 
         def get_all_selections(self) -> Dict[str, Any]:
             return self._from_store(super().get_all_selections())
+
+        def stored_selections(self) -> Dict[str, Any]:
+            """Every identifier as stored, those kept apart for a component too."""
+            return super().get_all_selections()
 
         def get_state_for_vue(self) -> Dict[str, Any]:
             return self._from_store(super().get_state_for_vue())
