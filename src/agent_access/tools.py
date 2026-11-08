@@ -391,6 +391,28 @@ class Tools:
             logger.exception("cannot import %s", entry["class"])
             raise ToolError(f"The workflow class {entry['class']} cannot be loaded.")
 
+    def _class(self, entry: dict):
+        module, _, cls = entry["class"].partition(":")
+        try:
+            return getattr(importlib.import_module(module), cls)
+        except Exception:  # noqa: BLE001 - a class that does not import cannot run either
+            logger.exception("cannot import %s", entry["class"])
+            raise ToolError(f"The workflow class {entry['class']} cannot be loaded.")
+
+    def _runs_of(self, entry: dict, workflow_dir: Path):
+        """The workflow's result sets, or None when it keeps one.
+
+        A multi-run workflow keeps them in run folders (``RunManager``). A
+        workflow that stores its results elsewhere (a cache of datasets, for
+        example) gives a class method ``results_store(workflow_dir)``
+        returning an object with the same ``list_runs()``, ``get(id)``,
+        ``latest()`` and ``results_dir(id)``.
+        """
+        store = getattr(self._class(entry), "results_store", None)
+        if callable(store):
+            return store(workflow_dir)
+        return runner._runs(workflow_dir) if self._multi_run(entry) else None
+
     def _input_keys(self, entry: dict, workflow_dir: Path, params: dict) -> dict[str, list]:
         """Input -> allowed file types (empty: any)."""
         keys = {k: self._input_types.get(k, []) for k in self._class_inputs.get(entry["class"], [])}
@@ -459,9 +481,9 @@ class Tools:
         return describe.prepare(self.app_root, self.workspace, entry["configure_page"], self.online)
 
     def _results_dir(self, workflow_dir: Path, entry: dict, run_id) -> tuple[Path, str | None]:
-        if not self._multi_run(entry):
+        runs = self._runs_of(entry, workflow_dir)
+        if runs is None:
             return Path(workflow_dir, "results"), None
-        runs = runner._runs(workflow_dir)
         if run_id is None:
             run_id = runs.latest()
             if run_id is None:
@@ -885,12 +907,12 @@ class Tools:
 
     def _list_runs(self, workflow) -> dict:
         workflow, entry, workflow_dir = self._workflow(workflow)
-        if not self._multi_run(entry):
+        runs = self._runs_of(entry, workflow_dir)
+        if runs is None:
             results = Path(workflow_dir, "results")
             has = results.is_dir() and any(results.iterdir())
             return {"multi_run": False, "runs": [{"id": None, "name": "Last run",
                                                   "has_results": has}] if has else []}
-        runs = runner._runs(workflow_dir)
         return {"multi_run": True, "runs": [
             {k: r.get(k) for k in ("id", "name", "status", "created", "finished", "adds_to",
                                    "purpose") if r.get(k)}
@@ -1069,13 +1091,13 @@ class Tools:
             raise ToolError(f"Cannot show these components: {problem.replace('Experiment 1', 'The view')}.")
         rows = [list(r) for r in components]
 
-        if self._multi_run(entry):
+        manager = self._runs_of(entry, workflow_dir)
+        if manager is not None:
             if runs is None:
-                runs = [runner._runs(workflow_dir).latest()] if runner._runs(workflow_dir).latest() else []
+                runs = [manager.latest()] if manager.latest() else []
             if (not isinstance(runs, list) or not 1 <= len(runs) <= 5
                     or not all(isinstance(r, str) for r in runs) or len(set(runs)) != len(runs)):
                 raise ToolError("runs lists one to five different runs from list_runs.")
-            manager = runner._runs(workflow_dir)
             for run in runs:
                 info = manager.get(run)
                 if info is None:
@@ -1168,9 +1190,10 @@ class Tools:
         if not page_file:
             raise ToolError(f"This app names no {page} page for {workflow}.")
         if run_id is not None:
-            if not self._multi_run(entry):
+            runs = self._runs_of(entry, workflow_dir)
+            if runs is None:
                 raise ToolError("This workflow keeps one result set; leave run_id out.")
-            if not isinstance(run_id, str) or runner._runs(workflow_dir).get(run_id) is None:
+            if not isinstance(run_id, str) or runs.get(run_id) is None:
                 raise ToolError(f"No run {run_id!r}. See list_runs.")
         if not isinstance(note, str):
             raise ToolError("note must be text.")

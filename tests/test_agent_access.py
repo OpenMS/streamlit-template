@@ -751,3 +751,48 @@ def test_sync_sidebar_needs_no_page_registry(tmp_path):
     at.session_state["developer-mode"] = True
     at.run()
     assert not at.exception, at.exception[0].message if at.exception else ""
+
+
+def test_results_kept_elsewhere_through_a_results_store(tmp_path, monkeypatch):
+    """An app that keeps its results in a cache of datasets, not run folders,
+    lists them as runs through the class's results_store."""
+    from src.Workflow import Workflow
+
+    ws = tmp_path / "ws"
+    cache = ws / "cache" / "files"
+    for name in ("run_a", "run_b"):
+        Path(cache, name).mkdir(parents=True)
+        Path(cache, name, "masses.tsv").write_text("mass\tintensity\n1000.5\t20\n2000.1\t5\n")
+
+    class Store:
+        def __init__(self, workflow_dir):
+            self.root = Path(workflow_dir).parent / "cache" / "files"
+
+        def list_runs(self):
+            return [{"id": p.name, "name": p.name.upper(), "status": "finished"}
+                    for p in sorted(self.root.iterdir())]
+
+        def get(self, run_id):
+            return next((r for r in self.list_runs() if r["id"] == run_id), None)
+
+        def latest(self):
+            runs = self.list_runs()
+            return runs[-1]["id"] if runs else None
+
+        def results_dir(self, run_id):
+            return self.root / run_id
+
+    monkeypatch.setattr(Workflow, "results_store", staticmethod(Store), raising=False)
+    tools = Tools(Path.cwd(), ws, agent_settings(SETTINGS))
+    runs = tools.call("list_runs", {"workflow": WF})
+    assert [r["id"] for r in runs["runs"]] == ["run_a", "run_b"]
+    assert tools.call("list_results", {"workflow": WF})["run_id"] == "run_b"
+    table = tools.call("read_result", {"workflow": WF, "run_id": "run_a", "path": "masses.tsv"})
+    assert table["rows"][0]["mass"] == 1000.5
+    with pytest.raises(Exception):
+        tools.call("read_result", {"workflow": WF, "run_id": "run_c", "path": "masses.tsv"})
+    view = tools.call("save_view", {
+        "workflow": WF, "label": "Both runs", "components": [["features"]],
+        "runs": ["run_a", "run_b"], "side_by_side": True, "question": "Which has more masses?",
+        "explanation": ["Both runs side by side."]})
+    assert view["runs"] == ["run_a", "run_b"]
