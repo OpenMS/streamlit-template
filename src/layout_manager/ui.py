@@ -22,6 +22,7 @@ from src.layout_manager.layout import (
     apply_defaults,
     apply_preset,
     capture_defaults,
+    has_own_defaults,
     differs_from_defaults,
     has_defaults,
     join_labels,
@@ -602,12 +603,12 @@ _RESTORE_DEFAULTS = "_restore_view_defaults"
 
 
 def _keeps_defaults(view: Optional[Dict[str, Any]]) -> bool:
-    """Whether the user can store a zoom and selection on ``view``.
+    """Whether the user can store a zoom and selection on ``view``: on every view.
 
-    Not on a ready-made view, nor on one the AI assistant made: those are
-    read-only (Duplicate to edit).
+    A ready-made view and one the AI assistant made stay read-only in the
+    editor, but keep the zoom and selection the user pins on them.
     """
-    return bool(view) and not view.get("preset") and view.get("by") != "assistant"
+    return bool(view)
 
 
 def _dataset_of(datasets: Optional[Callable[[int], Optional[str]]], index: int) -> Optional[str]:
@@ -696,8 +697,10 @@ def _defaults_dialog(key: str, path: Path, view: Dict[str, Any], components, pre
             st.session_state[f"{key}_defaults_applied"] = view["name"]
             _closed()
             st.rerun()
-        if has_defaults(view) and remove_col.button("Remove the saved ones", key=f"{key}_defaults_remove",
-                                                    width="stretch"):
+        fallback = view.get("preset") or view.get("by") == "assistant"
+        if has_own_defaults(view) and remove_col.button(
+                "Back to the view's own" if fallback else "Remove the saved ones",
+                key=f"{key}_defaults_remove", width="stretch"):
             set_view_defaults(path, view["name"], None, components, presets, default_layout)
             _closed()
             st.rerun()

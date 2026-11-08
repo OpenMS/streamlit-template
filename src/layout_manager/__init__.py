@@ -46,12 +46,13 @@ bring in another run). ``render_layout``/``render_experiments`` draw a note
 with the same offer for such a component in a view of the user's own.
 
 Pass ``view_bar(states=lambda i: experiment_state(...))`` and give each
-Insight plot ``zoom_identifier=zoom_identifier(name)``: a view of the user's
-own then keeps the zoom and selection of each experiment as its defaults
-(📌 stores them, ↺ brings them back, opening the view applies them). Only
+Insight plot ``zoom_identifier=zoom_identifier(name)``: every view, a
+ready-made or the assistant's too, then keeps the zoom and selection of each
+experiment as its defaults (📌 stores them, ↺ brings them back, opening the
+view applies them; on a ready-made view they replace the ones it ships with). Only
 plots of an openms-insight whose constructor takes ``zoom_identifier`` keep
 their zoom there; check the signature before passing it. A preset may ship
-``defaults`` of its own.
+``defaults`` of its own, which come back when the user removes theirs.
 
 ``layout_presets`` is the earlier, simpler selector of presets.
 
@@ -72,6 +73,7 @@ from src.layout_manager.layout import (
     clean_defaults,
     differs_from_defaults,
     has_defaults,
+    has_own_defaults,
     clear_layout,
     load_layout,
     load_views,
@@ -118,6 +120,7 @@ __all__ = [
     "differs_from_defaults",
     "experiment_state",
     "has_defaults",
+    "has_own_defaults",
     "layout_button",
     "layout_editor",
     "layout_presets",

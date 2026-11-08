@@ -201,7 +201,7 @@ def apply_preset(path: Path, rows: List[List[str]]) -> None:
 CUSTOM_PREFIX = "custom-"
 # Keys of a view of the user's own that are kept as they are: views made by
 # the AI assistant carry them ("by": "assistant", the runs shown, ...)
-VIEW_EXTRAS = ("by", "runs", "explanation", "question", "created")
+VIEW_EXTRAS = ("by", "runs", "explanation", "question", "created", "original_defaults")
 
 
 def _presets_or_default(presets: Sequence[Dict[str, Any]], default_layout) -> List[Dict[str, Any]]:
@@ -226,14 +226,18 @@ def load_views(
     known = {c["name"] for c in components}
     by_name = {p["name"]: p for p in presets}
 
-    def preset_view(p: Dict[str, Any], in_bar: bool = True) -> Dict[str, Any]:
+    def preset_view(p: Dict[str, Any], in_bar: bool = True,
+                    stored: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         view = {"name": p["name"], "label": p.get("label", p["name"]),
                 "rows": _known_rows(p["layout"], known), "preset": True, "in_bar": in_bar}
         if p.get("help"):
             view["help"] = p["help"]
-        defaults = clean_defaults(p.get("defaults"))
-        if defaults:  # zoom and selection the page ships with the view
+        own = clean_defaults((stored or {}).get("defaults"))
+        defaults = own or clean_defaults(p.get("defaults"))
+        if defaults:  # zoom and selection the user pinned, else those the page ships with the view
             view["defaults"] = defaults
+        if own:
+            view["own_defaults"] = True
         return view
 
     try:
@@ -255,7 +259,7 @@ def load_views(
             continue
         in_bar = bool(entry.get("in_bar", True))
         if name in by_name:
-            views.append(preset_view(by_name[name], in_bar))
+            views.append(preset_view(by_name[name], in_bar, entry))
         elif name.startswith(CUSTOM_PREFIX) and isinstance(entry.get("rows"), list):
             rows = _known_rows([r for r in entry["rows"] if isinstance(r, list)], known)
             if not rows:
@@ -306,6 +310,9 @@ def save_views(path: Path, state: Dict[str, Any]) -> None:
             entry.update({k: v[k] for k in VIEW_EXTRAS if k in v})
             if v.get("defaults"):
                 entry["defaults"] = v["defaults"]
+        elif v.get("own_defaults") and v.get("defaults"):
+            # Zoom and selection the user pinned on a ready-made view
+            entry["defaults"] = v["defaults"]
         stored.append(entry)
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -674,18 +681,46 @@ def set_view_defaults(
     presets: Sequence[Dict[str, Any]],
     default_layout: List[List[str]],
 ) -> bool:
-    """Store ``defaults`` (None or [] removes them) on the view ``name``.
+    """Store ``defaults`` (None or [] removes them) on the view ``name``; False if there is none.
 
-    False if there is no such view or it is a ready-made one, which keeps none.
+    Every view keeps them, read-only ones too. On a ready-made view they replace
+    the zoom and selection the page ships with it, which come back when they
+    are removed; on a view the assistant made, the assistant's come back.
     """
     state = load_views(path, components, presets, default_layout)
     view = next((v for v in state["views"] if v["name"] == name), None)
-    if view is None or view.get("preset"):
+    if view is None:
         return False
     cleaned = clean_defaults(defaults)
-    if cleaned:
+    if view.get("preset"):
+        if cleaned:
+            view.update(defaults=cleaned, own_defaults=True)
+        else:
+            shipped = next((p for p in _presets_or_default(presets, default_layout) if p["name"] == name), {})
+            view.pop("own_defaults", None)
+            view.pop("defaults", None)
+            if clean_defaults(shipped.get("defaults")):
+                view["defaults"] = clean_defaults(shipped.get("defaults"))
+    elif cleaned:
+        if view.get("by") == "assistant" and "original_defaults" not in view:
+            # The assistant's own come back when the user's are removed
+            view["original_defaults"] = view.get("defaults") or []
         view["defaults"] = cleaned
     else:
-        view.pop("defaults", None)
+        original = clean_defaults(view.pop("original_defaults", None))
+        if original:
+            view["defaults"] = original
+        else:
+            view.pop("defaults", None)
     save_views(path, state)
     return True
+
+
+def has_own_defaults(view: Optional[Dict[str, Any]]) -> bool:
+    """Whether ``view`` holds a zoom and selection the user pinned (📌), which can be removed."""
+    view = view or {}
+    if view.get("preset"):
+        return bool(view.get("own_defaults"))
+    if view.get("by") == "assistant":
+        return "original_defaults" in view
+    return has_defaults(view)

@@ -789,7 +789,7 @@ def test_apply_and_compare_defaults():
 
 
 def test_view_extras_and_defaults_round_trip(tmp_path):
-    from src.layout_manager.layout import load_views, save_views, set_view_defaults
+    from src.layout_manager.layout import has_own_defaults, load_views, save_views, set_view_defaults
 
     path = tmp_path / "viewer.json"
     state = load_views(path, COMPONENTS, VIEWS, DEFAULT)
@@ -806,15 +806,38 @@ def test_view_extras_and_defaults_round_trip(tmp_path):
     assert "unknown" not in view
     assert view["defaults"] == [{"selection": {"protein": "P1"}}]
 
-    # Ready-made views keep no defaults; a view of one's own does, and can lose them again
-    assert not set_view_defaults(path, "all", [{"selection": {"a": 1}}], COMPONENTS, VIEWS, DEFAULT)
     assert not set_view_defaults(path, "nope", [{"selection": {"a": 1}}], COMPONENTS, VIEWS, DEFAULT)
+
+    # A view the assistant made: the user's pin replaces its zoom and selection, removing it brings them back
     assert set_view_defaults(path, "custom-1", [{"zoom": {"plot": {"x": [3, 4]}}}], COMPONENTS, VIEWS, DEFAULT)
     view = next(v for v in load_views(path, COMPONENTS, VIEWS, DEFAULT)["views"] if v["name"] == "custom-1")
     assert view["defaults"] == [{"zoom": {"plot": {"x": [3.0, 4.0]}}}]
+    assert has_own_defaults(view)
     assert set_view_defaults(path, "custom-1", None, COMPONENTS, VIEWS, DEFAULT)
     view = next(v for v in load_views(path, COMPONENTS, VIEWS, DEFAULT)["views"] if v["name"] == "custom-1")
-    assert "defaults" not in view
+    assert view["defaults"] == [{"selection": {"protein": "P1"}}]
+    assert not has_own_defaults(view)
+
+    # A ready-made view keeps the user's pin in the views file
+    presets = [dict(VIEWS[0], defaults=[{"selection": {"protein": "SHIPPED"}}]), VIEWS[1]]
+    view = next(v for v in load_views(path, COMPONENTS, presets, DEFAULT)["views"] if v["name"] == "all")
+    assert view["defaults"] == [{"selection": {"protein": "SHIPPED"}}] and not has_own_defaults(view)
+    assert set_view_defaults(path, "all", [{"selection": {"a": 1}}], COMPONENTS, presets, DEFAULT)
+    view = next(v for v in load_views(path, COMPONENTS, presets, DEFAULT)["views"] if v["name"] == "all")
+    assert view["defaults"] == [{"selection": {"a": 1}}] and has_own_defaults(view)
+    stored = json.loads(path.read_text())
+    assert next(v for v in stored["views"] if v["name"] == "all")["defaults"] == [{"selection": {"a": 1}}]
+    # Removing it brings the shipped ones back
+    assert set_view_defaults(path, "all", None, COMPONENTS, presets, DEFAULT)
+    view = next(v for v in load_views(path, COMPONENTS, presets, DEFAULT)["views"] if v["name"] == "all")
+    assert view["defaults"] == [{"selection": {"protein": "SHIPPED"}}] and not has_own_defaults(view)
+    # A ready-made view without shipped ones keeps the pin too, and loses it again
+    assert set_view_defaults(path, "plots", [{"zoom": {"plot": {"x": [1, 2]}}}], COMPONENTS, VIEWS, DEFAULT)
+    view = next(v for v in load_views(path, COMPONENTS, VIEWS, DEFAULT)["views"] if v["name"] == "plots")
+    assert has_own_defaults(view)
+    assert set_view_defaults(path, "plots", None, COMPONENTS, VIEWS, DEFAULT)
+    view = next(v for v in load_views(path, COMPONENTS, VIEWS, DEFAULT)["views"] if v["name"] == "plots")
+    assert "defaults" not in view and not has_own_defaults(view)
 
 
 _DEFAULTS_APP = """
@@ -874,6 +897,45 @@ def test_view_bar_saves_and_restores_zoom_and_selection(tmp_path):
     at.session_state["vb_bar"] = {"action": "pick", "view": "custom-1", "nonce": 5}
     at.run()
     assert at.markdown[-1].value == "custom-1 [('protein', 'P1'), ('zoom@plot', {'x': [1.0, 2.0], 'xRange': [1.0, 2.0], 'yRange': [-1, -1]})]"
+
+
+def test_view_bar_pins_zoom_and_selection_on_a_ready_made_view(tmp_path):
+    from src.layout_manager.layout import load_views
+
+    path = tmp_path / "viewer.json"
+    presets = [dict(VIEWS[0], defaults=[{"selection": {"protein": "SHIPPED"}}]), VIEWS[1]]
+    at = AppTest.from_string(_DEFAULTS_APP.format(
+        tests=str(Path(__file__).parent), components=COMPONENTS, presets=presets, default=DEFAULT))
+    at.session_state["path"] = str(path)
+    at.run()
+    assert not at.exception
+
+    # 📌 on the ready-made view, then Save
+    at.session_state["exp_state_0"] = {"selections": {"protein": "P1", "zoom@plot": {"x": [1, 2]}}}
+    at.session_state["vb_bar"] = {"action": "button", "id": "_save_view_defaults", "nonce": 1}
+    at.run()
+    assert not at.exception
+    at.button(key="vb_defaults_save").click().run()
+    assert not at.exception
+    view = next(v for v in load_views(path, COMPONENTS, presets, DEFAULT)["views"] if v["name"] == "all")
+    assert view["defaults"] == [{"dataset": "run1", "selection": {"protein": "P1"},
+                                 "zoom": {"plot": {"x": [1.0, 2.0]}}}]
+
+    # Another view and back: the pinned state is applied, not the shipped one
+    at.session_state["vb_bar"] = {"action": "pick", "view": "plots", "nonce": 2}
+    at.run()
+    at.session_state["exp_state_0"] = {"selections": {"protein": "P8"}}
+    at.session_state["vb_bar"] = {"action": "pick", "view": "all", "nonce": 3}
+    at.run()
+    assert at.markdown[-1].value.startswith("all [('protein', 'P1')")
+
+    # Back to the view's own: the shipped selection returns
+    at.session_state["vb_bar"] = {"action": "button", "id": "_save_view_defaults", "nonce": 4}
+    at.run()
+    at.button(key="vb_defaults_remove").click().run()
+    assert not at.exception
+    view = next(v for v in load_views(path, COMPONENTS, presets, DEFAULT)["views"] if v["name"] == "all")
+    assert view["defaults"] == [{"selection": {"protein": "SHIPPED"}}]
 
 
 def test_zoom_is_shared_by_a_private_state():
