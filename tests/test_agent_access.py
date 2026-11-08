@@ -148,7 +148,7 @@ def test_http_handshake_and_errors(mcp):
     assert note.status_code == 202
 
     tools = _rpc(mcp, "tools/list").json()["result"]["tools"]
-    assert len(tools) == 20
+    assert len(tools) == 21
     assert {"upload_file", "start_run", "read_result"} <= {t["name"] for t in tools}
 
     assert _rpc(mcp, "nope").json()["error"]["code"] == protocol.METHOD_NOT_FOUND
@@ -543,3 +543,88 @@ def test_assistant_is_a_developer_feature(tmp_path):
     at.run()
     assert at.markdown[0].value == "assistant"
     assert agent_settings({"agent_access": {"enabled": True}})["developer_only"] is True
+
+
+def _assistant_tools(tmp_path, monkeypatch):
+    """Tools of a local workspace whose first run has settings, and starts recorded, not run."""
+    from src.workflow import start
+    from src.workflow.RunManager import FINISHED, RunManager
+    launched = []
+    monkeypatch.setattr(start, "launch_local", lambda *a, **k: launched.append(a))
+    ws = _workspace(tmp_path)
+    wf = ws / WF
+    folder = wf / "input-files" / "mzML-files"
+    for name in ("Control.mzML", "Treatment.mzML", "Extra.mzML"):
+        (folder / name).write_text("<mzML/>")
+    describe.write_params(wf, {"mzML-files": [str(folder / "Control.mzML"), str(folder / "Treatment.mzML")],
+                               "FeatureFinderMetabo": {}})
+    runs = RunManager(wf)
+    base = runs.new_run("Baseline", wf / "params.json")
+    runs.finish(base, FINISHED)
+    tools = Tools(Path.cwd(), ws, agent_settings({**SETTINGS, "online_deployment": False}))
+    return tools, runs, base, launched
+
+
+def test_every_assistant_run_says_why(tmp_path, monkeypatch):
+    from src.agent_access.tools import ToolError
+    from src.workflow.processing_report import report_for, to_markdown
+    tools, runs, _, _ = _assistant_tools(tmp_path, monkeypatch)
+    with pytest.raises(ToolError, match="why"):
+        tools.call("start_run", {"workflow": WF, "question": "Does Treatment carry more signal?",
+                                 "inputs": {"mzML-files": ["Control.mzML"]}})
+    out = tools.call("start_run", {"workflow": WF, "question": "Does Treatment carry more signal?",
+                                   "why": "First pass, defaults",
+                                   "inputs": {"mzML-files": ["Control.mzML", "Treatment.mzML"]}})
+    run_id = out["run_id"]
+    run = runs.get(run_id)
+    assert run["purpose"] == {"by": "AI assistant", "question": "Does Treatment carry more signal?",
+                              "why": "First pass, defaults"}
+    # The next settings, and so a person's next run, start without it
+    assert "_purpose" not in json.loads((runs.workflow_dir / "params.json").read_text())
+    md = to_markdown(report_for(runs.workflow_dir, run_id))
+    assert "| Started by | AI assistant |" in md
+    assert "| Question | Does Treatment carry more signal? |" in md
+    assert "| Why this run | First pass, defaults |" in md
+    listed = tools.call("list_runs", {"workflow": WF})["runs"]
+    assert listed[0]["purpose"]["why"] == "First pass, defaults"
+
+
+def test_follow_up_changes_settings(tmp_path, monkeypatch):
+    from src.workflow.processing_report import report_for
+    tools, runs, base, _ = _assistant_tools(tmp_path, monkeypatch)
+    out = tools.call("follow_up", {
+        "workflow": WF, "run_id": base, "question": "Does Treatment carry more signal?",
+        "why": "The noise floor of these runs is about 8e3",
+        "settings": {"FeatureFinderMetabo:algorithm:common:noise_threshold_int": 10000}})
+    run_id = out["run_id"]
+    params = runs.params(run_id)
+    assert params["FeatureFinderMetabo"]["algorithm:common:noise_threshold_int"] == 10000.0
+    assert [Path(f).name for f in params["mzML-files"]] == ["Control.mzML", "Treatment.mzML"]
+    report = report_for(runs.workflow_dir, run_id)["run"]
+    assert report["follows"] == "Baseline"
+    assert report["purpose"]["why"] == "The noise floor of these runs is about 8e3"
+
+
+def test_follow_up_adds_files_or_an_analysis(tmp_path, monkeypatch):
+    from src.agent_access.tools import ToolError
+    tools, runs, base, _ = _assistant_tools(tmp_path, monkeypatch)
+    q = {"workflow": WF, "run_id": base, "question": "q"}
+    with pytest.raises(ToolError, match="Already in the experiment"):
+        tools.call("follow_up", {**q, "why": "more", "add_files": {"mzML-files": ["Control.mzML"]}})
+    with pytest.raises(ToolError, match="not both"):
+        tools.call("follow_up", {**q, "why": "x", "keep": ["FeatureFinderMetabo"],
+                                 "add_files": {"mzML-files": ["Extra.mzML"]}})
+    with pytest.raises(ToolError, match="Not a tool"):
+        tools.call("follow_up", {**q, "why": "x", "keep": ["Nope"]})
+    added = tools.call("follow_up", {**q, "why": "A third sample",
+                                     "add_files": {"mzML-files": ["Extra.mzML"]}})
+    run = runs.get(added["run_id"])
+    assert run["adds_to"] == base
+    assert [Path(f).name for f in runs.params(added["run_id"])["mzML-files"]] == ["Extra.mzML"]
+    runs.finish(added["run_id"], "finished")
+    kept = tools.call("follow_up", {**q, "why": "Statistics on these features",
+                                    "keep": ["FeatureFinderMetabo"]})
+    info = runs.params(kept["run_id"])["_follow_up"]
+    assert info["kept"] == ["FeatureFinderMetabo"] and info["reuses"] == [base]
+    with pytest.raises(ToolError, match="No run"):
+        tools.call("follow_up", {**q, "run_id": "nope", "why": "x"})

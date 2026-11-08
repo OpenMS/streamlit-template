@@ -20,7 +20,7 @@ from pathlib import Path
 logger = logging.getLogger("agent-access")
 
 # Keys of params.json that are the framework's own, not settings.
-INTERNAL_KEYS = {"_defaults", "_flag_params", "_follow_up", "max_threads", "controllo"}
+INTERNAL_KEYS = {"_defaults", "_flag_params", "_follow_up", "_purpose", "max_threads", "controllo"}
 # Options every TOPP tool has; the workflow sets them, not the user.
 COMMON_TOPP = {"in", "out", "ini", "log", "instance", "debug", "threads", "no_progress",
                "force", "test", "write_ini", "write_ctd", "write_nested_cwl",

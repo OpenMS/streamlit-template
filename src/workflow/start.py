@@ -17,7 +17,8 @@ import sys
 import uuid
 from pathlib import Path
 
-from .RunManager import FOLLOW_UP_FILE, FOLLOW_UP_KEY, RunManager
+from .RunManager import (FOLLOW_UP_FILE, FOLLOW_UP_KEY, PURPOSE_FILE, PURPOSE_KEY,
+                         RunManager, clean_purpose)
 
 APP_ROOT = str(Path(__file__).resolve().parents[2])
 
@@ -53,7 +54,8 @@ def prepare(workflow_dir: Path, multi_run: bool, name: str = "") -> str | None:
     With run folders: create the run (named ``name``, with the settings in
     params.json and the run it adds to) and return its id. Without: keep which
     result the start follows in ``FOLLOW_UP_FILE``. Either way the next
-    settings start fresh, without the follow-up.
+    settings start fresh, without the follow-up. Who started the run and why
+    (``PURPOSE_KEY``) goes the same way: into the run, or ``PURPOSE_FILE``.
     """
     workflow_dir = Path(workflow_dir)
     params_file = Path(workflow_dir, "params.json")
@@ -69,7 +71,14 @@ def prepare(workflow_dir: Path, multi_run: bool, name: str = "") -> str | None:
             sidecar.write_text(json.dumps(info), encoding="utf-8")
         else:
             sidecar.unlink(missing_ok=True)
-    if params.pop(FOLLOW_UP_KEY, None) is not None:
+        purpose = clean_purpose(params.get(PURPOSE_KEY))
+        sidecar = Path(workflow_dir, PURPOSE_FILE)
+        if purpose:
+            sidecar.write_text(json.dumps(purpose), encoding="utf-8")
+        else:
+            sidecar.unlink(missing_ok=True)
+    followed = params.pop(FOLLOW_UP_KEY, None) is not None
+    if (params.pop(PURPOSE_KEY, None) is not None) or followed:
         _write(params_file, params)
     return run_id
 

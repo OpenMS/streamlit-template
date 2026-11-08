@@ -51,6 +51,11 @@ WORKFLOW = {"type": "string", "description": "The workflow, as get_app_info list
 RUN_ID = {"type": "string", "description": "A run from list_runs. Default: the newest finished run."}
 KEY = {"type": "string", "description": "The input, as describe_workflow lists it (e.g. mzML-files)."}
 
+QUESTION = {"type": "string", "description": "The person's question, in their words."}
+WHY = {"type": "string", "description": "One line on why this run: what it changes and what "
+       "it should show."}
+BY = "AI assistant"
+
 READ_ONLY = {"readOnlyHint": True, "openWorldHint": False}
 WRITES = {"readOnlyHint": False, "destructiveHint": False, "openWorldHint": False}
 
@@ -114,16 +119,41 @@ DEFINITIONS = [
               "preset": {"type": "string", "description": "A preset from describe_workflow."}},
              ("workflow",)), WRITES),
     ("start_run", "Start a run",
-     "Start the workflow with the chosen input files, as the Run page does. `inputs` maps "
-     "an input to file names from list_files; `settings` and `preset` are applied first as "
-     "in update_settings. The run shows on the app's Run page. Follow it with "
-     "get_run_status.",
+     "Start the workflow with the chosen input files, as the Run page does: the baseline "
+     "run of a question, with the workflow's defaults or a preset. `inputs` maps an input "
+     "to file names from list_files; `settings` and `preset` are applied first as in "
+     "update_settings. `question` (the person's question) and `why` (one line on why this "
+     "run) are kept with the run and named in its processing report. The run shows on the "
+     "app's Run page. Follow it with get_run_status. Before starting, check list_runs for "
+     "a finished run that already answers the question.",
      _schema({"workflow": WORKFLOW,
               "inputs": {"type": "object", "description": "Input -> list of file names.",
                          "additionalProperties": {"type": "array", "items": {"type": "string"}}},
               "settings": {"type": "object"}, "preset": {"type": "string"},
-              "name": {"type": "string", "description": "A name for the run."}},
-             ("workflow",)),
+              "name": {"type": "string", "description": "A name for the run."},
+              "question": QUESTION, "why": WHY},
+             ("workflow", "question", "why")),
+     {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False,
+      "openWorldHint": False}),
+    ("follow_up", "Start a follow-up run",
+     "Start a run from the settings of an earlier run, as the app's own follow-up does: "
+     "(1) changed settings on the same files (`settings`, `preset`); (2) an analysis "
+     "added to the run on exactly its files, reusing the results of the tools in `keep` "
+     "so only the later steps run again; or (3) more files for the run's experiment "
+     "(`add_files`: input -> file names not yet in it; upload or import them first). "
+     "The new run sits next to the earlier one; the run list, Results page and "
+     "processing report name the run it follows, the question and `why`.",
+     _schema({"workflow": WORKFLOW,
+              "run_id": {"type": "string", "description": "The run to follow, from list_runs."},
+              "settings": {"type": "object", "description": "Setting -> value, as in update_settings."},
+              "preset": {"type": "string"},
+              "keep": {"type": "array", "items": {"type": "string"},
+                       "description": "Tools whose results are reused (an added analysis)."},
+              "add_files": {"type": "object", "description": "Input -> file names to add.",
+                            "additionalProperties": {"type": "array", "items": {"type": "string"}}},
+              "name": {"type": "string", "description": "A name for the run."},
+              "question": QUESTION, "why": WHY},
+             ("workflow", "run_id", "question", "why")),
      {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False,
       "openWorldHint": False}),
     ("get_run_status", "Run status",
@@ -258,16 +288,24 @@ class Tools:
         names = ", ".join(self.cfg["workflows"]) or "none"
         return (
             f"You are connected to one workspace of {self.server_title()}, an OpenMS web app "
-            f"for mass spectrometry data analysis. Workflows: {names}. Call get_app_info, then "
-            "describe_workflow; add input files with upload_file or import_from_link, start "
-            "the workflow with start_run and follow it with get_run_status. To understand a "
-            "run, call list_result_views and look_at_results: it shows you every table and "
-            "plot of the Results page as a person sees them (select rows of a table to see "
-            "what follows a selection). Look at all of them before you answer; list_results "
-            "and read_result give the files behind them. Discuss what you found with the "
-            "person in your chat. Then call show_in_app with a short note to open in the app "
-            "what is worth seeing: a view, or the components you choose; get_app_link gives "
-            "them the link. Show only what they asked for or what your answer is about."
+            f"for mass spectrometry data analysis. Workflows: {names}.\n"
+            "Working rules:\n"
+            "1. Data is processed only by the app's workflows. You run no tools or code of "
+            "your own on the data; every number you report comes from a workflow run.\n"
+            "2. Start with get_app_info and describe_workflow. Check list_runs: reuse a "
+            "finished run that fits the question. Else start a baseline run with start_run "
+            "(the workflow's defaults or a preset).\n"
+            "3. Go further only with follow_up: changed settings, an analysis added to a run "
+            "(keep), or more files or experiments (add_files, after upload_file or "
+            "import_from_link). Every run takes the person's question and one line on why "
+            "it was started; the processing report names both. Tell the person in the chat "
+            "what you add and why before you start it.\n"
+            "4. Follow a run with get_run_status. Read its results with list_result_views, "
+            "look_at_results, list_results and read_result before you answer.\n"
+            "5. Write scientifically and concisely. State only numbers the person can find "
+            "in the results you show them.\n"
+            "Then call show_in_app with a short note to open in the app what your answer is "
+            "about; get_app_link gives them the link."
         )
 
     def definitions(self) -> list[dict]:
@@ -672,32 +710,103 @@ class Tools:
         return {"changed": changed,
                 "note": "The configure page shows these after it is reloaded."}
 
-    def _start_run(self, workflow, inputs=None, settings=None, preset=None, name="") -> dict:
+    def _start_run(self, workflow, inputs=None, settings=None, preset=None, name="",
+                   question="", why="") -> dict:
         workflow, entry, workflow_dir = self._workflow(workflow)
         self._ensure_described(entry, workflow_dir)
         params = describe.read_params(workflow_dir)
+        # A baseline follows no earlier run, whatever the configure page left there
+        params.pop("_follow_up", None)
         params, _ = self._apply_settings(workflow, workflow_dir, params, settings, preset)
-        keys = self._input_keys(entry, workflow_dir, params)
-        if inputs is not None:
-            if not isinstance(inputs, dict):
-                raise ToolError("inputs must map an input to a list of file names.")
-            for key, names in inputs.items():
-                key = self._check_key(key, keys)
-                names = [names] if isinstance(names, str) else names
-                if not isinstance(names, list) or not all(isinstance(n, str) for n in names):
-                    raise ToolError(f"inputs[{key!r}] must be a list of file names.")
-                chosen = [str(self._file_path(workflow_dir, key, n)) for n in names]
-                if isinstance(params.get(key), str):
-                    if len(chosen) != 1:
-                        raise ToolError(f"{key} takes one file.")
-                    params[key] = chosen[0]
-                else:
-                    params[key] = chosen
+        self._choose_inputs(entry, workflow_dir, params, inputs)
         empty = [k for k in self._class_inputs.get(entry["class"], []) if not params.get(k)]
         if empty and inputs is None:
             raise ToolError(f"No files chosen for {', '.join(empty)}; pass them in `inputs`.")
+        return self._launch(workflow, entry, params, name, question, why)
+
+    def _follow_up(self, workflow, run_id, question="", why="", settings=None, preset=None,
+                   keep=None, add_files=None, name="") -> dict:
+        workflow, entry, workflow_dir = self._workflow(workflow)
+        if not self._multi_run(entry):
+            raise ToolError(f"{workflow} keeps no runs side by side; start a new run with "
+                            "start_run and the settings you want.")
+        if runner.status(self.workspace, workflow, self.online)["running"]:
+            raise ToolError(f"{workflow} is running; start the follow-up after it ends.")
+        runs = runner._runs(workflow_dir)
+        run = runs.get(run_id) if isinstance(run_id, str) else None
+        if run is None:
+            raise ToolError(f"No run {run_id!r}; list_runs lists the runs.")
+        if run.get("status") != "finished":
+            raise ToolError(f"Run {run_id} is {run.get('status') or 'not finished'}; only a "
+                            "finished run can be followed.")
+        if keep is not None and add_files is not None:
+            raise ToolError("Pass `keep` (an analysis added to the run) or `add_files` "
+                            "(more files for its experiment), not both.")
+        if keep is not None and (not isinstance(keep, list)
+                                 or not all(isinstance(t, str) for t in keep)):
+            raise ToolError("keep must be a list of tool names.")
+        inputs = self._class_inputs.get(entry["class"], [])
+        files_key = inputs[0] if inputs else None
+        add_key = None
+        if add_files is not None:
+            if not isinstance(add_files, dict) or len(add_files) != 1:
+                raise ToolError("add_files maps one input to the file names to add.")
+            add_key = next(iter(add_files))
+        if keep is not None and files_key is None:
+            raise ToolError(f"{workflow} names no input files, so no results can be reused.")
+        if not runs.restore_settings(run_id, note=why if isinstance(why, str) else "",
+                                     add_files=add_key,
+                                     same_files=files_key if keep is not None else None,
+                                     keep=keep):
+            raise ToolError(f"Run {run_id} recorded no settings to start from.")
+        params = describe.read_params(workflow_dir)
+        if keep is not None:
+            tools = describe.topp_tools(params, workflow_dir)
+            unknown = [t for t in keep if t not in tools]
+            if unknown:
+                raise ToolError(f"Not a tool of {workflow}: {', '.join(unknown)}. "
+                                f"Tools: {', '.join(sorted(tools)) or 'none'}.")
+        params, _ = self._apply_settings(workflow, workflow_dir, params, settings, preset)
+        if add_key is not None:
+            self._choose_inputs(entry, workflow_dir, params, add_files)
+            already = set(runs.experiment_files(run_id, add_key))
+            chosen = params.get(add_key) or []
+            chosen = [chosen] if isinstance(chosen, str) else chosen
+            twice = [Path(f).name for f in chosen if f in already]
+            if twice:
+                raise ToolError(f"Already in the experiment: {', '.join(twice)}.")
+            if not chosen:
+                raise ToolError("add_files names no files.")
+        return self._launch(workflow, entry, params, name, question, why)
+
+    def _choose_inputs(self, entry: dict, workflow_dir: Path, params: dict, inputs) -> None:
+        if inputs is None:
+            return
+        keys = self._input_keys(entry, workflow_dir, params)
+        if not isinstance(inputs, dict):
+            raise ToolError("inputs must map an input to a list of file names.")
+        for key, names in inputs.items():
+            key = self._check_key(key, keys)
+            names = [names] if isinstance(names, str) else names
+            if not isinstance(names, list) or not all(isinstance(n, str) for n in names):
+                raise ToolError(f"inputs[{key!r}] must be a list of file names.")
+            chosen = [str(self._file_path(workflow_dir, key, n)) for n in names]
+            if isinstance(params.get(key), str):
+                if len(chosen) != 1:
+                    raise ToolError(f"{key} takes one file.")
+                params[key] = chosen[0]
+            else:
+                params[key] = chosen
+
+    def _launch(self, workflow: str, entry: dict, params: dict, name, question, why) -> dict:
         if not isinstance(name, str):
             raise ToolError("name must be text.")
+        if not isinstance(question, str) or not question.strip():
+            raise ToolError("question: the person's question this run helps answer.")
+        if not isinstance(why, str) or not why.strip():
+            raise ToolError("why: one line on why this run.")
+        from src.workflow.RunManager import PURPOSE_KEY, clean_purpose
+        params[PURPOSE_KEY] = clean_purpose({"by": BY, "question": question, "why": why})
         state = runner.start(self.app_root, self.workspace, workflow, entry["class"], params,
                              name[:100], self.online, self._multi_run(entry))
         state["link"] = self._page_link(entry["run_page"])
@@ -728,7 +837,8 @@ class Tools:
                                                   "has_results": has}] if has else []}
         runs = runner._runs(workflow_dir)
         return {"multi_run": True, "runs": [
-            {k: r.get(k) for k in ("id", "name", "status", "created", "finished", "adds_to") if r.get(k)}
+            {k: r.get(k) for k in ("id", "name", "status", "created", "finished", "adds_to",
+                                   "purpose") if r.get(k)}
             for r in runs.list_runs()[:200]]}
 
     def _list_results(self, workflow, run_id=None) -> dict:

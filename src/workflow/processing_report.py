@@ -153,6 +153,15 @@ def _settings(params: Dict[str, Any]) -> Dict[str, str]:
     return report_params(general)
 
 
+def _purpose(params: Optional[dict], run: Optional[dict]) -> Dict[str, str]:
+    """Who started the run and why: from its settings, else its run.json."""
+    for source in ((params or {}).get("_purpose"), (run or {}).get("purpose")):
+        if isinstance(source, dict):
+            return {k: str(source[k]) for k in ("by", "question", "why")
+                    if isinstance(source.get(k), str) and source[k].strip()}
+    return {}
+
+
 def build_report(
     progress: Optional[dict],
     *,
@@ -264,6 +273,7 @@ def build_report(
             if isinstance((params or {}).get("_follow_up"), dict) else "",
             "reused": list(((params or {}).get("_follow_up") or {}).get("kept") or [])
             if isinstance((params or {}).get("_follow_up"), dict) else [],
+            "purpose": _purpose(params, run),
         },
         "generated": datetime.now().strftime("%Y-%m-%d %H:%M"),
         "started": _fmt_time(progress.get("started")),
@@ -301,6 +311,11 @@ def report_for(workflow_dir: Path, run_id: Optional[str] = None, settings: Optio
         params = json.loads(Path(base, "params.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         params = {}
+    if run_id is None and "_purpose" not in params:
+        try:
+            params["_purpose"] = json.loads(Path(workflow_dir, "last-purpose.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            pass
     if run_id is None and "_follow_up" not in params:
         # An app without run folders keeps it apart, so the next settings start fresh
         try:
@@ -347,6 +362,13 @@ def _summary_lines(report: dict) -> List[List[str]]:
         rows.append(["Run", run["name"]])
     if run["status"]:
         rows.append(["Status", run["status"]])
+    purpose = run.get("purpose") or {}
+    if purpose.get("by"):
+        rows.append(["Started by", purpose["by"]])
+    if purpose.get("question"):
+        rows.append(["Question", purpose["question"]])
+    if purpose.get("why"):
+        rows.append(["Why this run", purpose["why"]])
     if run.get("follows"):
         rows.append(["Settings from", run["follows"] + (f" ({run['follow_note']})" if run.get("follow_note") else "")])
     if run.get("reused"):

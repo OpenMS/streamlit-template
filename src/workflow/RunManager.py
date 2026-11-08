@@ -37,6 +37,11 @@ DESIGN_FILE = "experimental-design.tsv"
 FOLLOW_UP_KEY = "_follow_up"
 # Without run folders: what the last start followed (WorkflowManager.start_from)
 FOLLOW_UP_FILE = "last-follow-up.json"
+# params.json key: who started the next run and why ({"by", "question", "why"}),
+# kept with the run's settings and in its run.json, named in its processing report
+PURPOSE_KEY = "_purpose"
+# Without run folders: who started the last run and why
+PURPOSE_FILE = "last-purpose.json"
 # run.json key: the run whose experiment this run adds files to
 ADDS_TO = "adds_to"
 MAX_NAME_LENGTH = 100
@@ -180,6 +185,9 @@ class RunManager:
         root = self.experiment_root(adds_to) if adds_to else None
         if root:
             run[ADDS_TO] = root
+        purpose = read_purpose(params_file)
+        if purpose:
+            run["purpose"] = purpose
         self._write(run_id, run)
         if params_file is not None and Path(params_file).exists():
             shutil.copy2(params_file, self.params_file(run_id))
@@ -522,6 +530,26 @@ class RunManager:
         tmp.replace(path)
 
 
+def clean_purpose(purpose) -> dict:
+    """``{"by", "question", "why"}`` as text of reasonable length, empty ones left out."""
+    if not isinstance(purpose, dict):
+        return {}
+    limits = {"by": 60, "question": 500, "why": 500}
+    return {k: " ".join(str(purpose[k]).split())[:n] for k, n in limits.items()
+            if isinstance(purpose.get(k), str) and purpose[k].strip()}
+
+
+def read_purpose(params_file: Optional[Path]) -> dict:
+    """The ``PURPOSE_KEY`` of a params.json, or {}."""
+    if params_file is None:
+        return {}
+    try:
+        params = json.loads(Path(params_file).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return clean_purpose(params.get(PURPOSE_KEY)) if isinstance(params, dict) else {}
+
+
 def same_files_info(key: str, files: list, keep: Optional[list] = None,
                     reuses: Optional[list] = None) -> dict:
     """What ``FOLLOW_UP_KEY`` records for an analysis added to earlier results:
@@ -542,6 +570,8 @@ def apply_settings(workflow_dir: Path, params: dict, changes: Optional[dict] = N
     """
     params = dict(params)
     params.pop(FOLLOW_UP_KEY, None)
+    # Who started the earlier run and why is that run's, not the next one's
+    params.pop(PURPOSE_KEY, None)
     for key, value in (changes or {}).items():
         if isinstance(value, dict) and isinstance(params.get(key), dict):
             params[key] = {**params[key], **value}
