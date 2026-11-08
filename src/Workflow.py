@@ -284,7 +284,7 @@ class Workflow(WorkflowManager):
             layout_path, self.COMPONENTS, self.PRESETS, self.PRESETS[0]["layout"], key="topp-results-view",
             available=self.available(), analyses=self.ANALYSES,
             unavailable_options=self.missing_options, target="the Results page",
-            actions=[{"id": "add-files", "icon": "➕", "label": "Add files", "on_click": self.add_files,
+            actions=[{"id": "add-files", "icon": "➕", "label": "Add analysis", "on_click": self.add_files,
                       "help": "Process more files with this run's settings and add them to its experiment"}],
         )
         layout, _ = resolve_layout(layout_path, self.COMPONENTS, self.PRESETS[0]["layout"])
