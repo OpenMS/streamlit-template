@@ -722,6 +722,18 @@ def _online_panel(workspace: Path) -> None:
         st.caption(f"⏸️ {paused} upload(s) paused until the desktop app continues them.")
 
 
+def _page_link(label: str, icon: str) -> None:
+    """``st.page_link`` to the sync page, a caption where no page is registered.
+
+    A page run on its own (AppTest, the assistant's headless settings check)
+    has no navigation, and ``st.page_link`` fails there.
+    """
+    try:
+        st.page_link(_PAGE, label=label, icon=icon)
+    except Exception:  # KeyError 'url_pathname', StreamlitPageNotFoundError
+        st.caption(f"{icon} {label}: open the Workspace Sync page.")
+
+
 def render_sync_sidebar() -> None:
     """The sidebar's sync status and its entry to the Workspace Sync page."""
     if not sync_enabled():
@@ -731,19 +743,19 @@ def render_sync_sidebar() -> None:
         linked = tokens.active_count(workspace.parent, workspace.name)
         with st.expander("**Workspace Sync**", icon=":material/sync:", expanded=bool(linked)):
             _online_panel(workspace)
-            st.page_link(_PAGE, label="Open sync" if linked else "Link desktop app",
-                         icon="🔄" if linked else "🔗")
+            _page_link("Open sync" if linked else "Link desktop app",
+                       "🔄" if linked else "🔗")
         return
     link = client.read_link(workspace)
     with st.expander("**Workspace Sync**", icon=":material/sync:", expanded=True):
         if not link:
             st.caption("Not linked to an online workspace.")
-            st.page_link(_PAGE, label="Link workspace", icon="🔗")
+            _page_link("Link workspace", "🔗")
             return
         # Online workspace names are UUIDs; the start tells them apart.
         st.caption(f"🔗 Linked to `{link.get('workspace', '?')[:8]}`")
         _sidebar_panel(workspace, link)
-        st.page_link(_PAGE, label="Open sync", icon="📋")
+        _page_link("Open sync", "📋")
 
 
 # -- Run page -----------------------------------------------------------------

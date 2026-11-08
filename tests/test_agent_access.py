@@ -730,3 +730,24 @@ def test_configure_page_shown_once_even_after_the_upload_page(tmp_path, monkeypa
     started = time.monotonic()
     assert tools.call("get_run_status", {"workflow": WF, "wait": 30})["running"] is False
     assert time.monotonic() - started < 5
+
+
+def test_sync_sidebar_needs_no_page_registry(tmp_path):
+    """The assistant shows a configure page on its own (no navigation); with
+    developer mode on, the sync panel's links must not break that page."""
+    from streamlit.testing.v1 import AppTest
+
+    settings = json.loads(Path("settings.json").read_text(encoding="utf-8"))
+    settings.update(test=True, online_deployment=True)
+    settings["workspace_sync"] = {**(settings.get("workspace_sync") or {}),
+                                  "enabled": True, "developer_only": True}
+    at = AppTest.from_file("content/topp_workflow_parameter.py", default_timeout=120)
+    at.session_state.settings = settings
+    at.session_state.workspace = tmp_path / "ws"
+    at.session_state.location = "online"
+    at.session_state.controllo = True
+    at.session_state.previous_dir = str(Path.cwd())
+    at.session_state.local_dir = ""
+    at.session_state["developer-mode"] = True
+    at.run()
+    assert not at.exception, at.exception[0].message if at.exception else ""
