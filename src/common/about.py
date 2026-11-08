@@ -64,6 +64,16 @@ def about_dialog() -> None:
             "software from others, each under its own license, listed in the other tabs."
         )
     with tabs[1]:
+        st.markdown("**Libraries**")
+        libraries = third_party.libraries()
+        _component_table(libraries, "libraries", ["Name", "Version", "License"])
+        if any(c.name == "Qt" for c in libraries):
+            st.caption(
+                "OpenMS uses Qt under the GNU LGPL version 3, as a shared library that can be "
+                "replaced by another build of the same version. Qt's source code is available at "
+                "https://download.qt.io/official_releases/qt/."
+            )
+        st.markdown("**Programs**")
         programs = third_party.third_party_programs()
         if programs:
             _component_table(programs, "programs", ["Name"])
