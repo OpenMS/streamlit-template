@@ -1,7 +1,7 @@
 {
     "app-name": "OpenMS WebApp Template",
     "github-user": "OpenMS",
-    "version": "2.3.0",
+    "version": "2.3.1",
     "repository-name": "streamlit-template",
     "legal_links": {
         "impressum": "https://openms.de/impressum",
