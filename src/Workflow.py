@@ -351,8 +351,10 @@ class Workflow(WorkflowManager):
         # Detected per sample: a feature missing from a sample has intensity 0 there
         samples = df.columns[4:]
         if len(samples):
+            st.caption("Features detected per sample")
             for col, sample in zip(st.columns(min(len(samples), 6)), samples[:6]):
-                col.metric(f"features in {Path(str(sample)).stem}", int((df[sample] > 0).sum()))
+                col.metric(Path(str(sample)).stem, int((df[sample] > 0).sum()),
+                           help=f"Consensus features with an intensity in {sample}")
         st.dataframe(df, selection_mode="multi-row", on_select="rerun", key=self._features_key())
 
     def _intensities(self) -> None:
