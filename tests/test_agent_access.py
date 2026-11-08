@@ -9,6 +9,8 @@ import asyncio
 import base64
 import io
 import json
+import re
+import sys
 import socket
 import threading
 from pathlib import Path
@@ -831,3 +833,52 @@ def test_results_kept_elsewhere_through_a_results_store(tmp_path, monkeypatch):
     assert "note" not in runs
     monkeypatch.setattr(Workflow, "multi_run", False)
     assert "start_run" in tools.call("list_runs", {"workflow": WF})["note"]
+
+
+def test_connection_link_carries_the_token(mcp):
+    """Claude Science's Remote connector takes a URL only: the token goes in the link."""
+    from src.agent_access.ui import link_url
+    body = {"jsonrpc": "2.0", "method": "tools/call", "id": 1,
+            "params": {"name": "get_app_info", "arguments": {}}}
+    r = requests.post(link_url(mcp["url"], mcp["token"]), json=body, timeout=30)
+    assert r.status_code == 200, r.text
+    assert json.loads(r.json()["result"]["content"][0]["text"])["workspace"] == mcp["ws"].name
+    r = requests.post(link_url(mcp["url"], "not-a-token"), json=body, timeout=30)
+    assert r.status_code == 401
+    # A sync token never opens the assistant's link.
+    sync_token, _ = tokens.issue(mcp["root"], mcp["ws"].name, 1, kind=tokens.SYNC)
+    assert requests.post(link_url(mcp["url"], sync_token), json=body, timeout=30).status_code == 401
+
+
+def test_access_log_hides_the_link_token(caplog):
+    import logging
+    from types import SimpleNamespace
+    request = SimpleNamespace(uri="/sync/mcp/c/abc-DEF_123", method="POST", remote_ip="1.2.3.4",
+                              request_time=lambda: 0.01)
+    handler = SimpleNamespace(get_status=lambda: 200, request=request)
+    with caplog.at_level(logging.INFO, logger="tornado.access"):
+        server._log_request(handler)
+    assert "abc-DEF_123" not in caplog.text and "/sync/mcp/c/<token>" in caplog.text
+
+
+def test_claude_science_fields(tmp_path):
+    from src.agent_access import install
+    from src.agent_access.ui import local_snippets, online_snippets
+    cfg = agent_settings(SETTINGS)
+    local = local_snippets(cfg, tmp_path / "default", "http://localhost:8501")["Claude Science"]
+    name = install.server_name(cfg["app_name"])
+    assert "Add connector > Local command" in local and f"Name: {name}" in local
+    assert re.fullmatch(r"[a-z0-9-]+", name)
+    assert f"Command: {sys.executable}" in local and "src.agent_access.stdio" in local
+    assert f"Environment variables: PYTHONPATH={Path('settings.json').resolve().parent}" in local
+    online = online_snippets(cfg, "https://app.example/sync/mcp", "tok")["Claude Science"]
+    assert "> Remote" in online and "URL: https://app.example/sync/mcp/c/tok" in online
+
+
+def test_app_info_warns_about_a_read_only_workspace(tmp_path, monkeypatch):
+    from src.agent_access import tools as tools_module
+    ws = _workspace(tmp_path)
+    tools = Tools(Path.cwd(), ws, agent_settings(SETTINGS))
+    assert "warning" not in tools._get_app_info()
+    monkeypatch.setattr(tools_module, "_writable", lambda folder: False)
+    assert "read and write access" in tools._get_app_info()["warning"]

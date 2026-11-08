@@ -26,6 +26,22 @@ Unlock developer mode, open **AI assistant** in the sidebar and click **Connect 
   itself. Copy the command or the configuration into your assistant; no
   data leaves your computer.
 
+**Claude Science** adds the app as a custom connector: in Claude Science open
+**Settings > Connectors > Add connector** and copy the fields from the
+**Claude Science** tab.
+
+- Online, choose **Remote** and enter the name and the link. The link holds
+  the connection, so keep it to yourself like the rest of the connection.
+- In the app on your computer, choose **Local command** and enter the name,
+  the command, and (under **Advanced settings**) the arguments and the
+  environment variable. Claude Science runs a local connector in its
+  sandbox; if the assistant reports that it cannot write to the workspace,
+  give Claude Science read and write access to the workspace folder the tab
+  names.
+
+Claude Science asks before it uses each of the app's tools until you set them
+to **Always allow** on the connector's page.
+
 With Claude Code, for example, paste the command into a terminal, start
 Claude Code and ask it to "run the workflow on the example files and
 summarize the results".
@@ -84,7 +100,9 @@ first rows of a table, so for exact numbers it reads the result files.
 
 The tools are in `src/agent_access/` (`tools.py`, Streamlit-free). Online, the
 workspace sync service answers MCP requests at `/sync/mcp` (Streamable HTTP,
-JSON responses, no session), so any replica can serve any request and no new
+JSON responses, no session) and at `/sync/mcp/c/<token>`, the same with the
+token in the link for clients that take a URL only (Claude Science's Remote
+connectors; the access log leaves the token out), so any replica can serve any request and no new
 deployment is needed. In the local app, `python -m src.agent_access.stdio`
 serves the same tools over stdio.
 

@@ -12,6 +12,8 @@ on the same image and the same workspaces volume, routed at ``/sync``.
     POST   /sync/runs/<workflow>             queue a run with the given params
     DELETE /sync/runs/<workflow>             stop it (see runs.py)
     POST   /sync/mcp                         an AI assistant's MCP requests
+    POST   /sync/mcp/c/<token>               the same, the token in the link (connectors
+                                             that take a URL only, such as Claude Science)
                                              (src/agent_access, its own tokens)
 
 Each PATCH may carry ``Upload-Checksum: sha256 <base64>`` (tus checksum
@@ -43,6 +45,7 @@ except ImportError:     # Windows: the desktop app imports this module, never se
     fcntl = None
 
 import tornado.ioloop
+import tornado.log
 import tornado.web
 
 from src.agent_access import protocol as mcp_protocol
@@ -565,8 +568,17 @@ class McpHandler(SyncHandler):
             self.set_header("WWW-Authenticate", 'Bearer realm="openms-app"')
         super().write_error(status_code, **kwargs)
 
-    def _rate_limit(self) -> None:
-        auth = self.request.headers.get("Authorization", "")
+    def workspace(self, link_token: str | None = None) -> Path:
+        """The token comes in the header, or in the link (``/mcp/c/<token>``)."""
+        if link_token:
+            name = tokens.resolve(self.root, link_token, tokens.AGENT)
+            if name is None:
+                raise tornado.web.HTTPError(401, "unknown or expired connection link")
+            return Path(self.root, name)
+        return super().workspace()
+
+    def _rate_limit(self, link_token: str | None = None) -> None:
+        auth = self.request.headers.get("Authorization", "") or (link_token or "")
         key = hashlib.sha256(auth.encode()).hexdigest()
         now = time.monotonic()
         calls = [t for t in self._calls.get(key, []) if now - t < 60]
@@ -585,9 +597,9 @@ class McpHandler(SyncHandler):
         return Tools(Path.cwd(), workspace, self.agent, app_url=app_url,
                      download_url=f"{origin}{self.prefix}/download", sync_cfg=self.config)
 
-    async def post(self):
-        workspace = self.workspace()
-        self._rate_limit()
+    async def post(self, link_token: str | None = None):
+        workspace = self.workspace(link_token)
+        self._rate_limit(link_token)
         limit = int(self.agent["max_upload_mb"] * 1024 ** 2 * 4 / 3) + 1024 ** 2
         if len(self.request.body) > limit:
             raise tornado.web.HTTPError(413, "request too large; send files in parts")
@@ -606,12 +618,12 @@ class McpHandler(SyncHandler):
         self.set_header("Content-Type", "application/json")
         self.finish(json.dumps(answer, default=str))
 
-    def get(self):
+    def get(self, link_token: str | None = None):
         # No server-to-client stream: every answer comes with its request.
         self.set_header("Allow", "POST")
         raise tornado.web.HTTPError(405, "this server sends no event stream")
 
-    def delete(self):
+    def delete(self, link_token: str | None = None):
         self.set_header("Allow", "POST")
         raise tornado.web.HTTPError(405, "this server keeps no session")
 
@@ -621,12 +633,14 @@ def make_app(root: Path, config: dict, prefix: str = "/sync",
     kw = {"root": Path(root), "config": config}
     routes = [(rf"{prefix}/health", HealthHandler, kw)]
     if agent and agent.get("enabled"):
-        routes.append((rf"{prefix}/mcp/?", McpHandler, {**kw, "agent": agent, "prefix": prefix}))
+        mcp = {**kw, "agent": agent, "prefix": prefix}
+        routes.append((rf"{prefix}/mcp/?", McpHandler, mcp))
+        routes.append((rf"{prefix}/mcp/c/([A-Za-z0-9_\-]+)/?", McpHandler, mcp))
     if not config["enabled"]:
         if agent and agent.get("enabled"):
             # The links read_result and list_results return point here.
             routes.append((rf"{prefix}/download", DownloadHandler, kw))
-        return tornado.web.Application(routes)
+        return tornado.web.Application(routes, log_function=_log_request)
     return tornado.web.Application(routes + [
 
         (rf"{prefix}/manifest", ManifestHandler, kw),
@@ -635,7 +649,20 @@ def make_app(root: Path, config: dict, prefix: str = "/sync",
         (rf"{prefix}/download", DownloadHandler, kw),
         (rf"{prefix}/runs/?", RunsHandler, kw),
         (rf"{prefix}/runs/([A-Za-z0-9._-]+)", RunHandler, kw),
-    ])
+    ], log_function=_log_request)
+
+
+_LINK_TOKEN = re.compile(r"(/mcp/c/)[A-Za-z0-9_\-]+")
+
+
+def _log_request(handler) -> None:
+    """Tornado's access log, without the token of a connection link."""
+    status = handler.get_status()
+    log = (tornado.log.access_log.info if status < 400 else
+           tornado.log.access_log.warning if status < 500 else tornado.log.access_log.error)
+    uri = _LINK_TOKEN.sub(r"\1<token>", handler.request.uri)
+    log("%d %s %s (%s) %.2fms", status, handler.request.method, uri,
+        handler.request.remote_ip, 1000.0 * handler.request.request_time())
 
 
 def main(argv=None) -> int:

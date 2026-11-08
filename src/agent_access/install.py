@@ -6,6 +6,9 @@ command depends on the assistant:
 - Claude Desktop reads ``claude_desktop_config.json``; the AI assistant panel
   writes the server's entry there after the person's OK
   (``connect_claude_desktop``), keeping the person's other servers.
+- Claude Science adds a connector in Settings > Connectors: the panel shows
+  the fields of a **Local command** connector (``claude_science_local``), or
+  online the link of a **Remote** one (``claude_science_remote``).
 - An agent with a command line (Claude Code, Codex, Gemini CLI) gets one
   prompt (``install_prompt``) the person pastes into it; the prompt names the
   command for each of them, and the agent registers the server itself.
@@ -60,6 +63,33 @@ def cli_commands(name: str, entry: dict) -> dict:
         "Gemini CLI": f"add this entry to \"mcpServers\" in ~/.gemini/settings.json "
                       f"(keep what is there): {json.dumps({name: entry})}",
     }
+
+
+def claude_science_local(name: str, entry: dict) -> dict:
+    """The fields of a Claude Science **Local command** connector, in its form's order."""
+    return {
+        "Name": name,
+        "Command": entry["command"],
+        "Arguments": " ".join(shlex.quote(a) for a in entry["args"]),
+        "Environment variables": "\n".join(f"{k}={v}" for k, v in entry["env"].items()),
+    }
+
+
+def claude_science_remote(name: str, link: str) -> dict:
+    """The fields of a Claude Science **Remote** connector: the token is in the link."""
+    return {"Name": name, "URL": link, "Transport": "Streamable HTTP"}
+
+
+def connector_steps(fields: dict, kind: str) -> str:
+    """The fields as text to copy: where to go, then one ``Field: value`` per line."""
+    lines = [f"Claude Science: Settings > Connectors > Add connector > {kind}"]
+    for field, value in fields.items():
+        if "\n" in value:
+            lines.append(f"{field}:")
+            lines += [f"  {v}" for v in value.splitlines()]
+        else:
+            lines.append(f"{field}: {value}")
+    return "\n".join(lines)
 
 
 def mcp_json(name: str, entry: dict) -> str:

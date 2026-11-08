@@ -299,6 +299,17 @@ def _yaml_inputs(app_root: Path) -> tuple[dict, dict]:
     return types, per_class
 
 
+def _writable(folder: Path) -> bool:
+    """Whether this process can create a file in ``folder`` (checked by doing it)."""
+    probe = Path(folder, f".agent-write-check-{os.getpid()}")
+    try:
+        probe.write_text("")
+        probe.unlink()
+        return True
+    except OSError:
+        return False
+
+
 class Tools:
     def __init__(self, app_root: Path, workspace: Path, cfg: dict, app_url: str = "",
                  download_url: str = "", sync_cfg: dict | None = None):
@@ -595,13 +606,22 @@ class Tools:
             params = describe.read_params(workflow_dir)
             workflows.append({"workflow": name, "description": entry["description"],
                               "inputs": list(self._input_keys(entry, workflow_dir, params))})
-        return {"app": self.server_title(), "version": self.server_version(),
+        info = {"app": self.server_title(), "version": self.server_version(),
                 "workspace": self.workspace.name,
                 "deployment": "online" if self.online else "local",
                 "workflows": workflows,
                 "link": self._page_link(""),
                 "limits": {"upload_mb_per_call": self.cfg["max_upload_mb"],
                            "import_gb": self.cfg["max_import_gb"]}}
+        if not _writable(self.workspace):
+            # An assistant that starts the server in a sandbox (Claude Science's
+            # local connectors) may see the workspace read-only.
+            info["warning"] = (
+                f"This server cannot write to the workspace folder {self.workspace}, so it "
+                "cannot add files, change settings or start runs. If your assistant runs its "
+                "connectors in a sandbox, give it read and write access to that folder, or "
+                "connect it to the online app instead.")
+        return info
 
     def _describe_workflow(self, workflow, include_advanced=False, tool=None) -> dict:
         workflow, entry, workflow_dir = self._workflow(workflow)

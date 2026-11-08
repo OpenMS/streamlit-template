@@ -49,9 +49,16 @@ def _server_name(cfg: dict) -> str:
     return install.server_name(cfg["app_name"])
 
 
+def link_url(url: str, token: str) -> str:
+    """The connection link: the MCP address with the token in it (``/mcp/c/<token>``)."""
+    return f"{url.rstrip('/')}/c/{token}"
+
+
 def online_snippets(cfg: dict, url: str, token: str) -> dict:
     name = _server_name(cfg)
     return {
+        "Claude Science": install.connector_steps(
+            install.claude_science_remote(name, link_url(url, token)), "Remote"),
         "Claude Code": f"claude mcp add --transport http {name} {url} "
                        f"--header \"Authorization: Bearer {token}\"",
         "Other MCP clients (JSON)": json.dumps({"mcpServers": {name: {
@@ -67,6 +74,8 @@ def local_snippets(cfg: dict, workspace: Path, app_url: str) -> dict:
     return {
         "Claude Code, Codex, Gemini CLI": install.install_prompt(cfg["app_name"], workspace.name, name, entry),
         "Claude Code": install.cli_commands(name, entry)["Claude Code"],
+        "Claude Science": install.connector_steps(install.claude_science_local(name, entry),
+                                                  "Local command"),
         "Other MCP clients (JSON)": install.mcp_json(name, entry),
     }
 
@@ -74,7 +83,12 @@ def local_snippets(cfg: dict, workspace: Path, app_url: str) -> dict:
 def _snippets(snippets: dict) -> None:
     for tab, (label, text) in zip(st.tabs(list(snippets)), snippets.items()):
         with tab:
-            st.code(text, language="json" if text.startswith("{") else "bash", wrap_lines=True)
+            if label == "Claude Science":
+                st.caption("Add a connector with these fields. The link holds the "
+                           "connection, so treat it like a password.")
+            language = ("json" if text.startswith("{") else
+                        None if label == "Claude Science" else "bash")
+            st.code(text, language=language, wrap_lines=True)
 
 
 def _claude_desktop(cfg: dict, workspace: Path) -> None:
@@ -140,14 +154,19 @@ def _connect_dialog(workspace: Path) -> None:
             f"the workspace **{workspace.name}**. It processes your data only with this "
             "app's workflows, and shows its answer as a view on the Results page."
         )
-        desktop, cli, other = st.tabs(["Claude Desktop", "Claude Code, Codex, Gemini CLI",
-                                       "Other MCP clients"])
+        desktop, cli, science, other = st.tabs(["Claude Desktop", "Claude Code, Codex, Gemini CLI",
+                                                "Claude Science", "Other MCP clients"])
         snippets = local_snippets(cfg, workspace, _origin())
         with desktop:
             _claude_desktop(cfg, workspace)
         with cli:
             st.caption("Paste this prompt into the agent; it connects itself.")
             st.code(snippets["Claude Code, Codex, Gemini CLI"], language=None, wrap_lines=True)
+        with science:
+            st.caption("Add a connector with these fields. Claude Science runs it in its "
+                       f"sandbox; give it read and write access to `{workspace}` if the "
+                       "assistant says it cannot write to the workspace.")
+            st.code(snippets["Claude Science"], language=None, wrap_lines=True)
         with other:
             st.code(snippets["Other MCP clients (JSON)"], language="json", wrap_lines=True)
         st.caption("The connection uses this app's files on this computer; nothing leaves it.")
