@@ -114,6 +114,38 @@ The checkable appearance rules a results page must satisfy — colour semantics,
 axis labelling, empty states, layout limits. Enforced, not advisory.
 _Avoid_: style guide, design system, conventions
 
+### The AI assistant
+
+**AI assistant**:
+Any agent that works in one workspace of the local app through its MCP endpoint,
+whichever product runs it. Developer-only for now.
+_Avoid_: bot, copilot, Claude (unless that product is meant)
+
+**Install prompt**:
+The one text the AI assistant panel offers to copy into an agent: it connects the
+agent to this workspace and says how to work. Distinct from the **entry prompt**,
+which builds an app; this one uses an app that exists.
+_Avoid_: setup prompt, connection string, bare "the prompt"
+
+**Baseline run**:
+The workflow run an assistant's answer starts from: a finished run that fits the
+question, or one it starts with the workflow's defaults or a preset. Everything
+else it does builds on a baseline run.
+_Avoid_: first run, initial analysis
+
+**Follow-up run**:
+A workflow run that starts from another run's settings and changes them, adds an
+analysis, or adds files or experiments. With the baseline run, the assistant's
+only way to process data: it runs no tools or code of its own.
+_Avoid_: rerun, child run, derived run
+
+**Assistant view**:
+A view in a Results page's view bar that the assistant designed and named: a
+layout of the workflow's own components, the runs they show, the zoom, selection
+and annotations it set as the view's defaults, and a collapsible explanation of at
+most five points. One answer may bring several.
+_Avoid_: finding, answer view, report, bare "view" when the assistant's is meant
+
 ### The framework itself
 
 **Browser control**:
