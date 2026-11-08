@@ -796,3 +796,8 @@ def test_results_kept_elsewhere_through_a_results_store(tmp_path, monkeypatch):
         "runs": ["run_a", "run_b"], "side_by_side": True, "question": "Which has more masses?",
         "explanation": ["Both runs side by side."]})
     assert view["runs"] == ["run_a", "run_b"]
+    # A page drawn in the browser only: views yes, looking no
+    monkeypatch.delattr(Workflow, "renderers")
+    assert tools.call("list_result_views", {"workflow": WF, "run_id": "run_a"})["views"]
+    with pytest.raises(Exception, match="browser only"):
+        tools.call("look_at_results", {"workflow": WF, "run_id": "run_a"})

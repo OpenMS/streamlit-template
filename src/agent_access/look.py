@@ -83,9 +83,11 @@ def catalog(entry: dict) -> dict | None:
     except Exception:  # noqa: BLE001 - reported as "no components"
         return None
     components = getattr(cls, "COMPONENTS", None)
-    if not components or not hasattr(cls, "renderers"):
+    if not components:
         return None
-    return {"class": cls, "components": list(components),
+    # Without renderers() the page draws in the browser only (look_at_results
+    # cannot run it), but its views can still be listed, saved and opened.
+    return {"class": cls, "components": list(components), "renders": hasattr(cls, "renderers"),
             "presets": list(getattr(cls, "PRESETS", None) or []),
             "layout": getattr(cls, "RESULTS_LAYOUT", "layouts/results.json"),
             "analyses": dict(getattr(cls, "ANALYSES", None) or {})}

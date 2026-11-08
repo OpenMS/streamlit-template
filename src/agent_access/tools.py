@@ -1021,6 +1021,9 @@ class Tools:
         from src.layout_manager.layout import missing_analyses
         workflow, entry, workflow_dir = self._workflow(workflow)
         cat = self._catalog(entry)
+        if not cat.get("renders", True):
+            raise ToolError("This app's results page draws its components in the browser only; "
+                            "read the result tables with list_results and read_result.")
         _, run_id = self._results_dir(workflow_dir, entry, run_id)
         known = {c["name"]: c for c in cat["components"]}
         have = look.available(cat["class"], workflow_dir, run_id)
