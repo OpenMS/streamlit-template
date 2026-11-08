@@ -2,7 +2,10 @@
 
 import os
 import platform
+import plistlib
 from pathlib import Path
+
+import pytest
 
 from src.common import third_party
 
@@ -93,6 +96,58 @@ def test_qt_dylib_on_macos(tmp_path, monkeypatch):
     (tmp_path / "openms" / "lib").mkdir(parents=True)
     (tmp_path / "openms" / "lib" / "libQt6Core.6.dylib").write_text("")
     assert third_party.qt_library({"OPENMS_DATA_PATH": str(data)}).version == "6.x"
+
+
+@pytest.mark.parametrize("where", ["stdlib", "base_prefix"])
+def test_python_license_text_is_found(tmp_path, monkeypatch, where):
+    stdlib, prefix = tmp_path / "stdlib", tmp_path / "prefix"
+    stdlib.mkdir()
+    prefix.mkdir()
+    (stdlib if where == "stdlib" else prefix).joinpath("LICENSE.txt").write_text("PSF terms")
+    monkeypatch.setattr(third_party.sysconfig, "get_paths", lambda: {"stdlib": str(stdlib)})
+    monkeypatch.setattr(third_party.sys, "base_prefix", str(prefix))
+    assert third_party.license_text(third_party.python_interpreter()) == "PSF terms"
+
+
+def _framework(lib, version=None, binary=True):
+    framework = lib / "QtCore.framework"
+    (framework / "Resources").mkdir(parents=True)
+    if binary:
+        (framework / "QtCore").write_text("")
+    if version:
+        with (framework / "Resources" / "Info.plist").open("wb") as handle:
+            plistlib.dump({"CFBundleShortVersionString": version}, handle)
+    return framework
+
+
+def test_qt_framework_on_macos(tmp_path, monkeypatch):
+    monkeypatch.setattr(third_party, "_system_qt_dirs", lambda: [])
+    data = tmp_path / "share" / "OpenMS"
+    data.mkdir(parents=True)
+    _framework(tmp_path / "openms" / "lib", "6.8.3")
+    env = {"OPENMS_DATA_PATH": str(data)}
+    qt = third_party.qt_library(env)
+    assert (qt.name, qt.version, qt.license) == ("Qt", "6.x", "LGPL-3.0-only")
+    assert [c.name for c in third_party.libraries(env)] == ["Python", "Qt"]
+
+
+def test_an_empty_qt_framework_is_not_qt(tmp_path, monkeypatch):
+    monkeypatch.setattr(third_party, "_system_qt_dirs", lambda: [tmp_path])
+    _framework(tmp_path, "6.8.3", binary=False)
+    assert third_party.qt_library({}) is None
+
+
+def test_each_qt_major_is_listed(tmp_path, monkeypatch):
+    wheel = tmp_path / "pyopenms.libs"
+    wheel.mkdir()
+    (wheel / "libQt5Core-a1b2.so.5").write_text("")
+    monkeypatch.setattr(third_party, "_system_qt_dirs", lambda: [wheel])
+    data = tmp_path / "share" / "OpenMS"
+    data.mkdir(parents=True)
+    (tmp_path / "openms" / "lib").mkdir(parents=True)
+    (tmp_path / "openms" / "lib" / "libQt6Core.so.6").write_text("")
+    env = {"OPENMS_DATA_PATH": str(data)}
+    assert [q.version for q in third_party.qt_libraries(env)] == ["6.x", "5.x"]
 
 
 def test_installed_packages_have_names_and_licenses():
