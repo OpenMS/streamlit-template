@@ -109,7 +109,7 @@ jobs:
 
       - name: Install kubeconform
         run: |
-          curl -sSL https://github.com/yannh/kubeconform/releases/latest/download/kubeconform-linux-amd64.tar.gz | tar xz
+          curl -fsSL --retry 6 --retry-delay 10 --retry-all-errors https://github.com/yannh/kubeconform/releases/latest/download/kubeconform-linux-amd64.tar.gz | tar xz
           sudo mv kubeconform /usr/local/bin/
 
       - name: Install kubectl
@@ -163,6 +163,37 @@ jobs:
           fi
           kubeconform -summary -strict -kubernetes-version 1.28.0 -skip IngressRoute \
             < /tmp/prod-lint.yaml
+
+      - name: Validate the overlay with the S3 storage component
+        # k8s/components/storage-s3/ is opt-in. Render prod with it (added
+        # unless the overlay already lists it) and check that it really
+        # switched the app: the Manila claim is gone, every workspace volume
+        # names the S3 claim, and the S3 settings reached the containers.
+        run: |
+          tmp=$(mktemp -d)
+          cp -r k8s "$tmp/"
+          yq -i '(.components // []) as $c | .components = ($c + (["../../components/storage-s3"] - $c))' "$tmp/k8s/overlays/prod/kustomization.yaml"
+          kubectl kustomize "$tmp/k8s/overlays/prod/" > /tmp/prod-s3.yaml
+          if [ ! -s /tmp/prod-s3.yaml ]; then
+            echo "::error::prod + storage-s3 rendered nothing"
+            exit 1
+          fi
+          kubeconform -summary -strict -kubernetes-version 1.28.0 -skip IngressRoute \
+            < /tmp/prod-s3.yaml
+          claims=$(yq '.. | select(has("claimName")) | .claimName' /tmp/prod-s3.yaml | grep -v '^---$' | sort -u)
+          if [ -z "$claims" ] || printf '%s\n' "$claims" | grep -vq 'workspaces-s3-pvc$'; then
+            echo "::error::workspace volumes do not all name the S3 claim: $claims"
+            exit 1
+          fi
+          if yq 'select(.kind == "PersistentVolumeClaim") | .metadata.name' /tmp/prod-s3.yaml | grep -q manila; then
+            echo "::error::the Manila claim is still rendered next to the S3 claim"
+            exit 1
+          fi
+          n=$(yq 'select(.kind == "Deployment") | .spec.template.spec.containers[0].env[] | select(.name == "WORKSPACES_S3_BUCKET") | .name' /tmp/prod-s3.yaml | grep -c . || true)
+          if [ "$n" -lt 3 ]; then
+            echo "::error::WORKSPACES_S3_BUCKET reached $n of the 3 deployments (streamlit, rq-worker, sync)"
+            exit 1
+          fi
 
       - name: Render the Argo CD folder
         # k8s/argocd/ is synced by Argo CD itself (argocd-application.yaml),
@@ -235,8 +266,9 @@ jobs:
           echo "$CI_RES"
 
       - name: Validate the storage roots
-        # Both of them: k8s/storage/ (Manila, what production applies) and
-        # k8s/ci-storage/ (the Ganesha stand-in the kind jobs apply).
+        # All three: k8s/storage/ (Manila, what production applies),
+        # k8s/ci-storage/ (the Ganesha stand-in the kind jobs apply) and the
+        # optional S3 tier k8s/storage-s3/ (JuiceFS).
         #
         # Rendered, not file-by-file: each root carries Helm values files,
         # which is not a Kubernetes manifest and would fail kubeconform on
@@ -253,7 +285,7 @@ jobs:
         # input, so a render that SUCCEEDS and emits zero documents would still
         # pass a pipefail-corrected pipe.
         run: |
-          for root in k8s/storage k8s/ci-storage; do
+          for root in k8s/storage k8s/ci-storage k8s/storage-s3; do
             kubectl kustomize --enable-helm "$root/" > /tmp/storage-rendered.yaml
             if [ ! -s /tmp/storage-rendered.yaml ]; then
               echo "::error::$root/ rendered nothing; its charts were never validated"

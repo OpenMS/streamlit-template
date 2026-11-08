@@ -182,7 +182,41 @@ def test_an_analysis_added_to_a_run_locks_its_files_and_kept_tools(launch):
         notes = " ".join(i.value for i in launch.info)
         assert "FeatureFinderMetabo** is not run again" in notes
         assert "FeatureLinkerUnlabeledKD** is not run again" in notes
-        assert any("Add to Features" in m.value for m in launch.markdown)
+        # The page's own run button starts it, saying what the start does,
+        # and the note offers a new experiment instead
+        assert any("Adds to Features" in c.value for c in launch.caption)
+        assert [b for b in launch.button if b.label == "Start a new experiment instead"]
+        assert not [b for b in launch.button if b.label == "Start analysis"]
     finally:
+        params.pop("_follow_up", None)
+        params_file.write_text(json.dumps(params))
+
+
+@pytest.mark.parametrize("launch", ["content/topp_workflow_parameter.py"], indirect=True)
+def test_a_new_experiment_instead_drops_the_earlier_run(launch):
+    """Settings that add files to an experiment: the note's "Start a new
+    experiment instead" keeps the settings and forgets the earlier run."""
+    launch.run(timeout=30)
+    assert not launch.exception
+    workflow_dir = Path(launch.session_state["workspace"], "topp-workflow")
+    params_file = Path(workflow_dir, "params.json")
+    params = json.loads(params_file.read_text()) if params_file.exists() else {}
+    files = [str(f) for f in Path("example-data", "mzML").glob("*.mzML")][:1]
+    params["_follow_up"] = {"run": "r1", "name": "Features", "note": "to add more files",
+                            "adds_to": "r1", "files_key": "mzML-files", "files": files}
+    params["mzML-files"] = []
+    params_file.write_text(json.dumps(params))
+    try:
+        launch.run(timeout=30)
+        assert not launch.exception
+        assert any("Adds the files picked above to Features" in c.value for c in launch.caption)
+        [button] = [b for b in launch.button if b.label == "Start a new experiment instead"]
+        button.click().run(timeout=30)
+        assert not launch.exception
+        assert "_follow_up" not in json.loads(params_file.read_text())
+        launch.run(timeout=30)
+        assert not [b for b in launch.button if b.label == "Start a new experiment instead"]
+    finally:
+        params = json.loads(params_file.read_text())
         params.pop("_follow_up", None)
         params_file.write_text(json.dumps(params))

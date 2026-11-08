@@ -1,0 +1,33 @@
+# Read by src/common/storage.py. The bucket is the pod's own `app` label,
+# because the StorageClass names the app's directory (= gateway bucket) after
+# the claim's `app` label and both come from the overlay's commonLabels.
+- op: add
+  path: /spec/template/spec/containers/0/env/-
+  value:
+    name: WORKSPACES_S3_ENDPOINT
+    value: http://juicefs-s3-gateway.openms-storage.svc:9000
+- op: add
+  path: /spec/template/spec/containers/0/env/-
+  value:
+    name: WORKSPACES_S3_BUCKET
+    valueFrom:
+      fieldRef:
+        fieldPath: metadata.labels['app']
+- op: add
+  path: /spec/template/spec/containers/0/env/-
+  value:
+    name: WORKSPACES_S3_ACCESS_KEY
+    valueFrom:
+      secretKeyRef:
+        name: workspaces-s3-gateway
+        key: access-key
+        optional: true
+- op: add
+  path: /spec/template/spec/containers/0/env/-
+  value:
+    name: WORKSPACES_S3_SECRET_KEY
+    valueFrom:
+      secretKeyRef:
+        name: workspaces-s3-gateway
+        key: secret-key
+        optional: true

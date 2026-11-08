@@ -1238,7 +1238,7 @@ class StreamlitUI:
             disabled=True,
             key=f"_same-files-{widget}",
             help=f"The files of {info.get('name') or 'the earlier run'}: the analysis is added to "
-            "its results, so they stay as they are. Dismiss the note at the top to pick other files.",
+            "its results, so they stay as they are. **Start a new experiment instead** (at the top) to pick other files.",
         )
         return True
 
@@ -2894,10 +2894,16 @@ class StreamlitUI:
             text += (" Its files stay as they are"
                      + (f", and the results of {', '.join(kept)} are reused" if kept else "")
                      + ": only the settings of the steps that follow can be changed.")
-        text += " Check them, then start below."
+        text += " Check them, then start the run."
         with st.container(border=True, horizontal=True, vertical_alignment="center"):
             st.markdown(f":material/history: {text}", width="stretch")
-            if st.button("Dismiss", key=f"{self.workflow_dir.name}-follow-up-dismiss"):
+            if st.button(
+                "Start a new experiment instead",
+                icon=":material/restart_alt:",
+                key=f"{self.workflow_dir.name}-follow-up-dismiss",
+                help="Keep these settings, but pick any files: the run then is an experiment "
+                "of its own, not added to this run.",
+            ):
                 params = self.parameter_manager.get_parameters_from_json()
                 params.pop(FOLLOW_UP_KEY, None)
                 self.parameter_manager.write_parameters(params)
