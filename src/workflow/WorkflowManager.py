@@ -480,44 +480,31 @@ class WorkflowManager:
         """
         Shows the parameter section of the UI with content defined in self.configure().
         """
-        self.ui.parameter_section(self.configure, after_parameters=self._add_files_start)
+        self.ui.parameter_section(self.configure)
 
-    def _add_files_start(self) -> None:
-        """While the settings follow an earlier run (``follow_up``, ``start_from``),
-        such as adding files to its experiment: a button that starts the run here."""
+    def _follow_up(self) -> Optional[dict]:
+        """What the settings follow (``follow_up``, ``start_from``), else None."""
         info = self.parameter_manager.get_parameters_from_json().get(FOLLOW_UP_KEY)
-        if not isinstance(info, dict):
-            return
-        running = self.get_workflow_status()["running"]
+        return info if isinstance(info, dict) else None
+
+    @staticmethod
+    def _follow_up_summary(info: dict) -> str:
+        """One line on what a start with the settings of an earlier run does."""
         name = info.get("name") or info.get("run") or "the earlier run"
-        with st.container(border=True):
-            if info.get("same_files"):
-                kept = info.get("kept") or []
-                st.markdown(f"**:material/add_circle: Add to {name}**")
-                text = (f"Processes the files of {name} with the settings above"
-                        + (f", reusing its results of {', '.join(kept)}" if kept else "")
-                        + "; the new run is kept next to it.")
-            elif info.get("adds_to"):
-                st.markdown(f"**:material/library_add: Add files to {name}**")
-                text = ("Processes the files picked above with these settings; the results then "
-                        "show them together with the experiment's files.")
-            else:
-                st.markdown(f"**:material/history: Start from the settings of {name}**")
-                text = "Processes the files picked above with these settings."
-            st.caption("A run is still going: start once it has finished." if running else text)
-            if st.button("Start analysis", type="primary", icon=":material/play_arrow:",
-                         key=f"{self.workflow_dir.name}-add-files-start", disabled=running):
-                key = info.get("files_key")
-                if key:
-                    picked = st.session_state.get(f"{self.parameter_manager.param_prefix}{key}",
-                                                  self.params.get(key))
-                    if not picked:
-                        st.warning("Pick the files to add first.")
-                        return
-                self.start_workflow()
-                if self.run_page is not None:
-                    st.switch_page(self.run_page)
-                st.rerun()
+        if info.get("same_files"):
+            return f"Adds to {name}: its files with these settings, the new run kept next to it."
+        if info.get("adds_to"):
+            return f"Adds the files picked above to {name}."
+        return f"Starts from the settings of {name}."
+
+    def _follow_up_files_missing(self, info: Optional[dict]) -> bool:
+        """True while settings that add files to an experiment have none picked."""
+        key = (info or {}).get("files_key")
+        if not key or not (info or {}).get("adds_to"):
+            return False
+        picked = st.session_state.get(f"{self.parameter_manager.param_prefix}{key}",
+                                      self.params.get(key))
+        return not picked
 
     def _autostart_key(self) -> str:
         """Session-state flag set by ``show_run_button``: start on the Run page."""
@@ -552,6 +539,12 @@ class WorkflowManager:
         else:
             icon = ":material/play_arrow:"
             help = help or "Save these settings, open the Run page and start the analysis."
+        info = None if running else self._follow_up()
+        if info:
+            # Settings of an earlier run (adding files, an analysis, a re-run):
+            # this button starts with them; say so beside it.
+            line = self._follow_up_summary(info)
+            summary = f"{line} {summary}" if summary else line
         key = key or f"{self.workflow_dir.name}-run-button"
         if sticky:
             bar = st.container(key=f"{key}-bar", horizontal=True,
@@ -564,6 +557,9 @@ class WorkflowManager:
                 st.caption(summary, width="stretch")
             clicked = st.button(label, type="primary", icon=icon, help=help, key=key)
         if clicked:
+            if not running and self._follow_up_files_missing(info):
+                st.toast("Pick the files to add first.", icon=":material/warning:")
+                return
             if not running:
                 self.parameter_manager.save_parameters()
                 st.session_state[self._autostart_key()] = True
