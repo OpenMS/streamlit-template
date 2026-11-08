@@ -823,6 +823,11 @@ def test_results_kept_elsewhere_through_a_results_store(tmp_path, monkeypatch):
     assert view["runs"] == ["run_a", "run_b"]
     # A page drawn in the browser only: views yes, looking no
     monkeypatch.delattr(Workflow, "renderers")
-    assert tools.call("list_result_views", {"workflow": WF, "run_id": "run_a"})["views"]
+    shown = tools.call("list_result_views", {"workflow": WF, "run_id": "run_a"})
+    assert shown["views"] and "read_result" in shown["note"]
     with pytest.raises(Exception, match="browser only"):
         tools.call("look_at_results", {"workflow": WF, "run_id": "run_a"})
+    # Results kept without run folders: no follow_up, and list_runs says so
+    assert "note" not in runs
+    monkeypatch.setattr(Workflow, "multi_run", False)
+    assert "start_run" in tools.call("list_runs", {"workflow": WF})["note"]

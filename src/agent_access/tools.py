@@ -913,10 +913,15 @@ class Tools:
             has = results.is_dir() and any(results.iterdir())
             return {"multi_run": False, "runs": [{"id": None, "name": "Last run",
                                                   "has_results": has}] if has else []}
-        return {"multi_run": True, "runs": [
+        out = {"multi_run": True, "runs": [
             {k: r.get(k) for k in ("id", "name", "status", "created", "finished", "adds_to",
                                    "purpose") if r.get(k)}
             for r in runs.list_runs()[:200]]}
+        if not self._multi_run(entry):
+            out["note"] = ("Each start makes a new result here, named by the app; follow_up is not "
+                           "available, so start a new run with start_run and the settings you want, "
+                           "then find it as the newest entry of list_runs.")
+        return out
 
     def _list_results(self, workflow, run_id=None) -> dict:
         workflow, entry, workflow_dir = self._workflow(workflow)
@@ -1014,8 +1019,13 @@ class Tools:
                 item.update(saved_by_you=True, runs=view_runs(v), question=v.get("question", ""),
                             explanation=explanation(v))
             views.append(item)
-        return {"run_id": run_id, "components": components, "views": views,
-                "open_view": state["current"]}
+        out = {"run_id": run_id, "components": components, "views": views,
+               "open_view": state["current"]}
+        if not cat.get("renders", True):
+            out["note"] = ("These components are drawn in the browser only, so look_at_results "
+                           "cannot show them: read their data with list_results and read_result, "
+                           "then save_view to show them in the app.")
+        return out
 
     def _look_at_results(self, workflow, run_id=None, components=None, select=None, rows=20) -> dict:
         from src.layout_manager.layout import missing_analyses
