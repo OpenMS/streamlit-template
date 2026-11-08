@@ -1,6 +1,7 @@
 """The listing behind the About dialog: app license, bundled programs, packages."""
 
 import os
+import platform
 from pathlib import Path
 
 from src.common import third_party
@@ -55,6 +56,43 @@ def test_thermo_notice_only_when_rawfilereader_is_shipped(tmp_path):
 def test_no_tools_without_data_path_or_path():
     assert third_party.third_party_programs({}) == []
     assert third_party.thermo_notice({}) == ""
+
+
+def test_python_interpreter_has_its_version_and_license():
+    python = third_party.python_interpreter()
+    assert python.name == "Python" and python.license == "PSF-2.0"
+    assert python.version == platform.python_version()
+    assert third_party.libraries({})[0] == python
+
+
+def test_qt_is_found_in_the_desktop_payload(tmp_path, monkeypatch):
+    monkeypatch.setattr(third_party, "_system_qt_dirs", lambda: [])
+    data = tmp_path / "share" / "OpenMS"
+    data.mkdir(parents=True)
+    env = {"OPENMS_DATA_PATH": str(data), "PATH": ""}
+    assert third_party.qt_library(env) is None
+    (tmp_path / "openms" / "bin").mkdir(parents=True)
+    (tmp_path / "openms" / "bin" / "Qt6Core.dll").write_text("")
+    qt = third_party.qt_library(env)
+    assert (qt.name, qt.version, qt.license) == ("Qt", "6.x", "LGPL-3.0-only")
+    assert [f.name for f in qt.files] == ["LGPL-3.0.txt", "GPL-3.0.txt"]
+    assert "LESSER GENERAL PUBLIC LICENSE" in third_party.license_text(qt)
+    assert [c.name for c in third_party.libraries(env)] == ["Python", "Qt"]
+
+
+def test_qt_in_a_linux_lib_folder(tmp_path, monkeypatch):
+    monkeypatch.setattr(third_party, "_system_qt_dirs", lambda: [tmp_path])
+    (tmp_path / "libQt6Core.so.6").write_text("")
+    assert third_party.qt_library({}).version == "6.x"
+
+
+def test_qt_dylib_on_macos(tmp_path, monkeypatch):
+    monkeypatch.setattr(third_party, "_system_qt_dirs", lambda: [])
+    data = tmp_path / "share" / "OpenMS"
+    data.mkdir(parents=True)
+    (tmp_path / "openms" / "lib").mkdir(parents=True)
+    (tmp_path / "openms" / "lib" / "libQt6Core.6.dylib").write_text("")
+    assert third_party.qt_library({"OPENMS_DATA_PATH": str(data)}).version == "6.x"
 
 
 def test_installed_packages_have_names_and_licenses():

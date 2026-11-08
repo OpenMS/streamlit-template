@@ -13,7 +13,10 @@ Streamlit-free, so it can be tested on its own.
 from __future__ import annotations
 
 import os
+import platform
 import re
+import sys
+import sysconfig
 from dataclasses import dataclass, field
 from functools import lru_cache
 from importlib import metadata
@@ -96,6 +99,77 @@ def fonts(root: Path | str = ".") -> list[Component]:
         path = Path(root, "static", "fonts", f"LICENSE-{slug}.txt")
         if path.is_file():
             found.append(Component(name=name, license="OFL-1.1", files=[path]))
+    return found
+
+
+LICENSES_DIR = Path(__file__).resolve().parents[2] / "static" / "licenses"
+
+# Qt's core library as OpenMS ships it: in the desktop payload (openms/bin on
+# Windows, openms/lib elsewhere, a dylib or framework on macOS), bundled into
+# the pyOpenMS wheel, or from the system's packages in the full Docker image.
+_QT_CORE = ("Qt6Core*.dll", "Qt5Core*.dll", "libQt6Core.so*", "libQt5Core.so*",
+            "libQt6Core-*.so*", "libQt5Core-*.so*", "libQt6Core*.dylib",
+            "libQt5Core*.dylib", "QtCore.framework")
+_QT_MAJOR = re.compile(r"Qt([56])Core")
+
+
+def _system_qt_dirs() -> list[Path]:
+    """Where pyOpenMS and the system keep Qt: the wheel's own folders, the
+    environment's lib/ and the system's library folder."""
+    dirs: list[Path] = []
+    try:
+        package = Path(metadata.distribution("pyopenms").locate_file("pyopenms"))
+        dirs += [package, package.parent / "pyopenms.libs", package / ".dylibs"]
+    except metadata.PackageNotFoundError:
+        pass
+    multiarch = sysconfig.get_config_var("MULTIARCH") or ""
+    return dirs + [Path(sys.prefix, "lib"), Path("/usr/lib", multiarch)]
+
+
+def _qt_dirs(env: dict) -> list[Path]:
+    """Folders next to the OpenMS installation that OPENMS_DATA_PATH names:
+    an OpenMS install (bin, lib, Frameworks) or the desktop payload, which
+    keeps share/OpenMS beside openms/bin and openms/lib."""
+    dirs: list[Path] = []
+    data_path = env.get("OPENMS_DATA_PATH")
+    if data_path:
+        root = Path(data_path).parent.parent
+        dirs += [root / "bin", root / "lib", root / "Frameworks"]
+        dirs += [root / "openms" / "bin", root / "openms" / "lib"]
+    return dirs + _system_qt_dirs()
+
+
+def qt_library(env: dict | None = None) -> Component | None:
+    """Qt, which OpenMS and pyOpenMS link as a shared library, when it is shipped."""
+    env = os.environ if env is None else env
+    for folder in _qt_dirs(env):
+        if not folder.is_dir():
+            continue
+        for pattern in _QT_CORE:
+            hit = next(iter(sorted(folder.glob(pattern))), None)
+            if hit is None:
+                continue
+            match = _QT_MAJOR.search(hit.name)
+            version = f"{match.group(1)}.x" if match else ""
+            files = [LICENSES_DIR / name for name in ("LGPL-3.0.txt", "GPL-3.0.txt")]
+            return Component(name="Qt", version=version, license="LGPL-3.0-only",
+                             files=[f for f in files if f.is_file()])
+    return None
+
+
+def python_interpreter() -> Component:
+    """The Python interpreter the app runs on, with the PSF license it ships."""
+    candidates = [Path(sysconfig.get_paths()["stdlib"], "LICENSE.txt"), Path(sys.base_prefix, "LICENSE.txt")]
+    files = [p for p in candidates if p.is_file()][:1]
+    return Component(name="Python", version=platform.python_version(), license="PSF-2.0", files=files)
+
+
+def libraries(env: dict | None = None) -> list[Component]:
+    """The runtime the app is built on: Python and, with OpenMS, Qt."""
+    found = [python_interpreter()]
+    qt = qt_library(env)
+    if qt:
+        found.append(qt)
     return found
 
 
