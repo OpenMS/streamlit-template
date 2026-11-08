@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import os
 import platform
+import plistlib
 import re
 import sys
 import sysconfig
@@ -139,22 +140,63 @@ def _qt_dirs(env: dict) -> list[Path]:
     return dirs + _system_qt_dirs()
 
 
-def qt_library(env: dict | None = None) -> Component | None:
-    """Qt, which OpenMS and pyOpenMS link as a shared library, when it is shipped."""
+def _framework_major(framework: Path) -> str:
+    """The Qt major of a QtCore.framework, from its Info.plist or Versions/<n>."""
+    for plist in (framework / "Resources" / "Info.plist",
+                  *sorted(framework.glob("Versions/*/Resources/Info.plist"))):
+        try:
+            with plist.open("rb") as handle:
+                info = plistlib.load(handle)
+        except (OSError, plistlib.InvalidFileException, ValueError):
+            continue
+        for key in ("CFBundleShortVersionString", "CFBundleVersion"):
+            major = str(info.get(key, "")).split(".")[0]
+            if major in ("5", "6"):
+                return major
+    for version in sorted(framework.glob("Versions/[56]")):
+        return version.name
+    return ""
+
+
+def _qt_major(hit: Path) -> str | None:
+    """The Qt major of a core library match; None when it is no Qt library
+    (a framework folder without its QtCore binary)."""
+    if hit.name == "QtCore.framework":
+        binaries = [hit / "QtCore", *hit.glob("Versions/*/QtCore")]
+        if not any(p.exists() for p in binaries):
+            return None
+        return _framework_major(hit)
+    match = _QT_MAJOR.search(hit.name)
+    return match.group(1) if match else ""
+
+
+def qt_libraries(env: dict | None = None) -> list[Component]:
+    """Qt, which OpenMS and pyOpenMS link as a shared library, once per Qt
+    major found (an OpenMS install and a pyOpenMS wheel may bring different
+    ones), in search order."""
     env = os.environ if env is None else env
+    majors: list[str] = []
     for folder in _qt_dirs(env):
         if not folder.is_dir():
             continue
         for pattern in _QT_CORE:
-            hit = next(iter(sorted(folder.glob(pattern))), None)
-            if hit is None:
-                continue
-            match = _QT_MAJOR.search(hit.name)
-            version = f"{match.group(1)}.x" if match else ""
-            files = [LICENSES_DIR / name for name in ("LGPL-3.0.txt", "GPL-3.0.txt")]
-            return Component(name="Qt", version=version, license="LGPL-3.0-only",
-                             files=[f for f in files if f.is_file()])
-    return None
+            for hit in sorted(folder.glob(pattern)):
+                major = _qt_major(hit)
+                if major is not None and major not in majors:
+                    majors.append(major)
+    # An unknown major says no more than a known one.
+    if len(majors) > 1:
+        majors = [m for m in majors if m]
+    files = [LICENSES_DIR / name for name in ("LGPL-3.0.txt", "GPL-3.0.txt")]
+    files = [f for f in files if f.is_file()]
+    return [Component(name="Qt", version=f"{m}.x" if m else "", license="LGPL-3.0-only",
+                      files=list(files)) for m in majors]
+
+
+def qt_library(env: dict | None = None) -> Component | None:
+    """The first Qt that ``qt_libraries`` finds, or None."""
+    found = qt_libraries(env)
+    return found[0] if found else None
 
 
 def python_interpreter() -> Component:
@@ -166,11 +208,7 @@ def python_interpreter() -> Component:
 
 def libraries(env: dict | None = None) -> list[Component]:
     """The runtime the app is built on: Python and, with OpenMS, Qt."""
-    found = [python_interpreter()]
-    qt = qt_library(env)
-    if qt:
-        found.append(qt)
-    return found
+    return [python_interpreter()] + qt_libraries(env)
 
 
 def thermo_notice(env: dict | None = None) -> str:
