@@ -1,6 +1,9 @@
 """Tests for the layout manager's Streamlit-free part and its grid renderer."""
 
+import pytest
+
 import json
+import os
 from pathlib import Path
 
 from streamlit.testing.v1 import AppTest
@@ -398,6 +401,99 @@ def test_view_bar_pick_new_view_and_action(tmp_path):
     assert at.markdown[0].value == "custom-1:table"
 
 
+def test_assistant_view_is_read_only_in_the_editor(tmp_path):
+    from src.layout_manager.layout import load_views, save_views
+
+    path = tmp_path / "viewer.json"
+    state = load_views(path, COMPONENTS, VIEWS, DEFAULT)
+    state["views"].append({"name": "custom-1", "label": "Assistant view", "rows": [["plot"]], "preset": False,
+                           "in_bar": True, "by": "assistant"})
+    save_views(path, state)
+    at = AppTest.from_string(_BAR_APP.format(components=COMPONENTS, presets=VIEWS, default=DEFAULT))
+    at.session_state["path"] = str(path)
+    at.run()
+    # Sent like a ready-made view (just its name), or changed by hand: its label and rows stay
+    for nonce, sent in ((2, {"name": "custom-1", "in_bar": False}),
+                        (4, {"name": "custom-1", "label": "Changed", "rows": [["table"]], "in_bar": True})):
+        at.session_state["vb_bar"] = {"action": "edit", "nonce": nonce - 1}
+        at.run()
+        at.session_state["vb_editor"] = {
+            "action": "save", "nonce": nonce, "current": "all", "experiments": 1, "side_by_side": False,
+            "views": [{"name": "all", "in_bar": True}, {"name": "plots", "in_bar": True}, sent]}
+        at.run()
+        assert not at.exception
+        view = next(v for v in load_views(path, COMPONENTS, VIEWS, DEFAULT)["views"] if v["name"] == "custom-1")
+        assert (view["label"], view["rows"], view["by"]) == ("Assistant view", [["plot"]], "assistant")
+        assert view["in_bar"] is sent["in_bar"]
+
+
+def test_duplicate_keeps_the_defaults_of_its_source(tmp_path):
+    from src.layout_manager.layout import load_views, save_views
+
+    path = tmp_path / "viewer.json"
+    defaults = [{"selection": {"protein": "P1"}, "zoom": {"plot": {"x": [1.0, 2.0]}}}]
+    state = load_views(path, COMPONENTS, VIEWS, DEFAULT)
+    state["views"].append({"name": "custom-1", "label": "Assistant view", "rows": [["plot"]], "preset": False,
+                           "in_bar": True, "by": "assistant", "defaults": defaults})
+    save_views(path, state)
+    at = AppTest.from_string(_BAR_APP.format(components=COMPONENTS, presets=VIEWS, default=DEFAULT))
+    at.session_state["path"] = str(path)
+    at.run()
+    at.session_state["vb_bar"] = {"action": "edit", "nonce": 1}
+    at.run()
+    # Duplicate to edit: a new view whose source is named, with no defaults of its own in the payload
+    at.session_state["vb_editor"] = {
+        "action": "save", "nonce": 2, "current": "custom-2", "experiments": 1, "side_by_side": False,
+        "views": [{"name": "all", "in_bar": True}, {"name": "plots", "in_bar": True},
+                  {"name": "custom-1", "in_bar": True},
+                  {"name": "custom-2", "label": "Assistant view (copy)", "rows": [["plot"]], "in_bar": True,
+                   "copy_of": "custom-1"}]}
+    at.run()
+    assert not at.exception
+    views = {v["name"]: v for v in load_views(path, COMPONENTS, VIEWS, DEFAULT)["views"]}
+    assert views["custom-2"]["defaults"] == defaults
+    assert "by" not in views["custom-2"]
+    assert views["custom-1"]["defaults"] == defaults
+
+
+
+def test_duplicate_in_the_editor_sends_its_source(tmp_path):
+    """The editor's own Save carries ``copy_of``, so the server can copy the defaults."""
+    sync_api = pytest.importorskip("playwright.sync_api")
+    import json
+    from pathlib import Path
+    from src.layout_manager.layout import load_views
+
+    page_file = Path(__file__).parent.parent / "src" / "layout_manager" / "frontend" / "index.html"
+    views = load_views(tmp_path / "viewer.json", COMPONENTS, VIEWS, DEFAULT)["views"]
+    views.append({"name": "custom-1", "label": "Assistant view", "rows": [["plot"]], "preset": True,
+                  "in_bar": True, "by": "assistant"})
+    args = {"components": COMPONENTS, "default_layout": DEFAULT, "saved_layout": None, "side_by_side": False,
+            "views": views, "current": "custom-1", "experiments": 1, "fresh": None, "fresh_from": None,
+            "max_experiments": 1, "max_columns": 3, "revision": "0-0", "server_error": None,
+            "target": "the Viewer", "experiment_label": "Experiment"}
+    with sync_api.sync_playwright() as p:
+        try:
+            browser = p.chromium.launch(executable_path=os.environ.get("CHROMIUM_PATH") or None)
+        except Exception as exc:  # no browser on this machine
+            pytest.skip(f"no Chromium: {exc}")
+        page = browser.new_page()
+        page.add_init_script("""window.__sent = [];
+            window.addEventListener('message', e => {
+              if (e.data && e.data.type === 'streamlit:setComponentValue') window.__sent.push(e.data.value);
+            });""")
+        page.goto(page_file.as_uri())
+        page.evaluate("a => window.postMessage({type: 'streamlit:render', args: a}, '*')", args)
+        page.get_by_role("button", name="Duplicate to edit").click()
+        page.get_by_role("button", name="Save", exact=True).click()
+        page.wait_for_function("window.__sent.length > 0", timeout=5000)
+        sent = page.evaluate("window.__sent")
+        browser.close()
+    saved = json.loads(json.dumps(sent[-1]))
+    copies = [v for v in saved["views"] if v["name"] not in {"all", "plots", "custom-1"}]
+    assert len(copies) == 1 and copies[0]["copy_of"] == "custom-1"
+
+
 _STATE_APP = """
 import sys, types
 import streamlit as st
@@ -681,14 +777,15 @@ def test_apply_and_compare_defaults():
     assert differs_from_defaults(state.get_all_selections(), entry, "run1")
     assert apply_defaults(state, entry, "run1")
     # Saved values set, a zoom the view does not name back to the full view, the rest kept
-    assert state.sel == {"protein": "P1", "peptide": "PEP", "zoom@plot": {"x": [1.0, 2.0]}}
+    zoom = {"x": [1.0, 2.0], "xRange": [1.0, 2.0], "yRange": [-1, -1]}  # the Heatmap reads xRange/yRange
+    assert state.sel == {"protein": "P1", "peptide": "PEP", "zoom@plot": zoom}
     assert not differs_from_defaults(state.get_all_selections(), entry, "run1")
     assert not apply_defaults(state, entry, "run1")
 
     # Another dataset shown: the zoom is applied, the selection is not
     other = State({"protein": "Q2"})
     apply_defaults(other, entry, "run2")
-    assert other.sel == {"protein": "Q2", "zoom@plot": {"x": [1.0, 2.0]}}
+    assert other.sel == {"protein": "Q2", "zoom@plot": zoom}
 
 
 def test_view_extras_and_defaults_round_trip(tmp_path):
@@ -767,7 +864,7 @@ def test_view_bar_saves_and_restores_zoom_and_selection(tmp_path):
     at.session_state["exp_state_0"] = {"selections": {"protein": "P7", "zoom@plot": {"x": [5, 9]}}}
     at.session_state["vb_bar"] = {"action": "button", "id": "_restore_view_defaults", "nonce": 3}
     at.run()
-    assert at.markdown[-1].value == "custom-1 [('protein', 'P1'), ('zoom@plot', {'x': [1.0, 2.0]})]"
+    assert at.markdown[-1].value == "custom-1 [('protein', 'P1'), ('zoom@plot', {'x': [1.0, 2.0], 'xRange': [1.0, 2.0], 'yRange': [-1, -1]})]"
 
     # Another view and back: opening the view applies its defaults
     at.session_state["vb_bar"] = {"action": "pick", "view": "plots", "nonce": 4}
@@ -776,7 +873,7 @@ def test_view_bar_saves_and_restores_zoom_and_selection(tmp_path):
     at.run()
     at.session_state["vb_bar"] = {"action": "pick", "view": "custom-1", "nonce": 5}
     at.run()
-    assert at.markdown[-1].value == "custom-1 [('protein', 'P1'), ('zoom@plot', {'x': [1.0, 2.0]})]"
+    assert at.markdown[-1].value == "custom-1 [('protein', 'P1'), ('zoom@plot', {'x': [1.0, 2.0], 'xRange': [1.0, 2.0], 'yRange': [-1, -1]})]"
 
 
 def test_zoom_is_shared_by_a_private_state():
@@ -791,6 +888,25 @@ def test_zoom_is_shared_by_a_private_state():
 
     state = _private_state(Base)("s", {"row": "row@table"})
     assert state.get_all_selections() == {"protein": "P1", "row": 2, "zoom@plot": {"x": [1, 2]}}
+    # A view stores what every component keeps apart too, so it can restore those rows
+    from src.layout_manager.ui import _stored
+    assert _stored(state) == Base("s").values
+
+
+def test_defaults_review_fixes(tmp_path):
+    from src.layout_manager.layout import capture_defaults, load_views, normalize_zoom, selections_to_apply
+
+    # An oversized number in a stored zoom drops that range instead of breaking the bar
+    assert normalize_zoom({"x": [10 ** 400, 1]}) is None
+    # A table's page kept apart for it is pagination too
+    assert capture_defaults({"table_page@table": 3, "protein": "P1"}) == {"selection": {"protein": "P1"}}
+    # A Heatmap reads xRange/yRange, the other plots x/y: both are written
+    assert selections_to_apply({"zoom": {"map": {"y": [3.0, 4.0]}}})["zoom@map"] == {
+        "y": [3.0, 4.0], "xRange": [-1, -1], "yRange": [3.0, 4.0]}
+    # A ready-made view can ship defaults
+    presets = [dict(VIEWS[0], defaults=[{"selection": {"protein": "P1"}, "zoom": {"plot": {"x": [2, 1]}}}])] + VIEWS[1:]
+    view = load_views(tmp_path / "v.json", COMPONENTS, presets, DEFAULT)["views"][0]
+    assert view["defaults"] == [{"selection": {"protein": "P1"}, "zoom": {"plot": {"x": [1.0, 2.0]}}}]
 
 
 def test_annotations_kept_and_applied_only_for_their_dataset():

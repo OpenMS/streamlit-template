@@ -231,6 +231,9 @@ def load_views(
                 "rows": _known_rows(p["layout"], known), "preset": True, "in_bar": in_bar}
         if p.get("help"):
             view["help"] = p["help"]
+        defaults = clean_defaults(p.get("defaults"))
+        if defaults:  # zoom and selection the page ships with the view
+            view["defaults"] = defaults
         return view
 
     try:
@@ -500,7 +503,7 @@ def _range(value: Any) -> Optional[List[float]]:
         return None
     try:
         low, high = float(value[0]), float(value[1])
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return None
     if not (math.isfinite(low) and math.isfinite(high)) or low == high or (low == -1 and high == -1):
         return None
@@ -523,7 +526,8 @@ def normalize_zoom(value: Any) -> Optional[Dict[str, List[float]]]:
 
 
 def _is_pagination(identifier: str) -> bool:
-    return identifier.endswith("_page")
+    # Also a table's page kept apart for it (``table_page@<component>``)
+    return identifier.split("@", 1)[0].endswith("_page")
 
 
 def _plain(value: Any) -> bool:
@@ -621,7 +625,9 @@ def selections_to_apply(entry: Dict[str, Any], dataset: Optional[str] = None) ->
         for component, points in (entry.get("annotations") or {}).items():
             values[annotations_identifier(component)] = points
     for component, zoom in (entry.get("zoom") or {}).items():
-        values[zoom_identifier(component)] = zoom
+        # The Heatmap reads xRange/yRange on the server (to pick its resolution), the other plots x/y
+        values[zoom_identifier(component)] = {
+            **zoom, **{axis + "Range": zoom.get(axis, [-1, -1]) for axis in ("x", "y")}}
     return values
 
 
@@ -651,7 +657,7 @@ def differs_from_defaults(selections: Dict[str, Any], entry: Dict[str, Any],
     for identifier, value in selections_to_apply(entry, dataset).items():
         current = selections.get(identifier)
         if identifier.startswith(ZOOM_PREFIX):
-            if normalize_zoom(current) != value:
+            if normalize_zoom(current) != normalize_zoom(value):
                 return True
         elif current != value:
             return True
