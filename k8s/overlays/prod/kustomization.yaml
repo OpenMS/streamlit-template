@@ -12,6 +12,10 @@ resources:
 
 components:
   - ../../components/memory-tier-low
+  # Workspaces on S3 object storage (JuiceFS, k8s/storage-s3/) instead of
+  # the Manila share. The size patch below still targets the Manila name;
+  # the component renames the claim after it applies.
+  - ../../components/storage-s3
 
 namePrefix: template-app-
 

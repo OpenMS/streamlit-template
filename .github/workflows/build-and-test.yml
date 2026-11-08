@@ -109,7 +109,7 @@ jobs:
 
       - name: Install kubeconform
         run: |
-          curl -sSL https://github.com/yannh/kubeconform/releases/latest/download/kubeconform-linux-amd64.tar.gz | tar xz
+          curl -fsSL --retry 6 --retry-delay 10 --retry-all-errors https://github.com/yannh/kubeconform/releases/latest/download/kubeconform-linux-amd64.tar.gz | tar xz
           sudo mv kubeconform /usr/local/bin/
 
       - name: Install kubectl
@@ -165,14 +165,14 @@ jobs:
             < /tmp/prod-lint.yaml
 
       - name: Validate the overlay with the S3 storage component
-        # k8s/components/storage-s3/ is opt-in, so no overlay in this repo
-        # renders it. Render prod with it added and check that it really
+        # k8s/components/storage-s3/ is opt-in. Render prod with it (added
+        # unless the overlay already lists it) and check that it really
         # switched the app: the Manila claim is gone, every workspace volume
         # names the S3 claim, and the S3 settings reached the containers.
         run: |
           tmp=$(mktemp -d)
           cp -r k8s "$tmp/"
-          yq -i '.components += ["../../components/storage-s3"]' "$tmp/k8s/overlays/prod/kustomization.yaml"
+          yq -i '(.components // []) as $c | .components = ($c + (["../../components/storage-s3"] - $c))' "$tmp/k8s/overlays/prod/kustomization.yaml"
           kubectl kustomize "$tmp/k8s/overlays/prod/" > /tmp/prod-s3.yaml
           if [ ! -s /tmp/prod-s3.yaml ]; then
             echo "::error::prod + storage-s3 rendered nothing"

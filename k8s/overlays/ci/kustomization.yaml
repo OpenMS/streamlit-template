@@ -32,6 +32,20 @@ resources:
   - ../prod
 
 patches:
+  # An overlay that enables k8s/components/storage-s3 claims the class
+  # openms-juicefs-s3, which the kind jobs do not install (no S3 server in
+  # kind). Put the claim back on the class k8s/ci-storage/ publishes; the
+  # claim name and the WORKSPACES_S3_* variables stay (their secret is
+  # optional, so the pods start without it and the app reads local paths).
+  # kustomize matches the claim's original name; without the component the
+  # patch sets the class the claim already has.
+  - target:
+      kind: PersistentVolumeClaim
+      name: workspaces-manila-pvc
+    patch: |
+      - op: replace
+        path: /spec/storageClassName
+        value: openms-manila-nfs
   - path: worker-resources.yaml
     target:
       kind: Deployment
