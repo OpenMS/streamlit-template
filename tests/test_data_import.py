@@ -547,6 +547,47 @@ def test_onedrive_browser_address_gives_the_sharing_link():
     assert sources.sharing_link(f"https://onedrive.live.com/?redeem={bad}").startswith("https://onedrive.live.com/")
 
 
+def test_onedrive_malformed_redeem_keeps_the_link():
+    bad = base64.b64encode(b"http://[abc").decode()
+    link = f"https://onedrive.live.com/?redeem={bad}"
+    assert sources.sharing_link(link) == link
+
+
+@pytest.mark.parametrize("body", [["TOK"], "TOK", {"token": 5}, {}])
+def test_onedrive_token_reply_that_is_not_a_token(monkeypatch, body):
+    monkeypatch.setattr(sources, "_badger", {})
+
+    class S:
+        def post(self, *a, **kw):
+            class R:
+                def raise_for_status(self):
+                    pass
+
+                def json(self):
+                    return body
+            return R()
+    with pytest.raises(ValueError):
+        sources._badger_headers(S())
+
+
+def test_onedrive_listing_page_that_is_not_an_object():
+    with pytest.raises(ValueError):
+        sources._page_items(["x"])
+    assert sources._page_items({"value": [1]}) == ([1], None)
+
+
+def test_onedrive_children_falls_back_after_a_malformed_drive_page(monkeypatch):
+    share = sources._Share(api=sources.ONEDRIVE_API, headers={}, id="s!1")
+    item = {"id": "F1", "parentReference": {"driveId": "D1"}}
+
+    def fake_json(session, url, headers=None, **kw):
+        if "/drives/" in url:
+            return ["not", "a", "page"]
+        return {"value": [{"name": "a.mzML"}], "@odata.nextLink": None}
+    monkeypatch.setattr(sources, "_json", fake_json)
+    assert sources._onedrive_children(None, share, item) == ([{"name": "a.mzML"}], None)
+
+
 class _TokenSession:
     def __init__(self):
         self.posts = []

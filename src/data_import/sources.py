@@ -418,10 +418,11 @@ def sharing_link(link: str) -> str:
     try:
         decoded = base64.b64decode(redeem.replace("-", "+").replace("_", "/")
                                    + "=" * (-len(redeem) % 4)).decode()
-    except (ValueError, UnicodeDecodeError):
+        target = urlsplit(decoded)
+        host = (target.hostname or "").lower()
+    except ValueError:  # UnicodeDecodeError is one too
         return link
-    host = (urlsplit(decoded).hostname or "").lower()
-    if urlsplit(decoded).scheme in ("http", "https") and host in ("1drv.ms", "onedrive.live.com"):
+    if target.scheme in ("http", "https") and host in ("1drv.ms", "onedrive.live.com"):
         return decoded
     return link
 
@@ -443,8 +444,9 @@ def _badger_headers(session) -> dict:
                                 headers={"AppId": BADGER_APP_ID, "Accept": "application/json"},
                                 timeout=REQUEST_TIMEOUT, allow_redirects=False)
         response.raise_for_status()
-        token = response.json().get("token") or ""
-        if not token:
+        body = response.json()
+        token = body.get("token") if isinstance(body, dict) else None
+        if not isinstance(token, str) or not token:
             raise ValueError("OneDrive gave no token.")
         _badger.update(token=token, expires=time.time() + BADGER_LIFETIME)
     return {"Authorization": f"Badger {token}", "Prefer": "autoredeem"}
@@ -460,24 +462,35 @@ class _Share:
 
 
 def _onedrive_children(session, share: _Share, item: dict):
+    """The first listing page of a folder: its items and the link to the next page."""
     drive = (item.get("parentReference") or {}).get("driveId") or ""
     item_id = quote(item.get("id", ""), safe="")
     try:
-        return _json(session, f"{share.api}/drives/{quote(drive, safe='')}/items/{item_id}/children",
-                     headers=share.headers)
+        return _page_items(_json(
+            session, f"{share.api}/drives/{quote(drive, safe='')}/items/{item_id}/children",
+            headers=share.headers))
     except (requests.RequestException, LookupError, ValueError):
         # A folder of a share the visitor has not redeemed is read through the share.
-        return _json(session, f"{share.api}/shares/{share.id}/items/{item_id}/children",
-                     headers=share.headers)
+        return _page_items(_json(
+            session, f"{share.api}/shares/{share.id}/items/{item_id}/children",
+            headers=share.headers))
+
+
+def _page_items(page):
+    """The items of one listing page and the link to the next one."""
+    if not isinstance(page, dict):
+        raise ValueError("OneDrive sent an unexpected reply.")
+    return page.get("value", []), page.get("@odata.nextLink")
 
 
 def _onedrive_pages(session, share: _Share, children, next_url):
+    """Every item of a folder listing, following its next-page links."""
     while True:
         yield from children or []
         if not next_url or not next_url.startswith(share.api + "/"):
             return
         page = _json(session, next_url, headers=share.headers)
-        children, next_url = page.get("value", []), page.get("@odata.nextLink")
+        children, next_url = _page_items(page)
 
 
 def _onedrive_files(session, share: _Share, item: dict, prefix: str, depth: int,
@@ -496,8 +509,7 @@ def _onedrive_files(session, share: _Share, item: dict, prefix: str, depth: int,
         return
     children, next_url = item.get("children"), item.get("children@odata.nextLink")
     if children is None:
-        page = _onedrive_children(session, share, item)
-        children, next_url = page.get("value", []), page.get("@odata.nextLink")
+        children, next_url = _onedrive_children(session, share, item)
     for child in _onedrive_pages(session, share, children, next_url):
         _onedrive_files(session, share, child, path, depth + 1, files)
 
