@@ -10,7 +10,8 @@
 #
 #   stage-dotnet.sh <out dir>
 # Run after stage-openms.sh. Does nothing when the staged OpenMS has no built-in
-# Thermo reader (share/OpenMS/openms_thermo_bridge/managed). DOTNET_CHANNEL
+# Thermo reader (share/OpenMS/openms_thermo_bridge/managed, which
+# stage-openms.sh leaves out when FileConverter is not staged). DOTNET_CHANNEL
 # names the .NET release channel (default 10.0, the current long-term support
 # release; the bridge rolls forward from 8.0 to any newer major version).
 set -euo pipefail
