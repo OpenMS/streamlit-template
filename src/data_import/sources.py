@@ -462,15 +462,18 @@ class _Share:
 
 
 def _onedrive_children(session, share: _Share, item: dict):
+    """The first listing page of a folder: its items and the link to the next page."""
     drive = (item.get("parentReference") or {}).get("driveId") or ""
     item_id = quote(item.get("id", ""), safe="")
     try:
-        return _json(session, f"{share.api}/drives/{quote(drive, safe='')}/items/{item_id}/children",
-                     headers=share.headers)
+        return _page_items(_json(
+            session, f"{share.api}/drives/{quote(drive, safe='')}/items/{item_id}/children",
+            headers=share.headers))
     except (requests.RequestException, LookupError, ValueError):
         # A folder of a share the visitor has not redeemed is read through the share.
-        return _json(session, f"{share.api}/shares/{share.id}/items/{item_id}/children",
-                     headers=share.headers)
+        return _page_items(_json(
+            session, f"{share.api}/shares/{share.id}/items/{item_id}/children",
+            headers=share.headers))
 
 
 def _page_items(page):
@@ -481,6 +484,7 @@ def _page_items(page):
 
 
 def _onedrive_pages(session, share: _Share, children, next_url):
+    """Every item of a folder listing, following its next-page links."""
     while True:
         yield from children or []
         if not next_url or not next_url.startswith(share.api + "/"):
@@ -505,8 +509,7 @@ def _onedrive_files(session, share: _Share, item: dict, prefix: str, depth: int,
         return
     children, next_url = item.get("children"), item.get("children@odata.nextLink")
     if children is None:
-        page = _onedrive_children(session, share, item)
-        children, next_url = _page_items(page)
+        children, next_url = _onedrive_children(session, share, item)
     for child in _onedrive_pages(session, share, children, next_url):
         _onedrive_files(session, share, child, path, depth + 1, files)
 

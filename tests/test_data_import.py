@@ -576,6 +576,18 @@ def test_onedrive_listing_page_that_is_not_an_object():
     assert sources._page_items({"value": [1]}) == ([1], None)
 
 
+def test_onedrive_children_falls_back_after_a_malformed_drive_page(monkeypatch):
+    share = sources._Share(api=sources.ONEDRIVE_API, headers={}, id="s!1")
+    item = {"id": "F1", "parentReference": {"driveId": "D1"}}
+
+    def fake_json(session, url, headers=None, **kw):
+        if "/drives/" in url:
+            return ["not", "a", "page"]
+        return {"value": [{"name": "a.mzML"}], "@odata.nextLink": None}
+    monkeypatch.setattr(sources, "_json", fake_json)
+    assert sources._onedrive_children(None, share, item) == ([{"name": "a.mzML"}], None)
+
+
 class _TokenSession:
     def __init__(self):
         self.posts = []
