@@ -6,6 +6,7 @@ from .ParameterManager import InvalidParameterFileError, ParameterManager
 from .CommandExecutor import CommandExecutor
 from .StreamlitUI import StreamlitUI
 from .FileManager import FileManager
+from .input_check import clash_message, selection_clashes
 from .RunManager import RunManager, FINISHED, FAILED, CANCELLED, RUNNING, FOLLOW_UP_KEY, FOLLOW_UP_FILE, RUN_NAME_KEY, RUN_NAME_FILE, MAX_NAME_LENGTH, apply_settings, same_files_info
 import multiprocessing
 import streamlit as st
@@ -94,6 +95,10 @@ class WorkflowManager:
         # (queued) or the workflow process (local) sees the values the user
         # just selected, not stale disk state from a previous fragment run.
         self.parameter_manager.save_parameters()
+        problems = self.input_problems()
+        if problems:
+            st.error(problems, icon=":material/block:")
+            return
         if self.multi_run:
             self._new_run()
         else:
@@ -102,6 +107,18 @@ class WorkflowManager:
             self._start_workflow_queued()
         else:
             self._start_workflow_local()
+
+    def input_problems(self) -> str:
+        """Why the selected input files cannot be run as they are ("" when they can).
+
+        Two selected files whose names differ only in folder, extension or
+        case would write to the same result files (outputs are named after
+        the inputs), so one would replace the other's results. A subclass may
+        add checks of its own.
+        """
+        params = self.parameter_manager.get_parameters_from_json()
+        found = selection_clashes(self.workflow_dir, params)
+        return " ".join(clash_message(groups) for groups in found.values())
 
     def _settle_follow_up(self) -> None:
         """Without run folders: the start keeps which result it follows (for the
@@ -671,7 +688,9 @@ class WorkflowManager:
             name_key = run_name_key(self.runs)
         if self._run_online(name_key):
             return
+        blocked = "" if self.get_workflow_status().get("running") else self.input_problems()
         self.ui.execution_section(
+            blocked=blocked,
             start_workflow_function=self.start_workflow,
             get_status_function=self.get_workflow_status,
             stop_workflow_function=self.stop_workflow,
