@@ -219,7 +219,8 @@ if [[ -d "$thirdparty" ]]; then
       SageAdapter) keep+=" Sage " ;;
       SpectraSTSearchAdapter) keep+=" SpectraST " ;;
       XTandemAdapter) keep+=" XTandem " ;;
-      # Thermo .raw input (CommandExecutor.convert_to_mzml).
+      # Thermo .raw input (CommandExecutor.convert_to_mzml) on Windows; macOS
+      # and Linux use the built-in reader and the .NET runtime of stage-dotnet.sh.
       FileConverter) keep+=" ThermoRawFileParser " ;;
     esac
   done

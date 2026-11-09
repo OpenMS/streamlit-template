@@ -649,8 +649,10 @@ class CommandExecutor:
         Returns an mzML path for every input file, converting vendor files first.
 
         mzML files are returned unchanged. Thermo ``.raw`` files are converted
-        with the TOPP tool FileConverter (ThermoRawFileParser; on Linux and
-        macOS it needs mono). Bruker timsTOF ``.d`` folders are converted with
+        with the TOPP tool FileConverter: on Windows with ThermoRawFileParser,
+        elsewhere with OpenMS's built-in reader, which needs a .NET 8 or newer
+        runtime (the desktop app ships one), or, in an OpenMS built without it
+        (the Docker image), with ThermoRawFileParser on mono. Bruker timsTOF ``.d`` folders are converted with
         ``src/python-tools/bruker_to_mzml.py``. A conversion is done once: the
         mzML is kept in ``out_dir`` (default ``<workflow_dir>/converted-mzML``)
         and reused while it is newer than its input.

@@ -40,7 +40,9 @@ env:
   # Name of the app and its installers
   APP_NAME: OpenMS-StreamlitTemplateApp
   # Define needed TOPP tools here. FileConverter converts Thermo .raw input
-  # (CommandExecutor.convert_to_mzml) with share/OpenMS/THIRDPARTY/ThermoRawFileParser.
+  # (CommandExecutor.convert_to_mzml): on Windows with
+  # share/OpenMS/THIRDPARTY/ThermoRawFileParser, on macOS and Linux with OpenMS's
+  # built-in reader on the bundled .NET runtime (electron/scripts/stage-dotnet.sh).
   TOPP_TOOLS: "FeatureFinderMetabo FeatureLinkerUnlabeledKD SiriusExport FileConverter"
 
 jobs:
@@ -178,6 +180,12 @@ jobs:
           OPENMS_PACKAGE=$(find openms-package -maxdepth 1 -type f | head -n 1)
         fi
         electron/scripts/stage-openms.sh "$OPENMS_VERSION" electron/payload $TOPP_TOOLS
+
+    - name: Stage the .NET runtime for Thermo .raw files
+      # macOS and Linux: FileConverter's built-in .raw reader needs .NET 8 or
+      # newer (DOTNET_ROOT, set by electron/src/payload.js). Windows needs none.
+      if: runner.os != 'Windows'
+      run: electron/scripts/stage-dotnet.sh electron/payload
 
     - name: Stage Python with the app's requirements
       run: electron/scripts/stage-python.sh "$PYTHON_VERSION" electron/payload requirements.txt
