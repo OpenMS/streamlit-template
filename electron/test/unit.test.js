@@ -123,7 +123,8 @@ test("the agreement names RawFileReader shipped with OpenMS's built-in reader", 
   fs.writeFileSync(path.join(dir, "share", "OpenMS", "LICENSES", "ThermoRawFileReader-License.doc"), "terms");
   const sections = license.agreementSections(dir, "MyApp");
   assert.deepEqual(sections.map((s) => s.title), ["MyApp license", "Thermo RawFileReader", "Other components"]);
-  assert.match(sections[1].text, /ThermoRawFileReader-License\.doc/);
+  assert.match(sections[1].text, /\(share\/OpenMS\/LICENSES\/ThermoRawFileReader-License\.doc in the app's folder\)/);
+  assert.ok(!sections[1].text.includes(dir), "the agreement text does not depend on where the app is mounted");
 });
 
 test("acceptance is remembered per agreement text", () => {

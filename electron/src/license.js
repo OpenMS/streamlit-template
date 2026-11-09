@@ -57,7 +57,9 @@ function agreementSections(payload, appName) {
         `${appName} reads Thermo .raw files with RawFileReader, which it includes under a license from ` +
         `Thermo Fisher Scientific.\n${THERMO_NOTICE}\n\n` +
         "By accepting, you agree to the RawFileReader license terms " +
-        (terms ? `(${terms}) ` : "") +
+        // Relative to the app's folder: the AppImage mounts it at a new path on every
+        // start, and the agreement text must stay the same to stay accepted.
+        (terms ? `(${path.relative(payload, terms).split(path.sep).join("/")} in the app's folder) ` : "") +
         "and in particular that you will not redistribute RawFileReader to others.",
     });
   }

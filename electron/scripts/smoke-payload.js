@@ -23,9 +23,15 @@ async function main() {
   const env = payload.appEnvironment(payloadDir, workspaces);
   const python = payload.pythonExecutable(payloadDir);
 
+  // A check that exits with SKIPPED could not run (e.g. its test file did not download).
+  const SKIPPED = 77;
   const check = (name, code) => {
     const r = spawnSync(python, ["-c", code], { cwd: payloadDir, env, encoding: "utf8" });
     process.stdout.write(r.stdout || "");
+    if (r.status === SKIPPED) {
+      console.log(`skipped: ${name}`);
+      return;
+    }
     if (r.status !== 0) {
       process.stderr.write(r.stderr || String(r.error || ""));
       throw new Error(`${name} failed`);
@@ -75,8 +81,11 @@ for attempt in range(5):
         print("download failed:", e)
         time.sleep(10 * (attempt + 1))
 else:
+    # A release must not ship untested; elsewhere an outage of the file's host only skips the check.
+    if os.environ.get("GITHUB_EVENT_NAME") == "release":
+        sys.exit("could not download the Thermo test file")
     print("::warning::could not download the Thermo test file; .raw conversion not tested")
-    sys.exit(0)
+    sys.exit(${SKIPPED})
 assert hashlib.sha256(open(raw, "rb").read()).hexdigest() == "${RAW_SHA256}", "test file checksum"
 out = os.path.join(tmp, "test.mzML")
 r = subprocess.run(["FileConverter", "-in", raw, "-out", out], capture_output=True, text=True)

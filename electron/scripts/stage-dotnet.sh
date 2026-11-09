@@ -33,6 +33,7 @@ echo "Thermo reader runtime config:"
 cat "$config"
 
 dl=$(mktemp -d)
+trap 'rm -rf "$dl"' EXIT
 curl -fsSL --retry 5 --retry-all-errors -o "$dl/releases.json" \
   "https://builds.dotnet.microsoft.com/dotnet/release-metadata/${channel}/releases.json"
 version=$(jq -r '."latest-runtime"' "$dl/releases.json")
@@ -57,6 +58,5 @@ tar -xzf "$dl/runtime.tar.gz" -C "$out/dotnet"
 # it is small and lets a user check the runtime (dotnet --list-runtimes).
 compgen -G "$out/dotnet/host/fxr/*/libhostfxr.*" >/dev/null ||
   { echo "::error::the .NET runtime archive has no host/fxr"; exit 1; }
-rm -rf "$dl"
 echo "Staged .NET runtime ${version}: $(ls "$out/dotnet/shared/Microsoft.NETCore.App" | tr '\n' ' ')"
 du -sh "$out/dotnet"
