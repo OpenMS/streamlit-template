@@ -15,9 +15,25 @@ const FALLBACK_LICENSE =
   "Copyright OpenMS Inc. -- Eberhard Karls University Tuebingen, ETH Zurich, and Freie Universitaet Berlin " +
   "2002-present.\nThis software is released under a three-clause BSD license.";
 
+// RawFileReader comes either with ThermoRawFileParser (Windows) or with
+// OpenMS's built-in reader (share/OpenMS/openms_thermo_bridge/managed, macOS and
+// Linux); the first that is there.
 function thermoFolder(payload) {
-  const dir = path.join(payload, "share", "OpenMS", "THIRDPARTY", "ThermoRawFileParser");
-  return fs.existsSync(dir) ? dir : null;
+  const share = path.join(payload, "share", "OpenMS");
+  for (const dir of [path.join(share, "THIRDPARTY", "ThermoRawFileParser"), path.join(share, "openms_thermo_bridge", "managed")]) {
+    if (fs.existsSync(dir)) return dir;
+  }
+  return null;
+}
+
+// Thermo's license terms: ThermoRawFileParser keeps them in its folder,
+// OpenMS installs them for its built-in reader in share/OpenMS/LICENSES.
+function thermoTerms(payload, folder) {
+  const candidates = [
+    path.join(folder, "THERMO_LICENSE"),
+    path.join(payload, "share", "OpenMS", "LICENSES", "ThermoRawFileReader-License.doc"),
+  ];
+  return candidates.find((f) => fs.existsSync(f)) || null;
 }
 
 function appLicense(payload) {
@@ -34,14 +50,16 @@ function agreementSections(payload, appName) {
   const sections = [{ title: `${appName} license`, text: appLicense(payload) }];
   const thermo = thermoFolder(payload);
   if (thermo) {
-    const terms = path.join(thermo, "THERMO_LICENSE");
+    const terms = thermoTerms(payload, thermo);
     sections.push({
       title: "Thermo RawFileReader",
       text:
         `${appName} reads Thermo .raw files with RawFileReader, which it includes under a license from ` +
         `Thermo Fisher Scientific.\n${THERMO_NOTICE}\n\n` +
         "By accepting, you agree to the RawFileReader license terms " +
-        (fs.existsSync(terms) ? `(${terms}) ` : "") +
+        // Relative to the app's folder: the AppImage mounts it at a new path on every
+        // start, and the agreement text must stay the same to stay accepted.
+        (terms ? `(${path.relative(payload, terms).split(path.sep).join("/")} in the app's folder) ` : "") +
         "and in particular that you will not redistribute RawFileReader to others.",
     });
   }

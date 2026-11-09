@@ -2,13 +2,18 @@
 // environment the Electron shell builds:
 //   node scripts/smoke-payload.js <payload dir> [TOPP tool ...]
 // It checks that pyOpenMS imports and reads an mzML file, that every listed
-// TOPP tool starts from Python the way the workflow executor calls it, and
-// that the Streamlit server comes up.
+// TOPP tool starts from Python the way the workflow executor calls it, that
+// FileConverter (when listed) converts a Thermo .raw file, and that the
+// Streamlit server comes up.
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const { spawnSync } = require("child_process");
 const payload = require("../src/payload");
+
+// A small Thermo .raw file from OpenMS's test data (tools/ci/fetch_thermo_assets.sh).
+const RAW_URL = "https://archive.openms.de/openms/testfiles/Angiotensin_AllScans.raw";
+const RAW_SHA256 = "3a0236f719e7c91e3c958f57f4e66ae422803ec3e6a997b9af4d2af395332b9f";
 
 async function main() {
   const [dir, ...tools] = process.argv.slice(2);
@@ -18,9 +23,15 @@ async function main() {
   const env = payload.appEnvironment(payloadDir, workspaces);
   const python = payload.pythonExecutable(payloadDir);
 
+  // A check that exits with SKIPPED could not run (e.g. its test file did not download).
+  const SKIPPED = 77;
   const check = (name, code) => {
     const r = spawnSync(python, ["-c", code], { cwd: payloadDir, env, encoding: "utf8" });
     process.stdout.write(r.stdout || "");
+    if (r.status === SKIPPED) {
+      console.log(`skipped: ${name}`);
+      return;
+    }
     if (r.status !== 0) {
       process.stderr.write(r.stderr || String(r.error || ""));
       throw new Error(`${name} failed`);
@@ -46,6 +57,44 @@ if files:
 ini = os.path.join(tempfile.mkdtemp(), "${tool}.ini")
 subprocess.run(["${tool}", "-write_ini", ini], check=True, capture_output=True)
 assert os.path.getsize(ini) > 0`
+    );
+  }
+
+  if (tools.includes("FileConverter")) {
+    // A real Thermo .raw file through FileConverter, the way convert_to_mzml
+    // calls it: on macOS and Linux this runs OpenMS's built-in reader on the
+    // bundled .NET runtime, on Windows ThermoRawFileParser.
+    check(
+      "Thermo .raw conversion",
+      `import hashlib, os, subprocess, sys, tempfile, time
+import pyopenms, requests
+url = "${RAW_URL}"
+tmp = tempfile.mkdtemp()
+raw = os.path.join(tmp, "test.raw")
+for attempt in range(5):
+    try:
+        resp = requests.get(url, timeout=120)
+        resp.raise_for_status()
+        open(raw, "wb").write(resp.content)
+        break
+    except Exception as e:
+        print("download failed:", e)
+        time.sleep(10 * (attempt + 1))
+else:
+    # A release must not ship untested; elsewhere an outage of the file's host only skips the check.
+    if os.environ.get("GITHUB_EVENT_NAME") == "release":
+        sys.exit("could not download the Thermo test file")
+    print("::warning::could not download the Thermo test file; .raw conversion not tested")
+    sys.exit(${SKIPPED})
+assert hashlib.sha256(open(raw, "rb").read()).hexdigest() == "${RAW_SHA256}", "test file checksum"
+out = os.path.join(tmp, "test.mzML")
+r = subprocess.run(["FileConverter", "-in", raw, "-out", out], capture_output=True, text=True)
+print(r.stdout[-3000:], r.stderr[-3000:])
+assert r.returncode == 0, f"FileConverter exited with {r.returncode}"
+exp = pyopenms.MSExperiment()
+pyopenms.MzMLFile().load(out, exp)
+print("converted", exp.getNrSpectra(), "spectra")
+assert exp.getNrSpectra() > 0`
     );
   }
 

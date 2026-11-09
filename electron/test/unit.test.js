@@ -68,6 +68,20 @@ test("appEnvironment puts openms/bin on PATH when present", () => {
   assert.deepEqual(entries.slice(0, 2), [dir, path.join(dir, "openms", "bin")]);
 });
 
+test("appEnvironment points DOTNET_ROOT at the bundled .NET runtime", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "payload-"));
+  const saved = process.env.DOTNET_ROOT;
+  process.env.DOTNET_ROOT = "/somewhere/else";
+  try {
+    assert.equal(payload.appEnvironment(dir).DOTNET_ROOT, "/somewhere/else");
+    fs.mkdirSync(path.join(dir, "dotnet"));
+    assert.equal(payload.appEnvironment(dir).DOTNET_ROOT, path.join(dir, "dotnet"));
+  } finally {
+    if (saved === undefined) delete process.env.DOTNET_ROOT;
+    else process.env.DOTNET_ROOT = saved;
+  }
+});
+
 test("pythonExecutable prefers the embedded interpreter", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "payload-"));
   const exe = process.platform === "win32" ? "python.exe" : path.join("bin", "python3");
@@ -100,6 +114,17 @@ test("the agreement names RawFileReader only when the payload ships it", () => {
   assert.ok(withThermo[1].text.includes(license.THERMO_NOTICE));
   assert.match(withThermo[1].text, /not redistribute RawFileReader/);
   assert.match(withThermo[1].text, /THERMO_LICENSE/);
+});
+
+test("the agreement names RawFileReader shipped with OpenMS's built-in reader", () => {
+  const dir = fakePayload();
+  fs.mkdirSync(path.join(dir, "share", "OpenMS", "openms_thermo_bridge", "managed"), { recursive: true });
+  fs.mkdirSync(path.join(dir, "share", "OpenMS", "LICENSES"), { recursive: true });
+  fs.writeFileSync(path.join(dir, "share", "OpenMS", "LICENSES", "ThermoRawFileReader-License.doc"), "terms");
+  const sections = license.agreementSections(dir, "MyApp");
+  assert.deepEqual(sections.map((s) => s.title), ["MyApp license", "Thermo RawFileReader", "Other components"]);
+  assert.match(sections[1].text, /\(share\/OpenMS\/LICENSES\/ThermoRawFileReader-License\.doc in the app's folder\)/);
+  assert.ok(!sections[1].text.includes(dir), "the agreement text does not depend on where the app is mounted");
 });
 
 test("acceptance is remembered per agreement text", () => {
