@@ -3,6 +3,7 @@
 A local HTTP server stands in for the object stores. It can refuse Range
 requests, drop the connection partway through a file, and redirect.
 """
+import base64
 import gzip
 import hashlib
 import io
@@ -528,6 +529,97 @@ def test_onedrive_personal_folder_is_walked(monkeypatch):
     items = job.build_items(listing.files, targets(Path("/tmp")))
     assert [(i["name"], i["kind"]) for i in items] == [
         ("run1.mzML", "file"), ("sample.d", "folder"), ("db.fasta", "file")]
+
+
+BROWSER_LINK = (
+    "https://onedrive.live.com/?id=1D8EB194B8DEBA10%21sd26d79411a4f42da8b76ddbc5749bc14"
+    "&cid=1D8EB194B8DEBA10&ithint=folder&redeem=aHR0cHM6Ly8xZHJ2Lm1zL2YvYy8xZDhlYjE5NGI4ZGViYTEw"
+    "L0lnQkJlVzNTVHhyYVFvdDIzYnhYU2J3VUFmWWZ4SGxQY2pQZ1NtaUpCZjd6dlpNP2U9ZzNLcEIz&migratedtospo=true")
+SHARE_LINK = "https://1drv.ms/f/c/1d8eb194b8deba10/IgBBeW3STxraQot23bxXSbwUAfYfxHlPcjPgSmiJBf7zvZM?e=g3KpB3"
+
+
+def test_onedrive_browser_address_gives_the_sharing_link():
+    assert sources.sharing_link(BROWSER_LINK) == SHARE_LINK
+    assert sources.sharing_link(SHARE_LINK) == SHARE_LINK
+    assert sources.sharing_link("https://onedrive.live.com/?id=A&cid=B") == "https://onedrive.live.com/?id=A&cid=B"
+    # A redeem value that is not a OneDrive link is not followed
+    bad = base64.b64encode(b"http://169.254.169.254/").decode()
+    assert sources.sharing_link(f"https://onedrive.live.com/?redeem={bad}").startswith("https://onedrive.live.com/")
+
+
+class _TokenSession:
+    def __init__(self):
+        self.posts = []
+
+    def post(self, url, json=None, headers=None, **kw):
+        self.posts.append((url, json, headers))
+
+        class R:
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                return {"token": "TOK"}
+        return R()
+
+
+def test_onedrive_folder_shared_since_the_move_to_sharepoint(monkeypatch):
+    """New personal shares answer only with the anonymous visitor token."""
+    monkeypatch.setattr(sources, "_badger", {})
+    api = sources.ONEDRIVE_API
+    sid = sources.share_id(SHARE_LINK)
+    seen = []
+
+    def fake_json(session, url, headers=None, **kw):
+        seen.append((url, dict(headers or {})))
+        if not headers:
+            raise requests.HTTPError("401 Unauthorized")
+        assert headers == {"Authorization": "Badger TOK", "Prefer": "autoredeem"}
+        pages = {
+            f"{api}/shares/{sid}/root?$expand=children": {
+                "name": "Spectra", "folder": {"childCount": 2},
+                "children": [
+                    {"name": "a.mzML", "size": 4, "file": {}, "@content.downloadUrl": "https://dl.example/a"},
+                    {"name": "raw", "id": "R1", "folder": {"childCount": 1},
+                     "parentReference": {"driveId": "1d8eb194b8deba10"}},
+                ]},
+            f"{api}/drives/1d8eb194b8deba10/items/R1/children": {"value": [
+                {"name": "b.raw", "size": 9, "file": {}, "@content.downloadUrl": "https://dl.example/b"}]},
+        }
+        return pages[url]
+
+    monkeypatch.setattr(sources, "_json", fake_json)
+    monkeypatch.setattr(sources, "_open_archives", lambda session, listing: None)
+    session = _TokenSession()
+    listing = sources.resolve(session, BROWSER_LINK)
+    assert listing.title == "OneDrive: Spectra"
+    assert [(f.path, f.url) for f in listing.files] == [
+        ("a.mzML", "https://dl.example/a"), ("raw/b.raw", "https://dl.example/b")]
+    assert seen[0] == (f"{api}/shares/{sid}/root?$expand=children", {})
+    assert session.posts == [(sources.BADGER_TOKEN_URL, {"appId": sources.BADGER_APP_UUID},
+                              {"AppId": sources.BADGER_APP_ID, "Accept": "application/json"})]
+
+
+def test_onedrive_personal_content_api_is_tried_last(monkeypatch):
+    monkeypatch.setattr(sources, "_badger", {})
+    sid = sources.share_id(SHARE_LINK)
+    personal = sources.ONEDRIVE_PERSONAL_API
+
+    def fake_json(session, url, headers=None, **kw):
+        if not url.startswith(personal):
+            raise requests.HTTPError("403")
+        return {
+            f"{personal}/shares/{sid}/driveitem?$expand=children": {
+                "name": "Spectra", "folder": {}, "children": [
+                    {"name": "sub", "id": "S", "folder": {}, "parentReference": {"driveId": "d"}}]},
+            f"{personal}/shares/{sid}/items/S/children": {"value": [
+                {"name": "c.mzML", "size": 1, "file": {}, "@content.downloadUrl": "https://dl.example/c"}]},
+        }.get(url) or (_ for _ in ()).throw(requests.HTTPError("404"))
+
+    monkeypatch.setattr(sources, "_json", fake_json)
+    monkeypatch.setattr(sources, "_open_archives", lambda session, listing: None)
+    listing = sources.resolve(_TokenSession(), SHARE_LINK)
+    assert [(f.path, f.url) for f in listing.files] == [("sub/c.mzML", "https://dl.example/c")]
 
 
 def test_sharepoint_file_link_is_fetched_with_download(monkeypatch):
