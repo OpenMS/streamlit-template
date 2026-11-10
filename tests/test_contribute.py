@@ -54,3 +54,14 @@ def test_readme_shows_the_templates_prompt():
     settings = json.loads((ROOT / "settings.json").read_text(encoding="utf-8"))
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     assert contribute_prompt(settings) in readme
+
+
+def test_community_line_names_the_app():
+    from src.common.contribute import community_line
+
+    line = community_line(
+        {"app-name": "FLASHApp", "github-user": "OpenMS", "repository-name": "FLASHApp"}
+    )
+    assert line.startswith("FLASHApp is a community effort")
+    assert "Everyone is welcome" in line
+    assert community_line({}).startswith("The OpenMS web app framework")

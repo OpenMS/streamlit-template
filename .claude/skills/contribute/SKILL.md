@@ -30,6 +30,34 @@ repository on disk.
 - Keep each message short and in plain words. At the end, give one summary
   (below), not a log of every command.
 
+## Where you run
+
+The prompt is usually pasted into the Claude desktop app, sometimes into
+Claude Code in a terminal. Find out which of these you are in before the first
+step:
+
+- **You can run commands on their computer** (the desktop app's Code tab, or
+  Claude Code): run the checks and, after a yes, the steps yourself. The
+  desktop app runs on macOS and Windows; on Windows your commands run in Git
+  Bash, so the paths below in `~/...` form work there too.
+- **You cannot run commands** (a chat without access to their computer): say
+  once that the desktop app's Code tab can do the steps for them, and offer
+  that. If they stay in the chat, give one command at a time, say where to
+  paste it (Terminal on macOS, PowerShell on Windows), and wait for what it
+  printed before the next one.
+
+Your shell is not interactive: a command that waits for typed input (a
+passphrase, `yes/no`, a menu) hangs. So:
+
+- Run SSH checks with `-o BatchMode=yes`, so they fail instead of waiting.
+- Steps where the person types something secret or answers a prompt
+  (`ssh-keygen` with a passphrase, `ssh-add`, `gh auth login`) are run **by the
+  person**, in their own Terminal or PowerShell window. Give them the exact
+  command, tell them what it will ask, and continue when they say it is done.
+  In Claude Code in a terminal they can instead type the command after `!`.
+- Long-running commands (`streamlit run`) go in the background, or the person
+  starts them.
+
 ## 1. Which app
 
 Take the app from the prompt. If none was named, ask, offering these:
@@ -62,7 +90,9 @@ Check: `git --version`.
 Missing → ask, then install:
 
 - Windows: `winget install --id Git.Git -e` (Git for Windows also brings Git
-  Bash and `ssh`); a new terminal is needed afterwards.
+  Bash and `ssh`). If you cannot run commands before Git is there, the person
+  runs this in PowerShell. Claude and any open terminal need a restart
+  afterwards to find it.
 - macOS: `xcode-select --install` (or `brew install git` when Homebrew is there).
 - Debian/Ubuntu: `sudo apt-get install -y git`; Fedora: `sudo dnf install -y git`.
 
@@ -86,29 +116,46 @@ login; you need it for the fork URLs.
 
 Check for a key: `ls ~/.ssh/id_ed25519.pub ~/.ssh/id_ecdsa.pub ~/.ssh/id_rsa.pub`
 (Windows PowerShell: `ls $HOME\.ssh\*.pub`). Then check whether GitHub already
-accepts it: `ssh -T git@github.com` answers "Hi <login>! You've successfully
-authenticated" when it does (the exit code is 1 even then; read the text). On
-the first connection `ssh` asks to trust GitHub's host key: the fingerprints
-GitHub publishes are at
-https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/githubs-ssh-key-fingerprints.
+accepts it: `ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -T git@github.com`
+answers "Hi <login>! You've successfully authenticated" when it does (the exit
+code is 1 even then; read the text). `accept-new` records GitHub's host key on
+the first connection without a prompt; compare it once
+(`ssh-keygen -lf ~/.ssh/known_hosts -F github.com`) with the fingerprints GitHub
+publishes at
+https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/githubs-ssh-key-fingerprints,
+and stop if they differ.
 
-No key → ask, then
-`ssh-keygen -t ed25519 -C "<their commit email>" -f ~/.ssh/id_ed25519`.
-`ssh-keygen` asks for a passphrase itself; tell them a passphrase is
-recommended and that they type it into that prompt, not to you. Then load it
-into the agent so they type it once per session:
+No key → the person creates it in their own Terminal or PowerShell (it asks
+for a passphrase, which they type there, never to you; a passphrase is
+recommended):
+`ssh-keygen -t ed25519 -C "<their commit email>" -f ~/.ssh/id_ed25519`
+(PowerShell: `-f $HOME\.ssh\id_ed25519`). Then the key goes into the
+system's key store, so that your commands, which cannot type the passphrase,
+can use it:
 
-- macOS: `ssh-add --apple-use-keychain ~/.ssh/id_ed25519`
-- Linux: `eval "$(ssh-agent -s)" && ssh-add ~/.ssh/id_ed25519`
-- Windows: start the `ssh-agent` service once
-  (`Get-Service ssh-agent | Set-Service -StartupType Automatic; Start-Service ssh-agent`,
-  in an administrator PowerShell), then `ssh-add $HOME\.ssh\id_ed25519`.
+- macOS: the person runs `ssh-add --apple-use-keychain ~/.ssh/id_ed25519`, and
+  you add to `~/.ssh/config` (after asking):
+  ```
+  Host github.com
+    AddKeysToAgent yes
+    UseKeychain yes
+    IdentityFile ~/.ssh/id_ed25519
+  ```
+- Windows: the person starts the `ssh-agent` service once, in an
+  administrator PowerShell
+  (`Get-Service ssh-agent | Set-Service -StartupType Automatic; Start-Service ssh-agent`),
+  then runs `ssh-add $HOME\.ssh\id_ed25519`. Git for Windows brings its own
+  `ssh`, which does not see that service, so point Git at the Windows one:
+  `git config --global core.sshCommand "C:/Windows/System32/OpenSSH/ssh.exe"`.
+- Linux: `eval "$(ssh-agent -s)" && ssh-add ~/.ssh/id_ed25519` in their
+  terminal; a desktop session usually runs an agent already.
 
-Key not yet on GitHub → with `gh`: `gh auth login` (they complete it in the
-browser; choose SSH), then `gh ssh-key add ~/.ssh/id_ed25519.pub --title "<computer name>"`.
-Without `gh`: show the content of the `.pub` file, open
-https://github.com/settings/ssh/new and let them paste it. Run
-`ssh -T git@github.com` again until it greets them by login.
+Key not yet on GitHub → show the content of the `.pub` file (the public key
+only), open https://github.com/settings/ssh/new and let them paste it. With
+`gh` already signed in (`gh auth status`), `gh ssh-key add ~/.ssh/id_ed25519.pub --title "<computer name>"`
+does the same; signing in (`gh auth login`) is a step the person runs. Run the
+`ssh -o BatchMode=yes -T git@github.com` check again until it greets them by
+login.
 
 A network that blocks port 22 makes `ssh -T` time out: GitHub serves SSH on
 port 443 too (`ssh -T -p 443 git@ssh.github.com`); if that works, add to
@@ -135,7 +182,8 @@ that already exists is reused; never delete or recreate one.
 
 ## 5. Clone
 
-Ask where the code should live (suggest `~/openms-webapps`). Clone each fork
+Ask where the code should live. In the desktop app's Code tab, suggest the
+folder the session was opened in; otherwise suggest `~/openms-webapps`. Clone each fork
 over SSH into that folder, side by side, and point `upstream` at the original:
 
 ```bash
@@ -161,7 +209,7 @@ The apps need Python 3.11. In the app's clone:
 python3.11 -m venv .venv && . .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt && pip install pytest fakeredis
 python -m pytest test_gui.py tests/ -q
-streamlit run app.py
+streamlit run app.py      # in the background; it serves http://localhost:8501
 ```
 
 To work on openms-insight together with the app, install the clone into the

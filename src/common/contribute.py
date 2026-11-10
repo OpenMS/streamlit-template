@@ -1,7 +1,6 @@
 """The "Want to contribute?" section of an app's front page.
 
-It offers one prompt to paste into an agentic terminal (Claude Code and the
-like). The prompt makes the agent read the ``contribute`` skill from the
+It offers one prompt to paste into Claude (the desktop app or Claude Code). The prompt makes the agent read the ``contribute`` skill from the
 template's repository and follow it: Git, a GitHub SSH key, forks and clones
 of the app, the template and openms-insight, and the order in which to open
 pull requests. The skill is read by URL because the person has nothing
@@ -52,6 +51,14 @@ def contribute_prompt(settings: dict[str, Any]) -> str:
     )
 
 
+def community_line(settings: dict[str, Any]) -> str:
+    """The sentence that opens the section, naming the app."""
+    name = str(settings.get("app-name") or "").strip()
+    if not name or app_repository(settings).lower() == TEMPLATE_REPO.lower():
+        name = "The OpenMS web app framework"
+    return f"{name} is a community effort, carried by the open source community. Everyone is welcome."
+
+
 def contribute_enabled(settings: dict[str, Any]) -> bool:
     """False when settings.json has ``"contribute": {"enabled": false}``."""
     return bool(settings.get("contribute", {}).get("enabled", True))
@@ -65,8 +72,9 @@ def render_contribute() -> None:
     if not contribute_enabled(settings):
         return
     st.markdown("##### 🛠️ Want to contribute?")
+    st.markdown(community_line(settings))
     st.caption(
-        "Paste this prompt into **Claude Code** or another agentic terminal. "
+        "Paste this prompt into **Claude**. "
         "It sets up Git and a GitHub SSH key, forks and clones the app, the "
         "template and openms-insight, and opens your pull requests in the right "
         "order. It asks before installing or changing anything."

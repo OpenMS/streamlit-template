@@ -213,7 +213,7 @@ Documentation for **users** and **developers** is included as pages in [this tem
 
 ## 🛠️ Contributing
 
-Paste this prompt into Claude Code or another agentic terminal (each app's front page shows it with the app's own name):
+Paste this prompt into Claude, in the desktop app or Claude Code (each app's front page shows it with the app's own name):
 
 ```text
 Read https://raw.githubusercontent.com/OpenMS/streamlit-template/main/.claude/skills/contribute/SKILL.md and follow it to set me up to contribute to the OpenMS web app template (https://github.com/OpenMS/streamlit-template): Git, an SSH key for GitHub, forks and clones of the template and openms-insight, and how to open pull requests. Ask me before you install or change anything.
