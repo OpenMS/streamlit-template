@@ -35,9 +35,13 @@ from src.workflow.progress import (
     current_step,
     failures,
     file_counts,
+    LIST_LIMIT,
     format_duration,
+    left_out_line,
+    list_entries,
     read_progress,
     sample_counts,
+    time_left,
     tool_progress,
 )
 from src.workflow.InputFolders import (
@@ -203,6 +207,10 @@ def latest_results_key(workflow_dir) -> str:
     """Session-state flag the Run page's results button sets for the results page."""
     return f"{Path(workflow_dir).name}-show-latest-results"
 
+
+# Failed files shown each with its own error after a run; the rest are in one
+# expander, so a study where many files failed does not fill the page
+FAILURES_SHOWN = 5
 
 class StreamlitUI:
     """
@@ -3217,12 +3225,16 @@ class StreamlitUI:
                     f"{threads} thread{'s' if threads > 1 else ''}"
                     + (f" × {parallel} in parallel" if parallel > 1 else "")
                 )
+                left = time_left(files, now, parallel) if n > 1 else None
+                if left is not None:
+                    text += f" · about {format_duration(left)} left"
                 bar.progress(finished / n if n else 0.0, text=text)
                 if len(active) == 1:
                     self._show_tool_progress(tool)
             if n > 1 or step["ended"] is not None:
                 lines = []
-                for f in files:
+                shown, left_out = list_entries(files)
+                for f in (files[i] for i in shown):
                     if f["status"] == DONE:
                         lines.append(f":green[:material/check_circle:] {f['name']} :gray[{format_duration(f['ended'] - f['started'])}]")
                     elif f["status"] == FAILED:
@@ -3231,6 +3243,8 @@ class StreamlitUI:
                         lines.append(f":blue[:material/progress_activity:] **{f['name']}** :gray[{format_duration(now - f['started'])}]")
                     else:
                         lines.append(f":gray[:material/radio_button_unchecked: {f['name']}]")
+                if left_out:
+                    lines.append(f":gray[{left_out_line(left_out)}]")
                 file_list.markdown("  \n".join(lines))
             earlier = state["steps"][:-1]
             if earlier:
@@ -3274,6 +3288,9 @@ class StreamlitUI:
             text = f"{counts[DONE]} of {n} samples done"
             if counts[FAILED]:
                 text += f" · :red[{counts[FAILED]} failed]"
+            left = time_left(samples, now)
+            if left is not None:
+                text += f" · about {format_duration(left)} left"
             bar.progress((counts[DONE] + counts[FAILED]) / n, text=text)
             step = shared
             if running:
@@ -3285,13 +3302,16 @@ class StreamlitUI:
             )
             if one_command:
                 self._show_tool_progress(tool)
-            sample_list.markdown("  \n".join(self._sample_lines(state, now)))
+            sample_list.markdown("  \n".join(self._sample_lines(state, now, compact=True)))
 
     @staticmethod
-    def _sample_lines(state: dict, now: float) -> list:
-        """A markdown line per sample, with its time and, while it runs, its tool."""
+    def _sample_lines(state: dict, now: float, compact: bool = False) -> list:
+        """A markdown line per sample, with its time and, while it runs, its
+        tool; ``compact`` lists a long run's samples as ``list_entries`` does."""
         lines = []
-        for s in state["samples"]:
+        samples = state["samples"]
+        shown, left_out = list_entries(samples) if compact else (range(len(samples)), {})
+        for s in (samples[i] for i in shown):
             if s["status"] == DONE:
                 lines.append(f":green[:material/check_circle:] {s['name']} :gray[{format_duration(s['ended'] - s['started'])}]")
             elif s["status"] == FAILED:
@@ -3304,6 +3324,8 @@ class StreamlitUI:
                 lines.append(f":blue[:material/progress_activity:] **{s['name']}** :gray[{format_duration(now - s['started'])}{tool}]")
             else:
                 lines.append(f":gray[:material/radio_button_unchecked: {s['name']}]")
+        if left_out:
+            lines.append(f":gray[{left_out_line(left_out)}]")
         return lines
 
     @staticmethod
@@ -3325,7 +3347,17 @@ class StreamlitUI:
         if not state or not state.get("steps"):
             return
         if show_failures:
-            for failure in failures(state):
+            found = failures(state)
+            for number, failure in enumerate(found):
+                if number == FAILURES_SHOWN:
+                    with st.expander(
+                        f":red[{len(found) - FAILURES_SHOWN} more failed files]"
+                    ):
+                        st.markdown("  \n".join(
+                            f"**{f['context']}**" + (f": {f['message']}" if f["message"] else "")
+                            for f in found[FAILURES_SHOWN:]
+                        ))
+                    break
                 st.error(
                     f"**{failure['context']}**"
                     + (f": {failure['message']}" if failure["message"] else "")
@@ -3336,7 +3368,10 @@ class StreamlitUI:
                     ):
                         st.code("\n".join(failure["output"]), language="neon")
         if len(state.get("samples") or []) > 1:
-            st.markdown("  \n".join(self._sample_lines(state, time.time())))
+            st.markdown("  \n".join(self._sample_lines(state, time.time(), compact=True)))
+            if len(state["samples"]) > LIST_LIMIT:
+                with st.expander(f"All {len(state['samples'])} samples"):
+                    st.markdown("  \n".join(self._sample_lines(state, time.time())))
             st.caption(self._tool_totals(state["steps"]))
             return
         st.caption(" · ".join(self._step_summary(s) for s in state["steps"]))

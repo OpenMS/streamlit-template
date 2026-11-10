@@ -385,3 +385,68 @@ def format_duration(seconds: float) -> str:
     h, rest = divmod(seconds, 3600)
     m, s = divmod(rest, 60)
     return f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
+
+
+# Files or samples listed one per line on the Run page; a longer list shows
+# the failed and running ones, the next waiting and the latest finished, and
+# counts the rest
+LIST_LIMIT = 12
+
+
+def list_entries(entries: List[dict], limit: int = LIST_LIMIT) -> tuple:
+    """(indices, left_out) for listing ``entries`` (files or samples).
+
+    Up to ``limit`` entries all show, in their order. Beyond it the list keeps
+    the failed ones first, then the running, the next waiting and the latest
+    finished, so a study of 200 files still fits on the page; ``left_out``
+    counts the others by status.
+    """
+    if len(entries) <= limit:
+        return list(range(len(entries))), {}
+    by_status = {PENDING: [], RUNNING: [], DONE: [], FAILED: []}
+    for i, entry in enumerate(entries):
+        by_status.setdefault(entry["status"], []).append(i)
+    latest_done = sorted(
+        by_status[DONE], key=lambda i: entries[i].get("ended") or 0, reverse=True
+    )
+    order = by_status[FAILED] + by_status[RUNNING] + by_status[PENDING][:3] + latest_done
+    order += by_status[PENDING][3:]
+    shown = order[:limit]
+    left_out = {}
+    for i in order[limit:]:
+        status = entries[i]["status"]
+        left_out[status] = left_out.get(status, 0) + 1
+    return shown, left_out
+
+
+def left_out_line(left_out: dict) -> str:
+    """'… and 120 more: 100 done, 20 waiting' for what list_entries left out."""
+    if not left_out:
+        return ""
+    words = {DONE: "done", FAILED: "failed", RUNNING: "running", PENDING: "waiting"}
+    parts = [
+        f"{left_out[status]} {words[status]}"
+        for status in (FAILED, RUNNING, DONE, PENDING)
+        if left_out.get(status)
+    ]
+    return f"… and {sum(left_out.values())} more: " + ", ".join(parts)
+
+
+def time_left(entries: List[dict], now: float, parallel: int = 1) -> Optional[float]:
+    """Seconds until every entry is finished, from the mean time of the
+    finished ones, or None before the first one is done."""
+    took = [
+        e["ended"] - e["started"]
+        for e in entries
+        if e["status"] == DONE and e.get("ended") and e.get("started")
+    ]
+    if not took:
+        return None
+    mean = sum(took) / len(took)
+    work = 0.0
+    for e in entries:
+        if e["status"] == PENDING:
+            work += mean
+        elif e["status"] == RUNNING:
+            work += max(mean - (now - (e.get("started") or now)), 0.0)
+    return work / max(int(parallel or 1), 1)
