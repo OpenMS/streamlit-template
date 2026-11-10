@@ -26,7 +26,7 @@ Standing rules for an agent (Claude Code or another) working on the template or 
 ### Which repository gets the change
 
 - **Template first.** A change goes as a PR to `OpenMS/streamlit-template` when it touches a template-owned file (anything not listed in `sync.app_owned` of the app's `app.yaml`: `src/workflow/`, `src/common/`, `src/layout_manager/`, `src/data_import/`, `src/sync/`, `docker/`, the Dockerfiles, `k8s/base`, `k8s/components`, `.github/`, `electron/`, `.claude/`, this file), when a second app would want it, or when it fixes a bug the template has too. It reaches the apps through the template sync (`template-sync.yml`, or a merge of the template's `main` into the app), never by editing the template-owned file in the app. App-specific behaviour in template-owned code becomes a template option (a parameter whose default keeps the old behaviour, a `settings.json` key, a method the app overrides), not a fork of the file. Skill `upstream-to-template` splits such a change out of app work; `sync-from-template` brings it back.
-- **App repository** for what the app owns: its workflow and python tools, its result pages and viewer components, its presets and parameter names, its identity (`settings.json`, hosts, overlay patches) and its `CLAUDE.app.md`.
+- **App repository** for what the app owns: its workflow and python tools, its result pages and viewer components, its presets and parameter names, its identity (`settings.json`, hosts, overlay patches), its own dependencies in `requirements.txt` (most apps list it in `sync.app_owned`; where one does not, `sync-from-template` resolves the conflict) and its `CLAUDE.app.md`.
 - **openms-insight** (`t0mdavid-m/OpenMS-Insight`) for visualization components and for component features any app could use: a new plot or component, an option of an existing one, a rendering or linking bug. The app then only configures the component. Until openms-insight releases the change, an app PR may depend on its branch or a dev build (see *Releases*).
 - **One PR per repository** when a change spans several, each naming the PRs it needs, merged in dependency order: openms-insight, then the template, then the app's template sync, then the app.
 - Merge template-sync PRs with a merge commit, never squash, or the next sync conflicts again.
@@ -45,7 +45,7 @@ Standing rules for an agent (Claude Code or another) working on the template or 
 
 ### Releases
 
-- **Every openms-insight change a release depends on must be in a published openms-insight version on PyPI**, and the app's `requirements.txt` requires that version (`openms-insight>=X.Y.Z`). No git branches, dev builds, wheels from elsewhere or unreleased versions in a release; if the needed change is not on PyPI yet, release openms-insight first. Skills `release-app` and `upgrade-openms-insight`.
+- **Every openms-insight change a release depends on must be in a published openms-insight version on PyPI**, and the app's `requirements.txt` pins that version (`openms-insight==X.Y.Z`, as `upgrade-openms-insight` does). No git branches, dev builds, wheels from elsewhere or unreleased versions in a release; if the needed change is not on PyPI yet, release openms-insight first. Skills `release-app` and `upgrade-openms-insight`.
 
 ### Secrets
 
