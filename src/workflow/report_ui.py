@@ -5,6 +5,7 @@ from typing import Optional
 
 import streamlit as st
 
+from .methods_text import methods_text
 from .processing_report import file_stem, report_for, to_markdown, to_pdf
 from .progress import progress_path
 
@@ -33,6 +34,31 @@ def _pdf(workflow_dir: str, run_id: Optional[str], workflow: str, stamp: tuple) 
         return to_pdf(_report(workflow_dir, run_id, workflow, stamp))
     except Exception:  # a layout error in reportlab leaves the Markdown report
         return None
+
+
+_METHODS_HELP = ("A methods section for a publication, written from this run: the tools, "
+                 "their versions and the settings that differ from their defaults, with "
+                 "references. Copy it and edit it to fit.")
+
+
+def methods_box(report: dict, stem: str, key: str, compact: bool = False) -> None:
+    """**Methods**: the run's methods section (``methods_text``) to copy or download.
+
+    ``compact`` (a row of a run list, already in a popover) draws only the download.
+    """
+    text = methods_text(report, st.session_state.get("settings"))
+    if not text:
+        return
+    if compact:
+        st.download_button("📝 Methods", text, file_name=f"{stem}-methods.txt", mime="text/plain",
+                           key=f"{key}-methods-txt", help=_METHODS_HELP, width="stretch")
+        return
+    with st.popover("Methods", icon=":material/article:", help=_METHODS_HELP):
+        st.caption("A draft to edit: it says what was run, not why. The copy button is at "
+                   "the top right of the text.")
+        st.code(text, language=None, wrap_lines=True)
+        st.download_button("Download", text, file_name=f"{stem}-methods.txt", mime="text/plain",
+                           key=f"{key}-methods-txt", icon=":material/download:")
 
 
 def has_report(workflow_dir: Path, run_id: Optional[str] = None) -> bool:
@@ -72,6 +98,7 @@ def report_buttons(
         if pdf:
             st.download_button("📄 PDF", pdf, file_name=f"{stem}.pdf", mime="application/pdf",
                                key=f"{key}-pdf", help=help_text, width="stretch")
+        methods_box(report, stem, key, compact=True)
         return
     with st.container(horizontal=True, vertical_alignment="center"):
         st.markdown("**Processing report**", help=help_text)
@@ -80,3 +107,4 @@ def report_buttons(
         if pdf:
             st.download_button("PDF", pdf, file_name=f"{stem}.pdf", mime="application/pdf",
                                key=f"{key}-pdf", icon=":material/picture_as_pdf:")
+        methods_box(report, stem, key)
