@@ -94,16 +94,19 @@ def methods_text(
     steps = [s for s in report.get("steps") or [] if s.get("status") == "done"]
     if not steps:
         return ""
-    wording: Dict[str, Any] = ((settings or {}).get("methods") or {})
-    tool_wording: Dict[str, dict] = wording.get("tools") or {}
+    # A settings block of another shape (a typo in settings.json) is ignored, never an error
+    wording = (settings or {}).get("methods") if isinstance(settings, dict) else None
+    wording = wording if isinstance(wording, dict) else {}
+    tool_wording = wording.get("tools") if isinstance(wording.get("tools"), dict) else {}
     refs = _References()
 
     # Steps that took several input files at once (feature linking, protein inference)
-    together = set()
+    # and how many of them each call of the step took at most
+    together: Dict[int, int] = {}
     for item in report.get("inputs") or []:
         for call in item.get("calls") or []:
             if call.get("with"):
-                together.add(call["step"])
+                together[call["step"]] = max(together.get(call["step"], 0), call["with"] + 1)
 
     app = report.get("app") or {}
     app_name = " ".join(x for x in (app.get("name"), app.get("version")) if x)
@@ -114,7 +117,7 @@ def methods_text(
     inputs = report.get("inputs") or []
     opening = _files_phrase(inputs) if inputs else "The data were"
     text = f"{opening} processed with {app_name or 'an OpenMS web app'}"
-    if wording.get("reference"):
+    if isinstance(wording.get("reference"), str) and wording["reference"]:
         text += f" {refs.cite(wording['reference'])}"
     text += f", which runs the tools of OpenMS{f' {openms}' if openms else ''} {refs.cite(OPENMS_REFERENCE)}."
     sentences = [text]
@@ -123,7 +126,8 @@ def methods_text(
         program = step.get("program") or step.get("tool", "")
         instance = _split_tool(step.get("tool", ""), program)
         own = tool_wording.get(instance or "") or tool_wording.get(program) or {}
-        if own.get("text"):
+        own = own if isinstance(own, dict) else {}
+        if isinstance(own.get("text"), str) and own["text"]:
             subject = own["text"]
         elif step.get("kind") == "python":
             subject = f"the Python script {program} was run"
@@ -132,7 +136,7 @@ def methods_text(
         version = step.get("version") or ""
         if step.get("kind") == "topp" and version and version != openms:
             subject += f" (version {version})"
-        if own.get("reference"):
+        if isinstance(own.get("reference"), str) and own["reference"]:
             subject += f" {refs.cite(own['reference'])}"
         if index == 0:
             lead = "First, " if len(steps) > 1 else ""
@@ -145,7 +149,13 @@ def methods_text(
             subject = subject[0].lower() + subject[1:]
         sentence = lead + subject
         if len(inputs) > 1:
-            sentence += " on all files together" if step["number"] in together else " on each file"
+            group = together.get(step["number"], 0)
+            if not group:
+                sentence += " on each file"
+            elif group >= len(inputs):
+                sentence += " on all files together"
+            else:
+                sentence += f" on groups of up to {group} files together"
         params = step.get("params") or {}
         if params:
             parts = [f"{_param_name(program, k, instance, names)} set to {v}" for k, v in params.items()]

@@ -96,3 +96,23 @@ def test_a_tool_of_another_openms_version_names_it(tmp_path):
 
 def test_no_finished_step_no_text(tmp_path):
     assert methods_text(build_report(read_progress(tmp_path))) == ""
+
+
+def test_a_step_on_some_files_together_says_so(tmp_path):
+    progress = RunProgress(tmp_path)
+    files = [f"/d/{x}.mzML" for x in "ABCD"]
+    _step(progress, "FeatureFinderMetabo",
+          command_io({"in": files, "out": [f.replace(".mzML", ".fx") for f in files]}, 4))
+    _step(progress, "FeatureLinkerUnlabeledKD",
+          command_io({"in": [["/d/A.fx", "/d/B.fx"], ["/d/C.fx", "/d/D.fx"]],
+                      "out": ["/r/ab.cx", "/r/cd.cx"]}, 2))
+    text = methods_text(build_report(read_progress(tmp_path), app_name="App"), names=_no_names)
+    assert "Then, FeatureLinkerUnlabeledKD was run on groups of up to 2 files together" in text
+
+
+def test_a_methods_block_of_another_shape_is_ignored(tmp_path):
+    report = _report(tmp_path)
+    plain = methods_text(report, names=_no_names)
+    for methods in (["CometAdapter"], "text", {"tools": ["x"]},
+                    {"tools": {"FeatureLinkerUnlabeledKD": "Linked"}}, {"reference": 3}):
+        assert methods_text(report, {"methods": methods}, names=_no_names) == plain
