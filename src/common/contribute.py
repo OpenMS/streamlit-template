@@ -52,23 +52,24 @@ def contribute_prompt(settings: dict[str, Any]) -> str:
     )
 
 
+def contribute_enabled(settings: dict[str, Any]) -> bool:
+    """False when settings.json has ``"contribute": {"enabled": false}``."""
+    return bool(settings.get("contribute", {}).get("enabled", True))
+
+
 def render_contribute() -> None:
-    """Draw the section, typically right after the contributors."""
+    """Draw the section; ``render_contributors()`` puts it at the top of its strip."""
     import streamlit as st
 
     settings = st.session_state.get("settings") or {}
-    if not settings.get("contribute", {}).get("enabled", True):
+    if not contribute_enabled(settings):
         return
-    st.markdown("#### 🛠️ Want to contribute?")
-    st.markdown(
+    st.markdown("##### 🛠️ Want to contribute?")
+    st.caption(
         "Paste this prompt into **Claude Code** or another agentic terminal. "
-        "It sets up Git and a GitHub SSH key if needed, forks and clones the "
-        "app, the template it is built on and openms-insight, and opens your "
-        "pull requests in the right order: shared changes in the template, "
-        "visualizations and statistics in openms-insight, then the app."
+        "It sets up Git and a GitHub SSH key, forks and clones the app, the "
+        "template and openms-insight, and opens your pull requests in the right "
+        "order. It asks before installing or changing anything."
     )
     st.code(contribute_prompt(settings), language="text", wrap_lines=True)
-    st.caption(
-        f"It asks before installing or changing anything. "
-        f"[Read the instructions it follows]({SKILL_PAGE})."
-    )
+    st.caption(f"[Read the instructions it follows]({SKILL_PAGE})")

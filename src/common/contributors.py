@@ -47,6 +47,11 @@ CSS = """
 .ctb .p .n{font-size:.74rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ctb .p .h{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ctb .p img{width:40px;height:40px;border-radius:50%;display:block;margin:0 auto 3px auto;background:rgba(128,128,128,.2)}
+.ctb.compact h3{font-size:1.05rem}
+.ctb.compact .lead{font-size:.8rem}
+.ctb.compact .grp{font-size:.66rem;margin:10px 0 4px 0}
+.ctb.compact .grid{gap:4px}
+.ctb.compact img.a{width:30px;height:30px;border-radius:50%;display:block;background:rgba(128,128,128,.2)}
 </style>
 """
 
@@ -108,33 +113,56 @@ def _person(login: str, name: str) -> str:
     )
 
 
-def to_html(content: dict[str, Any]) -> str:
+def _avatar(login: str, name: str) -> str:
+    login_e = html.escape(login)
+    tip = html.escape(f"{name} (@{login})" if name else f"@{login}")
+    return (
+        f'<a href="{PROFILE_URL.format(login=login_e)}" target="_blank" rel="noopener" title="{tip}">'
+        f'<img class="a" src="{AVATAR_URL.format(login=login_e)}" alt="{tip}" loading="lazy"></a>'
+    )
+
+
+def to_html(content: dict[str, Any], compact: bool = False) -> str:
+    """The section as HTML; ``compact`` shows pictures only, names on hover."""
+    person = _avatar if compact else _person
     parts = [
         CSS,
-        '<div class="ctb">',
+        f'<div class="ctb{" compact" if compact else ""}">',
         "<h3>🤝 Contributors</h3>",
         f'<p class="lead">{html.escape(content["lead"])}</p>',
     ]
     for group in content["groups"]:
         parts.append(f'<div class="grp">{html.escape(group["title"])}</div><div class="grid">')
-        parts.extend(_person(p, content["names"].get(p, "")) for p in group["people"])
+        parts.extend(person(p, content["names"].get(p, "")) for p in group["people"])
         parts.append("</div>")
     parts.append("</div>")
     return "".join(parts)
 
 
-def render_contributors(contribute: bool = True) -> None:
-    """Draw the contributors section, typically at the end of the front page.
+STRIP_KEY = "openms-side-strip"
 
-    ``contribute`` adds the "Want to contribute?" section below it
-    (``src/common/contribute.py``), also when there are no contributors to show.
+
+def render_contributors(contribute: bool = True) -> None:
+    """Draw the contributors in a strip on the right of the page.
+
+    Call it once on the front page, anywhere: on a wide window the strip is
+    fixed to the right edge (``.st-key-openms-side-strip`` in
+    ``src/common/theme.css``) and stays in view while the page scrolls; on a
+    narrow one it is drawn where it is called. ``contribute`` puts the
+    "Want to contribute?" prompt (``src/common/contribute.py``) at its top.
     """
     import streamlit as st
 
-    content = load(st.session_state.get("settings"))
-    if content:
-        st.html(to_html(content))
-    if contribute:
-        from src.common.contribute import render_contribute
+    from src.common.contribute import contribute_enabled, render_contribute
 
-        render_contribute()
+    content = load(st.session_state.get("settings"))
+    show_contribute = contribute and contribute_enabled(
+        st.session_state.get("settings") or {}
+    )
+    if not content and not show_contribute:
+        return
+    with st.container(key=STRIP_KEY):
+        if show_contribute:
+            render_contribute()
+        if content:
+            st.html(to_html(content, compact=True))

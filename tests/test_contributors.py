@@ -120,3 +120,24 @@ def test_every_build_ships_the_app_contributors_file():
     desktop = Path(".github/workflows/build-desktop-app.yaml").read_text(encoding="utf-8")
     copy_line = next(l for l in desktop.splitlines() if "cp -R src utils" in l)
     assert " contributors.json " in copy_line
+
+
+def test_compact_html_shows_names_on_hover_only():
+    from src.common.contributors import to_html
+
+    content = {"lead": "L", "groups": [{"title": "G", "people": ["octocat"]}],
+               "names": {"octocat": "Mona <Lisa>"}}
+    compact = to_html(content, compact=True)
+    assert 'class="ctb compact"' in compact
+    assert 'title="Mona &lt;Lisa&gt; (@octocat)"' in compact
+    assert '<div class="n">' not in compact
+    assert '<div class="n">' in to_html(content)
+
+
+def test_strip_is_styled_by_the_theme():
+    from pathlib import Path
+
+    from src.common.contributors import STRIP_KEY
+
+    css = Path("src/common/theme.css").read_text(encoding="utf-8")
+    assert f".st-key-{STRIP_KEY}" in css
