@@ -271,8 +271,11 @@ Every PR:
   repository's `CLAUDE.md` for the template and apps, `pytest` and `ruff check .`
   for openms-insight;
 - keeps to one change; unrelated fixes get their own PR;
-- contains no passwords, tokens, keys or personal data, in code, commits,
-  logs or screenshots.
+- contains no passwords, tokens, keys, password hashes or personal data, and
+  no details of a deployment's infrastructure (server names, internal
+  addresses, credentials of a cluster or registry), in code, commits, PR text,
+  logs or screenshots. These repositories are public. A deployment's own
+  values belong in its secrets, never in the repository.
 
 Push to the fork (`git push -u origin <branch>`) and open the PR against the
 upstream repository: `gh pr create --repo <owner>/<repo> --fill`, or the
