@@ -174,7 +174,9 @@ mkdir -p openms_insight/js-component && cp -r js-component/dist openms_insight/j
 pip install -e ".[dev]"
 ```
 
-Its `CONTRIBUTING.md` explains the hot-reload setup for frontend work. The
+The contributing guide of openms-insight
+(https://github.com/t0mdavid-m/OpenMS-Insight/blob/main/CONTRIBUTING.md)
+explains the hot-reload setup for frontend work. The
 template runs the same way as an app (`streamlit run app.py` in its clone).
 Running TOPP tools locally needs OpenMS installed (https://openms.de); pages
 that only show results work without it. Say so if a test or page fails for
