@@ -123,10 +123,18 @@ def to_html(content: dict[str, Any]) -> str:
     return "".join(parts)
 
 
-def render_contributors() -> None:
-    """Draw the contributors section, typically at the end of the front page."""
+def render_contributors(contribute: bool = True) -> None:
+    """Draw the contributors section, typically at the end of the front page.
+
+    ``contribute`` adds the "Want to contribute?" section below it
+    (``src/common/contribute.py``), also when there are no contributors to show.
+    """
     import streamlit as st
 
     content = load(st.session_state.get("settings"))
     if content:
         st.html(to_html(content))
+    if contribute:
+        from src.common.contribute import render_contribute
+
+        render_contribute()
