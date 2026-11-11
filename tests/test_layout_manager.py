@@ -1094,3 +1094,11 @@ def test_link_params_leaves_out_what_does_not_fit():
     import base64
     show = base64.urlsafe_b64encode(b"[" * 5000).decode()[:MAX_LINK_LENGTH]
     assert read_link({"view": "all", "show": show}) == {"view": "all", "experiments": []}
+
+
+def test_link_params_keeps_the_view_when_even_the_datasets_do_not_fit():
+    from src.layout_manager.layout import link_params, read_link
+
+    params = link_params("all", [{"dataset": "x" * 9000, "selection": {"protein": "P1"}}])
+    assert params == {"view": "all"}
+    assert read_link(params) == {"view": "all", "experiments": []}

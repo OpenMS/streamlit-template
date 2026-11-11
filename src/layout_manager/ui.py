@@ -674,9 +674,11 @@ def _link_dialog(key: str, view: Dict[str, Any], states: Optional[Callable[[int]
                        else " with the same data." if datasets is not None else "."))
         params = link_params(view["name"], entries)
         st.code(link_url(base, params), language=None, wrap_lines=True)
-        if (read_link(params) or {}).get("experiments", []) != link_entries(entries):
-            st.caption("What is selected is too much for a link: it opens the view and its data, "
-                       "without all of the selection, zoom and annotations.")
+        carried = (read_link(params) or {}).get("experiments", [])
+        if carried != link_entries(entries):
+            st.caption("What is shown is too much for a link: it opens the view and its data, "
+                       "without all of the selection, zoom and annotations." if carried
+                       else "What is shown is too much for a link: it opens the view only.")
         st.caption("Copy it with the button at its right. It opens this workspace, so only "
                    "people who can open the workspace see the data.")
 
