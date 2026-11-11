@@ -1102,3 +1102,23 @@ def test_link_params_keeps_the_view_when_even_the_datasets_do_not_fit():
     params = link_params("all", [{"dataset": "x" * 9000, "selection": {"protein": "P1"}}])
     assert params == {"view": "all"}
     assert read_link(params) == {"view": "all", "experiments": []}
+
+
+def test_link_dialog_says_what_the_link_opens(tmp_path):
+    at = AppTest.from_string(_LINK_APP.format(
+        tests=str(Path(__file__).parent), components=COMPONENTS, presets=VIEWS, default=DEFAULT))
+    at.session_state["path"] = str(tmp_path / "viewer.json")
+    at.run()
+    at.session_state["exp_state_0"] = {"selections": {"protein": "P1"}}
+    at.session_state["vb_bar"] = {"action": "button", "id": "_copy_view_link", "nonce": 1}
+    at.run()
+    assert not at.exception
+    opens = lambda: next(m.value for m in at.markdown if m.value.startswith("Opens"))
+    assert "with the same data, zoom and selection" in opens()
+    # A dataset id too long for a link: the view only, and the dialog says so
+    at.session_state["dataset"] = "x" * 9000
+    at.session_state["vb_bar"] = {"action": "button", "id": "_copy_view_link", "nonce": 2}
+    at.run()
+    assert not at.exception
+    assert opens() == "Opens this page on **All**."
+    assert any("opens the view only" in c.value for c in at.caption)

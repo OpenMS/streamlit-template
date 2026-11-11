@@ -669,15 +669,16 @@ def _link_dialog(key: str, view: Dict[str, Any], states: Optional[Callable[[int]
             entries.append(capture_defaults(_stored(states(index)), dataset) if states is not None
                            else ({"dataset": dataset} if dataset is not None else {}))
         base = link_url(getattr(st.context, "url", None) or "", st.query_params.to_dict())
-        st.markdown(f"Opens this page on **{view['label']}**"
-                    + (" with the same data, zoom and selection." if states is not None
-                       else " with the same data." if datasets is not None else "."))
         params = link_params(view["name"], entries)
-        st.code(link_url(base, params), language=None, wrap_lines=True)
         carried = (read_link(params) or {}).get("experiments", [])
+        state = any(e.get("selection") or e.get("zoom") or e.get("annotations") for e in carried)
+        st.markdown(f"Opens this page on **{view['label']}**"
+                    + (" with the same data, zoom and selection." if state
+                       else " with the same data." if carried else "."))
+        st.code(link_url(base, params), language=None, wrap_lines=True)
         if carried != link_entries(entries):
-            st.caption("What is shown is too much for a link: it opens the view and its data, "
-                       "without all of the selection, zoom and annotations." if carried
+            st.caption("What is shown is too much for a link: it leaves out part of the selection, "
+                       "zoom and annotations." if carried
                        else "What is shown is too much for a link: it opens the view only.")
         st.caption("Copy it with the button at its right. It opens this workspace, so only "
                    "people who can open the workspace see the data.")
