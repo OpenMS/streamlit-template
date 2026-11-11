@@ -433,6 +433,19 @@ kubectl -n openms rollout restart deployment/<your-app-name>-streamlit
 
 `skip-worktree` is a per-clone flag that makes git ignore further edits to that file; the password never shows up in `git status`, so you cannot accidentally commit it. Undo with `git update-index --no-skip-worktree k8s/base/streamlit-secrets.yaml`. A plain `.gitignore` entry would **not** work here — `.gitignore` only applies to untracked files, and this Secret is tracked.
 
+### Step 5b — Configure the Redis password (recommended)
+
+`k8s/base/redis-auth-secret.yaml` ships the `redis-auth` Secret with an empty password, so Redis starts without one, reachable only from the app's own pods (`redis-networkpolicy.yaml`). Set a password on the cluster, never in git; use a URL-safe value, because the clients add it to `REDIS_URL`:
+
+```bash
+kubectl -n openms patch secret <your-app-name>-redis-auth --type=merge \
+  -p "{\"stringData\":{\"password\":\"$(openssl rand -hex 32)\"}}"
+kubectl -n openms rollout restart deployment/<your-app-name>-redis \
+  deployment/<your-app-name>-streamlit deployment/<your-app-name>-rq-worker deployment/<your-app-name>-sync
+```
+
+Redis passes it to `--requirepass`; the Streamlit server, the RQ workers and the sync service read it as `REDIS_PASSWORD` and add it to `REDIS_URL` (`src/workflow/redis_auth.py`), so the overlay's `REDIS_URL` patches stay as they are. Rotate the same way. With Argo CD, add `<your-app-name>-redis-auth` to `ignoreDifferences` like the admin Secret (`k8s/argocd/application.yaml`), or self-heal resets it.
+
 ### Step 6 — Deploy
 
 **The storage tier first, once per cluster.** If no other app on the cluster has applied it yet, set the two cluster-specific values in `k8s/storage/storageclass.yaml`, create the credentials Secret (section 3b) and apply the root. It publishes the StorageClass the workspace PVC claims; applied in the other order, every pod sits `Pending` on a class that does not exist yet:

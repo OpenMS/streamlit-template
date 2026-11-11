@@ -121,10 +121,18 @@ spec:
               set -euo pipefail
               source /root/miniforge3/bin/activate streamlit-env
               jq -s '.[0] * .[1]' /app/settings.json /app/settings-overrides.json > /tmp/settings-merged.json && mv /tmp/settings-merged.json /app/settings.json
-              exec rq worker openms-workflows --url $REDIS_URL
+              exec rq worker openms-workflows -c src.workflow.rq_settings
           env:
             - name: REDIS_URL
               value: "redis://redis:6379/0"
+            # Empty unless the redis-auth Secret holds a password; the code adds
+            # it to REDIS_URL (src/workflow/redis_auth.py).
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: redis-auth
+                  key: password
+                  optional: true
             - name: WORKSPACES_DIR
               value: "/workspaces-streamlit-template"
             # Downward API. The storage heartbeat is keyed per node

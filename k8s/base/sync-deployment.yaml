@@ -43,6 +43,14 @@ spec:
             # service, on the same queue the app's Run button uses.
             - name: REDIS_URL
               value: "redis://redis:6379/0"
+            # Empty unless the redis-auth Secret holds a password; the code adds
+            # it to REDIS_URL (src/workflow/redis_auth.py).
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: redis-auth
+                  key: password
+                  optional: true
             - name: WORKSPACES_DIR
               value: "/workspaces-streamlit-template"
           # Hashing and writing chunks to NFS is I/O-bound; memory stays small

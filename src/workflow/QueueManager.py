@@ -99,7 +99,9 @@ class QueueManager:
             from redis import Redis
             from rq import Queue
 
-            self._redis = Redis.from_url(self.REDIS_URL)
+            from src.workflow.redis_auth import redis_url_with_password
+
+            self._redis = Redis.from_url(redis_url_with_password(self.REDIS_URL))
             self._redis.ping()  # Test connection
             self._queue = Queue(self.QUEUE_NAME, connection=self._redis)
         except ImportError:
