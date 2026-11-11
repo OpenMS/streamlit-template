@@ -11,6 +11,7 @@ from .vendor_files import vendor_format
 from .progress import RunProgress, read_progress, failure_context, OUTPUT_TAIL
 from .processing_report import command_io, report_params
 from collections import deque
+from .StepCache import StepCache
 import sys
 import importlib.util
 import json
@@ -27,6 +28,7 @@ class CommandExecutor:
     """
     # Methods for running commands and logging
     def __init__(self, workflow_dir: Path, logger: Logger, parameter_manager: ParameterManager):
+        self.workflow_dir = Path(workflow_dir)
         self.pid_dir = Path(workflow_dir, "pids")
         self.logger = logger
         self.parameter_manager = parameter_manager
@@ -34,6 +36,8 @@ class CommandExecutor:
         self._max_threads = None
         # Per-file progress of run_topp() calls, read by the Run page
         self.progress = RunProgress(Path(workflow_dir))
+        self.step_cache = StepCache(self.workflow_dir)
+        self._step_cache_failed = False
 
     def _get_max_threads(self) -> int:
         """
@@ -105,8 +109,15 @@ class CommandExecutor:
         return self._max_threads
 
     def run_multiple_commands(
-        self, commands: list[str], step: int = None
+        self, commands: list[list[str]], step: int = None
     ) -> bool:
+        """Run a batch, retaining upstream's aggregate boolean contract."""
+        return all(self._run_multiple_command_results(commands, step=step))
+
+    def _run_multiple_command_results(
+        self, commands: list[list[str]], step: int = None,
+        file_indices: list[int] = None,
+    ) -> list[bool]:
         """
         Executes multiple shell commands concurrently in separate threads.
 
@@ -120,9 +131,14 @@ class CommandExecutor:
                                         a command and its arguments.
             step (int, optional): The progress step these commands belong to
                 (from RunProgress.start_step()); command i is its file i.
+            file_indices: Original file indices when cache hits were removed.
 
         Returns:
-            bool: True if all commands succeeded, False if any failed.
+            list[bool]: Per-command success, in the same order as ``commands``.
+                Returning per-command results (rather than an aggregate bool)
+                lets run_topp() match each result back to its step-cache
+                metadata and publish only the commands that actually ran and
+                succeeded.
         """
         # Get thread settings and calculate distribution
         max_threads = self._get_max_threads()
@@ -133,31 +149,38 @@ class CommandExecutor:
         self.logger.log(f"Running {num_commands} commands (max {parallel_commands} parallel, {max_threads} total threads)...", 1)
         start_time = time.time()
 
-        results = []
+        results: list[bool] = [False] * num_commands
+        if file_indices is None:
+            file_indices = list(range(num_commands))
         lock = threading.Lock()
         semaphore = threading.Semaphore(parallel_commands)
 
-        def run_and_track(i, cmd):
+        def run_and_track(index, cmd):
             with semaphore:
                 try:
                     if step is None:
                         success = self.run_command(cmd)
                     else:
-                        success = self.run_command(cmd, task=(step, i))
+                        success = self.run_command(cmd, task=(step, file_indices[index]))
                 except Exception as e:
                     # e.g. the tool is not installed. A thread that dies here
                     # would add no result, and the step would count as passed.
                     self.logger.log(f"ERROR: {cmd[0]}: {e}", 0)
                     success = False
+                    if step is not None:
+                        task = (step, file_indices[index])
+                        self.progress.file_finished(*task, ok=False, returncode=-1, output=[str(e)])
+                        self._log_failure_context(task, -1)
                 with lock:
-                    results.append(success)
+                    results[index] = success
 
         # Initialize a list to keep track of threads
         threads = []
 
-        # Start a new thread for each command
-        for i, cmd in enumerate(commands):
-            thread = threading.Thread(target=run_and_track, args=(i, cmd))
+        # Start a new thread for each command, tracking its position so
+        # results stay aligned with the caller's command order.
+        for index, cmd in enumerate(commands):
+            thread = threading.Thread(target=run_and_track, args=(index, cmd))
             thread.start()
             threads.append(thread)
 
@@ -169,7 +192,7 @@ class CommandExecutor:
         end_time = time.time()
         self.logger.log(f"Total time to run {num_commands} commands: {end_time - start_time:.2f} seconds", 1)
 
-        return all(results)
+        return results
 
     def run_command(self, command: list[str], task: tuple = None, cwd=None) -> bool:
         """
@@ -408,8 +431,6 @@ class CommandExecutor:
         parallel_commands = min(n_processes, max_threads)
         threads_per_command = max(1, max_threads // parallel_commands)
 
-        commands = []
-
         # Load merged parameters (_defaults + user overrides) for this tool instance
         merged_params = self.parameter_manager.get_merged_params(params_key)
 
@@ -432,15 +453,27 @@ class CommandExecutor:
 
         # Load flag parameter names: params.json takes priority (survives session restart),
         # session_state is the live fallback during the current session.
-        flag_map = self.parameter_manager.get_parameters_from_json().get("_flag_params", {})
+        params_json = self.parameter_manager.get_parameters_from_json()
+        flag_map = params_json.get("_flag_params", {})
         flag_list = flag_map.get(params_key)
         if flag_list is None:
             flag_list = st.session_state.get("_topp_flag_params", {}).get(params_key, [])
         flag_params: set = set(flag_list)
+        step_cache_enabled = params_json.get("step-cache-enabled", True) and not self._step_cache_failed
 
-        # Construct commands for each process
+        # Commands that still need to run (cache misses), and their aligned
+        # step-cache metadata (or None for entries not eligible for caching).
+        pending_commands = []
+        pending_meta = []
+        pending_indices = []
+        cached_indices = []
+
+        # Construct a command for each process, checking the step cache first
         for i in range(n_processes):
             command = [tool]
+            input_paths: list = []
+            output_paths: list = []
+            cache_io = []
             # Add input/output files
             for k in input_output.keys():
                 # add key as parameter name
@@ -448,14 +481,26 @@ class CommandExecutor:
                 # get value from input_output dictionary
                 value = input_output[k]
                 # when multiple input/output files exist (e.g., multiple mzMLs and featureXMLs), but only one additional input file (e.g., one input database file)
-                if len(value) == 1:
-                    i = 0
+                idx = 0 if len(value) == 1 else i
+                entry = value[idx]
                 # when the entry is a list of collected files to be passed as one [["sample1", "sample2"]]
-                if isinstance(value[i], list):
-                    command += value[i]
+                if isinstance(entry, list):
+                    command += entry
+                    file_names = entry
                 # standard case, files was a list of strings, take the file name at index
                 else:
-                    command += [value[i]]
+                    command += [entry]
+                    file_names = [entry]
+                # Convention used throughout this codebase: TOPP output keys
+                # are named "out", "out_cxml", "out_msstats", etc.; every
+                # other key ("in", "ids", "id", ...) is an input.
+                if k.startswith("out"):
+                    output_paths.extend(file_names)
+                else:
+                    input_paths.extend(file_names)
+                cache_io.append((k, [str(p) if k.startswith("out") else Path(p).name
+                                     for p in file_names]))
+            params_start = len(command)
             # Add merged TOPP tool parameters (_defaults + user overrides)
             for k, v in merged_params.items():
                 if k in flag_params:
@@ -501,16 +546,42 @@ class CommandExecutor:
                     command += [str(v)]
             # Add threads parameter for TOPP tools
             command += ["-threads", str(threads_per_command)]
-            commands.append(command)
 
-        if not commands:
-            raise Exception("No commands to execute.")
+            if step_cache_enabled and output_paths:
+                meta, restored = self._lookup_step_cache(
+                    tool, params_key, input_paths, output_paths,
+                    {
+                        "io": cache_io,
+                        # Thread count affects scheduling but is intentionally
+                        # excluded from cache identity. This lets a per-file
+                        # result survive when the batch size changes.
+                        "argv": [str(v) for v in command[params_start:-2]],
+                    },
+                    threads_per_command,
+                )
+                if restored:
+                    self.logger.log(
+                        f"Cache HIT for {params_key} ({meta['digest'][:12]}): reused "
+                        f"{len(output_paths)} output(s), skipped computation", 1
+                    )
+                    cached_indices.append(i)
+                    continue
+                pending_meta.append(meta)
+            else:
+                if step_cache_enabled and not output_paths:
+                    self.logger.log(
+                        f"Cache bypass for {params_key}: no declared output files detected", 2
+                    )
+                pending_meta.append(None)
+
+            pending_commands.append(command)
+            pending_indices.append(i)
 
         # Record the call for the Run page: one entry per command (input file),
         # with what the processing report says about it
         step = self.progress.start_step(
             tool if params_key == tool else f"{tool} ({params_key})",
-            self._command_labels(input_output, len(commands)),
+            self._command_labels(input_output, n_processes),
             threads=threads_per_command,
             parallel=parallel_commands,
             provenance={
@@ -522,11 +593,66 @@ class CommandExecutor:
             },
         )
         try:
-            if len(commands) == 1:
-                return self.run_command(commands[0], task=(step, 0))
-            return self.run_multiple_commands(commands, step=step)
+            for index in cached_indices:
+                self.progress.file_finished(step, index, ok=True)
+            if not pending_commands:
+                return True
+            # Preserve upstream's single-command exception behavior. A batch
+            # remains a batch even if all but one file were cache hits.
+            if n_processes == 1:
+                successes = [self.run_command(pending_commands[0], task=(step, pending_indices[0]))]
+            else:
+                successes = self._run_multiple_command_results(
+                    pending_commands, step=step, file_indices=pending_indices,
+                )
+            for success, meta in zip(successes, pending_meta):
+                if success and meta is not None:
+                    self._publish_step_cache(params_key, meta)
+            return all(successes)
         finally:
             self.progress.end_step(step)
+
+    def _lookup_step_cache(self, tool, params_key, inputs, outputs, params, threads):
+        """Cache failures are warnings; the original tool can still run."""
+        if self._step_cache_failed:
+            return None, False
+        try:
+            upstream_keys = {self.step_cache.upstream_key_for(p) for p in inputs}
+            upstream_keys.discard(None)
+            digest, condition = self.step_cache.condition_hash(
+                tool=params_key, executable=tool, input_paths=inputs,
+                output_paths=outputs, effective_params=params, threads=threads,
+                upstream_keys=upstream_keys,
+            )
+            meta = {"digest": digest, "condition": condition, "output_paths": outputs}
+            if self.step_cache.try_restore(params_key, digest, outputs):
+                for path in outputs:
+                    self.step_cache.register_producer(path, digest)
+                return meta, True
+            self.logger.log(f"Cache MISS for {params_key} ({digest[:12]})", 1)
+            return meta, False
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            # A missing producer update could make downstream reuse stale
+            # results. Bypass caching for this executor after an I/O failure.
+            self._step_cache_failed = True
+            self.logger.log(f"WARNING: Step cache bypass for {params_key}: {exc}", 1)
+            return None, False
+
+    def _publish_step_cache(self, params_key, meta):
+        if self._step_cache_failed:
+            return
+        try:
+            if self.step_cache.publish(
+                params_key, meta["digest"], meta["condition"], meta["output_paths"]
+            ):
+                for path in meta["output_paths"]:
+                    self.step_cache.register_producer(path, meta["digest"])
+            else:
+                self._step_cache_failed = True
+                self.logger.log(f"WARNING: Step cache disabled: incomplete outputs for {params_key}", 1)
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            self._step_cache_failed = True
+            self.logger.log(f"WARNING: Could not publish step cache for {params_key}: {exc}", 1)
 
     def stop(self) -> None:
         """
