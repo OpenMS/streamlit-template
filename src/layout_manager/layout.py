@@ -743,7 +743,8 @@ def _link_entry(entry: Any) -> Dict[str, Any]:
     return out
 
 
-def _link_entries(entries: Any) -> List[Dict[str, Any]]:
+def link_entries(entries: Any) -> List[Dict[str, Any]]:
+    """``entries`` as a link carries them when nothing has to be left out."""
     if not isinstance(entries, list):
         return []
     out = [_link_entry(e) for e in entries[:MAX_EXPERIMENTS]]
@@ -757,13 +758,23 @@ def link_params(view: str, entries: Optional[Sequence[Dict[str, Any]]] = None) -
 
     ``entries`` holds one ``capture_defaults`` entry per experiment: the dataset
     it shows, its selection, zoom and annotations. They travel as compact JSON
-    in URL-safe base64, so the link stays one opaque parameter.
+    in URL-safe base64, so the link stays one opaque parameter. What would make
+    it longer than ``read_link`` accepts is left out (annotations first, then
+    selection and zoom), so the link always opens the view and its datasets.
     """
     params = {LINK_VIEW: str(view)}
-    cleaned = _link_entries(list(entries or []))
-    if cleaned:
-        raw = json.dumps(cleaned, separators=(",", ":"), sort_keys=True).encode()
-        params[LINK_SHOW] = base64.urlsafe_b64encode(raw).decode().rstrip("=")
+    cleaned = link_entries(list(entries or []))
+    # State too long for a link is left out step by step: the annotations, then
+    # selection and zoom; the datasets stay
+    for keep in (None, ("dataset", "selection", "zoom"), ("dataset",)):
+        trimmed = link_entries([{k: v for k, v in e.items() if keep is None or k in keep} for e in cleaned])
+        if not trimmed:
+            break
+        raw = json.dumps(trimmed, separators=(",", ":"), sort_keys=True).encode()
+        show = base64.urlsafe_b64encode(raw).decode().rstrip("=")
+        if len(show) <= MAX_LINK_LENGTH:
+            params[LINK_SHOW] = show
+            break
     return params
 
 
@@ -786,8 +797,8 @@ def read_link(params: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
     if show is not None and len(show) <= MAX_LINK_LENGTH:
         try:
             raw = base64.urlsafe_b64decode(show + "=" * (-len(show) % 4))
-            experiments = _link_entries(json.loads(raw.decode()))
-        except (ValueError, UnicodeDecodeError):
+            experiments = link_entries(json.loads(raw.decode()))
+        except (ValueError, UnicodeDecodeError, RecursionError):
             experiments = []
     if view is None and not experiments:
         return None

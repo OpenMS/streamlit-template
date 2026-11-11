@@ -1078,3 +1078,19 @@ def test_view_bar_opens_and_gives_links(tmp_path):
     assert query["workspace"] == "abc"
     assert read_link(query) == {"view": "plots", "experiments": [
         {"dataset": "run3", "selection": {"protein": "P9"}}]}
+
+
+def test_link_params_leaves_out_what_does_not_fit():
+    from src.layout_manager.layout import MAX_LINK_LENGTH, link_params, read_link
+
+    points = {str(i): {"highlight": True, "annotation": f"b{i} 1+"} for i in range(400)}
+    entries = [{"dataset": "run1", "selection": {"protein": "P1"}, "annotations": {"spectrum": points}}]
+    params = link_params("all", entries)
+    assert len(params["show"]) <= MAX_LINK_LENGTH
+    assert read_link(params)["experiments"] == [{"dataset": "run1", "selection": {"protein": "P1"}}]
+    big = [{"dataset": "run1", "selection": {"ids": list(range(5000))}}]
+    assert read_link(link_params("all", big))["experiments"] == [{"dataset": "run1"}]
+    # Deeply nested input does not raise
+    import base64
+    show = base64.urlsafe_b64encode(b"[" * 5000).decode()[:MAX_LINK_LENGTH]
+    assert read_link({"view": "all", "show": show}) == {"view": "all", "experiments": []}

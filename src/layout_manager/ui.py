@@ -26,6 +26,7 @@ from src.layout_manager.layout import (
     differs_from_defaults,
     has_defaults,
     join_labels,
+    link_entries,
     link_params,
     link_url,
     LINK_SHOW,
@@ -671,7 +672,11 @@ def _link_dialog(key: str, view: Dict[str, Any], states: Optional[Callable[[int]
         st.markdown(f"Opens this page on **{view['label']}**"
                     + (" with the same data, zoom and selection." if states is not None
                        else " with the same data." if datasets is not None else "."))
-        st.code(link_url(base, link_params(view["name"], entries)), language=None, wrap_lines=True)
+        params = link_params(view["name"], entries)
+        st.code(link_url(base, params), language=None, wrap_lines=True)
+        if (read_link(params) or {}).get("experiments", []) != link_entries(entries):
+            st.caption("What is selected is too much for a link: it opens the view and its data, "
+                       "without all of the selection, zoom and annotations.")
         st.caption("Copy it with the button at its right. It opens this workspace, so only "
                    "people who can open the workspace see the data.")
 
