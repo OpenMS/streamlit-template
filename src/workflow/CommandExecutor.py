@@ -133,8 +133,7 @@ class CommandExecutor:
         self.logger.log(f"Running {num_commands} commands (max {parallel_commands} parallel, {max_threads} total threads)...", 1)
         start_time = time.time()
 
-        results = []
-        lock = threading.Lock()
+        results = [False] * num_commands
         semaphore = threading.Semaphore(parallel_commands)
 
         def run_and_track(i, cmd):
@@ -149,8 +148,7 @@ class CommandExecutor:
                     # would add no result, and the step would count as passed.
                     self.logger.log(f"ERROR: {cmd[0]}: {e}", 0)
                     success = False
-                with lock:
-                    results.append(success)
+                results[i] = success
 
         # Initialize a list to keep track of threads
         threads = []
@@ -169,6 +167,7 @@ class CommandExecutor:
         end_time = time.time()
         self.logger.log(f"Total time to run {num_commands} commands: {end_time - start_time:.2f} seconds", 1)
 
+        self._last_results = results
         return all(results)
 
     def run_command(self, command: list[str], task: tuple = None, cwd=None) -> bool:
@@ -360,7 +359,14 @@ class CommandExecutor:
         stdout_thread.join()
         stderr_thread.join()
 
-    def run_topp(self, tool: str, input_output: dict, custom_params: dict = {}, tool_instance_name: str = None) -> bool:
+    def run_topp(
+        self,
+        tool: str,
+        input_output: dict,
+        custom_params: dict = {},
+        tool_instance_name: str = None,
+        allow_failed: bool = False,
+    ) -> bool:
         """
         Constructs and executes commands for the specified tool OpenMS TOPP tool based on the given
         input and output configurations. Ensures that all input/output file lists
@@ -381,9 +387,16 @@ class CommandExecutor:
             tool_instance_name (str, optional): A unique instance name for this tool
                 invocation, used for parameter lookup when multiple instances of the
                 same tool exist. If not provided, defaults to the tool name.
+            allow_failed (bool, optional): Go on without the files the tool
+                fails on, instead of failing the run: the call returns True
+                while at least one command succeeded, ``self.failed`` lists
+                the indices of the failed commands, and ``keep_succeeded()``
+                drops their entries from the lists the next step takes. The
+                Run page names the files left out and why.
 
         Returns:
-            bool: True if all commands succeeded, False if any failed.
+            bool: True if all commands succeeded (with ``allow_failed``: any),
+            False otherwise.
 
         Raises:
             ValueError: If the lengths of input/output file lists are inconsistent,
@@ -520,13 +533,44 @@ class CommandExecutor:
                 "params": report_params({**merged_params, **custom_params}),
                 "io": command_io(input_output, len(commands)),
             },
+            allow_failed=allow_failed,
         )
+        self.failed = []
         try:
             if len(commands) == 1:
-                return self.run_command(commands[0], task=(step, 0))
-            return self.run_multiple_commands(commands, step=step)
+                results = [self.run_command(commands[0], task=(step, 0))]
+            else:
+                self._last_results = None
+                ok = self.run_multiple_commands(commands, step=step)
+                results = self._last_results
+                if not isinstance(results, list) or len(results) != len(commands):
+                    results = [bool(ok)] * len(commands)
         finally:
             self.progress.end_step(step)
+        self.failed = [i for i, ok in enumerate(results) if not ok]
+        if not allow_failed or not self.failed:
+            return not self.failed
+        labels = self._command_labels(input_output, len(commands))
+        if len(self.failed) == len(results):
+            self.logger.log(f"ERROR: {tool} failed for every file.", 0)
+            return False
+        self.logger.log(
+            f"WARNING: {tool} failed for {len(self.failed)} of {len(results)} "
+            f"files; the run goes on without them: "
+            + ", ".join(labels[i] for i in self.failed),
+            0,
+        )
+        return True
+
+    def keep_succeeded(self, values: list) -> list:
+        """``values`` without the entries of the files the last
+        ``run_topp(..., allow_failed=True)`` failed on (``self.failed``).
+
+        Pass the lists the next step takes, in the order of that call's
+        inputs, e.g. ``mzmls = executor.keep_succeeded(mzmls)``.
+        """
+        failed = set(getattr(self, "failed", []) or [])
+        return [v for i, v in enumerate(values) if i not in failed]
 
     def stop(self) -> None:
         """

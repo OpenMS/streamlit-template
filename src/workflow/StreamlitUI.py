@@ -3335,11 +3335,36 @@ class StreamlitUI:
                         f"Tool output (exit code {failure['returncode']})"
                     ):
                         st.code("\n".join(failure["output"]), language="neon")
+        else:
+            self._show_left_out(failures(state, left_out=True))
         if len(state.get("samples") or []) > 1:
             st.markdown("  \n".join(self._sample_lines(state, time.time())))
             st.caption(self._tool_totals(state["steps"]))
             return
         st.caption(" · ".join(self._step_summary(s) for s in state["steps"]))
+
+    @staticmethod
+    def _show_left_out(left: list) -> None:
+        """A finished run that went on without some files: which, and why."""
+        if not left:
+            return
+        n = len(left)
+        st.warning(
+            f"**{n} file{'s were' if n > 1 else ' was'} left out after an error.** "
+            "The run went on without "
+            + ("them" if n > 1 else "it")
+            + ", so the results do not include "
+            + ("these files" if n > 1 else "this file")
+            + ".  \n"
+            + "  \n".join(
+                f"{f['context']}" + (f": {f['message']}" if f["message"] else "")
+                for f in left
+            )
+        )
+        with st.expander("Tool output of the files left out"):
+            for f in left:
+                st.markdown(f"**{f['context']}** (exit code {f['returncode']})")
+                st.code("\n".join(f["output"]) or "(no output)", language="neon")
 
     @staticmethod
     def _tool_totals(steps: list) -> str:
