@@ -7,6 +7,12 @@ spec:
     spec:
       containers:
         - name: streamlit
+          # The memory of one rq-worker (worker-resources.yaml): the Run page
+          # checks a run's memory estimate against it (src/workflow/memory.py).
+          # Change it together with the worker's limits.memory.
+          env:
+            - name: WORKER_MEMORY_LIMIT
+              value: "180Gi"
           resources:
             requests:
               memory: "512Mi"

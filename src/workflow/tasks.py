@@ -34,6 +34,20 @@ class WorkflowExecutionError(RuntimeError):
     """
 
 
+def _log_memory_warning(workflow, params, logger) -> None:
+    """Say in the log when the run's memory estimate is above what it has here."""
+    try:
+        from src.workflow.memory import available_memory, memory_warning
+
+        estimate = workflow.memory_estimate(params)
+        warning = memory_warning(estimate, available_memory(), "this machine",
+                                 workflow.memory_advice(params))
+    except Exception:  # the estimate must never stop a run
+        return
+    if warning:
+        logger.log(f"WARNING: {warning}", 0)
+
+
 def execute_workflow(
     workflow_dir: str,
     workflow_class: str,
@@ -166,6 +180,8 @@ def execute_workflow(
         if job is not None and getattr(job, "timeout", None):
             from src.workflow.job_timeout import format_duration
             logger.log(f"Time limit of this run: {format_duration(job.timeout)}")
+
+        _log_memory_warning(workflow, params, logger)
 
         _update_progress(job, 0.15, "Executing workflow steps...")
 

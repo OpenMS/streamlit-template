@@ -323,6 +323,34 @@ class WorkflowManager:
         params = self.parameter_manager.get_parameters_from_json()
         return job_timeout(count_input_files(params), load_settings().get("queue_settings", {}))
 
+    def memory_estimate(self, params: dict) -> Optional[int]:
+        """Peak memory (bytes) a run with ``params`` is expected to need, or None.
+
+        None (the default) skips the check. Override it with an estimate from
+        the run's inputs and settings (file sizes, database size, files run
+        side by side); the Run page warns before a start that would not fit
+        (``memory_check()``), and the run's log says so as well.
+        """
+        return None
+
+    def memory_advice(self, params: dict) -> str:
+        """What to change when ``memory_estimate()`` does not fit (a sentence)."""
+        return ""
+
+    def memory_check(self, params: Optional[dict] = None) -> Optional[str]:
+        """The memory warning for the next run, or None when it fits or is unknown."""
+        from .memory import memory_warning, run_memory
+
+        if params is None:
+            params = self.parameter_manager.get_parameters_from_json()
+        try:
+            estimate = self.memory_estimate(params)  # pylint: disable=assignment-from-none
+        except Exception:  # an estimate must never block a start
+            return None
+        online = bool(st.session_state.get("settings", {}).get("online_deployment"))
+        memory, place = run_memory(online)
+        return memory_warning(estimate, memory, place, self.memory_advice(params))
+
     def _start_workflow_local(self) -> None:
         """Start the workflow in a separate Python process (local mode)."""
         # Delete the log file if it already exists
@@ -618,6 +646,10 @@ class WorkflowManager:
             # this button starts with them; say so beside it.
             line = self._follow_up_summary(info)
             summary = f"{line} {summary}" if summary else line
+        if not running and self.memory_check():
+            # The Run page says how much and what to change
+            line = ":material/memory: This analysis may need more memory than there is."
+            summary = f"{summary} {line}" if summary else line
         key = key or f"{self.workflow_dir.name}-run-button"
         if sticky:
             bar = st.container(key=f"{key}-bar", horizontal=True,
@@ -692,6 +724,10 @@ class WorkflowManager:
             name_key = run_name_key(self.runs)
         if self._run_online(name_key):
             return
+        if not self.get_workflow_status().get("running", False):
+            warning = self.memory_check()
+            if warning:
+                st.warning(warning, icon=":material/memory:")
         self.ui.execution_section(
             start_workflow_function=self.start_workflow,
             get_status_function=self.get_workflow_status,

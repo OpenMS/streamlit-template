@@ -117,6 +117,27 @@ class Workflow(WorkflowManager):
             # execution() with src.workflow.ExperimentalDesign.load_design().
             self.ui.experimental_design("mzML-files", suggest=True)
 
+    def memory_estimate(self, params: dict):
+        """FeatureFinderMetabo holds a file's spectra and their mass traces:
+        about three times the mzML, for each file run side by side."""
+        sizes = []
+        for f in params.get("mzML-files") or []:
+            try:
+                sizes.append(Path(f).stat().st_size)
+            except OSError:
+                continue
+        if not sizes:
+            return None
+        side_by_side = min(len(sizes), max(1, self.executor._get_max_threads()))
+        return 3 * max(sizes) * side_by_side + 300 * 1000 ** 2
+
+    def memory_advice(self, params: dict) -> str:
+        from src.workflow.settings_io import load_settings
+
+        if load_settings().get("online_deployment"):
+            return "Select fewer files for one run."
+        return "Fewer Threads (on the Configure page) run fewer files side by side."
+
     def execution(self) -> bool:
         # Return True only if every step succeeded. The caller
         # (tasks.execute_workflow, in local and queue mode) writes the

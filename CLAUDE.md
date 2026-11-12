@@ -209,6 +209,8 @@ The workflow directory is `<workspace>/<workflow-name-lowercased-hyphenated>/`, 
 
 **A queued run's time limit grows with its input files** (`src/workflow/job_timeout.py`): `queue_settings.default_timeout` + `timeout_per_input` per selected input file, at most `max_timeout` (defaults 2 h, 30 min, 7 days); `WorkflowManager.job_timeout()` computes it, a subclass may override it, and the sync service uses the same rule. The run's log names the limit, and a run that reaches it says so and SIGTERMs the tools listed in `pids/`, which would otherwise outlive the job.
 
+**Memory check before a start** (`src/workflow/memory.py`, Streamlit-free): a subclass that overrides `memory_estimate(params)` (peak bytes of a run, from its files and settings; default None skips the check) and `memory_advice(params)` (what to change) gets a warning on the Run page, a line beside the Run button and a WARNING in the run's log when the estimate is above 90 % of the memory the run has: the cgroup limit or the machine's available memory, and online the rq-worker's limit, which the memory-tier components pass to the Streamlit pod as `WORKER_MEMORY_LIMIT` (keep it equal to the worker's `limits.memory`). The example workflow estimates FeatureFinderMetabo's.
+
 The off-switches are `online_deployment` and unsetting `REDIS_URL`. `docs/REDIS_QUEUE_IMPLEMENTATION_PLAN.md` is a pre-implementation design doc written in future tense — the work shipped, its line references are stale, and the `queue_settings.enabled` flag it describes is read nowhere. Read the code.
 
 ### Parameters — two independent systems
