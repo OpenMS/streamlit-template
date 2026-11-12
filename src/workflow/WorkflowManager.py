@@ -349,7 +349,11 @@ class WorkflowManager:
             return None
         online = bool(st.session_state.get("settings", {}).get("online_deployment"))
         memory, place = run_memory(online)
-        return memory_warning(estimate, memory, place, self.memory_advice(params))
+        try:
+            advice = self.memory_advice(params) or ""
+        except Exception:  # nor may the advice
+            advice = ""
+        return memory_warning(estimate, memory, place, advice)
 
     def _start_workflow_local(self) -> None:
         """Start the workflow in a separate Python process (local mode)."""

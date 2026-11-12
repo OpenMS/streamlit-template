@@ -89,7 +89,7 @@ def available_memory() -> int | None:
     """
     values = []
     available = _meminfo("MemAvailable")
-    if available:
+    if available is not None:
         values.append(available)
     limit = cgroup_memory_limit()
     if limit:
@@ -126,7 +126,7 @@ def memory_warning(estimate: int | None, memory: int | None, place: str = "this 
     None while either number is unknown or the estimate fits in HEADROOM of
     the memory.
     """
-    if not estimate or not memory or estimate <= HEADROOM * memory:
+    if not estimate or memory is None or estimate <= HEADROOM * memory:
         return None
     text = (
         f"This analysis may need about {format_bytes(estimate)} of memory, and "

@@ -122,8 +122,12 @@ class Workflow(WorkflowManager):
         about three times the mzML, for each file run side by side."""
         sizes = []
         for f in params.get("mzML-files") or []:
+            path = Path(f)
             try:
-                sizes.append(Path(f).stat().st_size)
+                if path.is_dir():  # a Bruker .d folder: the files in it
+                    sizes.append(sum(p.stat().st_size for p in path.rglob("*") if p.is_file()))
+                else:
+                    sizes.append(path.stat().st_size)
             except OSError:
                 continue
         if not sizes:

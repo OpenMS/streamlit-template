@@ -87,6 +87,28 @@ def test_warning():
     assert "850 MB" == memory.format_bytes(850 * 1000 ** 2)
 
 
+
+def test_no_memory_left_still_warns(fake_proc):
+    fake_proc(meminfo="MemTotal: 16000000 kB\nMemAvailable: 0 kB\n")
+    assert memory.available_memory() == 0
+    assert memory.memory_warning(10 ** 9, 0).startswith("This analysis may need about 1.0 GB")
+
+
+def test_failing_advice_keeps_the_warning(monkeypatch):
+    from src.workflow.WorkflowManager import WorkflowManager
+
+    class Broken(WorkflowManager):
+        def memory_estimate(self, params):
+            return 100 * 1000 ** 3
+
+        def memory_advice(self, params):
+            raise RuntimeError("no advice")
+
+    wf = object.__new__(Broken)
+    monkeypatch.setattr(memory, "run_memory", lambda online: (8 * 1000 ** 3, "this computer"))
+    text = wf.memory_check({})
+    assert text and text.endswith("It may stop when the memory runs out.")
+
 def test_worker_logs_the_warning(monkeypatch):
     from src.workflow import tasks
 
