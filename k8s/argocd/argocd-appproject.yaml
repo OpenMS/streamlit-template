@@ -1,0 +1,28 @@
+# Argo CD project of `streamlit-template-argocd` (argocd-application.yaml),
+# which syncs this folder: only this repository, only the argocd namespace,
+# and only the kinds the folder holds (Applications, AppProjects and the
+# ImageUpdater). Nothing else can be deployed through it.
+#
+# Synced from git by `streamlit-template-argocd`: change this file in a PR.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: streamlit-template-argocd
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false
+spec:
+  description: Argo CD resources of streamlit-template, synced from k8s/argocd
+  sourceRepos:
+    - https://github.com/OpenMS/streamlit-template.git
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: argocd
+  clusterResourceWhitelist: []
+  namespaceResourceWhitelist:
+    - group: argoproj.io
+      kind: Application
+    - group: argoproj.io
+      kind: AppProject
+    - group: argocd-image-updater.argoproj.io
+      kind: ImageUpdater

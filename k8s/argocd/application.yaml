@@ -15,7 +15,7 @@ metadata:
     # Never pruned or deleted by the parent: losing it would stop deploys.
     argocd.argoproj.io/sync-options: Prune=false,Delete=false
 spec:
-  project: default
+  project: streamlit-template
   source:
     repoURL: https://github.com/OpenMS/streamlit-template.git
     targetRevision: main

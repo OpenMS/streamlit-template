@@ -11,7 +11,7 @@ metadata:
     # keeps the deployment updated; clean up by hand instead.
     argocd.argoproj.io/sync-options: Prune=false,Delete=false
 spec:
-  project: default
+  project: streamlit-template-argocd
   source:
     repoURL: https://github.com/OpenMS/streamlit-template.git
     targetRevision: main

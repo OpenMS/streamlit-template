@@ -144,3 +144,70 @@ def test_allow_tags_skip_everything_else():
         "buildcache-amd64",
     ):
         assert not allow.fullmatch(tag), tag
+
+
+def _projects():
+    return {p["metadata"]["name"]: p for p in _docs().get("AppProject", [])}
+
+
+def _needs_projects():
+    if not _projects():
+        pytest.skip(
+            "no AppProject in k8s/argocd yet: add appproject.yaml and "
+            "argocd-appproject.yaml (docs/kubernetes-deployment.md)"
+        )
+
+
+def test_applications_run_in_their_own_projects():
+    _needs_projects()
+    projects = _projects()
+    for app in _docs()["Application"]:
+        project = app["spec"]["project"]
+        assert project != "default", app["metadata"]["name"]
+        assert project in projects, (app["metadata"]["name"], project)
+        assert projects[project]["metadata"]["namespace"] == "argocd"
+
+
+def test_projects_allow_only_this_repository_and_one_namespace():
+    _needs_projects()
+    parent, child = _apps()
+    projects = _projects()
+    for app, namespace in ((child, "openms"), (parent, "argocd")):
+        spec = projects[app["spec"]["project"]]["spec"]
+        assert spec["sourceRepos"] == [app["spec"]["source"]["repoURL"]]
+        assert spec["destinations"] == [
+            {"server": app["spec"]["destination"]["server"], "namespace": namespace}
+        ]
+        assert app["spec"]["destination"]["namespace"] == namespace
+
+
+def test_app_project_allows_no_rbac_and_at_most_the_namespace():
+    _needs_projects()
+    _, child = _apps()
+    spec = _projects()[child["spec"]["project"]]["spec"]
+    for entry in spec.get("clusterResourceWhitelist", []):
+        assert entry == {"group": "", "kind": "Namespace"}, entry
+    overlay = yaml.safe_load(OVERLAY.read_text(encoding="utf-8"))
+    if "namespace.yaml" not in overlay.get("resources", []):
+        assert not spec.get("clusterResourceWhitelist"), (
+            "the overlay deploys no Namespace: drop it from the whitelist"
+        )
+    assert {"group": "rbac.authorization.k8s.io", "kind": "*"} in spec.get(
+        "namespaceResourceBlacklist", []
+    )
+
+
+def test_folder_project_allows_only_the_folders_kinds():
+    _needs_projects()
+    parent, _ = _apps()
+    spec = _projects()[parent["spec"]["project"]]["spec"]
+    assert spec.get("clusterResourceWhitelist") == []
+    allowed = {(e["group"], e["kind"]) for e in spec["namespaceResourceWhitelist"]}
+    groups = {
+        "Application": "argoproj.io",
+        "AppProject": "argoproj.io",
+        "ImageUpdater": "argocd-image-updater.argoproj.io",
+    }
+    in_folder = {(groups[kind], kind) for kind in _docs()}
+    assert in_folder <= allowed, in_folder - allowed
+    assert allowed <= set((g, k) for k, g in groups.items())
