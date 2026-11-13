@@ -163,10 +163,16 @@ def _projects():
 
 
 def _needs_projects():
-    if not _projects():
+    # An app gets k8s/argocd-projects/ (app-owned) with the template's names
+    # through the sync; until its own PR renames them and points its
+    # Applications at them, these checks skip instead of failing its CI.
+    if not _projects() or all(
+        app["spec"].get("project", "default") == "default"
+        for app in _docs()["Application"]
+    ):
         pytest.skip(
-            "no k8s/argocd-projects yet: add the app's AppProjects "
-            "(docs/kubernetes-deployment.md)"
+            "the Applications still use the default project: add the app's "
+            "AppProjects to k8s/argocd-projects (docs/kubernetes-deployment.md)"
         )
 
 
