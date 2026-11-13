@@ -42,10 +42,11 @@ dl=$(mktemp -d)
 trap 'rm -rf "$dl"' EXIT
 curl -fsSL --retry 5 --retry-all-errors -o "$dl/releases.json" \
   "https://builds.dotnet.microsoft.com/dotnet/release-metadata/${channel}/releases.json"
-version=$(jq -r '."latest-runtime"' "$dl/releases.json")
+# jq on Windows ends its lines with CRLF; the CR would end up in the hash.
+version=$(jq -r '."latest-runtime"' "$dl/releases.json" | tr -d '\r')
 read -r url hash < <(jq -r --arg v "$version" --arg n "dotnet-runtime-${rid}.${ext}" \
   '.releases[] | select(.runtime.version == $v) | .runtime.files[] | select(.name == $n) | "\(.url) \(.hash)"' \
-  "$dl/releases.json" | head -n 1)
+  "$dl/releases.json" | tr -d '\r' | head -n 1)
 [[ -n "${url:-}" && -n "${hash:-}" ]] || { echo "::error::no dotnet-runtime-${rid}.${ext} for .NET ${version}"; exit 1; }
 
 echo "Downloading .NET runtime ${version} (${rid})"
