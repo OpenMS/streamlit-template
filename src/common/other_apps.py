@@ -59,9 +59,10 @@ def load(settings: dict[str, Any] | None = None, apps_file: Path = APPS_FILE) ->
         repo = _key(app.get("repository"))
         if repo == own or _key(name) in hidden or (repo and repo in hidden):
             continue
-        apps.append(
-            {"name": name, "url": url, "description": app.get("description", "")}
-        )
+        description = app.get("description")
+        if not isinstance(description, str):
+            description = ""
+        apps.append({"name": name, "url": url, "description": description})
     if not apps:
         return None
     return {"title": data.get("title") or DEFAULT_TITLE, "apps": apps}

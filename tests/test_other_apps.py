@@ -57,3 +57,14 @@ def test_bad_entries_are_skipped(tmp_path):
 
 def test_missing_file_shows_nothing(tmp_path):
     assert other_apps.load(TEMPLATE, tmp_path / "missing.json") is None
+
+
+def test_non_text_description_is_dropped(tmp_path):
+    apps_file = tmp_path / "apps.json"
+    apps_file.write_text(json.dumps({"apps": [
+        {"name": "A", "url": "https://a.example", "description": 5},
+        {"name": "B", "url": "https://b.example"},
+    ]}))
+    content = other_apps.load(TEMPLATE, apps_file=apps_file)
+    assert [a["description"] for a in content["apps"]] == ["", ""]
+    assert "<small>" not in other_apps.sidebar_markdown(content)
