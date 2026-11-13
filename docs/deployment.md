@@ -7,6 +7,19 @@ OpenMS streamlit apps can be deployed two ways:
 
 If you're using Claude Code, the `configure-app-settings` and `configure-docker-compose-deployment` skills automate the docker-compose path; `configure-app-settings` + `configure-k8s-deployment` automate the Kubernetes path.
 
+### Thermo RawFileReader in the full image
+
+The full image (`Dockerfile`, `Dockerfile.arm`) includes Thermo's RawFileReader twice:
+with OpenMS's built-in reader in `/openms/share/openms_thermo_bridge/managed`, which
+FileConverter uses for Thermo `.raw` files, and in `/thirdparty/ThermoRawFileParser`. Its
+license asks that users see Thermo's notice and terms, so the image keeps
+`docker/THERMO-NOTICE.txt` as `NOTICE.txt` next to Thermo's `THERMO_LICENSE` and the
+container prints the notice when it starts, so whoever deploys the image sees it. People who only use a hosted app (`online_deployment: true`)
+receive no copy of RawFileReader, so the app's About dialog shows them no notice. Users agree not
+to redistribute RawFileReader in any form, which includes the image itself: publish the
+full image only from the app's own registry, and do not mirror it, push copies to other
+registries or offer it (or an image built from it) for download elsewhere.
+
 ---
 
 ## Docker Compose

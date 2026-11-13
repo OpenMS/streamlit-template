@@ -126,15 +126,22 @@ class GuardedAdapter(HTTPAdapter):
         return super().send(request, **kwargs)
 
 
-def make_session(guard: bool, allowed_hosts=None) -> requests.Session:
-    """A session for one import; ``guard`` on public servers."""
+def make_session(guard: bool, allowed_hosts=None, pool_size: int = 10) -> requests.Session:
+    """A session for one import; ``guard`` on public servers. ``pool_size``
+    connections per host are kept open for reuse (an import downloads over
+    several at once)."""
     session = requests.Session()
     session.headers["User-Agent"] = USER_AGENT
     session.max_redirects = MAX_REDIRECTS
-    if guard or allowed_hosts:
-        adapter = GuardedAdapter(allowed_hosts) if guard else _HostListAdapter(allowed_hosts)
-        session.mount("http://", adapter)
-        session.mount("https://", adapter)
+    pool = dict(pool_connections=10, pool_maxsize=max(10, pool_size))
+    if guard:
+        adapter = GuardedAdapter(allowed_hosts, **pool)
+    elif allowed_hosts:
+        adapter = _HostListAdapter(allowed_hosts, **pool)
+    else:
+        adapter = HTTPAdapter(**pool)
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
     return session
 
 

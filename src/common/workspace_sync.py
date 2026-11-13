@@ -26,6 +26,7 @@ It never waits on the network; states older than a minute are refreshed in
 a background thread.
 """
 
+import json
 import threading
 import time
 from dataclasses import dataclass, field
@@ -37,6 +38,7 @@ import streamlit as st
 
 from src.common.developer import is_developer
 from src.sync import client, server, tokens
+from src.sync import runs as sync_runs
 
 
 @dataclass
@@ -417,6 +419,15 @@ def _upload_note(used, missing) -> str:
             + (f"; {online} already online." if online else "."))
 
 
+def _selection_problem(workspace: Path, workflow: str) -> str:
+    """Why this workflow's file selections cannot run online, or "" (names that clash)."""
+    try:
+        params = json.loads(Path(workspace, workflow, "params.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return ""
+    return sync_runs.selection_problem(Path(workspace, workflow), params)
+
+
 def _run_view(workspace: Path, link: dict, workflow: str, run: dict, inputs, busy) -> None:
     """One workflow's run in the online workspace, with Run and Stop."""
     active = run["status"] in _RUN_ACTIVE
@@ -428,8 +439,11 @@ def _run_view(workspace: Path, link: dict, workflow: str, run: dict, inputs, bus
     if run["status"] == "started" and run.get("progress"):
         col1.progress(min(float(run["progress"]), 1.0))
     suffix = f"{workspace.name}-{workflow}"
+    clash = "" if active else _selection_problem(workspace, workflow)
+    if clash:
+        col1.error(clash, icon="⚠️")
     if col2.button("▶️ Run on cloud", key=f"sync-run-{suffix}", width="stretch",
-                   disabled=active or busy,
+                   disabled=active or busy or bool(clash),
                    help="Upload this workflow's inputs, then run it in the online workspace "
                         "with the parameters set here."):
         _start_run(workspace, link, workflow, inputs)
@@ -830,8 +844,11 @@ def _run_panel(workspace: Path, link: dict, workflow: str, name_key: str,
         if missing:
             st.caption("The upload goes in verified chunks and continues where it stopped "
                        "if the connection drops, also after closing the app.")
+        clash = _selection_problem(workspace, workflow)
+        if clash:
+            st.error(clash, icon="⚠️")
         if st.button("Start Workflow online", type="primary", width="stretch",
-                     key=f"sync-run-start-{workflow}"):
+                     key=f"sync-run-start-{workflow}", disabled=bool(clash)):
             # The online run takes its parameters from params.json: a failed
             # save (already reported) would start it with the stored ones.
             if save_parameters is None or save_parameters() is not False:

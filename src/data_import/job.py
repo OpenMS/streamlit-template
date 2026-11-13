@@ -27,9 +27,10 @@ from typing import Dict, List, Optional
 
 from src.workflow.vendor_files import has_type
 
-from .download import Cancelled, download, inflate, md5sum
+from . import download as dl
+from .download import Cancelled, download, download_parallel, inflate, md5sum
 from .net import make_session, redact
-from .remote import RemoteFile, archive_type, safe_member_path, zip_data_offset
+from .remote import RemoteFile, archive_type, probe, safe_member_path, zip_data_offset
 
 HEARTBEAT_SECONDS = 2
 # A job whose heartbeat is older than this is gone (its server restarted).
@@ -40,6 +41,9 @@ STALE_AFTER = 30
 MAX_UNPACK_RATIO = 100
 MIN_UNPACK_LIMIT = 10 * 10**9
 MAX_UNPACK_MEMBERS = 20000
+# Connections one import holds at most, shared by the files it downloads at
+# once and the ranges of a large file (``download_parallel``).
+CONNECTIONS = 8
 
 
 # ---------------------------------------------------------------------------
@@ -52,11 +56,22 @@ def _strip_gz(name: str) -> str:
 
 
 def target_for(name: str, targets: Dict[str, dict]) -> str:
-    """The upload key whose file types match ``name`` ('' if none)."""
+    """Automatically match an upload by type, excluding manual-only targets."""
     base = _strip_gz(name)
     for key, target in targets.items():
-        if has_type(base, target["file_types"]):
+        if target.get("auto_route", True) and has_type(base, target["file_types"]):
             return key
+    return ""
+
+
+def _archive_target(name: str, chosen: str, targets: Dict[str, dict]) -> str:
+    """The upload an archive entry goes to: sorted by type for ``"*"``,
+    otherwise the upload picked for the archive, when the entry fits it."""
+    if chosen == "*":
+        return target_for(name, targets)
+    target = targets.get(chosen)
+    if target and has_type(_strip_gz(name), target["file_types"]):
+        return chosen
     return ""
 
 
@@ -219,10 +234,13 @@ def _is_copy(path: Path, source: Optional[Path]) -> bool:
 
 
 class _Job:
-    def __init__(self, job_dir: Path, items, targets, guard, allowed_hosts, max_bytes):
+    def __init__(self, job_dir: Path, items, targets, guard, allowed_hosts, max_bytes,
+                 connections=CONNECTIONS):
         self.job_dir, self.items, self.targets = job_dir, items, targets
         self.max_bytes = max_bytes
-        self.session = make_session(guard, allowed_hosts)
+        self.connections = max(1, int(connections))
+        self.slots = threading.BoundedSemaphore(self.connections)
+        self.session = make_session(guard, allowed_hosts, pool_size=self.connections + 4)
         self.lock = threading.Lock()
         self.cancel_file = Path(job_dir, "cancel")
         self._cancel_checked, self._cancelled = 0.0, False
@@ -303,26 +321,45 @@ class _Job:
             if rf.deflate:
                 packed = dest.with_name(dest.name + ".deflate")
                 if not dest.exists():
-                    download(self.session, rf.url, packed, start=offset, length=rf.stored_size,
-                             etag=rf.etag, **common)
+                    with self.slots:
+                        download(self.session, rf.url, packed, start=offset, length=rf.stored_size,
+                                 etag=rf.etag, **common)
                     inflate(packed, dest, rf.size, rf.crc32)
                 return dest
-            path = download(self.session, rf.url, dest, start=offset, length=rf.stored_size,
-                            etag=rf.etag, **common)
+            with self.slots:
+                path = download(self.session, rf.url, dest, start=offset, length=rf.stored_size,
+                                etag=rf.etag, **common)
         elif rf.offset is not None:
-            path = download(self.session, rf.url, dest, start=rf.offset, length=rf.stored_size,
-                            etag=rf.etag, **common)
+            with self.slots:
+                path = download(self.session, rf.url, dest, start=rf.offset, length=rf.stored_size,
+                                etag=rf.etag, **common)
         else:
-            path = download(self.session, rf.url, dest, etag=rf.etag, **common)
+            path, md5 = self.fetch_whole(rf, dest, common)
             if rf.size and path.stat().st_size != rf.size:
                 path.unlink()
                 raise IOError(f"{dest.name}: got {path.stat().st_size} bytes, the source lists {rf.size}.")
-            if rf.md5 and md5sum(path) != rf.md5:
+            if rf.md5 and (md5 or md5sum(path)) != rf.md5:
                 path.unlink()
                 raise IOError(f"{dest.name}: the checksum does not match the source's.")
         with self.lock:
             self.status["retry"] = ""
         return path
+
+    def fetch_whole(self, rf: RemoteFile, dest: Path, common: dict):
+        """A whole file: in ranges over several connections when it is large
+        and the server sends ranges, else over one. Returns the path and, for
+        the former, its MD5."""
+        if self.connections > 1 and rf.size and rf.size >= 2 * dl.SEGMENT_SIZE and not dest.exists():
+            try:
+                info = probe(self.session, rf.url)
+            except Exception:  # the download itself says what is wrong
+                info = None
+            if info and info.ranges and info.size == rf.size:
+                return download_parallel(self.session, rf.url, dest, rf.size,
+                                         connections=self.connections, slots=self.slots,
+                                         etag=rf.etag or info.etag, **common)
+        with self.slots:
+            return download(self.session, rf.url, dest, etag=rf.etag, **common), ""
 
     def run_item(self, item: dict) -> None:
         if self.cancelled():
@@ -348,7 +385,7 @@ class _Job:
                 _unpack(archive, unpacked, self.max_bytes)
                 archive.unlink()
                 for entry in _unpacked_entries(unpacked):
-                    key = target_for(entry.name, self.targets)
+                    key = _archive_target(entry.name, item["target"], self.targets)
                     if not key:
                         with self.lock:
                             self.status["skipped"].append(f"{item['name']}/{entry.relative_to(unpacked)}")
@@ -393,13 +430,14 @@ def _gunzip(path: Path) -> Path:
 
 def run_import(job_dir: str, items: List[dict], targets: Dict[str, dict], guard: bool = True,
                allowed_hosts: List[str] = None, max_bytes: Optional[int] = None,
-               parallel: int = 4) -> dict:
-    """Download ``items`` (from ``build_items``) into their targets' folders."""
+               parallel: int = 4, connections: int = CONNECTIONS) -> dict:
+    """Download ``items`` (from ``build_items``) into their targets' folders:
+    ``parallel`` of them at once, over at most ``connections`` connections."""
     job_dir = Path(job_dir)
     job_dir.mkdir(parents=True, exist_ok=True)
     Path(job_dir, "cancel").unlink(missing_ok=True)
     items = [i for i in items if i.get("target")]
-    job = _Job(job_dir, items, targets, guard, allowed_hosts, max_bytes)
+    job = _Job(job_dir, items, targets, guard, allowed_hosts, max_bytes, connections)
     job.save()
     _log(job_dir, f"Importing {len(items)} item(s).")
     stop = threading.Event()

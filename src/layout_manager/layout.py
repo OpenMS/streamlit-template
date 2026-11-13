@@ -33,10 +33,12 @@ A page can also offer preset views, ready-made layouts for one purpose::
 ``match_preset`` tells which preset the current layout is, if any.
 """
 
+import base64
 import json
 import math
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 MAX_EXPERIMENTS = 5
 MAX_COLUMNS = 3
@@ -724,3 +726,88 @@ def has_own_defaults(view: Optional[Dict[str, Any]]) -> bool:
     if view.get("by") == "assistant":
         return "original_defaults" in view
     return has_defaults(view)
+
+
+# Links that open a page on a view with its datasets, zoom and selection
+LINK_VIEW = "view"
+LINK_SHOW = "show"
+MAX_LINK_LENGTH = 8000
+
+
+def _link_entry(entry: Any) -> Dict[str, Any]:
+    """One experiment of a link: like ``clean_defaults``, the dataset kept on its own too."""
+    cleaned = clean_defaults([entry])
+    out = cleaned[0] if cleaned else {}
+    if isinstance(entry, dict) and isinstance(entry.get("dataset"), str):
+        out["dataset"] = entry["dataset"]
+    return out
+
+
+def link_entries(entries: Any) -> List[Dict[str, Any]]:
+    """``entries`` as a link carries them when nothing has to be left out."""
+    if not isinstance(entries, list):
+        return []
+    out = [_link_entry(e) for e in entries[:MAX_EXPERIMENTS]]
+    while out and not out[-1]:
+        out.pop()
+    return out
+
+
+def link_params(view: str, entries: Optional[Sequence[Dict[str, Any]]] = None) -> Dict[str, str]:
+    """The query parameters of a link to ``view`` showing ``entries``.
+
+    ``entries`` holds one ``capture_defaults`` entry per experiment: the dataset
+    it shows, its selection, zoom and annotations. They travel as compact JSON
+    in URL-safe base64, so the link stays one opaque parameter. What would make
+    it longer than ``read_link`` accepts is left out (annotations first, then
+    selection and zoom), so the link always opens the view and its datasets.
+    """
+    params = {LINK_VIEW: str(view)}
+    cleaned = link_entries(list(entries or []))
+    # State too long for a link is left out step by step: the annotations, then
+    # selection and zoom; the datasets stay
+    for keep in (None, ("dataset", "selection", "zoom"), ("dataset",)):
+        trimmed = link_entries([{k: v for k, v in e.items() if keep is None or k in keep} for e in cleaned])
+        if not trimmed:
+            break
+        raw = json.dumps(trimmed, separators=(",", ":"), sort_keys=True).encode()
+        show = base64.urlsafe_b64encode(raw).decode().rstrip("=")
+        if len(show) <= MAX_LINK_LENGTH:
+            params[LINK_SHOW] = show
+            break
+    return params
+
+
+def read_link(params: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
+    """What a link's query parameters ask for: ``{"view", "experiments"}``, or None.
+
+    ``params`` is ``st.query_params`` or any mapping. Anything that does not
+    decode, or is too long, is left out rather than raising.
+    """
+    def first(name: str) -> Optional[str]:
+        value = params.get(name)
+        if isinstance(value, (list, tuple)):
+            value = value[0] if value else None
+        return value if isinstance(value, str) and value else None
+
+    view, show = first(LINK_VIEW), first(LINK_SHOW)
+    if view is None and show is None:
+        return None
+    experiments: List[Dict[str, Any]] = []
+    if show is not None and len(show) <= MAX_LINK_LENGTH:
+        try:
+            raw = base64.urlsafe_b64decode(show + "=" * (-len(show) % 4))
+            experiments = link_entries(json.loads(raw.decode()))
+        except (ValueError, UnicodeDecodeError, RecursionError):
+            experiments = []
+    if view is None and not experiments:
+        return None
+    return {"view": view, "experiments": experiments}
+
+
+def link_url(url: str, params: Mapping[str, str]) -> str:
+    """``url`` with ``params`` set in its query; the other parameters (the workspace) stay."""
+    parts = urlsplit(url)
+    query = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True) if k not in params]
+    query += list(params.items())
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), ""))

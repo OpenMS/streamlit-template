@@ -7,13 +7,20 @@ Only activates when running in online mode with Redis available.
 """
 
 import os
-from typing import Optional, Callable, Any
+import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
+from typing import Any
 
-from .settings_io import load_settings
 from .app_build import app_build
+from .file_lock import file_lock
+from .settings_io import load_settings
+
+
+class QueueStateUnavailableError(ValueError):
+    """Queue state or submission could not be confirmed safely."""
 
 
 class JobStatus(Enum):
@@ -33,13 +40,13 @@ class JobInfo:
     status: JobStatus
     progress: float  # 0.0 to 1.0
     current_step: str
-    queue_position: Optional[int] = None
-    queue_length: Optional[int] = None
-    result: Optional[Any] = None
-    error: Optional[str] = None
-    enqueued_at: Optional[str] = None
-    started_at: Optional[str] = None
-    ended_at: Optional[str] = None
+    queue_position: int | None = None
+    queue_length: int | None = None
+    result: Any | None = None
+    error: str | None = None
+    enqueued_at: str | None = None
+    started_at: str | None = None
+    ended_at: str | None = None
 
 
 class QueueManager:
@@ -121,12 +128,12 @@ class QueueManager:
         func: Callable,
         args: tuple = (),
         kwargs: dict = None,
-        job_id: Optional[str] = None,
-        timeout: Optional[int] = None,
-        result_ttl: Optional[int] = None,
-        failure_ttl: Optional[int] = None,
+        job_id: str | None = None,
+        timeout: int | None = None,
+        result_ttl: int | None = None,
+        failure_ttl: int | None = None,
         description: str = ""
-    ) -> Optional[str]:
+    ) -> str | None:
         """
         Submit a job to the queue.
 
@@ -177,10 +184,14 @@ class QueueManager:
                 meta=meta,
             )
             return job.id
-        except Exception:
-            return None
+        except Exception as error:
+            # Redis may have accepted the enqueue before its response was
+            # lost. A local fallback could execute the same analysis twice.
+            raise QueueStateUnavailableError(
+                "Queue submission could not be confirmed. Its job ID was retained; check the queue status before retrying."
+            ) from error
 
-    def get_job_info(self, job_id: str) -> Optional[JobInfo]:
+    def get_job_info(self, job_id: str) -> JobInfo | None:
         """
         Get information about a job.
 
@@ -194,8 +205,11 @@ class QueueManager:
             return None
 
         try:
+            from rq.exceptions import NoSuchJobError
             from rq.job import Job
-
+        except ImportError as error:
+            raise QueueStateUnavailableError("Queue status support is unavailable.") from error
+        try:
             job = Job.fetch(job_id, connection=self._redis)
 
             # 'stopped' is what RQ records after send_stop_job_command runs;
@@ -237,10 +251,14 @@ class QueueManager:
                 started_at=str(job.started_at) if job.started_at else None,
                 ended_at=str(job.ended_at) if job.ended_at else None,
             )
-        except Exception:
+        except NoSuchJobError:
             return None
+        except Exception as error:
+            raise QueueStateUnavailableError(
+                "The queue status is temporarily unavailable. Wait for it to recover before starting another analysis."
+            ) from error
 
-    def _get_job_position(self, job_id: str) -> Optional[int]:
+    def _get_job_position(self, job_id: str) -> int | None:
         """Get position of a job in the queue (1-indexed)"""
         try:
             job_ids = self._queue.job_ids
@@ -264,7 +282,8 @@ class QueueManager:
             job_id: The job ID to cancel
 
         Returns:
-            True if the job is canceled (or already was), False otherwise.
+            True if cancellation was requested or acknowledged. A started job
+            remains started until its worker acknowledges the stop command.
         """
         if not self.is_available:
             return False
@@ -287,27 +306,57 @@ class QueueManager:
         if job.is_canceled or job.is_stopped:
             return True
 
-        # Tell the worker to interrupt the work-horse before marking canceled.
-        if job.is_started and job.worker_name:
+        # Never mark a running job canceled before its worker acknowledges the
+        # stop. Redis state is the authority even in a different PID namespace.
+        if job.is_started:
+            if not job.worker_name:
+                return False
             try:
                 send_stop_job_command(self._redis, job_id)
             except InvalidJobOperation:
-                # The worker just finished or the job moved out of 'started';
-                # fall through to cancel() to settle registry state.
-                pass
+                try:
+                    job.refresh()
+                    return job.is_stopped or job.is_canceled
+                except Exception:
+                    return False
             except Exception:
-                pass
+                return False
+            return True
 
-        try:
-            job.cancel()
-        except InvalidJobOperation:
-            # Worker already transitioned the job (e.g. to 'stopped'); that
-            # satisfies the user's intent to stop.
-            pass
-        except Exception:
-            return False
+        if job.is_finished or job.is_failed:
+            return False  # A late Stop must not cancel an already completed job.
 
-        return True
+        return self._cancel_pending_job(job)
+
+    def _cancel_pending_job(self, job) -> bool:
+        """Cancel only while the job is still unclaimed by a worker."""
+        from redis.exceptions import WatchError
+        from rq import Queue
+
+        queue_key = Queue(job.origin, connection=self._redis).key
+        for _attempt in range(5):
+            try:
+                with self._redis.pipeline() as pipeline:
+                    # A worker removes the queue entry before it marks the
+                    # job started. Watch both keys and refuse that handoff gap.
+                    pipeline.watch(job.key, queue_key)
+                    state = pipeline.hget(job.key, "status")
+                    if isinstance(state, bytes):
+                        state = state.decode("utf-8")
+                    if state not in {"queued", "deferred", "scheduled"}:
+                        pipeline.unwatch()
+                        return self.cancel_job(job.id)
+                    if state == "queued" and pipeline.lpos(queue_key, job.id) is None:
+                        return False
+                    pipeline.multi()
+                    job.cancel(pipeline=pipeline)
+                    pipeline.execute()
+                    return True
+            except WatchError:
+                continue  # Recheck ownership after a concurrent dequeue.
+            except Exception:
+                return False
+        return False
 
     def get_queue_stats(self) -> dict:
         """
@@ -340,17 +389,26 @@ class QueueManager:
     def store_job_id(self, workflow_dir: Path, job_id: str) -> None:
         """Store job ID in workflow directory for recovery"""
         job_file = Path(workflow_dir) / ".job_id"
-        job_file.write_text(job_id)
+        with file_lock(Path(workflow_dir) / ".locks" / "queue-reference.lock"):
+            temporary = job_file.with_name(f".job-id-{uuid.uuid4().hex}.tmp")
+            try:
+                temporary.write_text(job_id, encoding="utf-8")
+                temporary.replace(job_file)
+            finally:
+                temporary.unlink(missing_ok=True)
 
-    def load_job_id(self, workflow_dir: Path) -> Optional[str]:
+    def load_job_id(self, workflow_dir: Path) -> str | None:
         """Load job ID from workflow directory"""
         job_file = Path(workflow_dir) / ".job_id"
-        if job_file.exists():
-            return job_file.read_text().strip()
-        return None
+        try:
+            return job_file.read_text(encoding="utf-8").strip() or None
+        except FileNotFoundError:
+            return None
 
-    def clear_job_id(self, workflow_dir: Path) -> None:
-        """Clear stored job ID"""
+    def clear_job_id(self, workflow_dir: Path, expected_job_id: str | None = None) -> None:
+        """Clear the observed ID without erasing a newer session's submission."""
         job_file = Path(workflow_dir) / ".job_id"
-        if job_file.exists():
-            job_file.unlink()
+        with file_lock(Path(workflow_dir) / ".locks" / "queue-reference.lock"):
+            if expected_job_id is not None and self.load_job_id(workflow_dir) != expected_job_id:
+                return
+            job_file.unlink(missing_ok=True)

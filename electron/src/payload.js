@@ -60,7 +60,7 @@ function appEnvironment(payload, workspacesDir) {
   env[pathKey] = [...extraPath, env[pathKey] || ""].join(path.delimiter);
 
   // The .NET runtime FileConverter's built-in Thermo .raw reader starts in its
-  // own process (macOS, Linux; electron/scripts/stage-dotnet.sh). Without
+  // own process (electron/scripts/stage-dotnet.sh). Without
   // DOTNET_ROOT it only looks in the system locations, where users rarely have one.
   const dotnetRoot = path.join(payload, "dotnet");
   if (fs.existsSync(dotnetRoot)) {

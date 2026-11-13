@@ -62,8 +62,9 @@ assert os.path.getsize(ini) > 0`
 
   if (tools.includes("FileConverter")) {
     // A real Thermo .raw file through FileConverter, the way convert_to_mzml
-    // calls it: on macOS and Linux this runs OpenMS's built-in reader on the
-    // bundled .NET runtime, on Windows ThermoRawFileParser.
+    // calls it: OpenMS's built-in reader on the bundled .NET runtime, named
+    // explicitly because Windows defaults to ThermoRawFileParser. Only an
+    // OpenMS without that reader converts with its default.
     check(
       "Thermo .raw conversion",
       `import hashlib, os, subprocess, sys, tempfile, time
@@ -88,7 +89,16 @@ else:
     sys.exit(${SKIPPED})
 assert hashlib.sha256(open(raw, "rb").read()).hexdigest() == "${RAW_SHA256}", "test file checksum"
 out = os.path.join(tmp, "test.mzML")
-r = subprocess.run(["FileConverter", "-in", raw, "-out", out], capture_output=True, text=True)
+ini = os.path.join(tmp, "FileConverter.ini")
+subprocess.run(["FileConverter", "-write_ini", ini], check=True, capture_output=True)
+reader = []
+managed = os.path.isdir(os.path.join(os.environ["OPENMS_DATA_PATH"], "openms_thermo_bridge", "managed"))
+has_reader = 'inprocess' in open(ini, encoding="utf-8").read()
+assert has_reader == managed, f"FileConverter's built-in Thermo reader ({has_reader}) and its managed assemblies ({managed}) disagree"
+if has_reader:
+    reader = ["-RawToMzML:reader", "inprocess"]
+print("reader:", reader[1] if reader else "FileConverter's default")
+r = subprocess.run(["FileConverter", "-in", raw, "-out", out, *reader], capture_output=True, text=True)
 print(r.stdout[-3000:], r.stderr[-3000:])
 assert r.returncode == 0, f"FileConverter exited with {r.returncode}"
 exp = pyopenms.MSExperiment()

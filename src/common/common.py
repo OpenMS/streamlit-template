@@ -37,6 +37,12 @@ logger = logging.getLogger(__name__)
 # Detect system platform
 OS_PLATFORM = sys.platform
 
+
+def native_dialog_available() -> bool:
+    """Native pickers require Tk and a desktop display, not just local mode."""
+    return TK_AVAILABLE and (OS_PLATFORM != "linux" or bool(os.environ.get("DISPLAY")))
+
+
 # Demo and example files are symlinked on Linux to save space. An AppImage
 # mounts the app under a new path on every launch, so links into it would
 # dangle after a restart; it copies them instead.
@@ -247,14 +253,22 @@ def find_demo_workspace_path(demo_name: str) -> Path | None:
     return None
 
 
+# Demo files at least this large are linked, smaller ones copied: the small
+# ones are the settings, indexes and lists an app writes in place (params.json,
+# a SQLite cache index, external_files.txt), which a link would write back into
+# the demo every visitor shares. The large ones are the data (mzML, parquet,
+# FASTA) that make copying a workspace slow.
+LINK_MIN_BYTES = 1024 * 1024
+
+
 def _symlink_tree(source: Path, target: Path) -> None:
     """
     Recursively create directory structure and symlink files from source to target.
 
     Creates real directories but symlinks individual files, allowing users to
     add new files to workspace directories without affecting the original.
-    params.json and .ini files are copied instead of symlinked so they can be
-    modified independently.
+    params.json, .ini files and every file smaller than ``LINK_MIN_BYTES`` are
+    copied instead of symlinked so they can be modified independently.
 
     Args:
         source: Source directory path.
@@ -265,7 +279,11 @@ def _symlink_tree(source: Path, target: Path) -> None:
         target_item = target / item.name
         if item.is_dir():
             _symlink_tree(item, target_item)
-        elif item.name == "params.json" or item.suffix == ".ini":
+        elif (
+            item.name == "params.json"
+            or item.suffix == ".ini"
+            or item.stat().st_size < LINK_MIN_BYTES
+        ):
             # Copy config files so they can be modified independently
             shutil.copy2(item, target_item)
         else:
@@ -306,6 +324,48 @@ def copy_demo_workspace(demo_name: str, target_path: Path) -> bool:
         return True
     except Exception:
         return False
+
+
+def new_workspace_demo() -> str | None:
+    """
+    The demo workspace a new workspace starts from, or None.
+
+    Set by ``demo_workspaces.new_workspace`` in settings.json (for example
+    ``"default"``). Without it, or when that demo does not exist, a new
+    workspace starts empty.
+    """
+    settings = st.session_state.get("settings", {})
+    name = settings.get("demo_workspaces", {}).get("new_workspace")
+    if not name or find_demo_workspace_path(name) is None:
+        return None
+    return name
+
+
+def seed_new_workspace(workspace: Path, location: str) -> None:
+    """
+    Fill a workspace that does not exist yet from ``new_workspace_demo()``.
+
+    Online, every new workspace gets the demo's content. Locally, the
+    ``default`` workspace does, and every other demo missing beside it is
+    added under its own name. Large files are linked rather than copied
+    (``copy_demo_workspace``), so a new visitor does not wait while hundreds
+    of megabytes of example data are copied.
+
+    Args:
+        workspace: The workspace directory, which does not exist yet.
+        location: ``"online"`` or ``"local"``.
+    """
+    demo = new_workspace_demo()
+    if demo is None:
+        return
+    if location == "online":
+        copy_demo_workspace(demo, workspace)
+    elif workspace.name == "default":
+        copy_demo_workspace(demo, workspace)
+        for other in get_available_demo_workspaces():
+            target = Path(workspace.parent, other)
+            if other != demo and not target.exists():
+                copy_demo_workspace(other, target)
 
 
 def monitor_hardware():
@@ -838,6 +898,8 @@ def page_setup(page: str = "") -> dict[str, Any]:
         st.query_params.workspace = st.session_state.workspace.name
 
     # Make sure the necessary directories exist
+    if not st.session_state.workspace.is_dir():
+        seed_new_workspace(st.session_state.workspace, st.session_state.location)
     st.session_state.workspace.mkdir(parents=True, exist_ok=True)
     Path(st.session_state.workspace, "mzML-files").mkdir(parents=True, exist_ok=True)
 
@@ -1485,7 +1547,7 @@ def export_folder_input(key: str) -> Path:
             "📁",
             key=f"{key}-export-browse",
             help="Choose the export folder.",
-            disabled=not TK_AVAILABLE,
+            disabled=not native_dialog_available(),
         ):
             chosen = tk_directory_dialog(
                 "Select the export folder", st.session_state["export_dir"]

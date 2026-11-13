@@ -275,10 +275,23 @@ def test_a_run_that_adds_files_joins_the_earlier_runs_experiment(tmp_path):
     assert [r["id"] for r in runs.experiments()] == [added]
 
 
+def _example_merge_feature_tables():
+    """The template's example workflow helper; an app's own workflow may lack it."""
+    try:
+        import src.Workflow as workflow
+    except ModuleNotFoundError as e:
+        if e.name != "src.Workflow":
+            raise
+        pytest.skip("this app has no src/Workflow.py")
+    if not hasattr(workflow, "merge_feature_tables"):
+        pytest.skip("this app's workflow has no merge_feature_tables")
+    return workflow.merge_feature_tables
+
+
 def test_merge_feature_tables_matches_features_of_added_runs():
     import pandas as pd
 
-    from src.Workflow import merge_feature_tables
+    merge_feature_tables = _example_merge_feature_tables()
 
     cols = ["charge", "rt", "mz", "quality"]
     first = pd.DataFrame([[1, 100.0, 300.0, 1, 10.0], [1, 200.0, 400.0, 1, 20.0]],
@@ -319,7 +332,7 @@ def test_a_delete_cut_short_keeps_the_experiment_together(tmp_path, monkeypatch)
 def test_merge_feature_tables_updates_one_of_two_features_with_the_same_label():
     import pandas as pd
 
-    from src.Workflow import merge_feature_tables
+    merge_feature_tables = _example_merge_feature_tables()
 
     cols = ["charge", "rt", "mz", "quality"]
     first = pd.DataFrame([[1, 100.0, 300.0, 1, 10.0], [1, 100.0, 300.02, 1, 20.0]],

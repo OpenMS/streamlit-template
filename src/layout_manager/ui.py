@@ -26,7 +26,13 @@ from src.layout_manager.layout import (
     differs_from_defaults,
     has_defaults,
     join_labels,
+    link_entries,
+    link_params,
+    link_url,
+    LINK_SHOW,
+    LINK_VIEW,
     missing_analyses,
+    read_link,
     clear_layout,
     load_layout,
     load_views,
@@ -444,6 +450,7 @@ def view_bar(
     dataset_label: str = "run",
     states: Optional[Callable[[int], Any]] = None,
     datasets: Optional[Callable[[int], Optional[str]]] = None,
+    link: bool = False,
     **editor_args: Any,
 ) -> str:
     """The view bar: as many views as fit, the rest in More, and ✏️ Customize.
@@ -498,9 +505,20 @@ def view_bar(
             clicked = submitted.get("id")
             if clicked == _SAVE_DEFAULTS:
                 st.session_state[f"{key}_defaults_dialog"] = True
+            elif clicked == _COPY_LINK:
+                st.session_state[f"{key}_link_dialog"] = True
         elif submitted.get("action") == "unavailable":
             view = submitted.get("view")
             request_analysis(key, [], view=view)
+
+    opened = _pending_link(key) if link else None
+    if opened is not None:
+        st.session_state[f"{key}_link_seen"] = _link_token()
+        if opened["view"]:
+            select_view(path, opened["view"], components, presets, default_layout)
+        # The link is applied: what the page shows from here on is the user's
+        for name in (LINK_VIEW, LINK_SHOW):
+            st.query_params.pop(name, None)
 
     state = _views(path, components, presets, default_layout, default_view)
     missing_of = {v["name"]: missing_analyses(v["rows"], components, available) for v in state["views"]}
@@ -518,6 +536,12 @@ def view_bar(
     if states is not None:
         applied_key = f"{key}_defaults_applied"
         # Opening a view (also the one shown when the session starts) applies its defaults
+        if opened is not None and opened["experiments"]:
+            # A link's zoom and selection win over the view's own
+            st.session_state[applied_key] = state["current"]
+            for index, entry in enumerate(opened["experiments"][:experiments]):
+                if entry:
+                    apply_defaults(states(index), entry, _dataset_of(datasets, index))
         if st.session_state.get(applied_key) != state["current"]:
             st.session_state[applied_key] = state["current"]
             if has_defaults(current_view):
@@ -525,6 +549,9 @@ def view_bar(
         if clicked == _RESTORE_DEFAULTS and has_defaults(current_view):
             _apply_view_defaults(current_view, states, datasets, experiments)
         builtin = _defaults_actions(current_view, states, datasets, experiments)
+    if link:
+        builtin.append({"id": _COPY_LINK, "icon": "🔗",
+                        "help": "Link to this view with what it shows now"})
 
     def _bar_view(v: Dict[str, Any]) -> Dict[str, Any]:
         out = {k: v[k] for k in ("name", "label", "rows", "preset", "in_bar", "help") if k in v}
@@ -572,6 +599,8 @@ def view_bar(
     elif states is not None and st.session_state.get(f"{key}_defaults_dialog") and current_view:
         _defaults_dialog(key, path, current_view, components, presets, default_layout,
                          states, datasets, experiments, dataset_label)
+    elif link and st.session_state.get(f"{key}_link_dialog") and current_view:
+        _link_dialog(key, current_view, states, datasets, experiments)
     request = st.session_state.get(f"{key}_missing")
     if request and not st.session_state.get(open_key):
         view = next((v for v in state["views"] if v["name"] == request.get("view")), None)
@@ -600,6 +629,61 @@ def view_bar(
 
 _SAVE_DEFAULTS = "_save_view_defaults"
 _RESTORE_DEFAULTS = "_restore_view_defaults"
+_COPY_LINK = "_copy_view_link"
+
+
+def _link_token() -> str:
+    return f"{st.query_params.get(LINK_VIEW, '')}|{st.query_params.get(LINK_SHOW, '')}"
+
+
+def _pending_link(key: str) -> Optional[Dict[str, Any]]:
+    """The link the page was opened with, while the bar ``key`` has not applied it."""
+    if st.session_state.get(f"{key}_link_seen") == _link_token():
+        return None
+    return read_link(st.query_params)
+
+
+def linked_datasets(key: str) -> List[Optional[str]]:
+    """The datasets a link asks the bar ``key`` to show, one per experiment.
+
+    Empty unless the page was opened with a link the bar has not applied yet,
+    so a page sets its dataset selectors from it (before ``view_bar``) only
+    once and the user's later picks stay.
+    """
+    opened = _pending_link(key)
+    return [e.get("dataset") for e in opened["experiments"]] if opened else []
+
+
+def _link_dialog(key: str, view: Dict[str, Any], states: Optional[Callable[[int], Any]],
+                 datasets: Optional[Callable[[int], Optional[str]]], experiments: int) -> None:
+    open_key = f"{key}_link_dialog"
+
+    def _closed() -> None:
+        st.session_state[open_key] = False
+
+    @st.dialog("Link to this view", on_dismiss=_closed)
+    def _dialog() -> None:
+        entries = []
+        for index in range(experiments):
+            dataset = _dataset_of(datasets, index)
+            entries.append(capture_defaults(_stored(states(index)), dataset) if states is not None
+                           else ({"dataset": dataset} if dataset is not None else {}))
+        base = link_url(getattr(st.context, "url", None) or "", st.query_params.to_dict())
+        params = link_params(view["name"], entries)
+        carried = (read_link(params) or {}).get("experiments", [])
+        state = any(e.get("selection") or e.get("zoom") or e.get("annotations") for e in carried)
+        st.markdown(f"Opens this page on **{view['label']}**"
+                    + (" with the same data, zoom and selection." if state
+                       else " with the same data." if carried else "."))
+        st.code(link_url(base, params), language=None, wrap_lines=True)
+        if carried != link_entries(entries):
+            st.caption("What is shown is too much for a link: it leaves out part of the selection, "
+                       "zoom and annotations." if carried
+                       else "What is shown is too much for a link: it opens the view only.")
+        st.caption("Copy it with the button at its right. It opens this workspace, so only "
+                   "people who can open the workspace see the data.")
+
+    _dialog()
 
 
 def _keeps_defaults(view: Optional[Dict[str, Any]]) -> bool:
