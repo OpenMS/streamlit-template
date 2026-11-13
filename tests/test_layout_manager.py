@@ -1182,3 +1182,23 @@ def test_link_dialog_says_what_the_link_opens(tmp_path):
     assert not at.exception
     assert opens() == "Opens this page on **All**."
     assert any("opens the view only" in c.value for c in at.caption)
+
+
+def test_changed_preset_reaches_the_stored_layout(tmp_path):
+    """A page update that changes a ready-made view's rows replaces the rows
+    stored for it, so the page does not keep drawing the old ones."""
+    from src.layout_manager.layout import load_views, save_views
+    from src.layout_manager.ui import _refresh_stored_layout
+
+    components = [{"name": n, "label": n} for n in ("a", "b", "c")]
+    path = tmp_path / "views.json"
+    old = [{"name": "main", "label": "Main", "layout": [["a", "b"], ["c"]]}]
+    save_views(path, load_views(path, components, old, old[0]["layout"]))
+    new = [{"name": "main", "label": "Main", "layout": [["a"], ["b"], ["c"]]}]
+    state = load_views(path, components, new, new[0]["layout"])
+    _refresh_stored_layout(path, state, components, new[0]["layout"])
+    assert json.loads(path.read_text())["layout"] == [[["a"], ["b"], ["c"]]]
+    # Nothing stored yet: nothing written
+    empty = tmp_path / "none.json"
+    _refresh_stored_layout(empty, state, components, new[0]["layout"])
+    assert not empty.exists()

@@ -432,6 +432,20 @@ def views_editor(
     return done
 
 
+def _refresh_stored_layout(path, state, components, default_layout) -> None:
+    """Store the current view's rows again when they changed since they were
+    stored: a page update that changes a ready-made view reaches the pages
+    that show it, not only those that switch views."""
+    if load_layout(path) is None:
+        return
+    current = next((v for v in state["views"] if v["name"] == state["current"]), None)
+    if current is None:
+        return
+    stored, _ = resolve_layout(path, components, default_layout)
+    if any(rows != current["rows"] for rows in stored):
+        save_views(path, state)
+
+
 def view_bar(
     path: Path,
     components: Sequence[Dict[str, Any]],
@@ -529,6 +543,7 @@ def view_bar(
         if fallback is not None:
             state["current"] = fallback
             save_views(path, state)
+    _refresh_stored_layout(path, state, components, default_layout)
 
     current_view = next((v for v in state["views"] if v["name"] == state["current"]), None)
     experiments = int(state.get("experiments") or 1)
