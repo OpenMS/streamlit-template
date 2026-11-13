@@ -48,6 +48,9 @@ class WorkflowManager:
     # How the notification at the end of a run names it ("<label> finished.");
     # None: the workflow's name.
     run_label = None
+    # The configure page. A multi-run workflow that names it offers **Start
+    # again with these settings** in the History of each run (start_again).
+    configure_page = None
 
     # Core workflow logic using the above classes
     def __init__(self, name: str, workspace: str):
@@ -885,7 +888,17 @@ class WorkflowManager:
             self.runs,
             workflow_running=self.get_workflow_status()["running"],
             exclude=exclude,
+            on_start_again=self.start_again if self.configure_page else None,
         )
+
+    def start_again(self, run_id: str) -> bool:
+        """Open ``configure_page`` with the files and settings ``run_id`` was
+        started with (``follow_up``); the next start makes a new run next to it.
+        False if the run recorded no settings."""
+        if self.follow_up(run_id, page=self.configure_page, note="to start again"):
+            return True
+        st.toast("This run recorded no settings to start from.", icon=":material/error:")
+        return False
 
     def show_results_download_section(self, exclude: list[str] | None = None) -> None:
         """

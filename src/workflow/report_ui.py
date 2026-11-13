@@ -35,6 +35,11 @@ def _pdf(workflow_dir: str, run_id: Optional[str], workflow: str, stamp: tuple) 
         return None
 
 
+def run_report(workflow_dir: Path, run_id: Optional[str] = None) -> dict:
+    """The processing report of a run (``report_for``), cached until the run changes."""
+    return _report(str(workflow_dir), run_id, "", _stamp(workflow_dir, run_id))
+
+
 def has_report(workflow_dir: Path, run_id: Optional[str] = None) -> bool:
     """True when the run recorded tool calls to report on."""
     report = _report(str(workflow_dir), run_id, "", _stamp(workflow_dir, run_id))
