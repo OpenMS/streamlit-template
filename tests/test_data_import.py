@@ -711,7 +711,7 @@ def test_pride_dataset(monkeypatch):
         "https://www.ebi.ac.uk/pride/ws/archive/v3/projects/PXD000001": {
             "title": "Top-down test", "projectDescription": "Two runs.",
             "organisms": [{"name": "Escherichia coli"}], "instruments": [{"name": "Orbitrap Eclipse"}]},
-        "https://www.ebi.ac.uk/pride/ws/archive/v3/projects/PXD000001/files": [
+        "https://www.ebi.ac.uk/pride/ws/archive/v3/projects/PXD000001/files/all": [
             {"fileName": name, "fileSizeBytes": 10, "checksum": "",
              "publicFileLocations": [
                  {"value": "prd_ascp@fasp.ebi.ac.uk:pride/data/archive/2012/03/PXD000001/" + name},
@@ -737,6 +737,28 @@ def test_pride_dataset(monkeypatch):
         ("ms", False), ("ms", True), ("ms", True), ("db", True), ("ms", False), ("ms", True)]
 
 
+def test_pride_files_fall_back_to_pages(monkeypatch):
+    base = "https://www.ebi.ac.uk/pride/ws/archive/v3/projects/PXD000003"
+    entries = [{"fileName": f"run{i}.mzML", "fileSizeBytes": 1,
+                "publicFileLocations": [{"value": f"ftp://ftp.pride.ebi.ac.uk/x/run{i}.mzML"}]}
+               for i in range(250)]
+    calls = []
+
+    def answer(session, url, params=None, **kw):
+        calls.append(url)
+        if url == base:
+            return {"title": "Paged"}
+        if url == base + "/files/all":
+            raise LookupError("404")
+        page = params["page"]
+        return entries[page * 100:(page + 1) * 100]
+    monkeypatch.setattr(sources, "_json", answer)
+    monkeypatch.setattr(sources, "_open_archives", lambda session, listing: None)
+    listing = sources.resolve(plain(), "PXD000003")
+    assert len(listing.files) == 250
+    assert calls.count(base + "/files") == 3
+
+
 def test_unknown_pride_dataset_is_explained(monkeypatch):
     def missing(session, url, **kw):
         raise LookupError("404")
@@ -747,7 +769,7 @@ def test_unknown_pride_dataset_is_explained(monkeypatch):
 
 def test_large_pride_dataset_starts_unticked(monkeypatch):
     base = "https://www.ebi.ac.uk/pride/ws/archive/v3/projects/PXD000002"
-    pages = {base: {"title": "Big"}, base + "/files": [
+    pages = {base: {"title": "Big"}, base + "/files/all": [
         {"fileName": f"run{i}.raw", "fileSizeBytes": 2 * 10**9,
          "publicFileLocations": [{"value": f"ftp://ftp.pride.ebi.ac.uk/x/run{i}.raw"}]}
         for i in range(30)]}
