@@ -1,6 +1,6 @@
 """The "Want to contribute?" section of an app's front page.
 
-It offers one prompt to paste into Claude (the desktop app or Claude Code). The prompt makes the agent read the ``contribute`` skill from the
+It offers one prompt to paste into Claude Desktop (Claude Code works too). The prompt makes the agent read the ``contribute`` skill from the
 template's repository and follow it: Git, a GitHub SSH key, forks and clones
 of the app, the template and openms-insight, and the order in which to open
 pull requests. The skill is read by URL because the person has nothing
@@ -74,10 +74,8 @@ def render_contribute() -> None:
     st.markdown("##### 🛠️ Want to contribute?")
     st.markdown(community_line(settings))
     st.caption(
-        "Paste this prompt into **Claude**. "
-        "It sets up Git and a GitHub SSH key, forks and clones the app, the "
-        "template and openms-insight, and opens your pull requests in the right "
-        "order. It asks before installing or changing anything."
+        "Paste this prompt into **Claude Desktop** to get started. "
+        "No programming experience required."
     )
     st.code(contribute_prompt(settings), language="text", wrap_lines=True)
     st.caption(f"[Read the instructions it follows]({SKILL_PAGE})")
