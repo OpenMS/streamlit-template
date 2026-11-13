@@ -17,6 +17,15 @@ spec:
       containers:
         - name: redis
           image: redis:7.4.12-alpine
+          securityContext:
+            # The image's entrypoint chowns /data and switches to the redis user;
+            # nothing else is needed.
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
+            capabilities:
+              drop: ["ALL"]
+              add: ["CHOWN", "SETGID", "SETUID"]
           ports:
             - containerPort: 6379
           resources:
