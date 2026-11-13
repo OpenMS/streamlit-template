@@ -240,6 +240,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends mono-complete \
     && rm -rf /var/lib/apt/lists/* \
     && mono --version
 
+# Thermo's notice and license terms for RawFileReader (in ThermoRawFileParser),
+# next to its THERMO_LICENSE. The About dialog lists it with the folder's other
+# license files, and the entrypoint prints it when the container starts.
+COPY docker/THERMO-NOTICE.txt /thirdparty/ThermoRawFileParser/NOTICE.txt
+
 # Command line tools an app installs from conda-forge (SIRIUS, for example),
 # one package spec per line in its optional conda-requirements.txt. Python
 # packages stay in requirements.txt. The glob lets the file be absent; this

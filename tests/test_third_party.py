@@ -193,3 +193,20 @@ def test_installed_packages_have_names_and_licenses():
     assert pytest_pkg.version
     assert "MIT" in pytest_pkg.license
     assert pytest_pkg.files and "MIT" in third_party.license_text(pytest_pkg)
+
+
+def test_full_images_ship_thermo_notice():
+    """The full images put Thermo's notice next to RawFileReader, and it carries Thermo's line."""
+    from pathlib import Path
+
+    from src.common import third_party
+
+    root = Path(__file__).resolve().parents[1]
+    notice = (root / "docker" / "THERMO-NOTICE.txt").read_text(encoding="utf-8")
+    assert third_party.THERMO_NOTICE in notice
+    assert third_party._LICENSE_FILE.search("NOTICE.txt")
+    for dockerfile in ("Dockerfile", "Dockerfile.arm"):
+        text = (root / dockerfile).read_text(encoding="utf-8")
+        assert "COPY docker/THERMO-NOTICE.txt /thirdparty/ThermoRawFileParser/NOTICE.txt" in text
+    entrypoint = (root / "docker" / "entrypoint.sh").read_text(encoding="utf-8")
+    assert "/thirdparty/ThermoRawFileParser/NOTICE.txt" in entrypoint
