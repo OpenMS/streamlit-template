@@ -248,6 +248,46 @@ def test_render_experiments_side_by_side_and_empty():
     assert not empty.exception and empty.session_state["picked"] == [None]
 
 
+_TOP_SELECTOR_APP = """
+import streamlit as st
+from src.layout_manager import experiment_selector, render_experiments
+
+datasets = {"r1": "Run 1", "r2": "Run 2"}
+top = experiment_selector(datasets, key="viewer", label="Experiment",
+                          buttons=lambda i: st.button("History"))
+st.markdown(f"top {top}")
+picked = render_experiments(
+    st.session_state["layout"], False, datasets,
+    lambda dataset, index: {"plot": lambda: st.markdown(f"plot {dataset} {index}")},
+    key="viewer", first_selector=False,
+)
+st.session_state["picked"] = picked
+"""
+
+
+def test_experiment_selector_above_render_experiments():
+    at = AppTest.from_string(_TOP_SELECTOR_APP)
+    at.session_state["layout"] = [[["plot"]], [["plot"]]]
+    at.run()
+    assert not at.exception
+    # One selector at the top for the first experiment, one for the second
+    assert len(at.selectbox) == 2 and len(at.button) == 1
+    assert [m.value for m in at.markdown] == ["top r1", "plot r1 0", "plot r2 1"]
+
+    # Picking at the top changes what the first experiment shows
+    at.selectbox[0].set_value("r2").run()
+    assert [m.value for m in at.markdown] == ["top r2", "plot r2 0", "plot r2 1"]
+    assert at.session_state["picked"] == ["r2", "r2"]
+
+    empty = AppTest.from_string(
+        "import streamlit as st\n"
+        "from src.layout_manager import experiment_selector\n"
+        "st.session_state['top'] = experiment_selector({}, key='v')\n"
+    ).run()
+    assert not empty.exception and empty.session_state["top"] is None
+    assert len(empty.selectbox) == 0
+
+
 PRESETS = [
     {"name": "all", "label": "All", "layout": [["table", "detail"], ["plot"]]},
     {"name": "plots", "label": "Plots", "layout": [["plot"]], "help": "Only the plot."},
