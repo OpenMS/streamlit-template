@@ -159,4 +159,7 @@ def test_run_page_names_the_files_left_out(workflow, monkeypatch):
     monkeypatch.setenv("SUMMARY_FAILED", "1")
     at = AppTest.from_function(_summary_script, default_timeout=60).run()
     assert not at.warning
-    assert len(at.error) == 2
+    # (two failed files of one tool: one line and a table of the files)
+    (error,) = at.error
+    assert "FakeTool failed on 2 of 4 files" in error.value
+    assert len(at.dataframe) == 1

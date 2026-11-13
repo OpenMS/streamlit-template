@@ -35,8 +35,11 @@ from src.workflow.progress import (
     RUNNING,
     current_step,
     failures,
+    failures_by_tool,
     file_counts,
     format_duration,
+    left_out_line,
+    list_entries,
     read_progress,
     sample_counts,
     tool_progress,
@@ -3311,7 +3314,8 @@ class StreamlitUI:
                     self._show_tool_progress(tool)
             if n > 1 or step["ended"] is not None:
                 lines = []
-                for f in files:
+                shown, left_out = list_entries(files)
+                for f in (files[i] for i in shown):
                     if f["status"] == DONE:
                         lines.append(f":green[:material/check_circle:] {f['name']} :gray[{format_duration(f['ended'] - f['started'])}]")
                     elif f["status"] == FAILED:
@@ -3320,6 +3324,8 @@ class StreamlitUI:
                         lines.append(f":blue[:material/progress_activity:] **{f['name']}** :gray[{format_duration(now - f['started'])}]")
                     else:
                         lines.append(f":gray[:material/radio_button_unchecked: {f['name']}]")
+                if left_out:
+                    lines.append(f":gray[{left_out_line(left_out)}]")
                 file_list.markdown("  \n".join(lines))
             earlier = state["steps"][:-1]
             if earlier:
@@ -3374,13 +3380,16 @@ class StreamlitUI:
             )
             if one_command:
                 self._show_tool_progress(tool)
-            sample_list.markdown("  \n".join(self._sample_lines(state, now)))
+            sample_list.markdown("  \n".join(self._sample_lines(state, now, compact=True)))
 
     @staticmethod
-    def _sample_lines(state: dict, now: float) -> list:
-        """A markdown line per sample, with its time and, while it runs, its tool."""
+    def _sample_lines(state: dict, now: float, compact: bool = False) -> list:
+        """A markdown line per sample, with its time and, while it runs, its
+        tool; ``compact`` lists a long run's samples as ``list_entries`` does."""
         lines = []
-        for s in state["samples"]:
+        samples = state["samples"]
+        shown, left_out = list_entries(samples) if compact else (range(len(samples)), {})
+        for s in (samples[i] for i in shown):
             if s["status"] == DONE:
                 lines.append(f":green[:material/check_circle:] {s['name']} :gray[{format_duration(s['ended'] - s['started'])}]")
             elif s["status"] == FAILED:
@@ -3393,6 +3402,8 @@ class StreamlitUI:
                 lines.append(f":blue[:material/progress_activity:] **{s['name']}** :gray[{format_duration(now - s['started'])}{tool}]")
             else:
                 lines.append(f":gray[:material/radio_button_unchecked: {s['name']}]")
+        if left_out:
+            lines.append(f":gray[{left_out_line(left_out)}]")
         return lines
 
     @staticmethod
@@ -3414,23 +3425,55 @@ class StreamlitUI:
         if not state or not state.get("steps"):
             return
         if show_failures:
-            for failure in failures(state):
-                st.error(
-                    f"**{failure['context']}**"
-                    + (f": {failure['message']}" if failure["message"] else "")
-                )
-                if failure["output"]:
-                    with st.expander(
-                        f"Tool output (exit code {failure['returncode']})"
-                    ):
-                        st.code("\n".join(failure["output"]), language="neon")
+            self._show_failures(state)
         else:
             self._show_left_out(failures(state, left_out=True))
+        # The per-sample lines are for following a run; afterwards the
+        # failures above and the totals say what happened
         if len(state.get("samples") or []) > 1:
-            st.markdown("  \n".join(self._sample_lines(state, time.time())))
             st.caption(self._tool_totals(state["steps"]))
             return
         st.caption(" · ".join(self._step_summary(s) for s in state["steps"]))
+
+    def _show_failures(self, state: dict) -> None:
+        """One failed file: its error and tool output. More: per tool one
+        line with the count, a table of the files and their errors, and the
+        tool output of the file picked below it."""
+        found = failures(state)
+        if len(found) == 1:
+            (failure,) = found
+            st.error(
+                f"**{failure['context']}**"
+                + (f": {failure['message']}" if failure["message"] else "")
+            )
+            if failure["output"]:
+                with st.expander(f"Tool output (exit code {failure['returncode']})"):
+                    st.code("\n".join(failure["output"]), language="neon")
+            return
+        for group in failures_by_tool(state):
+            failed = group["failures"]
+            st.error(
+                f"**{group['tool']} failed on {len(failed)} of {group['total']} "
+                f"{'file' if group['total'] == 1 else 'files'}.**"
+            )
+            st.dataframe(
+                [{"File": f["file"] or f["context"], "Error": f["message"]} for f in failed],
+                hide_index=True,
+                width="stretch",
+            )
+            with_output = [f for f in failed if f["output"]]
+            if with_output:
+                with st.expander("Tool output"):
+                    names = [f["file"] or f["context"] for f in with_output]
+                    picked = st.selectbox(
+                        "File",
+                        range(len(with_output)),
+                        format_func=lambda i: names[i],
+                        key=f"{Path(self.workflow_dir).name}-failure-output-{group['tool']}",
+                    )
+                    failure = with_output[picked]
+                    st.caption(f"Exit code {failure['returncode']}")
+                    st.code("\n".join(failure["output"]), language="neon")
 
     @staticmethod
     def _show_left_out(left: list) -> None:
