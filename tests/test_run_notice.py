@@ -104,3 +104,26 @@ def test_a_failed_run_says_it_failed(tmp_path, streamlit_mock):
     _section(tmp_path, running=True)
     drawn = _section(tmp_path, running=False, log="Error: tool crashed\n")
     assert drawn == [run_notice.notice_html("error", "Quantification")]
+
+
+def test_the_notice_names_the_run_label_else_the_workflow(tmp_path):
+    pytest.importorskip("streamlit")
+    pytest.importorskip("pyopenms")
+    from src.workflow import WorkflowManager as wm_module
+    from src.workflow.WorkflowManager import WorkflowManager
+
+    wf = object.__new__(WorkflowManager)
+    wf.name = "TOPP Workflow"
+    wf.workflow_dir = Path(tmp_path, "wf")
+    wf.multi_run = False
+    wf.ui = mock.MagicMock()
+    wf.get_workflow_status = lambda: {"running": False}
+    wf._run_online = lambda name_key: False
+    st = mock.MagicMock()
+    st.session_state = {}
+    with mock.patch.object(wm_module, "st", st):
+        wf.show_execution_section()
+        assert wf.ui.execution_section.call_args.kwargs["name"] == "TOPP Workflow"
+        wf.run_label = "My analysis"
+        wf.show_execution_section()
+        assert wf.ui.execution_section.call_args.kwargs["name"] == "My analysis"
