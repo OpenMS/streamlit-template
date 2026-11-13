@@ -197,7 +197,7 @@ What the apps rely on, and what a cluster of your own has to provide:
 
 - A StorageClass `openms-manila-nfs` handing out `ReadWriteMany` volumes. On OpenStack this is the Manila CSI driver (`openstack-manila-csi`, NFS only) with the `csi-driver-nfs` node plugin doing the mounts; one NFS share is created per claim.
 - `reclaimPolicy: Retain` (deleting a claim must not delete every workspace in it) and volume expansion on.
-- Mount options `hard`, `nfsvers=3` (works with backends that serve no NFSv4) and `nconnect=4`. CI's stand-in in `k8s/ci-storage/` publishes a class of the same name with the same options, and `assert_storage_class_contract` (`.github/scripts/ci-assertions.sh`, `CI_ASSERT_PROD_MOUNT_OPTIONS`) pins them, so the kind jobs test the mount production uses.
+- Mount options `hard`, `nfsvers=3` (works with backends that serve no NFSv4), `nconnect=4`, `retrans=2` and `timeo=30`. CI's stand-in in `k8s/ci-storage/` publishes a class of the same name with the same options, and `assert_storage_class_contract` (`.github/scripts/ci-assertions.sh`, `CI_ASSERT_PROD_MOUNT_OPTIONS`) pins them, so the kind jobs test the mount production uses.
 - Credentials for the storage API (on OpenStack an application credential in a `kube-system` Secret) are created by hand on the cluster and never committed anywhere.
 
 ### NFS client on Linux 6.19 and newer

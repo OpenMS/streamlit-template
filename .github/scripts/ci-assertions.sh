@@ -61,7 +61,8 @@
 #   CI_ASSERT_STORAGE_ROOT  kustomize root serving it    (default: k8s/ci-storage)
 #   CI_ASSERT_PROD_MOUNT_OPTIONS
 #                           mount options of the production StorageClass,
-#                           sorted (default: hard nconnect=4 nfsvers=3). The
+#                           sorted (default: hard nconnect=4 nfsvers=3
+#                           retrans=2 timeo=30). The
 #                           class itself is cluster configuration, kept
 #                           outside this repository; change this together
 #                           with it.
@@ -76,7 +77,7 @@ CI_ASSERT_MOUNT="${CI_ASSERT_MOUNT:-/workspaces-streamlit-template}"
 CI_ASSERT_TIMEOUT="${CI_ASSERT_TIMEOUT:-180}"
 CI_ASSERT_BASE="${CI_ASSERT_BASE:-k8s/base}"
 CI_ASSERT_STORAGE_ROOT="${CI_ASSERT_STORAGE_ROOT:-k8s/ci-storage}"
-CI_ASSERT_PROD_MOUNT_OPTIONS="${CI_ASSERT_PROD_MOUNT_OPTIONS:-hard nconnect=4 nfsvers=3}"
+CI_ASSERT_PROD_MOUNT_OPTIONS="${CI_ASSERT_PROD_MOUNT_OPTIONS:-hard nconnect=4 nfsvers=3 retrans=2 timeo=30}"
 # Read, never assumed, so a renamed CI storage namespace does not silently
 # point every runtime assertion at a namespace that no longer exists.
 # Parsed with yq so a quoted value is read correctly. Sourcing must not fail, so
