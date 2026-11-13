@@ -45,6 +45,9 @@ class WorkflowManager:
     # (show_run_button). Run folders always offer it; a workflow without them
     # sets this to True and reads the name in execution() with run_name().
     name_runs = False
+    # How the notification at the end of a run names it ("<label> finished.");
+    # None: the workflow's name.
+    run_label = None
 
     # Core workflow logic using the above classes
     def __init__(self, name: str, workspace: str):
@@ -804,6 +807,7 @@ class WorkflowManager:
             results_page=results_page,
             results_label=results_label,
             on_open_results=self._select_newest_run if self.multi_run else None,
+            name=self.run_label or getattr(self, "name", "The workflow"),
         )
 
     def _select_newest_run(self) -> None:
