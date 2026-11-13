@@ -28,6 +28,7 @@ from src.common.common import (
 from src.workflow._log_status import classify_log_outcome
 from src.workflow import run_notice
 from src.workflow.report_ui import report_buttons
+from src.workflow.input_check import clash_message, name_clashes
 from src.workflow.RunManager import FOLLOW_UP_KEY
 from src.workflow.progress import (
     DONE,
@@ -1164,7 +1165,18 @@ class StreamlitUI:
             save_folders(self.workflow_dir, key, {**folders, **missing})
 
     def _select_input_file_impl(self, key, name, multiple, display_file_path, reactive, upload=None):
-        """Internal implementation of select_input_file - contains all the widget logic."""
+        """Internal implementation of select_input_file: the widgets, then a
+        warning when selected files would write to the same results."""
+        self._select_input_file_widgets(key, name, multiple, display_file_path, reactive, upload)
+        if multiple:
+            groups = name_clashes(st.session_state.get(
+                f"{self.parameter_manager.param_prefix}{key}", self.params.get(key)
+            ))
+            if groups:
+                st.warning(clash_message(groups), icon=":material/content_copy:")
+
+    def _select_input_file_widgets(self, key, name, multiple, display_file_path, reactive, upload=None):
+        """The widgets of select_input_file."""
         if not name:
             name = f"**{key}**"
         if upload is not None:
@@ -3069,6 +3081,7 @@ class StreamlitUI:
         results_page=None,
         results_label: str = "Open results",
         on_open_results=None,
+        blocked: str = "",
         name: str = "The workflow",
     ) -> None:
         """Start/Stop, progress and log of the workflow.
@@ -3076,11 +3089,14 @@ class StreamlitUI:
         ``autostart`` starts the workflow on this render unless one is running
         (the Run button of the configure page). ``results_page`` is linked
         below the success message of a finished run; ``on_open_results`` runs
-        before that button switches to it. While a run is going the page
-        offers browser notifications; when a run this session saw running
-        ends, a hidden tab gets the outcome in its title and, if allowed, a
-        notification naming ``name`` (``run_notice``).
+        before that button switches to it. ``blocked`` says why the workflow
+        cannot start: it is shown, and Start is disabled. While a run is going
+        the page offers browser notifications; when a run this session saw
+        running ends, a hidden tab gets the outcome in its title and, if
+        allowed, a notification naming ``name`` (``run_notice``).
         """
+        if blocked:
+            st.error(blocked, icon=":material/block:")
         with st.expander("**Summary**"):
             st.markdown(self.export_parameters_markdown())
 
@@ -3123,7 +3139,7 @@ class StreamlitUI:
             self._show_queue_status(status)
 
         # Started from the configure page's Run button
-        if autostart and not is_running:
+        if autostart and not is_running and not blocked:
             start_workflow_function()
             with st.spinner("**Workflow starting...**"):
                 time.sleep(1)
@@ -3137,7 +3153,8 @@ class StreamlitUI:
                 else:
                     self.executor.stop()
                 st.rerun()
-        elif c1.button("Start Workflow", type="primary", use_container_width=True):
+        elif c1.button("Start Workflow", type="primary", use_container_width=True,
+                       disabled=bool(blocked)):
             start_workflow_function()
             with st.spinner("**Workflow starting...**"):
                 time.sleep(1)

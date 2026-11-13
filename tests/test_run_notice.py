@@ -129,6 +129,7 @@ def test_the_notice_names_the_run_label_else_the_workflow(tmp_path):
     wf.ui = mock.MagicMock()
     wf.get_workflow_status = lambda: {"running": False}
     wf._run_online = lambda name_key: False
+    wf.input_problems = lambda: ""
     st = mock.MagicMock()
     st.session_state = {}
     with mock.patch.object(wm_module, "st", st):
