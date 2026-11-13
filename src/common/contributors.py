@@ -10,7 +10,9 @@ Two data files feed it:
   visualizations it uses. Its ``repository`` must match ``repository-name``
   in settings.json; a copy that belongs to another repository (the
   template's example, for instance) is ignored, so an app without its own
-  file shows the framework group only.
+  file shows the framework group only. The framework group comes after the
+  app's own groups, or before them with ``"framework": "first"`` (the
+  template does this, since the framework is what it shows).
 
 People are listed by GitHub handle; the picture is loaded from GitHub, not
 stored in the repository. ``python -m utils.contributors`` refreshes every
@@ -90,8 +92,12 @@ def load(
     names.update(framework.get("names", {}))
     names.update(app.get("names", {}))
 
+    if app.get("framework") == "first":
+        ordered = list(framework.get("groups", [])) + list(app.get("groups", []))
+    else:
+        ordered = list(app.get("groups", [])) + list(framework.get("groups", []))
     groups = []
-    for group in list(app.get("groups", [])) + list(framework.get("groups", [])):
+    for group in ordered:
         people = [p for p in dict.fromkeys(group.get("people", [])) if _valid_login(p)]
         if people and group.get("title"):
             groups.append({"title": group["title"], "people": people})
