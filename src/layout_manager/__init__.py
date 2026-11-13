@@ -70,6 +70,14 @@ selectors of its own sets them from ``linked_datasets(key)`` before the bar.
 
 ``layout_presets`` is the earlier, simpler selector of presets.
 
+The standard Viewer page (``viewer.py``) puts these together: an app says
+what it shows in a ``ViewerSpec`` (its datasets, one ``DatasetKind`` per
+kind of dataset with its catalog, presets, renderers and buttons, and how a
+comparison lists its runs) and ``show_viewer(spec)`` draws the selector with
+its buttons, the view bar and the experiments, each with its own state::
+
+    show_viewer(ViewerSpec(key="viewer", datasets=DATASETS, kinds=[RUN]))
+
 ``layout.py`` is Streamlit-free; ``ui.py`` holds the editor and the grid.
 Ported from FLASHApp's Layout Manager.
 """
@@ -123,8 +131,20 @@ from src.layout_manager.ui import (
     view_bar,
     views_editor,
 )
+from src.layout_manager.viewer import (
+    DatasetKind,
+    ViewerContext,
+    ViewerSpec,
+    show_dataset,
+    show_viewer,
+)
 
 __all__ = [
+    "DatasetKind",
+    "ViewerContext",
+    "ViewerSpec",
+    "show_dataset",
+    "show_viewer",
     "ANNOTATIONS_PREFIX",
     "MAX_COLUMNS",
     "MAX_EXPERIMENTS",

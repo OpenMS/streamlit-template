@@ -9,6 +9,11 @@ Add mass spectrometry data visualizations using pyopenms-viz or OpenMS-Insight c
 
 MS data has specialized visualization needs: mass spectra (m/z vs intensity stick plots), chromatograms (RT vs intensity), 2D peak maps (RT vs m/z heatmaps), isotope patterns, fragment ion annotations, and statistical plots like volcano plots for differential expression.
 
+Where the code goes is set by *Four layers* in `CLAUDE.md`: reuse a panel of
+the template's visualization library (`src/viz/`) when there is one, keep an
+app-only panel in the app, and add a missing generic plot or option to
+OpenMS-Insight rather than drawing it with plotly in the app.
+
 ## Instructions
 
 1. **Ask the user** for:
