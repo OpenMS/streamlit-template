@@ -12,7 +12,9 @@ For each app `run.sh` shallow-clones the default branch, installs
 starts Streamlit and runs `check.mjs`, which:
 
 - opens every page in the sidebar navigation twice: in a fresh workspace and in
-  a copy of the app's demo workspace (`example-data/workspaces/<demo>`);
+  a copy of the app's demo workspace (`example-data/workspaces/<demo>`).
+  Menu entries an app hides (developer-only pages such as Workspace Sync) are
+  not part of the check;
 - fails a page on a rendered Python exception, an uncaught browser error, a
   Streamlit "Page not found", or a script run that does not finish within
   `PAGE_TIMEOUT_MS` (default 120 s);

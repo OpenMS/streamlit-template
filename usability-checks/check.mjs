@@ -256,8 +256,10 @@ async function navLinks(page) {
     if (txt.includes("more")) await more.first().click().catch(() => {});
     await page.waitForTimeout(300);
   }
+  // Only entries a user can see: an app hides developer-only pages (Workspace
+  // Sync) from the menu with CSS, and those are not part of the check.
   const links = await page.locator('[data-testid="stSidebarNav"] a[data-testid="stSidebarNavLink"]').evaluateAll((as) =>
-    as.map((a) => {
+    as.filter((a) => a.getClientRects().length > 0).map((a) => {
       // Link text is "<icon>\n<title>"; section headers precede each page group.
       const text = a.innerText.trim().split("\n").pop().trim();
       const hdr = a.closest("li")?.parentElement?.querySelector('[data-testid="stNavSectionHeader"]');
