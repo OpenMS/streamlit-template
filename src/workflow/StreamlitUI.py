@@ -34,6 +34,7 @@ from src.workflow.progress import (
     RUNNING,
     current_step,
     failures,
+    failures_by_tool,
     file_counts,
     LIST_LIMIT,
     format_duration,
@@ -206,10 +207,6 @@ def latest_results_key(workflow_dir) -> str:
     """Session-state flag the Run page's results button sets for the results page."""
     return f"{Path(workflow_dir).name}-show-latest-results"
 
-
-# Failed files shown each with its own error after a run; the rest are in one
-# expander, so a study where many files failed does not fill the page
-FAILURES_SHOWN = 5
 
 class StreamlitUI:
     """
@@ -3340,26 +3337,7 @@ class StreamlitUI:
         if not state or not state.get("steps"):
             return
         if show_failures:
-            found = failures(state)
-            for number, failure in enumerate(found):
-                if number == FAILURES_SHOWN:
-                    with st.expander(
-                        f":red[{len(found) - FAILURES_SHOWN} more failed files]"
-                    ):
-                        st.markdown("  \n".join(
-                            f"**{f['context']}**" + (f": {f['message']}" if f["message"] else "")
-                            for f in found[FAILURES_SHOWN:]
-                        ))
-                    break
-                st.error(
-                    f"**{failure['context']}**"
-                    + (f": {failure['message']}" if failure["message"] else "")
-                )
-                if failure["output"]:
-                    with st.expander(
-                        f"Tool output (exit code {failure['returncode']})"
-                    ):
-                        st.code("\n".join(failure["output"]), language="neon")
+            self._show_failures(state)
         if len(state.get("samples") or []) > 1:
             st.markdown("  \n".join(self._sample_lines(state, time.time(), compact=True)))
             if len(state["samples"]) > LIST_LIMIT:
@@ -3368,6 +3346,46 @@ class StreamlitUI:
             st.caption(self._tool_totals(state["steps"]))
             return
         st.caption(" · ".join(self._step_summary(s) for s in state["steps"]))
+
+    def _show_failures(self, state: dict) -> None:
+        """One failed file: its error and tool output. More: per tool one
+        line with the count, a table of the files and their errors, and the
+        tool output of the file picked below it."""
+        found = failures(state)
+        if len(found) == 1:
+            (failure,) = found
+            st.error(
+                f"**{failure['context']}**"
+                + (f": {failure['message']}" if failure["message"] else "")
+            )
+            if failure["output"]:
+                with st.expander(f"Tool output (exit code {failure['returncode']})"):
+                    st.code("\n".join(failure["output"]), language="neon")
+            return
+        for group in failures_by_tool(state):
+            failed = group["failures"]
+            st.error(
+                f"**{group['tool']} failed on {len(failed)} of {group['total']} "
+                f"{'file' if group['total'] == 1 else 'files'}.**"
+            )
+            st.dataframe(
+                [{"File": f["file"] or f["context"], "Error": f["message"]} for f in failed],
+                hide_index=True,
+                width="stretch",
+            )
+            with_output = [f for f in failed if f["output"]]
+            if with_output:
+                with st.expander("Tool output"):
+                    names = [f["file"] or f["context"] for f in with_output]
+                    picked = st.selectbox(
+                        "File",
+                        range(len(with_output)),
+                        format_func=lambda i: names[i],
+                        key=f"{Path(self.workflow_dir).name}-failure-output-{group['tool']}",
+                    )
+                    failure = with_output[picked]
+                    st.caption(f"Exit code {failure['returncode']}")
+                    st.code("\n".join(failure["output"]), language="neon")
 
     @staticmethod
     def _tool_totals(steps: list) -> str:

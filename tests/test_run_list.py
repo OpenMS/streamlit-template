@@ -76,3 +76,51 @@ def test_panel_of_a_study_stays_short(tmp_path, monkeypatch):
     assert text.count(".mzML") == LIST_LIMIT
     assert "sample_150.mzML" in text and "sample_153.mzML" in text
     assert "… and 188 more: 145 done, 43 waiting" in text
+
+
+def test_failures_are_grouped_by_tool():
+    from src.workflow.progress import failures_by_tool
+
+    files = _entries([DONE, FAILED, DONE, FAILED])
+    files[1]["output"] = ["Error: cannot read f1.mzML"]
+    state = {"steps": [
+        {"tool": "DecoyDatabase", "files": _entries([DONE])},
+        {"tool": "CometAdapter", "files": files},
+    ]}
+    (group,) = failures_by_tool(state)
+    assert group["tool"] == "CometAdapter"
+    assert group["total"] == 4
+    assert [f["file"] for f in group["failures"]] == ["f1.mzML", "f3.mzML"]
+    assert group["failures"][0]["message"] == "Error: cannot read f1.mzML"
+
+
+def _summary_script():
+    import os
+    from pathlib import Path
+
+    from src.workflow.StreamlitUI import StreamlitUI
+
+    ui = object.__new__(StreamlitUI)
+    ui.workflow_dir = Path(os.environ["PANEL_WORKFLOW_DIR"])
+    ui._show_run_summary(show_failures=True)
+
+
+def test_failed_files_after_a_run_are_one_table(tmp_path, monkeypatch):
+    files = _entries([DONE] * 193 + [FAILED] * 7)
+    for f in files:
+        if f["status"] == FAILED:
+            f.update(output=[f"Error: cannot read {f['name']}"], returncode=1)
+    step = {"tool": "CometAdapter", "started": 1000.0, "ended": 2000.0, "threads": 2,
+            "parallel": 4, "sample": None, "files": files}
+    logs = Path(tmp_path, "logs")
+    logs.mkdir()
+    (logs / "progress.json").write_text(json.dumps({"started": 900.0, "steps": [step]}))
+    monkeypatch.setenv("PANEL_WORKFLOW_DIR", str(tmp_path))
+    at = AppTest.from_function(_summary_script, default_timeout=60)
+    at.run()
+    assert not at.exception
+    assert [e.value for e in at.error] == ["**CometAdapter failed on 7 of 200 files.**"]
+    (table,) = at.dataframe
+    assert len(table.value) == 7
+    assert list(table.value.columns) == ["File", "Error"]
+    assert len(at.selectbox) == 1

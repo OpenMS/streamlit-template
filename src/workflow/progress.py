@@ -312,7 +312,8 @@ def key_message(output: List[str]) -> str:
 
 
 def failures(state: Optional[dict]) -> List[dict]:
-    """Every failed file: {"context", "message", "returncode", "output"}."""
+    """Every failed file: {"context", "message", "returncode", "output",
+    "tool", "file"}."""
     found = []
     for step in (state or {}).get("steps", []):
         for i, entry in enumerate(step["files"]):
@@ -324,9 +325,23 @@ def failures(state: Optional[dict]) -> List[dict]:
                         "message": key_message(output),
                         "returncode": entry.get("returncode"),
                         "output": output,
+                        "tool": step["tool"],
+                        "file": entry["name"],
                     }
                 )
     return found
+
+
+def failures_by_tool(state: Optional[dict]) -> List[dict]:
+    """The failed files grouped by tool, in the order the tools ran:
+    {"tool", "total" (files the tool ran on), "failures"}."""
+    groups = {}
+    for step in (state or {}).get("steps", []):
+        group = groups.setdefault(step["tool"], {"tool": step["tool"], "total": 0, "failures": []})
+        group["total"] += len(step["files"])
+    for failure in failures(state):
+        groups[failure["tool"]]["failures"].append(failure)
+    return [g for g in groups.values() if g["failures"]]
 
 
 def sample_counts(state: Optional[dict]) -> dict:
