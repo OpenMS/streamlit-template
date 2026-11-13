@@ -120,9 +120,20 @@ def status(qm, workspace: Path, workflow: str) -> dict:
 def selection_problem(workflow_dir: Path, params: dict) -> str:
     """Why the input file selections of ``params`` cannot run, or "": two
     selected files with one name would write the same results, as the Run
-    page checks before a local start."""
-    from src.workflow.input_check import clash_message, selection_clashes
+    page checks before a local start.
+
+    A selection is what the Run page checks (a parameter named like a folder
+    of ``input-files/``) or, sent by the desktop app, a list of uploaded
+    inputs (``sync-workspace://`` paths), wherever they were uploaded to.
+    """
+    from src.workflow.input_check import clash_message, name_clashes, selection_clashes
     clashes = selection_clashes(workflow_dir, params)
+    for key, value in (params or {}).items():
+        if (key not in clashes and isinstance(value, list) and len(value) > 1
+                and all(isinstance(v, str) and v.startswith(WORKSPACE_REF) for v in value)):
+            groups = name_clashes([v[len(WORKSPACE_REF):] for v in value])
+            if groups:
+                clashes[key] = groups
     return " ".join(clash_message(groups) for groups in clashes.values())
 
 
@@ -135,12 +146,13 @@ def start(qm, workspace: Path, workflow: str, target: str, params: dict,
     current = status(qm, workspace, workflow)
     if current["status"] in ACTIVE:
         raise LookupError(f"{workflow} is already {current['status']}")
-    params, missing = resolve_params(workspace, params)
-    if missing:
-        raise FileNotFoundError(", ".join(missing))
+    # Checked on the paths as sent, which say what was uploaded.
     clashes = selection_problem(workflow_dir, params)
     if clashes:
         raise ValueError(clashes)
+    params, missing = resolve_params(workspace, params)
+    if missing:
+        raise FileNotFoundError(", ".join(missing))
     workflow_dir.mkdir(parents=True, exist_ok=True)
     tmp = Path(workflow_dir, "params.json.sync-tmp")
     tmp.write_text(json.dumps(params, indent=4), encoding="utf-8")

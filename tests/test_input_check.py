@@ -68,3 +68,19 @@ def test_an_online_start_refuses_clashing_selections(tmp_path):
     with pytest.raises(ValueError, match="a"):
         runs.start(None, tmp_path, "topp-workflow", "src.Workflow:Workflow", params)
     assert not Path(workflow_dir, "params.json").exists()
+
+
+def test_an_online_start_checks_uploads_from_any_folder(tmp_path):
+    """Uploaded inputs are a selection even where the key has no folder online."""
+    import pytest
+    from src.sync import runs
+
+    ref = runs.WORKSPACE_REF
+    params = {"mzML-files": [f"{ref}mzML-files/plate1/a.mzML", f"{ref}mzML-files/plate2/a.mzML"],
+              "labels": ["a.x", "a.y"]}
+    workflow_dir = Path(tmp_path, "topp-workflow")
+    assert "`plate1/a.mzML`" in runs.selection_problem(workflow_dir, params)
+    assert runs.selection_problem(workflow_dir, {"labels": ["a.x", "a.y"]}) == ""
+    with pytest.raises(ValueError):
+        runs.start(None, tmp_path, "topp-workflow", "src.Workflow:Workflow", params)
+    assert not workflow_dir.exists()
