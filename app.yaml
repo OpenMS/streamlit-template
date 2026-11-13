@@ -69,6 +69,7 @@ deploy:
 #   apptainer: false              # Apptainer test and SIF
 #   example_workflow_tests: false # workflow-tests.yml (template example)
 #   openms_release: false         # PRs for new OpenMS releases
+#   contributors: false           # weekly contributor-list refresh PRs
 
 sync:
   # Files the app owns. A merge conflict in one of them keeps the app's

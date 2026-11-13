@@ -6,9 +6,17 @@
   "groups": [
     {
       "title": "Interactive visualizations (OpenMS-Insight)",
+      "github": "t0mdavid-m/OpenMS-Insight",
+      "exclude": [
+        "claude"
+      ],
+      "extra": [
+        "JKVISION1101"
+      ],
       "people": [
         "t0mdavid-m",
         "hjn0415a",
+        "PhilippKaulich",
         "JKVISION1101"
       ]
     },
@@ -45,6 +53,7 @@
     "grosenberger": "George Rosenberger",
     "t0mdavid-m": "Tom David Müller",
     "hjn0415a": "Yoo HoJun",
-    "JKVISION1101": "Jaekwan Kim"
+    "JKVISION1101": "Jaekwan Kim",
+    "PhilippKaulich": "Philipp T. Kaulich"
   }
 }
