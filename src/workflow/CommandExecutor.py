@@ -752,6 +752,18 @@ class CommandExecutor:
         )
         return {}
 
+    @staticmethod
+    def _reader_label(reader: dict) -> str:
+        """The Thermo reader of thermo_reader_args() as recorded with a converted file."""
+        return reader.get("RawToMzML:reader", "default")
+
+    @staticmethod
+    def _read_stamp(stamp: Path):
+        try:
+            return stamp.read_text(encoding="utf-8").strip()
+        except OSError:
+            return None
+
     def convert_to_mzml(self, files: list[str], out_dir: str = None) -> list[str]:
         """
         Returns an mzML path for every input file, converting vendor files first.
@@ -783,7 +795,16 @@ class CommandExecutor:
                 mzmls.append(str(f))
                 continue
             out = Path(out_dir, f"{Path(f).stem}.mzML")
-            if out.exists() and out.stat().st_mtime >= Path(f).stat().st_mtime:
+            # A .raw file's mzML depends on the reader, which is recorded next
+            # to it: one converted by another reader (an earlier version of the
+            # app) is converted again rather than mixed with the others.
+            reader = self.thermo_reader_args() if kind == "raw" else {}
+            stamp = Path(out_dir, f".{out.name}.reader")
+            if (
+                out.exists()
+                and out.stat().st_mtime >= Path(f).stat().st_mtime
+                and (kind != "raw" or self._read_stamp(stamp) == self._reader_label(reader))
+            ):
                 self.logger.log(f"Using converted {out.name} for {Path(f).name}.")
                 self.progress.record_alias(str(out), str(f), "converted to mzML in an earlier run")
                 mzmls.append(str(out))
@@ -796,17 +817,27 @@ class CommandExecutor:
                 tmp = Path(temporary, f"{out.stem}.part.mzML")
                 self.logger.log(f"Converting {Path(f).name} to mzML...")
                 if kind == "raw":
-                    ok = self.run_topp(
-                        "FileConverter",
-                        {"in": [str(f)], "out": [str(tmp)]},
-                        custom_params=self.thermo_reader_args(),
-                    )
+                    io = {"in": [str(f)], "out": [str(tmp)]}
+                    ok = self.run_topp("FileConverter", io, custom_params=reader)
+                    if not ok and reader:
+                        # The built-in reader needs a .NET 8 or newer runtime,
+                        # which a source install on Windows may lack.
+                        self.logger.log(
+                            f"WARNING: The built-in Thermo reader could not convert {Path(f).name} "
+                            "(it needs a .NET 8 or newer runtime); trying FileConverter's default "
+                            "reader (ThermoRawFileParser), whose mzML differs slightly.",
+                            0,
+                        )
+                        reader = {}
+                        ok = self.run_topp("FileConverter", io, custom_params=reader)
                 else:
                     ok = self.run_python("bruker_to_mzml", {"in": str(f), "out": str(tmp)})
                 if not ok or not tmp.exists():
                     self.logger.log(f"ERROR: Could not convert {Path(f).name} to mzML.", 0)
                     return None
                 os.replace(tmp, out)
+                if kind == "raw":
+                    stamp.write_text(self._reader_label(reader), encoding="utf-8")
                 # The report follows the mzML back to the file it came from
                 self.progress.record_alias(str(out), str(tmp))
             mzmls.append(str(out))

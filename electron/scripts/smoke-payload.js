@@ -92,8 +92,10 @@ out = os.path.join(tmp, "test.mzML")
 ini = os.path.join(tmp, "FileConverter.ini")
 subprocess.run(["FileConverter", "-write_ini", ini], check=True, capture_output=True)
 reader = []
-if os.path.isdir(os.path.join(os.environ["OPENMS_DATA_PATH"], "openms_thermo_bridge", "managed")):
-    assert 'inprocess' in open(ini, encoding="utf-8").read(), "FileConverter has no built-in Thermo reader"
+managed = os.path.isdir(os.path.join(os.environ["OPENMS_DATA_PATH"], "openms_thermo_bridge", "managed"))
+has_reader = 'inprocess' in open(ini, encoding="utf-8").read()
+assert has_reader == managed, f"FileConverter's built-in Thermo reader ({has_reader}) and its managed assemblies ({managed}) disagree"
+if has_reader:
     reader = ["-RawToMzML:reader", "inprocess"]
 print("reader:", reader[1] if reader else "FileConverter's default")
 r = subprocess.run(["FileConverter", "-in", raw, "-out", out, *reader], capture_output=True, text=True)

@@ -169,6 +169,43 @@ def test_conversion_is_reused_until_the_input_changes(tmp_path):
     assert executor.run_topp.call_count == 2
 
 
+def test_mzml_of_another_reader_is_converted_again(tmp_path):
+    raw = tmp_path / "run1.raw"
+    raw.write_text("raw")
+    executor = _executor(tmp_path)
+    executor.thermo_reader_args = MagicMock(return_value={})
+    executor.convert_to_mzml([str(raw)])
+    assert executor.run_topp.call_count == 1
+
+    # The same app now reads with the built-in reader: the cached mzML is stale.
+    executor.thermo_reader_args = MagicMock(return_value={"RawToMzML:reader": "inprocess"})
+    executor.convert_to_mzml([str(raw)])
+    assert executor.run_topp.call_count == 2
+    executor.convert_to_mzml([str(raw)])
+    assert executor.run_topp.call_count == 2
+    stamp = tmp_path / "converted-mzML" / ".run1.mzML.reader"
+    assert stamp.read_text() == "inprocess"
+
+
+def test_built_in_reader_failure_falls_back_to_the_default_reader(tmp_path):
+    raw = tmp_path / "run1.raw"
+    raw.write_text("raw")
+    executor = _executor(tmp_path)
+    executor.thermo_reader_args = MagicMock(return_value={"RawToMzML:reader": "inprocess"})
+
+    def fake_topp(tool, input_output, custom_params={}, tool_instance_name=None):
+        if custom_params:
+            return False  # no .NET runtime
+        Path(input_output["out"][0]).write_text("converted")
+        return True
+
+    executor.run_topp = MagicMock(side_effect=fake_topp)
+    assert executor.convert_to_mzml([str(raw)]) == [str(tmp_path / "converted-mzML" / "run1.mzML")]
+    assert [c.kwargs["custom_params"] for c in executor.run_topp.call_args_list] == [
+        {"RawToMzML:reader": "inprocess"}, {}]
+    assert (tmp_path / "converted-mzML" / ".run1.mzML.reader").read_text() == "default"
+
+
 def test_failed_conversion_returns_none_and_leaves_no_mzml(tmp_path):
     raw = tmp_path / "run1.raw"
     raw.write_text("raw")

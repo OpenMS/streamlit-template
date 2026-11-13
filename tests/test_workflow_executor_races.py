@@ -274,7 +274,8 @@ def test_concurrent_conversions_do_not_share_or_remove_partial_output(executor, 
     assert results == [[str(destination)], [str(destination)]]
     assert len(set(partials)) == 2
     assert destination.read_text().startswith('complete conversion ')
-    assert list(destination.parent.iterdir()) == [destination]
+    # Only the mzML and the record of the reader that made it are left.
+    assert sorted(p.name for p in destination.parent.iterdir()) == ['.sample.mzML.reader', 'sample.mzML']
 
 
 def test_conversion_exception_removes_only_its_private_partial_output(executor, monkeypatch):
