@@ -90,7 +90,6 @@ sync:
     - assets/*
     - k8s/overlays/*
     - k8s/argocd/*
-    - k8s/argocd-projects/*
     - CLAUDE.app.md
     - conda-requirements.txt
     - dependency-licenses.json

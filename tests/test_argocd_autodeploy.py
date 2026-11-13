@@ -147,87 +147,20 @@ def test_allow_tags_skip_everything_else():
 
 
 
-PROJECTS = ROOT / "k8s" / "argocd-projects"
-
-
-def _projects():
-    if not (PROJECTS / "kustomization.yaml").exists():
-        return {}
-    resources = yaml.safe_load(
-        (PROJECTS / "kustomization.yaml").read_text(encoding="utf-8")
-    )["resources"]
-    docs = [
-        yaml.safe_load((PROJECTS / r).read_text(encoding="utf-8")) for r in resources
-    ]
-    return {d["metadata"]["name"]: d for d in docs if d["kind"] == "AppProject"}
-
-
-def _needs_projects():
-    # An app gets k8s/argocd-projects/ (app-owned) with the template's names
-    # through the sync; until its own PR renames them and points its
-    # Applications at them, these checks skip instead of failing its CI.
-    if not _projects() or all(
-        app["spec"].get("project", "default") == "default"
-        for app in _docs()["Application"]
-    ):
-        pytest.skip(
-            "the Applications still use the default project: add the app's "
-            "AppProjects to k8s/argocd-projects (docs/kubernetes-deployment.md)"
-        )
-
-
-def test_projects_are_not_synced_from_git():
-    # In k8s/argocd/ a merge could widen them; an admin applies them instead.
+def test_projects_are_not_kept_in_the_repository():
+    # A project in git could be widened by a merge; the cluster's admin
+    # keeps them in the cluster configuration instead.
     assert "AppProject" not in _docs()
+    assert not (ROOT / "k8s" / "argocd-projects").exists()
 
 
 def test_applications_run_in_their_own_projects():
-    _needs_projects()
-    projects = _projects()
-    for app in _docs()["Application"]:
-        project = app["spec"]["project"]
-        assert project != "default", app["metadata"]["name"]
-        assert project in projects, (app["metadata"]["name"], project)
-        assert projects[project]["metadata"]["namespace"] == "argocd"
-
-
-def test_projects_allow_only_this_repository_and_one_namespace():
-    _needs_projects()
-    parent, child = _apps()
-    projects = _projects()
-    for app, namespace in ((child, "openms"), (parent, "argocd")):
-        spec = projects[app["spec"]["project"]]["spec"]
-        assert spec["sourceRepos"] == [app["spec"]["source"]["repoURL"]]
-        assert spec["destinations"] == [
-            {"server": app["spec"]["destination"]["server"], "namespace": namespace}
-        ]
-        assert app["spec"]["destination"]["namespace"] == namespace
-
-
-def test_app_project_allows_no_rbac_and_at_most_the_namespace():
-    _needs_projects()
-    _, child = _apps()
-    spec = _projects()[child["spec"]["project"]]["spec"]
-    for entry in spec.get("clusterResourceWhitelist", []):
-        assert entry == {"group": "", "kind": "Namespace"}, entry
-    overlay = yaml.safe_load(OVERLAY.read_text(encoding="utf-8"))
-    if "namespace.yaml" not in overlay.get("resources", []):
-        assert not spec.get("clusterResourceWhitelist"), (
-            "the overlay deploys no Namespace: drop it from the whitelist"
+    apps = _docs()["Application"]
+    if all(app["spec"].get("project", "default") == "default" for app in apps):
+        pytest.skip(
+            "the Applications still use the default project "
+            "(docs/kubernetes-deployment.md, GitOps with Argo CD)"
         )
-    assert {"group": "rbac.authorization.k8s.io", "kind": "*"} in spec.get(
-        "namespaceResourceBlacklist", []
-    )
-
-
-def test_folder_project_allows_only_the_folders_kinds():
-    _needs_projects()
-    parent, _ = _apps()
-    spec = _projects()[parent["spec"]["project"]]["spec"]
-    assert spec.get("clusterResourceWhitelist") == []
-    allowed = {(e["group"], e["kind"]) for e in spec["namespaceResourceWhitelist"]}
-    groups = {
-        "Application": "argoproj.io",
-        "ImageUpdater": "argocd-image-updater.argoproj.io",
-    }
-    assert allowed == {(groups[kind], kind) for kind in _docs()}
+    for app in apps:
+        # The project is named like the Application; the admin creates it.
+        assert app["spec"]["project"] == app["metadata"]["name"], app["metadata"]["name"]
