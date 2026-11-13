@@ -25,9 +25,8 @@ commonLabels:
 images:
   - name: openms-streamlit
     newName: ghcr.io/openms/streamlit-template
-    # A release image, not the deployed one: under Argo CD the ImageUpdater
-    # (k8s/argocd/image-updater.yaml) sets the latest release on the
-    # Application. This tag is only where a new Application starts and the
+    # A release image, not the deployed one: under Argo CD the cluster's
+    # ImageUpdater sets the latest release on the Application. This tag is only where a new Application starts and the
     # name CI loads its test image under, so it need not follow releases.
     newTag: v2.1.0-full
 
