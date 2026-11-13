@@ -31,6 +31,9 @@ services:
       # The sync service below; with STREAMLIT_SERVER_COUNT > 1 the bundled
       # nginx proxies /sync/ to it.
       - SYNC_UPSTREAM=127.0.0.1:8502
+      # With the data mount above, name its host folder so the upload page
+      # can show users where to put their files:
+      # - LOCAL_DATA_HOST_DIR=/path/on/host
   # Workspace sync service for the desktop app (workspace_sync in
   # settings.json), in its own container so large transfers neither compete
   # with the app nor break when it restarts. Same image, same workspaces

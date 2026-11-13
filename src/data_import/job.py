@@ -52,10 +52,10 @@ def _strip_gz(name: str) -> str:
 
 
 def target_for(name: str, targets: Dict[str, dict]) -> str:
-    """The upload key whose file types match ``name`` ('' if none)."""
+    """Automatically match an upload by type, excluding manual-only targets."""
     base = _strip_gz(name)
     for key, target in targets.items():
-        if has_type(base, target["file_types"]):
+        if target.get("auto_route", True) and has_type(base, target["file_types"]):
             return key
     return ""
 
