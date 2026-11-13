@@ -13,8 +13,10 @@ The full image (`Dockerfile`, `Dockerfile.arm`) includes Thermo's RawFileReader 
 `/thirdparty/ThermoRawFileParser`, which FileConverter uses for Thermo `.raw` files. Its
 license asks that users see Thermo's notice and terms, so the image keeps
 `docker/THERMO-NOTICE.txt` as `NOTICE.txt` next to Thermo's `THERMO_LICENSE`, the About
-dialog lists both, and the container prints the notice when it starts. Do not offer
-RawFileReader for download on its own or take it out of the image.
+dialog lists both, and the container prints the notice when it starts. Users agree not
+to redistribute RawFileReader in any form, which includes the image itself: publish the
+full image only from the app's own registry, and do not mirror it, push copies to other
+registries or offer it (or an image built from it) for download elsewhere.
 
 ---
 

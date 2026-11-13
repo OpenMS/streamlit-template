@@ -205,6 +205,11 @@ def test_full_images_ship_thermo_notice():
     notice = (root / "docker" / "THERMO-NOTICE.txt").read_text(encoding="utf-8")
     assert third_party.THERMO_NOTICE in notice
     assert third_party._LICENSE_FILE.search("NOTICE.txt")
+    # Clause 3.3: the terms forbid passing RawFileReader on in any form,
+    # the image that carries it included.
+    flat = " ".join(notice.split())
+    assert "as part of this image" in flat
+    assert "taken out of this image" not in flat
     for dockerfile in ("Dockerfile", "Dockerfile.arm"):
         text = (root / dockerfile).read_text(encoding="utf-8")
         assert "COPY docker/THERMO-NOTICE.txt /thirdparty/ThermoRawFileParser/NOTICE.txt" in text
