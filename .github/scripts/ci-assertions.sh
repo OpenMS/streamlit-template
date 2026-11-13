@@ -1798,14 +1798,16 @@ assert_storage_class_contract() {
     fi
     rm -f "$_ci_err"
 
-    for _ci_pair in "$CI_ASSERT_STORAGE_ROOT|$_ci_ci"; do
-        _ci_root="${_ci_pair%%|*}"
-        _ci_file="${_ci_pair#*|}"
+    _ci_root="$CI_ASSERT_STORAGE_ROOT"
+    _ci_file="$_ci_ci"
+    _ci_ci_opts=""
+    # One pass; `break` leaves it early when the class is missing.
+    while :; do
         _ci_sc="select(.kind == \"StorageClass\" and .metadata.name == \"$_ci_want\")"
         if [ -z "$(yq "$_ci_sc | .metadata.name" "$_ci_file" | grep -v '^---$' || true)" ]; then
             _ci_fail "$_ci_root publishes no StorageClass '$_ci_want', which $CI_ASSERT_BASE/workspace-pvc.yaml claims (it has: $(yq 'select(.kind == "StorageClass") | .metadata.name' "$_ci_file" | grep -v '^---$' | tr '\n' ' '))"
             _ci_rc=1
-            continue
+            break
         fi
         _ci_reclaim="$(yq "$_ci_sc | .reclaimPolicy" "$_ci_file" | grep -v '^---$' || true)"
         if [ "$_ci_reclaim" != "Retain" ]; then
@@ -1823,6 +1825,7 @@ assert_storage_class_contract() {
             esac
         done
         _ci_ci_opts="$_ci_opts"
+        break
     done
     rm -f "$_ci_ci"
     _ci_prod_opts="$(printf '%s\n' $CI_ASSERT_PROD_MOUNT_OPTIONS | sort | tr '\n' ' ')"
