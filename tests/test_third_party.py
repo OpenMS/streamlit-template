@@ -52,6 +52,8 @@ def test_thermo_notice_only_when_rawfilereader_is_shipped(tmp_path):
     assert third_party.thermo_notice(env) == ""
     _tool(data / "THIRDPARTY", "ThermoRawFileParser", "THERMO_LICENSE", "LICENSE")
     assert third_party.thermo_notice(env) == third_party.THERMO_NOTICE
+    # Users of a hosted app receive no copy, so the notice is for deployers only.
+    assert third_party.thermo_notice(env, hosted=True) == ""
     thermo = [p for p in third_party.third_party_programs(env) if p.name == "ThermoRawFileParser"][0]
     assert sorted(f.name for f in thermo.files) == ["LICENSE", "THERMO_LICENSE"]
 
@@ -205,6 +207,11 @@ def test_full_images_ship_thermo_notice():
     notice = (root / "docker" / "THERMO-NOTICE.txt").read_text(encoding="utf-8")
     assert third_party.THERMO_NOTICE in notice
     assert third_party._LICENSE_FILE.search("NOTICE.txt")
+    # Clause 3.3: the terms forbid passing RawFileReader on in any form,
+    # the image that carries it included.
+    flat = " ".join(notice.split())
+    assert "as part of this image" in flat
+    assert "taken out of this image" not in flat
     for dockerfile in ("Dockerfile", "Dockerfile.arm"):
         text = (root / dockerfile).read_text(encoding="utf-8")
         assert "COPY docker/THERMO-NOTICE.txt /thirdparty/ThermoRawFileParser/NOTICE.txt" in text
