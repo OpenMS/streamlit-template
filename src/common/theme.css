@@ -51,10 +51,13 @@
 [data-testid="stMain"] [data-testid="stWidgetLabel"] p { font-size: .84rem; font-weight: 600; }
 [data-testid="stMain"], [data-testid="stSidebar"] { font-variant-numeric: lining-nums tabular-nums; }
 
-/* openms-insight components sit on a soft panel */
-[data-testid="stMain"] iframe[title*="openms_insight"] { background: #f9faff; border-radius: 16px; box-shadow: 0 0 0 1px #e3e8fb; }
+/* openms-insight components and Plotly charts sit on the same soft panel */
+[data-testid="stMain"] iframe[title*="openms_insight"],
+[data-testid="stMain"] [data-testid="stPlotlyChart"] { background: #f9faff; border-radius: 16px; box-shadow: 0 0 0 1px #e3e8fb; }
+[data-testid="stMain"] [data-testid="stPlotlyChart"] { padding: 8px; box-sizing: border-box; }
 @media (prefers-color-scheme: dark) {
-  [data-testid="stMain"] iframe[title*="openms_insight"] { background: #2b2627; box-shadow: none; }
+  [data-testid="stMain"] iframe[title*="openms_insight"],
+  [data-testid="stMain"] [data-testid="stPlotlyChart"] { background: #2b2627; box-shadow: none; }
 }
 
 /* Expanders and the version box as soft rounded panels */

@@ -1306,7 +1306,9 @@ def follow_app_theme(fig):
         plotly.graph_objs._figure.Figure: The same figure, for chaining.
     """
     black = {"black", "#000", "#000000", "rgb(0,0,0)", "rgb(0, 0, 0)"}
-    fig.update_layout(template="streamlit", paper_bgcolor=None, plot_bgcolor=None)
+    # Transparent, so the figure sits on the plot panel of theme.css like the
+    # openms-insight components instead of on a grey box of its own
+    fig.update_layout(template="streamlit", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
     for axis in list(fig.select_xaxes()) + list(fig.select_yaxes()):
         if str(axis.linecolor).lower() in black:
             axis.linecolor = None

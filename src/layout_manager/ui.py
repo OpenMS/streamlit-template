@@ -432,6 +432,20 @@ def views_editor(
     return done
 
 
+def _refresh_stored_layout(path, state, components, default_layout) -> None:
+    """Store the current view's rows again when they changed since they were
+    stored: a page update that changes a ready-made view reaches the pages
+    that show it, not only those that switch views."""
+    if load_layout(path) is None:
+        return
+    current = next((v for v in state["views"] if v["name"] == state["current"]), None)
+    if current is None:
+        return
+    stored, _ = resolve_layout(path, components, default_layout)
+    if any(rows != current["rows"] for rows in stored):
+        save_views(path, state)
+
+
 def view_bar(
     path: Path,
     components: Sequence[Dict[str, Any]],
@@ -529,6 +543,7 @@ def view_bar(
         if fallback is not None:
             state["current"] = fallback
             save_views(path, state)
+    _refresh_stored_layout(path, state, components, default_layout)
 
     current_view = next((v for v in state["views"] if v["name"] == state["current"]), None)
     experiments = int(state.get("experiments") or 1)
@@ -801,6 +816,18 @@ def selected_datasets(key: str, count: int) -> List[Optional[str]]:
     return [st.session_state.get(_selection_key(key, i)) for i in range(count)]
 
 
+def _picked(key: str, index: int, datasets: Mapping[str, str]) -> Optional[str]:
+    """The dataset experiment ``index`` shows: the one picked, else the
+    ``index``-th (the first when there are fewer), kept by id."""
+    ids = list(datasets)
+    state = _selection_key(key, index)
+    picked = st.session_state.get(state)
+    if picked not in datasets:
+        picked = ids[index] if index < len(ids) else (ids[0] if ids else None)
+        st.session_state[state] = picked
+    return picked
+
+
 def _selector(
     key: str,
     index: int,
@@ -813,10 +840,7 @@ def _selector(
     state = _selection_key(key, index)
     widget = f"{state}_select"
     # Keep the pick by id, so a renamed or added dataset does not move it.
-    picked = st.session_state.get(state)
-    if picked not in datasets:
-        picked = ids[index] if index < len(ids) else (ids[0] if ids else None)
-        st.session_state[state] = picked
+    picked = _picked(key, index, datasets)
     if st.session_state.get(widget) != picked:
         st.session_state[widget] = picked
 
@@ -833,6 +857,35 @@ def _selector(
     return st.session_state.get(state)
 
 
+def experiment_selector(
+    datasets: Mapping[str, str],
+    key: str,
+    index: int = 0,
+    label: str = "Experiment",
+    buttons: Optional[Callable[[int], Any]] = None,
+    pick: Optional[str] = None,
+) -> Optional[str]:
+    """The dataset selector of experiment ``index`` with ``buttons(index)`` to
+    its right, drawn where the page calls it; returns the picked id.
+
+    ``pick`` selects that dataset before the selector is drawn, for a page
+    opened with a link to it (``linked_datasets``); an id not in
+    ``datasets`` is ignored.
+
+    A Viewer draws the first experiment's selector above its ``view_bar``,
+    with the buttons that act on what it shows (edit, history, add, export),
+    so a page reads top to bottom as: what is shown, how it is shown, the
+    components. ``render_experiments(..., first_selector=False)`` then draws
+    the experiments without drawing that selector again. Nothing is drawn
+    without datasets.
+    """
+    if not datasets:
+        return None
+    if pick in datasets:
+        st.session_state[_selection_key(key, index)] = pick
+    return _selector(key, index, datasets, label, buttons)
+
+
 def render_experiments(
     layout: Layout,
     side_by_side: bool,
@@ -847,6 +900,7 @@ def render_experiments(
     analyses: Optional[Dict[str, Any]] = None,
     on_missing: Optional[Callable[[List[str], str, str, int], Any]] = None,
     dataset_label: str = "run",
+    first_selector: bool = True,
 ) -> List[Optional[str]]:
     """Render every experiment of ``layout``, each below its own dataset selector.
 
@@ -873,6 +927,9 @@ def render_experiments(
             returning the analyses a dataset has, components that need another
             draw a note (see ``render_layout``); its button calls
             ``on_missing(missing, component, dataset_id, index)``.
+        first_selector: False when the page drew the first experiment's
+            selector itself (``experiment_selector``, above the view bar):
+            the first experiment then shows the dataset picked there.
 
     Returns:
         The dataset id picked in each experiment (None without datasets).
@@ -881,7 +938,10 @@ def render_experiments(
         return [None] * len(layout)
 
     def one(index: int, rows: List[List[str]]) -> Optional[str]:
-        dataset = _selector(key, index, datasets, experiment_label, buttons)
+        if index == 0 and not first_selector:
+            dataset = _picked(key, index, datasets)
+        else:
+            dataset = _selector(key, index, datasets, experiment_label, buttons)
         if dataset is not None:
             has = available(dataset) if available is not None else None
             missing_cb = None

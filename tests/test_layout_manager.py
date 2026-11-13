@@ -248,6 +248,66 @@ def test_render_experiments_side_by_side_and_empty():
     assert not empty.exception and empty.session_state["picked"] == [None]
 
 
+_TOP_SELECTOR_APP = """
+import streamlit as st
+from src.layout_manager import experiment_selector, render_experiments
+
+datasets = {"r1": "Run 1", "r2": "Run 2"}
+top = experiment_selector(datasets, key="viewer", label="Experiment",
+                          buttons=lambda i: st.button("History"))
+st.markdown(f"top {top}")
+picked = render_experiments(
+    st.session_state["layout"], False, datasets,
+    lambda dataset, index: {"plot": lambda: st.markdown(f"plot {dataset} {index}")},
+    key="viewer", first_selector=False,
+)
+st.session_state["picked"] = picked
+"""
+
+
+def test_experiment_selector_above_render_experiments():
+    at = AppTest.from_string(_TOP_SELECTOR_APP)
+    at.session_state["layout"] = [[["plot"]], [["plot"]]]
+    at.run()
+    assert not at.exception
+    # One selector at the top for the first experiment, one for the second
+    assert len(at.selectbox) == 2 and len(at.button) == 1
+    assert [m.value for m in at.markdown] == ["top r1", "plot r1 0", "plot r2 1"]
+
+    # Picking at the top changes what the first experiment shows
+    at.selectbox[0].set_value("r2").run()
+    assert [m.value for m in at.markdown] == ["top r2", "plot r2 0", "plot r2 1"]
+    assert at.session_state["picked"] == ["r2", "r2"]
+
+    empty = AppTest.from_string(
+        "import streamlit as st\n"
+        "from src.layout_manager import experiment_selector\n"
+        "st.session_state['top'] = experiment_selector({}, key='v')\n"
+    ).run()
+    assert not empty.exception and empty.session_state["top"] is None
+    assert len(empty.selectbox) == 0
+
+
+def test_experiment_selector_pick():
+    app = (
+        "import streamlit as st\n"
+        "from src.layout_manager import experiment_selector\n"
+        "st.session_state['top'] = experiment_selector(\n"
+        "    {'r1': 'Run 1', 'r2': 'Run 2'}, key='v', pick=st.session_state.get('link'))\n"
+    )
+    # A link picks its dataset
+    at = AppTest.from_string(app)
+    at.session_state["link"] = "r2"
+    at.run()
+    assert not at.exception and at.session_state["top"] == "r2"
+    assert at.selectbox[0].value == "r2"
+    # An id the page does not offer is ignored
+    unknown = AppTest.from_string(app)
+    unknown.session_state["link"] = "gone"
+    unknown.run()
+    assert not unknown.exception and unknown.session_state["top"] == "r1"
+
+
 PRESETS = [
     {"name": "all", "label": "All", "layout": [["table", "detail"], ["plot"]]},
     {"name": "plots", "label": "Plots", "layout": [["plot"]], "help": "Only the plot."},
@@ -1122,3 +1182,23 @@ def test_link_dialog_says_what_the_link_opens(tmp_path):
     assert not at.exception
     assert opens() == "Opens this page on **All**."
     assert any("opens the view only" in c.value for c in at.caption)
+
+
+def test_changed_preset_reaches_the_stored_layout(tmp_path):
+    """A page update that changes a ready-made view's rows replaces the rows
+    stored for it, so the page does not keep drawing the old ones."""
+    from src.layout_manager.layout import load_views, save_views
+    from src.layout_manager.ui import _refresh_stored_layout
+
+    components = [{"name": n, "label": n} for n in ("a", "b", "c")]
+    path = tmp_path / "views.json"
+    old = [{"name": "main", "label": "Main", "layout": [["a", "b"], ["c"]]}]
+    save_views(path, load_views(path, components, old, old[0]["layout"]))
+    new = [{"name": "main", "label": "Main", "layout": [["a"], ["b"], ["c"]]}]
+    state = load_views(path, components, new, new[0]["layout"])
+    _refresh_stored_layout(path, state, components, new[0]["layout"])
+    assert json.loads(path.read_text())["layout"] == [[["a"], ["b"], ["c"]]]
+    # Nothing stored yet: nothing written
+    empty = tmp_path / "none.json"
+    _refresh_stored_layout(empty, state, components, new[0]["layout"])
+    assert not empty.exists()
