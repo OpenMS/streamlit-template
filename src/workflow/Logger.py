@@ -24,8 +24,8 @@ class Logger:
             level (int, optional): The level of importance of the message. Defaults to 0.
         """
         log_dir = Path(self.workflow_dir, "logs")
-        if not log_dir.exists():
-            log_dir.mkdir()
+        # stdout/stderr collectors can write their first messages together.
+        log_dir.mkdir(parents=True, exist_ok=True)
         # Write the message to the log file.
         if level == 0:
             with open(Path(log_dir, "minimal.log"), "a", encoding="utf-8") as f:

@@ -59,6 +59,7 @@ from src.workflow.ExperimentalDesign import (
     to_openms_design,
 )
 from src.workflow.vendor_files import extract_bruker_zip, has_type
+from src.workflow.process_state import local_workflow_running
 from src.workflow.settings_io import (
     THREADS_USER_MARKER,
     local_thread_default,
@@ -77,6 +78,17 @@ from src.workflow.parameter_names import display_name as _display_name
 def _txt(value) -> str:
     """Text from pyOpenMS: bytes up to pyOpenMS 3.5, str from 3.6 (nanobind)."""
     return value.decode() if isinstance(value, bytes) else str(value)
+
+
+def _read_workflow_log(path: Path):
+    """Read content and timestamp from one open file during log rotation."""
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            created = os.fstat(handle.fileno()).st_ctime
+            return created, handle.readlines()
+    except FileNotFoundError:
+        # Starting a workflow replaces its logs; the next poll can read them.
+        return None
 
 
 def _tags(param, key) -> list[str]:
@@ -1164,7 +1176,7 @@ class StreamlitUI:
             value = st.session_state.pop(pending)
             st.session_state[widget] = (
                 [v for v in value if v in options] if multiple
-                else (value if value in options else (options[0] if options else None))
+                else (value if value in options else None)
             )
             self.params[key] = st.session_state[widget]
         if upload is None and not Path(self.workflow_dir, "input-files", key).exists():
@@ -1174,11 +1186,21 @@ class StreamlitUI:
             self.params[key] = [f for f in self.params[key] if f in options]
         if upload is not None:
             # A selected file can be gone (an example replaced by own files).
-            current = st.session_state.get(widget)
+            current = st.session_state.get(widget, self.params.get(key))
             if isinstance(current, list):
                 st.session_state[widget] = [f for f in current if f in options]
             elif current is not None and current not in options:
-                del st.session_state[widget]
+                st.warning(
+                    f"The selected {name.replace('*', '')} is no longer available: {Path(str(current)).name}. Choose a file again."
+                )
+                st.session_state[widget] = None
+                self.params[key] = None
+                self.parameter_manager.save_parameters()
+            elif not multiple and current is None and key in self.params:
+                # A cleared or removed file must not become the first remaining
+                # option when this page is revisited.
+                if widget not in st.session_state:
+                    st.session_state[widget] = None
 
         widget_type = "multiselect" if multiple else "selectbox"
         if multiple:
@@ -2983,29 +3005,37 @@ class StreamlitUI:
             )
 
         with cols[2]:
+            import_key = f"{self.workflow_dir.resolve()}-parameter-import"
+            generation = st.session_state.get(import_key, 0)
             up = st.file_uploader(
                 "⬆️ Import parameters",
                 help="Import previously exported parameters.",
-                key="param_import_uploader"
+                key=f"{import_key}-{generation}",
             )
             if up is not None:
-                # encoding="utf-8" explicitly: the payload is decoded as utf-8
-                # just above, and writing it back in the platform codepage
-                # produced a params.json that no later utf-8 read could decode.
-                text = up.read().decode("utf-8")
-                try:
-                    # An export made while a follow-up was prepared names the run
-                    # it followed: imported settings start no follow-up
-                    imported = json.loads(text)
-                    if isinstance(imported, dict) and imported.pop(FOLLOW_UP_KEY, None) is not None:
-                        text = json.dumps(imported, indent=4)
-                except ValueError:
-                    pass
-                with open(self.parameter_manager.params_file, "w", encoding="utf-8") as f:
-                    f.write(text)
-                self.parameter_manager.clear_parameter_session_state()
-                st.toast("Parameters imported")
-                st.rerun()
+                if self._import_parameters(up):
+                    self.parameter_manager.clear_parameter_session_state()
+                    st.session_state[import_key] = generation + 1
+                    st.toast("Parameters imported")
+                    st.rerun()
+
+    def _import_parameters(self, upload) -> bool:
+        """Check an imported file, then replace the saved settings atomically.
+
+        A file that is not a JSON object keeps the current settings. An
+        export made while a follow-up was prepared names the run it
+        followed: imported settings start no follow-up.
+        """
+        try:
+            params = json.loads(upload.getvalue().decode("utf-8"))
+            if not isinstance(params, dict):
+                raise ValueError("Parameters must be a JSON object.")
+            params.pop(FOLLOW_UP_KEY, None)
+            self.parameter_manager.write_parameters(params)
+        except (OSError, ValueError) as error:
+            st.error(f"Could not import parameters: {error} Existing settings were kept.")
+            return False
+        return True
 
     def execution_section(
         self,
@@ -3053,14 +3083,13 @@ class StreamlitUI:
         is_running = status.get("running", False)
         job_status = status.get("status", "idle")
 
-        # Fallback to PID check for backward compatibility
-        pid_exists = self.executor.pid_dir.exists() and list(self.executor.pid_dir.iterdir())
-        if not is_running and pid_exists:
+        # A supplied queue/local status is authoritative. Legacy callers that
+        # omit it can still use PID files, after checking process liveness.
+        if "running" not in status and local_workflow_running(self.executor.pid_dir):
             is_running = True
             job_status = "running"
 
         log_path = Path(self.workflow_dir, "logs", log_level.replace(" ", "-") + ".log")
-        log_exists = log_path.exists()
 
         # Show queue status if available (online mode)
         if status.get("job_id"):
@@ -3093,12 +3122,21 @@ class StreamlitUI:
         # view's trailing elements on the page.
         status_area = st.empty()
         with status_area.container():
+            try:
+                log_snapshot = _read_workflow_log(log_path)
+            except (OSError, UnicodeError) as error:
+                log_snapshot = None
+                st.info(f"Workflow log is temporarily unavailable: {error}")
             if is_running:
                 # Real-time display during execution
                 spinner_text = "**Workflow running...**"
                 if job_status == "queued":
                     pos = status.get("queue_position", "?")
                     spinner_text = f"**Waiting in queue (position {pos})...**"
+                elif job_status == "unknown":
+                    spinner_text = "**Waiting for queue status...**"
+                elif job_status == "stopping":
+                    spinner_text = "**Waiting for workflow processes to exit...**"
 
                 if job_status != "queued":
                     self._show_run_progress()
@@ -3106,9 +3144,8 @@ class StreamlitUI:
                     st.empty()  # keeps the place of the progress panel
                 with st.spinner(spinner_text):
                     log_slot = st.empty()
-                    if log_exists:
-                        with open(log_path, "r", encoding="utf-8") as f:
-                            lines = f.readlines()
+                    if log_snapshot is not None:
+                        _, lines = log_snapshot
                         if log_lines_count == "all":
                             display_lines = lines
                         else:
@@ -3122,13 +3159,12 @@ class StreamlitUI:
                     time.sleep(1)
                     st.rerun()
 
-            elif log_exists:
+            elif log_snapshot is not None:
                 # Static display after completion
+                created, lines = log_snapshot
                 st.markdown(
-                    f"**Workflow log file: {datetime.fromtimestamp(log_path.stat().st_ctime).strftime('%Y-%m-%d %H:%M')} CET**"
+                    f"**Workflow log file: {datetime.fromtimestamp(created).strftime('%Y-%m-%d %H:%M')} CET**"
                 )
-                with open(log_path, "r", encoding="utf-8") as f:
-                    lines = f.readlines()
                 content = "".join(lines)
                 outcome = classify_log_outcome(content)
                 if outcome == "finished":
@@ -3374,6 +3410,8 @@ class StreamlitUI:
             "finished": ("Completed", "success"),
             "failed": ("Failed", "error"),
             "canceled": ("Cancelled", "warning"),
+            "unknown": ("Waiting for queue status", "warning"),
+            "stopping": ("Stopping", "warning"),
         }
 
         label, msg_type = status_display.get(job_status, ("Unknown", "info"))
@@ -3409,6 +3447,9 @@ class StreamlitUI:
 
         elif job_status == "canceled":
             st.warning(f"**Status: {label}** - Workflow was cancelled.")
+        elif job_status in {"unknown", "stopping"}:
+            detail = status.get("error") or status.get("current_step") or "Wait for confirmation before starting another analysis."
+            st.warning(f"**Status: {label}** - {detail}")
 
         # Expandable job details
         with st.expander("Job Details", expanded=False):
@@ -3562,6 +3603,23 @@ Started: {status.get('started_at', 'N/A')}""")
     def non_default_params_summary(self):
         # Display a summary of non-default TOPP parameters and all others (custom and python scripts)
 
+        def path_exists(value):
+            try:
+                return Path(str(value)).exists()
+            except (OSError, ValueError):
+                return False
+
+        def list_item(value):
+            # Imported JSON may have mixed or nested values. Keep them readable
+            # without treating dictionaries/numbers as paths or modifying data.
+            if isinstance(value, dict):
+                return remove_full_paths(value)
+            if isinstance(value, list):
+                return [list_item(item) for item in value]
+            if isinstance(value, str) and path_exists(value):
+                return Path(value).name
+            return value
+
         def remove_full_paths(d: dict) -> dict:
             # Create a copy to avoid modifying the original dictionary
             cleaned_dict = {}
@@ -3574,13 +3632,13 @@ Started: {status.get('started_at', 'N/A')}""")
                         cleaned_dict[key] = nested_cleaned
                 elif isinstance(value, list):
                     # Filter out existing paths from the list
-                    filtered_list = [
-                        item if not Path(str(item)).exists() else Path(str(item)).name
-                        for item in value
-                    ]
+                    filtered_list = [list_item(item) for item in value]
                     if filtered_list:  # Only add non-empty lists
-                        cleaned_dict[key] = ", ".join(filtered_list)
-                elif not Path(str(value)).exists():
+                        cleaned_dict[key] = ", ".join(
+                            item if isinstance(item, str) else json.dumps(item, ensure_ascii=False)
+                            for item in filtered_list
+                        )
+                elif not path_exists(value):
                     # Add entries that are not existing paths
                     cleaned_dict[key] = value
 
@@ -3611,7 +3669,13 @@ Started: {status.get('started_at', 'N/A')}""")
 
         # Merge _defaults into topp so summary shows custom defaults + user overrides
         defaults = params.get("_defaults", {})
+        if not isinstance(defaults, dict):
+            general["_defaults (invalid format)"] = defaults
+            defaults = {}
         for tool_name, default_vals in defaults.items():
+            if not isinstance(default_vals, dict):
+                topp[f"{tool_name} defaults (invalid format)"] = default_vals
+                continue
             if tool_name not in topp:
                 topp[tool_name] = {}
             topp[tool_name] = {**default_vals, **topp.get(tool_name, {})}

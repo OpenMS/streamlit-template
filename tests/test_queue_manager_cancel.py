@@ -87,6 +87,7 @@ def test_cancel_started_job_sends_stop_command_to_worker(monkeypatch):
         "cancel_job must call send_stop_job_command for started jobs - "
         "otherwise the RQ worker keeps running the workflow."
     )
+    assert Job.fetch("started-job", connection=qm._redis).get_status() == JobStatus.STARTED
 
 
 def test_cancel_already_canceled_job_does_not_raise():
@@ -111,8 +112,8 @@ def test_cancel_missing_job_returns_false():
 def test_started_status_without_worker_is_handled_gracefully(monkeypatch):
     """
     Edge case: job is marked started but has no worker_name yet (race between
-    worker pickup and stop click). cancel_job must not raise; it should fall
-    back to canceling the job in the registry.
+    worker pickup and stop click). Keep its state active until the worker can
+    acknowledge a stop; marking it canceled here could admit overlapping work.
     """
     qm = _make_queue_manager()
     job = qm._queue.enqueue(os.getcwd, job_id="started-no-worker")
@@ -131,12 +132,12 @@ def test_started_status_without_worker_is_handled_gracefully(monkeypatch):
 
     result = qm.cancel_job("started-no-worker")
 
-    assert result is True
+    assert result is False
     # Without a worker_name there is nothing to send the stop command to.
     assert stop_calls == []
     assert (
         Job.fetch("started-no-worker", connection=qm._redis).get_status()
-        == JobStatus.CANCELED
+        == JobStatus.STARTED
     )
 
 
