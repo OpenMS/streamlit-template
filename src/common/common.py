@@ -37,6 +37,12 @@ logger = logging.getLogger(__name__)
 # Detect system platform
 OS_PLATFORM = sys.platform
 
+
+def native_dialog_available() -> bool:
+    """Native pickers require Tk and a desktop display, not just local mode."""
+    return TK_AVAILABLE and (OS_PLATFORM != "linux" or bool(os.environ.get("DISPLAY")))
+
+
 # Demo and example files are symlinked on Linux to save space. An AppImage
 # mounts the app under a new path on every launch, so links into it would
 # dangle after a restart; it copies them instead.
@@ -1541,7 +1547,7 @@ def export_folder_input(key: str) -> Path:
             "📁",
             key=f"{key}-export-browse",
             help="Choose the export folder.",
-            disabled=not TK_AVAILABLE,
+            disabled=not native_dialog_available(),
         ):
             chosen = tk_directory_dialog(
                 "Select the export folder", st.session_state["export_dir"]
