@@ -257,8 +257,16 @@ def libraries(env: dict | None = None) -> list[Component]:
     return found + [dotnet] if dotnet else found
 
 
-def thermo_notice(env: dict | None = None) -> str:
-    """Thermo's notice when the app ships RawFileReader, else ""."""
+def thermo_notice(env: dict | None = None, hosted: bool = False) -> str:
+    """Thermo's notice when the app ships RawFileReader, else "".
+
+    A hosted app (``online_deployment``) gives its users no copy of
+    RawFileReader, so they get no notice: it is for those who install the app
+    or run the image, who see it in the installer, the image's NOTICE.txt and
+    the container's console output.
+    """
+    if hosted:
+        return ""
     shipped = any(p.name == THERMO_FOLDER for p in tool_folders(env)) or thermo_reader(env) is not None
     return THERMO_NOTICE if shipped else ""
 

@@ -52,6 +52,8 @@ def test_thermo_notice_only_when_rawfilereader_is_shipped(tmp_path):
     assert third_party.thermo_notice(env) == ""
     _tool(data / "THIRDPARTY", "ThermoRawFileParser", "THERMO_LICENSE", "LICENSE")
     assert third_party.thermo_notice(env) == third_party.THERMO_NOTICE
+    # Users of a hosted app receive no copy, so the notice is for deployers only.
+    assert third_party.thermo_notice(env, hosted=True) == ""
     thermo = [p for p in third_party.third_party_programs(env) if p.name == "ThermoRawFileParser"][0]
     assert sorted(f.name for f in thermo.files) == ["LICENSE", "THERMO_LICENSE"]
 
