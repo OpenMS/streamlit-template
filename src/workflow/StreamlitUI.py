@@ -41,7 +41,6 @@ from src.workflow.progress import (
     list_entries,
     read_progress,
     sample_counts,
-    time_left,
     tool_progress,
 )
 from src.workflow.InputFolders import (
@@ -3225,9 +3224,6 @@ class StreamlitUI:
                     f"{threads} thread{'s' if threads > 1 else ''}"
                     + (f" × {parallel} in parallel" if parallel > 1 else "")
                 )
-                left = time_left(files, now, parallel) if n > 1 else None
-                if left is not None:
-                    text += f" · about {format_duration(left)} left"
                 bar.progress(finished / n if n else 0.0, text=text)
                 if len(active) == 1:
                     self._show_tool_progress(tool)
@@ -3288,9 +3284,6 @@ class StreamlitUI:
             text = f"{counts[DONE]} of {n} samples done"
             if counts[FAILED]:
                 text += f" · :red[{counts[FAILED]} failed]"
-            left = time_left(samples, now)
-            if left is not None:
-                text += f" · about {format_duration(left)} left"
             bar.progress((counts[DONE] + counts[FAILED]) / n, text=text)
             step = shared
             if running:

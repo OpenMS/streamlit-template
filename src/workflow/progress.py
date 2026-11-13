@@ -431,22 +431,3 @@ def left_out_line(left_out: dict) -> str:
     ]
     return f"… and {sum(left_out.values())} more: " + ", ".join(parts)
 
-
-def time_left(entries: List[dict], now: float, parallel: int = 1) -> Optional[float]:
-    """Seconds until every entry is finished, from the mean time of the
-    finished ones, or None before the first one is done."""
-    took = [
-        e["ended"] - e["started"]
-        for e in entries
-        if e["status"] == DONE and e.get("ended") and e.get("started")
-    ]
-    if not took:
-        return None
-    mean = sum(took) / len(took)
-    work = 0.0
-    for e in entries:
-        if e["status"] == PENDING:
-            work += mean
-        elif e["status"] == RUNNING:
-            work += max(mean - (now - (e.get("started") or now)), 0.0)
-    return work / max(int(parallel or 1), 1)

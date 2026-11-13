@@ -1,8 +1,7 @@
 """A long run (a study of 200 files) lists on the Run page what needs a look.
 
 The failed and running files or samples come first, then the next waiting and
-the latest finished ones; the rest are counted in one line, and the progress
-bar estimates the time left from the files already finished.
+the latest finished ones; the rest are counted in one line.
 """
 import json
 import time
@@ -11,7 +10,7 @@ from pathlib import Path
 from streamlit.testing.v1 import AppTest
 
 from src.workflow.progress import (
-    DONE, FAILED, LIST_LIMIT, PENDING, RUNNING, left_out_line, list_entries, time_left,
+    DONE, FAILED, LIST_LIMIT, PENDING, RUNNING, left_out_line, list_entries,
 )
 
 
@@ -41,14 +40,6 @@ def test_long_list_puts_failed_and_running_first():
     assert shown[8] == 139
     assert left_out == {DONE: 136, PENDING: 52}
     assert left_out_line(left_out) == "… and 188 more: 136 done, 52 waiting"
-
-
-def test_time_left_from_the_finished_files():
-    entries = _entries([DONE, DONE, PENDING, PENDING, RUNNING])
-    # each file took 10 s: two waiting, one running since 1004 (4 s at 1008)
-    assert time_left(entries, now=1008.0) == 26.0
-    assert time_left(entries, now=1008.0, parallel=2) == 13.0
-    assert time_left(_entries([PENDING, RUNNING]), now=1008.0) is None
 
 
 def _script():
@@ -85,4 +76,3 @@ def test_panel_of_a_study_stays_short(tmp_path, monkeypatch):
     assert text.count(".mzML") == LIST_LIMIT
     assert "sample_150.mzML" in text and "sample_153.mzML" in text
     assert "… and 188 more: 145 done, 43 waiting" in text
-    assert "left" in at.get("progress")[0].proto.text
