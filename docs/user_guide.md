@@ -41,7 +41,7 @@ In the OpenMS web application, workspaces are designed to keep your analysis org
   - a public S3 or Swift folder (a link ending in `/`);
   - in **Import from PRIDE**, a PRIDE Archive dataset to reanalyse: its accession (`PXD000001`), its PRIDE or ProteomeXchange page, or its DOI (pasted in **Cloud data**, these work too). The mzML, Thermo RAW and FASTA files go to the matching upload; when a run is there both as mzML and as a RAW file, only the mzML is ticked at first. A workflow that takes RAW files converts them to mzML when it runs;
   - a Zenodo record or Figshare article (page link or DOI);
-  - a OneDrive or SharePoint link shared with "Anyone with the link": files and folders from personal OneDrive, single files from SharePoint / OneDrive for Business (their folders can only be read with a sign-in).
+  - a OneDrive or SharePoint link shared with "Anyone with the link": files and folders from personal OneDrive (the `1drv.ms` link, or the `onedrive.live.com` address of the shared folder opened in the browser), single files from SharePoint / OneDrive for Business (their folders can only be read with a sign-in).
 
   **Look up** lists the files; when the server allows it, the files inside an archive are listed too, and only the ones you select are downloaded. Each file is matched to the upload that takes its type (a Bruker `.d` folder as a whole), and you can change that in the table. The import runs in the background: you can leave the page, and a cancelled or interrupted import continues where it stopped when you start it again. Archives the server cannot send in parts are downloaded whole, unpacked, and their files sorted by type.
 

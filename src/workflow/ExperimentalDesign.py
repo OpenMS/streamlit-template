@@ -37,10 +37,11 @@ def default_design(files: List[str]) -> pd.DataFrame:
     """
     names = [_file_name(str(f)) for f in files]
     return pd.DataFrame({
-        "file": names,
-        "condition": [""] * len(names),
-        "replicate": list(range(1, len(names) + 1)),
-        "fraction": [1] * len(names),
+        # Empty selections must retain the same join-key type as saved designs.
+        "file": pd.Series(names, dtype="object"),
+        "condition": pd.Series([""] * len(names), dtype="object"),
+        "replicate": pd.Series(range(1, len(names) + 1), dtype="int64"),
+        "fraction": pd.Series([1] * len(names), dtype="int64"),
     })
 
 

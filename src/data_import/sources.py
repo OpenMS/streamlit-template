@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import base64
 import re
+import time
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import PurePosixPath
@@ -48,8 +49,9 @@ class Listing:
     notes: List[str] = field(default_factory=list)
 
 
-def _json(session: requests.Session, url: str, **kwargs):
-    response = session.get(url, timeout=REQUEST_TIMEOUT, headers={"Accept": "application/json"}, **kwargs)
+def _json(session: requests.Session, url: str, headers: Optional[dict] = None, **kwargs):
+    response = session.get(url, timeout=REQUEST_TIMEOUT,
+                           headers={"Accept": "application/json", **(headers or {})}, **kwargs)
     if response.status_code == 404:
         raise LookupError("Nothing was found at this link (404). Is it public?")
     response.raise_for_status()
@@ -375,7 +377,18 @@ def s3(session, link: str) -> Optional[Listing]:
 # ---------------------------------------------------------------------------
 
 ONEDRIVE_API = "https://api.onedrive.com/v1.0"
+# Personal OneDrive moved onto SharePoint ("migratedtospo"); its shares are
+# also served here.
+ONEDRIVE_PERSONAL_API = "https://my.microsoftpersonalcontent.com/_api/v2.0"
+# An anonymous token for public personal shares, the one onedrive.live.com
+# itself asks for before it shows a shared folder to a visitor.
+BADGER_TOKEN_URL = "https://api-badgerp.svc.ms/v1.0/token"
+BADGER_APP_UUID = "5cbed6ac-a083-4e14-b191-b4ba07653de2"
+BADGER_APP_ID = "1141147648"
+BADGER_LIFETIME = 30 * 60
 ONEDRIVE_MAX_DEPTH = 20
+
+_badger: dict = {}
 
 
 def _is_onedrive(host: str) -> bool:
@@ -389,6 +402,31 @@ def share_id(link: str) -> str:
     return "u!" + base64.urlsafe_b64encode(link.encode()).decode().rstrip("=")
 
 
+def sharing_link(link: str) -> str:
+    """The sharing link behind a OneDrive page link.
+
+    Opening a ``1drv.ms`` link lands on ``onedrive.live.com/?id=...&redeem=...``,
+    whose ``redeem`` parameter is the sharing link in base64; users often copy
+    that address from the browser instead of the link they were sent.
+    """
+    parts = urlsplit(link)
+    if (parts.hostname or "").lower() != "onedrive.live.com":
+        return link
+    redeem = dict(parse_qsl(parts.query)).get("redeem", "")
+    if not redeem:
+        return link
+    try:
+        decoded = base64.b64decode(redeem.replace("-", "+").replace("_", "/")
+                                   + "=" * (-len(redeem) % 4)).decode()
+        target = urlsplit(decoded)
+        host = (target.hostname or "").lower()
+    except ValueError:  # UnicodeDecodeError is one too
+        return link
+    if target.scheme in ("http", "https") and host in ("1drv.ms", "onedrive.live.com"):
+        return decoded
+    return link
+
+
 def with_download(link: str) -> str:
     """A sharing link that answers with the file instead of the preview page."""
     parts = urlsplit(link)
@@ -397,7 +435,66 @@ def with_download(link: str) -> str:
     return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), ""))
 
 
-def _onedrive_files(session, item: dict, prefix: str, depth: int, files: List[RemoteFile]) -> None:
+def _badger_headers(session) -> dict:
+    """Headers that let a visitor read a public personal OneDrive share."""
+    if _badger.get("token") and _badger.get("expires", 0) > time.time():
+        token = _badger["token"]
+    else:
+        response = session.post(BADGER_TOKEN_URL, json={"appId": BADGER_APP_UUID},
+                                headers={"AppId": BADGER_APP_ID, "Accept": "application/json"},
+                                timeout=REQUEST_TIMEOUT, allow_redirects=False)
+        response.raise_for_status()
+        body = response.json()
+        token = body.get("token") if isinstance(body, dict) else None
+        if not isinstance(token, str) or not token:
+            raise ValueError("OneDrive gave no token.")
+        _badger.update(token=token, expires=time.time() + BADGER_LIFETIME)
+    return {"Authorization": f"Badger {token}", "Prefer": "autoredeem"}
+
+
+@dataclass
+class _Share:
+    """Where a share was read: the API, the headers it needed, its id."""
+
+    api: str
+    headers: dict
+    id: str
+
+
+def _onedrive_children(session, share: _Share, item: dict):
+    """The first listing page of a folder: its items and the link to the next page."""
+    drive = (item.get("parentReference") or {}).get("driveId") or ""
+    item_id = quote(item.get("id", ""), safe="")
+    try:
+        return _page_items(_json(
+            session, f"{share.api}/drives/{quote(drive, safe='')}/items/{item_id}/children",
+            headers=share.headers))
+    except (requests.RequestException, LookupError, ValueError):
+        # A folder of a share the visitor has not redeemed is read through the share.
+        return _page_items(_json(
+            session, f"{share.api}/shares/{share.id}/items/{item_id}/children",
+            headers=share.headers))
+
+
+def _page_items(page):
+    """The items of one listing page and the link to the next one."""
+    if not isinstance(page, dict):
+        raise ValueError("OneDrive sent an unexpected reply.")
+    return page.get("value", []), page.get("@odata.nextLink")
+
+
+def _onedrive_pages(session, share: _Share, children, next_url):
+    """Every item of a folder listing, following its next-page links."""
+    while True:
+        yield from children or []
+        if not next_url or not next_url.startswith(share.api + "/"):
+            return
+        page = _json(session, next_url, headers=share.headers)
+        children, next_url = _page_items(page)
+
+
+def _onedrive_files(session, share: _Share, item: dict, prefix: str, depth: int,
+                    files: List[RemoteFile]) -> None:
     name = item.get("name") or ""
     if name in ("", ".", "..") or "/" in name or "\\" in name:
         return
@@ -412,49 +509,56 @@ def _onedrive_files(session, item: dict, prefix: str, depth: int, files: List[Re
         return
     children, next_url = item.get("children"), item.get("children@odata.nextLink")
     if children is None:
-        drive = (item.get("parentReference") or {}).get("driveId") or ""
-        page = _json(session, f"{ONEDRIVE_API}/drives/{quote(drive, safe='')}/items/"
-                              f"{quote(item.get('id', ''), safe='')}/children")
-        children, next_url = page.get("value", []), page.get("@odata.nextLink")
-    while True:
-        for child in children or []:
-            _onedrive_files(session, child, path, depth + 1, files)
-        if not next_url or not next_url.startswith(ONEDRIVE_API + "/"):
-            break
-        page = _json(session, next_url)
-        children, next_url = page.get("value", []), page.get("@odata.nextLink")
+        children, next_url = _onedrive_children(session, share, item)
+    for child in _onedrive_pages(session, share, children, next_url):
+        _onedrive_files(session, share, child, path, depth + 1, files)
+
+
+def _onedrive_share(session, link: str):
+    """The shared item and where it was read, or ``(None, None)``.
+
+    Older personal shares answer without a sign-in; shares made since
+    personal OneDrive moved onto SharePoint want the anonymous visitor token.
+    """
+    sid = share_id(link)
+    attempts = [
+        (ONEDRIVE_API, lambda: {}, "root"),
+        (ONEDRIVE_API, lambda: _badger_headers(session), "root"),
+        (ONEDRIVE_PERSONAL_API, lambda: _badger_headers(session), "driveitem"),
+    ]
+    for api, headers_for, item in attempts:
+        try:
+            headers = headers_for()
+            root = _json(session, f"{api}/shares/{sid}/{item}?$expand=children", headers=headers)
+        except (requests.RequestException, LookupError, ValueError):
+            continue
+        if root and ("file" in root or "folder" in root):
+            return root, _Share(api=api, headers=headers, id=sid)
+    return None, None
 
 
 def onedrive(session, link: str) -> Optional[Listing]:
     """A OneDrive or SharePoint sharing link ("Anyone with the link").
 
     Personal OneDrive shares are read through the public shares API, which
-    lists folders too. SharePoint and OneDrive for Business only allow that
-    API with a signed-in app, so their links work for single files, fetched
-    with ``download=1``.
+    lists folders too; the address of a shared folder opened in the browser
+    (``onedrive.live.com/?...&redeem=...``) works as well. SharePoint and
+    OneDrive for Business only allow that API with a signed-in app, so their
+    links work for single files, fetched with ``download=1``.
     """
     host = urlsplit(link).hostname or ""
     if not _is_onedrive(host):
         return None
     if not host.endswith(".sharepoint.com"):
-        try:
-            root = _json(session, f"{ONEDRIVE_API}/shares/{share_id(link)}/root?$expand=children")
-        except (requests.RequestException, LookupError, ValueError):
-            root = None
-        if root and ("file" in root or "folder" in root):
+        root, share = _onedrive_share(session, sharing_link(link))
+        if root is not None:
             files: List[RemoteFile] = []
             if "folder" in root:
-                for child in root.get("children") or []:
-                    _onedrive_files(session, child, "", 1, files)
-                # Remaining pages of the top folder
-                next_url = root.get("children@odata.nextLink")
-                while next_url and next_url.startswith(ONEDRIVE_API + "/"):
-                    page = _json(session, next_url)
-                    for child in page.get("value", []):
-                        _onedrive_files(session, child, "", 1, files)
-                    next_url = page.get("@odata.nextLink")
+                for child in _onedrive_pages(session, share, root.get("children"),
+                                             root.get("children@odata.nextLink")):
+                    _onedrive_files(session, share, child, "", 1, files)
             else:
-                _onedrive_files(session, root, "", 0, files)
+                _onedrive_files(session, share, root, "", 0, files)
             return Listing(title=f"OneDrive: {root.get('name', '')}", url=link, files=files,
                            notes=["OneDrive download links expire after about an hour: "
                                   "if an import stops for longer, look the link up again."])

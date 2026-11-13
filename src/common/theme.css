@@ -12,8 +12,10 @@
 [data-testid="stMain"] { padding: 12px 12px 12px 0; }
 [data-testid="stMainBlockContainer"] {
   background: #ffffff; border-radius: 22px; margin-top: 12px; padding: 2.2rem 2.6rem !important;
-  /* Full height, so the sheet does not shrink while the next page draws */
-  min-height: calc(100vh - 48px);
+  /* Full height, so the sheet does not shrink while the next page draws. Streamlit
+     makes it a flex item, which an explicit min-height lets shrink to the window:
+     flex-shrink keeps it as tall as the page, however long. */
+  min-height: calc(100vh - 48px); flex-shrink: 0;
   box-shadow: 0 0 0 1px rgba(35, 31, 32, .05), 0 8px 30px -12px rgba(35, 31, 32, .16);
 }
 @media (prefers-color-scheme: dark) {
