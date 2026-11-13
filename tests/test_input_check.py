@@ -53,3 +53,18 @@ def test_workflow_input_problems(tmp_path):
     wf.parameter_manager.get_parameters_from_json.return_value = {
         "mzML-files": ["p1/a.mzML", "p2/b.mzML"]}
     assert wf.input_problems() == ""
+
+
+def test_an_online_start_refuses_clashing_selections(tmp_path):
+    """The sync service checks the selections too, before params.json is written."""
+    import pytest
+    from src.sync import runs
+
+    workflow_dir = Path(tmp_path, "topp-workflow")
+    Path(workflow_dir, "input-files", "mzML-files").mkdir(parents=True)
+    params = {"mzML-files": ["p1/a.mzML", "p2/a.mzML"]}
+    assert "**a**" in runs.selection_problem(workflow_dir, params)
+    assert runs.selection_problem(workflow_dir, {"mzML-files": ["p1/a.mzML"]}) == ""
+    with pytest.raises(ValueError, match="a"):
+        runs.start(None, tmp_path, "topp-workflow", "src.Workflow:Workflow", params)
+    assert not Path(workflow_dir, "params.json").exists()

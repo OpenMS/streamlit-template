@@ -117,10 +117,20 @@ def status(qm, workspace: Path, workflow: str) -> dict:
     return info
 
 
+def selection_problem(workflow_dir: Path, params: dict) -> str:
+    """Why the input file selections of ``params`` cannot run, or "": two
+    selected files with one name would write the same results, as the Run
+    page checks before a local start."""
+    from src.workflow.input_check import clash_message, selection_clashes
+    clashes = selection_clashes(workflow_dir, params)
+    return " ".join(clash_message(groups) for groups in clashes.values())
+
+
 def start(qm, workspace: Path, workflow: str, target: str, params: dict,
           name: str = "") -> dict:
     """Write the parameters and queue the run. Raises LookupError when the
-    workflow is already running, FileNotFoundError for missing inputs."""
+    workflow is already running, FileNotFoundError for missing inputs and
+    ValueError for selected files whose names clash."""
     workflow_dir = Path(workspace, workflow)
     current = status(qm, workspace, workflow)
     if current["status"] in ACTIVE:
@@ -128,6 +138,9 @@ def start(qm, workspace: Path, workflow: str, target: str, params: dict,
     params, missing = resolve_params(workspace, params)
     if missing:
         raise FileNotFoundError(", ".join(missing))
+    clashes = selection_problem(workflow_dir, params)
+    if clashes:
+        raise ValueError(clashes)
     workflow_dir.mkdir(parents=True, exist_ok=True)
     tmp = Path(workflow_dir, "params.json.sync-tmp")
     tmp.write_text(json.dumps(params, indent=4), encoding="utf-8")
