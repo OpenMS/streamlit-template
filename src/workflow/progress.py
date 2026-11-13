@@ -116,6 +116,7 @@ class RunProgress:
         threads: int = 1,
         parallel: int = 1,
         provenance: Optional[dict] = None,
+        allow_failed: bool = False,
     ) -> int:
         """Record a tool call with one entry per label; returns the step index.
 
@@ -140,6 +141,8 @@ class RunProgress:
             }
             if provenance:
                 step["provenance"] = provenance
+            if allow_failed:
+                step["allow_failed"] = True
             state["steps"].append(step)
             return len(state["steps"]) - 1
 
@@ -311,10 +314,16 @@ def key_message(output: List[str]) -> str:
     return short[:300]
 
 
-def failures(state: Optional[dict]) -> List[dict]:
-    """Every failed file: {"context", "message", "returncode", "output"}."""
+def failures(state: Optional[dict], left_out: Optional[bool] = None) -> List[dict]:
+    """Every failed file: {"context", "message", "returncode", "output"}.
+
+    ``left_out=True`` gives only the files of steps the run went on without
+    (``allow_failed``), ``False`` only the others, ``None`` all of them.
+    """
     found = []
     for step in (state or {}).get("steps", []):
+        if left_out is not None and bool(step.get("allow_failed")) != left_out:
+            continue
         for i, entry in enumerate(step["files"]):
             if entry["status"] == FAILED:
                 output = entry.get("output", [])

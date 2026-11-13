@@ -52,11 +52,22 @@ def _strip_gz(name: str) -> str:
 
 
 def target_for(name: str, targets: Dict[str, dict]) -> str:
-    """The upload key whose file types match ``name`` ('' if none)."""
+    """Automatically match an upload by type, excluding manual-only targets."""
     base = _strip_gz(name)
     for key, target in targets.items():
-        if has_type(base, target["file_types"]):
+        if target.get("auto_route", True) and has_type(base, target["file_types"]):
             return key
+    return ""
+
+
+def _archive_target(name: str, chosen: str, targets: Dict[str, dict]) -> str:
+    """The upload an archive entry goes to: sorted by type for ``"*"``,
+    otherwise the upload picked for the archive, when the entry fits it."""
+    if chosen == "*":
+        return target_for(name, targets)
+    target = targets.get(chosen)
+    if target and has_type(_strip_gz(name), target["file_types"]):
+        return chosen
     return ""
 
 
@@ -348,7 +359,7 @@ class _Job:
                 _unpack(archive, unpacked, self.max_bytes)
                 archive.unlink()
                 for entry in _unpacked_entries(unpacked):
-                    key = target_for(entry.name, self.targets)
+                    key = _archive_target(entry.name, item["target"], self.targets)
                     if not key:
                         with self.lock:
                             self.status["skipped"].append(f"{item['name']}/{entry.relative_to(unpacked)}")

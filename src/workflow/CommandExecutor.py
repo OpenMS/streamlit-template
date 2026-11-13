@@ -1,6 +1,5 @@
 import time
 import os
-import shutil
 import subprocess
 import threading
 from pathlib import Path
@@ -14,7 +13,9 @@ from collections import deque
 import sys
 import importlib.util
 import json
+import tempfile
 import streamlit as st
+from .process_state import pid_markers, prune_exited_marker, register_process_marker, signal_owned_process
 
 class CommandExecutor:
     """
@@ -133,8 +134,7 @@ class CommandExecutor:
         self.logger.log(f"Running {num_commands} commands (max {parallel_commands} parallel, {max_threads} total threads)...", 1)
         start_time = time.time()
 
-        results = []
-        lock = threading.Lock()
+        results = [False] * num_commands
         semaphore = threading.Semaphore(parallel_commands)
 
         def run_and_track(i, cmd):
@@ -149,8 +149,7 @@ class CommandExecutor:
                     # would add no result, and the step would count as passed.
                     self.logger.log(f"ERROR: {cmd[0]}: {e}", 0)
                     success = False
-                with lock:
-                    results.append(success)
+                results[i] = success
 
         # Initialize a list to keep track of threads
         threads = []
@@ -169,6 +168,7 @@ class CommandExecutor:
         end_time = time.time()
         self.logger.log(f"Total time to run {num_commands} commands: {end_time - start_time:.2f} seconds", 1)
 
+        self._last_results = results
         return all(results)
 
     def run_command(self, command: list[str], task: tuple = None, cwd=None) -> bool:
@@ -199,8 +199,11 @@ class CommandExecutor:
         if task is not None:
             self.progress.file_started(*task)
 
+        # Create tracking before spawning: failure must not leave an untracked
+        # child. Cancellation can still remove this directory after the spawn.
         # Execute the command with real-time output capture
         try:
+            self.pid_dir.mkdir(parents=True, exist_ok=True)
             process = subprocess.Popen(
                 command,
                 stdout=subprocess.PIPE,
@@ -221,22 +224,31 @@ class CommandExecutor:
         # Record the PID to keep track of running processes associated with this workspace/workflow
         # User can close the Streamlit app and return to a running workflow later
         pid_file_path = self.pid_dir / str(child_pid)
-        pid_file_path.touch()
-
         # Buffer for stderr - will only be written to minimal log if process fails
         stderr_buffer: list[str] = []
         # Last lines of stdout, kept for the run progress of a failed file
         stdout_tail: deque = deque(maxlen=OUTPUT_TAIL)
 
-        # Real-time output capture
-        self._stream_output(process, stderr_buffer, stdout_tail)
+        try:
+            register_process_marker(pid_file_path, child_pid)
+            # Real-time output capture, followed by reaping the child.
+            self._stream_output(process, stderr_buffer, stdout_tail)
+            process.wait()
+        except Exception as error:
+            # An I/O/registration failure after Popen must not orphan a native
+            # tool or lose the original failure behind a secondary cleanup.
+            self._terminate_failed_command(process)
+            try:
+                pid_file_path.unlink(missing_ok=True)
+            except OSError as cleanup_error:
+                self.logger.log(f"Could not remove process marker: {cleanup_error}", 1)
+            if task is not None:
+                self.progress.file_finished(*task, ok=False, returncode=-1, output=[str(error)])
+                self._log_failure_context(task, -1)
+            raise
 
-        # Wait for process completion
-        process.wait()
-
-        # Cleanup PID file. Between the tool's exit and wait() it is a zombie,
-        # and the Run page's status check (pid_files.reap) removes the file of
-        # a zombie, so it may already be gone.
+        # Status polling (pid_files.reap) removes the marker of a zombie, and
+        # a tool is a zombie between its exit and wait(): it may be gone.
         pid_file_path.unlink(missing_ok=True)
 
         end_time = time.time()
@@ -264,6 +276,23 @@ class CommandExecutor:
                 self._log_failure_context(task, process.returncode)
             return False
         return True
+
+    def _terminate_failed_command(self, process) -> None:
+        """Terminate and reap a child when its execution cannot be monitored."""
+        try:
+            if process.poll() is None:
+                process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+        except OSError as cleanup_error:
+            self.logger.log(f"Could not stop untracked command: {cleanup_error}", 0)
+        finally:
+            for pipe in (process.stdout, process.stderr):
+                if pipe is not None:
+                    pipe.close()
 
     def _log_failure_context(self, task: tuple, returncode: int) -> None:
         """Log which tool failed on which file, e.g. 'While running X on file 2 of 3 (a.mzML)'."""
@@ -328,8 +357,6 @@ class CommandExecutor:
                         self.logger.log(line.rstrip(), 2)
                         if stdout_tail is not None:
                             stdout_tail.append(line.rstrip())
-                    if process.poll() is not None:
-                        break
             except Exception as e:
                 self.logger.log(f"Error reading stdout: {e}", 2)
             finally:
@@ -344,8 +371,6 @@ class CommandExecutor:
                         stderr_buffer.append(stderr_line)
                         # Log to detailed log only during execution
                         self.logger.log(f"STDERR: {stderr_line}", 2)
-                    if process.poll() is not None:
-                        break
             except Exception as e:
                 self.logger.log(f"Error reading stderr: {e}", 2)
             finally:
@@ -362,7 +387,14 @@ class CommandExecutor:
         stdout_thread.join()
         stderr_thread.join()
 
-    def run_topp(self, tool: str, input_output: dict, custom_params: dict = {}, tool_instance_name: str = None) -> bool:
+    def run_topp(
+        self,
+        tool: str,
+        input_output: dict,
+        custom_params: dict = {},
+        tool_instance_name: str = None,
+        allow_failed: bool = False,
+    ) -> bool:
         """
         Constructs and executes commands for the specified tool OpenMS TOPP tool based on the given
         input and output configurations. Ensures that all input/output file lists
@@ -383,9 +415,16 @@ class CommandExecutor:
             tool_instance_name (str, optional): A unique instance name for this tool
                 invocation, used for parameter lookup when multiple instances of the
                 same tool exist. If not provided, defaults to the tool name.
+            allow_failed (bool, optional): Go on without the files the tool
+                fails on, instead of failing the run: the call returns True
+                while at least one command succeeded, ``self.failed`` lists
+                the indices of the failed commands, and ``keep_succeeded()``
+                drops their entries from the lists the next step takes. The
+                Run page names the files left out and why.
 
         Returns:
-            bool: True if all commands succeeded, False if any failed.
+            bool: True if all commands succeeded (with ``allow_failed``: any),
+            False otherwise.
 
         Raises:
             ValueError: If the lengths of input/output file lists are inconsistent,
@@ -522,29 +561,70 @@ class CommandExecutor:
                 "params": report_params({**merged_params, **custom_params}),
                 "io": command_io(input_output, len(commands)),
             },
+            allow_failed=allow_failed,
         )
+        self.failed = []
         try:
             if len(commands) == 1:
-                return self.run_command(commands[0], task=(step, 0))
-            return self.run_multiple_commands(commands, step=step)
+                results = [self.run_command(commands[0], task=(step, 0))]
+            else:
+                self._last_results = None
+                ok = self.run_multiple_commands(commands, step=step)
+                results = self._last_results
+                if not isinstance(results, list) or len(results) != len(commands):
+                    results = [bool(ok)] * len(commands)
         finally:
             self.progress.end_step(step)
+        self.failed = [i for i, ok in enumerate(results) if not ok]
+        if not allow_failed or not self.failed:
+            return not self.failed
+        labels = self._command_labels(input_output, len(commands))
+        if len(self.failed) == len(results):
+            self.logger.log(f"ERROR: {tool} failed for every file.", 0)
+            return False
+        self.logger.log(
+            f"WARNING: {tool} failed for {len(self.failed)} of {len(results)} "
+            f"files; the run goes on without them: "
+            + ", ".join(labels[i] for i in self.failed),
+            0,
+        )
+        return True
+
+    def keep_succeeded(self, values: list) -> list:
+        """``values`` without the entries of the files the last
+        ``run_topp(..., allow_failed=True)`` failed on (``self.failed``).
+
+        Pass the lists the next step takes, in the order of that call's
+        inputs, e.g. ``mzmls = executor.keep_succeeded(mzmls)``.
+        """
+        failed = set(getattr(self, "failed", []) or [])
+        return [v for i, v in enumerate(values) if i not in failed]
 
     def stop(self) -> None:
         """
         Terminates all processes initiated by this executor by killing them based on stored PIDs.
         """
         self.logger.log("Stopping all running processes...")
-        pids = [Path(f).stem for f in self.pid_dir.iterdir()]
-        
-        for pid in pids:
+        incomplete = False
+        for marker in pid_markers(self.pid_dir):
             try:
-                os.kill(int(pid), 9)
-            except OSError as e:
-                self.logger.log(f"Failed to kill process {pid}: {e}")
-        
-        shutil.rmtree(self.pid_dir, ignore_errors=True)
-        self.logger.log("Workflow stopped.")
+                signal_owned_process(marker, 9)
+            except ProcessLookupError:
+                pass
+            except (OSError, OverflowError) as error:
+                # In particular, retain tracking when a live process cannot be
+                # signalled. Do not claim it stopped or start another over it.
+                self.logger.log(f"Failed to kill process {marker.name}: {error}")
+                incomplete = True
+                continue
+            if prune_exited_marker(marker):
+                incomplete = True
+        try:
+            self.pid_dir.rmdir()
+        except OSError:
+            # Other processes or housekeeping files may still own this folder.
+            pass
+        self.logger.log("Some processes are still stopping or could not be stopped." if incomplete else "Workflow stopped.")
 
     def run_python(self, script_file: str, input_output: dict = {}) -> bool:
         """
@@ -606,35 +686,39 @@ class CommandExecutor:
                 defaults[k.replace(f"{path.name}:", "")] = v
             for k, v in input_output.items():
                 defaults[k] = v
-            # save parameters to temporary JSON file
-            tmp_params_file = Path(self.pid_dir.parent, f"{path.stem}.json")
-            with open(tmp_params_file, "w", encoding="utf-8") as f:
-                json.dump(defaults, f, indent=4)
+            # Each invocation owns its parameters, including concurrent calls
+            # to the same script. Close before dispatch for Windows readers.
+            with tempfile.NamedTemporaryFile(
+                mode="w", encoding="utf-8", prefix=f"{path.stem}-", suffix=".json",
+                dir=self.pid_dir.parent, delete=False,
+            ) as temporary:
+                tmp_params_file = Path(temporary.name)
             # Record the call like run_topp(), for the Run page and the report
             io = {k: v if isinstance(v, list) else [v] for k, v in input_output.items()}
             io = {k: v for k, v in io.items() if v}
-            step = self.progress.start_step(
-                path.name,
-                self._command_labels(io, 1) if io else [""],
-                provenance={
-                    "kind": "python",
-                    "program": path.name,
-                    "version": None,
-                    "params": report_params({k: v for k, v in defaults.items()
-                                            if k not in input_output and v != script_defaults.get(k)}),
-                    "io": command_io({k: [v] for k, v in io.items()}, 1),
-                },
-            )
-            # run command
+            step = None
             try:
-                success = self.run_command(
+                with tmp_params_file.open("w", encoding="utf-8") as handle:
+                    json.dump(defaults, handle, indent=4)
+                step = self.progress.start_step(
+                    path.name,
+                    self._command_labels(io, 1) if io else [""],
+                    provenance={
+                        "kind": "python",
+                        "program": path.name,
+                        "version": None,
+                        "params": report_params({k: v for k, v in defaults.items()
+                                                if k not in input_output and v != script_defaults.get(k)}),
+                        "io": command_io({k: [v] for k, v in io.items()}, 1),
+                    },
+                )
+                return self.run_command(
                     [sys.executable, str(path), str(tmp_params_file)], task=(step, 0)
                 )
             finally:
-                self.progress.end_step(step)
-                # remove tmp params file
+                if step is not None:
+                    self.progress.end_step(step)
                 tmp_params_file.unlink(missing_ok=True)
-            return success
 
         # DEFAULTS exists but is not the documented list of parameter dicts, so
         # nothing ran. Reporting that as success would put the workflow's
@@ -681,21 +765,21 @@ class CommandExecutor:
                 mzmls.append(str(out))
                 continue
             out_dir.mkdir(parents=True, exist_ok=True)
-            # Written under a temporary name so a cancelled or failed
-            # conversion never leaves a truncated mzML that would be reused.
-            tmp = Path(out_dir, f"{out.stem}.part.mzML")
-            tmp.unlink(missing_ok=True)
-            self.logger.log(f"Converting {Path(f).name} to mzML...")
-            if kind == "raw":
-                ok = self.run_topp("FileConverter", {"in": [str(f)], "out": [str(tmp)]})
-            else:
-                ok = self.run_python("bruker_to_mzml", {"in": str(f), "out": str(tmp)})
-            if not ok or not tmp.exists():
-                tmp.unlink(missing_ok=True)
-                self.logger.log(f"ERROR: Could not convert {Path(f).name} to mzML.", 0)
-                return None
-            os.replace(tmp, out)
-            # The report follows the mzML back to the file it came from
-            self.progress.record_alias(str(out), str(tmp))
+            # A private temporary directory prevents simultaneous conversions
+            # from removing each other's partial output. Only complete files
+            # replace the cache, and exceptions also clean up partial data.
+            with tempfile.TemporaryDirectory(prefix=f".{out.stem}-", dir=out_dir) as temporary:
+                tmp = Path(temporary, f"{out.stem}.part.mzML")
+                self.logger.log(f"Converting {Path(f).name} to mzML...")
+                if kind == "raw":
+                    ok = self.run_topp("FileConverter", {"in": [str(f)], "out": [str(tmp)]})
+                else:
+                    ok = self.run_python("bruker_to_mzml", {"in": str(f), "out": str(tmp)})
+                if not ok or not tmp.exists():
+                    self.logger.log(f"ERROR: Could not convert {Path(f).name} to mzML.", 0)
+                    return None
+                os.replace(tmp, out)
+                # The report follows the mzML back to the file it came from
+                self.progress.record_alias(str(out), str(tmp))
             mzmls.append(str(out))
         return mzmls
