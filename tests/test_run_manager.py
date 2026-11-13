@@ -277,7 +277,12 @@ def test_a_run_that_adds_files_joins_the_earlier_runs_experiment(tmp_path):
 
 def _example_merge_feature_tables():
     """The template's example workflow helper; an app's own workflow may lack it."""
-    workflow = pytest.importorskip("src.Workflow")
+    try:
+        import src.Workflow as workflow
+    except ModuleNotFoundError as e:
+        if e.name != "src.Workflow":
+            raise
+        pytest.skip("this app has no src/Workflow.py")
     if not hasattr(workflow, "merge_feature_tables"):
         pytest.skip("this app's workflow has no merge_feature_tables")
     return workflow.merge_feature_tables
