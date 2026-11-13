@@ -5,19 +5,19 @@
       "name": "FLASHApp",
       "repository": "OpenMS/FLASHApp",
       "url": "https://flashapp.webapps.openms.de",
-      "description": "Top-down proteomics: deconvolution, proteoform identification and quantification."
+      "description": "Top-down proteomics"
     },
     {
       "name": "NASEWEIS",
       "repository": "OpenMS/nase-weis",
       "url": "https://naseweis.webapps.openms.de",
-      "description": "RNA oligonucleotide identification and label-free quantification."
+      "description": "RNA mass spectrometry"
     },
     {
       "name": "OpenDDA",
       "repository": "OpenMS/quantms-web",
       "url": "https://opendda.webapps.openms.de",
-      "description": "Quantitative DDA proteomics: label-free and TMT/iTRAQ quantification with statistics."
+      "description": "Quantitative DDA proteomics"
     }
   ]
 }
