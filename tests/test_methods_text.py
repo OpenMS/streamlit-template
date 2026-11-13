@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from src.workflow.methods_text import OPENMS_REFERENCE, methods_text
+from src.workflow.methods_text import OPENMS_REFERENCE, WEBAPPS_REFERENCE, methods_text
 from src.workflow.processing_report import build_report, command_io
 from src.workflow.progress import RunProgress, read_progress
 
@@ -39,13 +39,13 @@ def _no_names(tool, parameter, instance=None):
 def test_sentences_follow_the_tool_calls(tmp_path):
     text = methods_text(_report(tmp_path), names=_no_names)
     assert text.startswith("The 2 input files")
-    assert ("The 2 input files (A.mzML and B.mzML) were processed with App 1.0, "
-            "which runs the tools of OpenMS 3.6.0 [1].") in text
+    assert ("The 2 input files (A.mzML and B.mzML) were processed with App 1.0, a web application "
+            "built on the OpenMS WebApps framework [1] that runs the tools of OpenMS 3.6.0 [2].") in text
     assert ("First, FeatureFinderMetabo was run on each file, with "
             "algorithm:common:noise_threshold_int set to 1000.0.") in text
     assert "Then, FeatureLinkerUnlabeledKD was run on all files together, with default parameters." in text
     assert "Finally, the Python script export.py was run on all files together." in text
-    assert f"\n\nReferences\n1. {OPENMS_REFERENCE}\n" in text
+    assert f"\n\nReferences\n1. {WEBAPPS_REFERENCE}\n2. {OPENMS_REFERENCE}\n" in text
 
 
 def test_parameter_display_names_are_used(tmp_path):
@@ -62,9 +62,10 @@ def test_app_wording_and_references(tmp_path):
                                                "FeatureLinkerUnlabeledKD", "reference": "Linker paper."}},
     }}
     text = methods_text(_report(tmp_path), settings, names=_no_names)
-    assert "processed with App 1.0 [1], which runs the tools of OpenMS 3.6.0 [2]." in text
-    assert "Then, features were linked across files with FeatureLinkerUnlabeledKD [3] on all files" in text
-    assert text.endswith(f"1. App paper.\n2. {OPENMS_REFERENCE}\n3. Linker paper.\n")
+    assert ("processed with App 1.0 [1], a web application built on the OpenMS WebApps framework [2] "
+            "that runs the tools of OpenMS 3.6.0 [3].") in text
+    assert "Then, features were linked across files with FeatureLinkerUnlabeledKD [4] on all files" in text
+    assert text.endswith(f"1. App paper.\n2. {WEBAPPS_REFERENCE}\n3. {OPENMS_REFERENCE}\n4. Linker paper.\n")
 
 
 def test_an_instance_uses_its_own_wording(tmp_path):

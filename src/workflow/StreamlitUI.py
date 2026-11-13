@@ -3,7 +3,6 @@ import pyopenms as poms
 from pathlib import Path
 import shutil
 import filecmp
-import subprocess
 from typing import Any, Callable, Dict, List, Literal, Union
 import json
 import math
@@ -26,7 +25,7 @@ from src.common.common import (
     tk_file_dialog,
 )
 from src.workflow._log_status import classify_log_outcome
-from src.workflow.report_ui import report_buttons
+from src.workflow.report_ui import methods_section, report_buttons, run_methods
 from src.workflow.RunManager import FOLLOW_UP_KEY
 from src.workflow.progress import (
     DONE,
@@ -60,7 +59,6 @@ from src.workflow.ExperimentalDesign import (
 )
 from src.workflow.vendor_files import extract_bruker_zip, has_type
 from src.workflow.settings_io import (
-    THREADS_USER_MARKER,
     local_thread_default,
     local_threads_pinned,
     usable_cpu_count,
@@ -2972,13 +2970,15 @@ class StreamlitUI:
                         help="Export parameter, can be used to import to this workflow.",
                         use_container_width=True,
                     )
-            text = self.export_parameters_markdown()
+            text, stem = run_methods(self.workflow_dir)
             st.download_button(
-                "📑 Method summary",
+                "📑 Methods",
                 data=text,
-                file_name="method-summary.md",
-                mime="text/md",
-                help="Download method summary for publications.",
+                file_name=f"{stem or 'run'}-methods.txt",
+                mime="text/plain",
+                help=("A methods section for a publication, written from the last run."
+                      if text else "Written from a run, once a tool of a run has finished."),
+                disabled=not text,
                 use_container_width=True,
             )
 
@@ -3024,8 +3024,7 @@ class StreamlitUI:
         below the success message of a finished run; ``on_open_results`` runs
         before that button switches to it.
         """
-        with st.expander("**Summary**"):
-            st.markdown(self.export_parameters_markdown())
+        methods_section(self.workflow_dir, key=f"{self.workflow_dir.name}-run-methods")
 
         c1, c2 = st.columns(2)
         # Select log level, this can be changed at run time or later without re-running the workflow
@@ -3140,7 +3139,8 @@ class StreamlitUI:
                 else:
                     st.error("**Errors occurred, check log file.**")
                 self._show_run_summary(show_failures=outcome != "finished")
-                report_buttons(self.workflow_dir, key=f"{self.workflow_dir.name}-run-report")
+                report_buttons(self.workflow_dir, key=f"{self.workflow_dir.name}-run-report",
+                               methods=False)
                 # Apply line limit to static display
                 if log_lines_count == "all":
                     display_lines = lines
@@ -3558,111 +3558,3 @@ Started: {status.get('started_at', 'N/A')}""")
                         key=f"{key_prefix}-zip-button",
                         width="stretch",
                     )
-
-    def non_default_params_summary(self):
-        # Display a summary of non-default TOPP parameters and all others (custom and python scripts)
-
-        def remove_full_paths(d: dict) -> dict:
-            # Create a copy to avoid modifying the original dictionary
-            cleaned_dict = {}
-
-            for key, value in d.items():
-                if isinstance(value, dict):
-                    # Recursively clean nested dictionaries
-                    nested_cleaned = remove_full_paths(value)
-                    if nested_cleaned:  # Only add non-empty dictionaries
-                        cleaned_dict[key] = nested_cleaned
-                elif isinstance(value, list):
-                    # Filter out existing paths from the list
-                    filtered_list = [
-                        item if not Path(str(item)).exists() else Path(str(item)).name
-                        for item in value
-                    ]
-                    if filtered_list:  # Only add non-empty lists
-                        cleaned_dict[key] = ", ".join(filtered_list)
-                elif not Path(str(value)).exists():
-                    # Add entries that are not existing paths
-                    cleaned_dict[key] = value
-
-            return cleaned_dict
-
-        # Don't want file paths to be shown in summary for export
-        params = remove_full_paths(
-            {k: v for k, v in self.params.items() if k != THREADS_USER_MARKER}
-        )
-
-        summary_text = ""
-        python = {}
-        topp = {}
-        general = {}
-
-        for k, v in params.items():
-            if k.startswith("_"):  # _defaults, _flag_params, _follow_up: bookkeeping
-                continue
-            if isinstance(v, dict):
-                topp[k] = v
-            elif ".py" in k:
-                script = k.split(".py")[0] + ".py"
-                if script not in python:
-                    python[script] = {}
-                python[script][k.split(".py")[1][1:]] = v
-            else:
-                general[k] = v
-
-        # Merge _defaults into topp so summary shows custom defaults + user overrides
-        defaults = params.get("_defaults", {})
-        for tool_name, default_vals in defaults.items():
-            if tool_name not in topp:
-                topp[tool_name] = {}
-            topp[tool_name] = {**default_vals, **topp.get(tool_name, {})}
-
-        markdown = []
-
-        def dict_to_markdown(d: dict):
-            for key, value in d.items():
-                if isinstance(value, dict):
-                    # Add a header for nested dictionaries
-                    markdown.append(f"> **{key}**\n")
-                    dict_to_markdown(value)
-                else:
-                    # Add key-value pairs as list items
-                    markdown.append(f">> {key}: **{value}**\n")
-
-        if len(general) > 0:
-            markdown.append("**General**")
-            dict_to_markdown(general)
-        if len(topp) > 0:
-            markdown.append("**OpenMS TOPP Tools**\n")
-            dict_to_markdown(topp)
-        if len(python) > 0:
-            markdown.append("**Python Scripts**")
-            dict_to_markdown(python)
-        return "\n".join(markdown)
-
-    def export_parameters_markdown(self):
-        markdown = []
-
-        url = f"https://github.com/{st.session_state.settings['github-user']}/{st.session_state.settings['repository-name']}"
-        tools = [p.stem for p in Path(self.parameter_manager.ini_dir).iterdir()]
-        if len(tools) > 1:
-            tools = ", ".join(tools[:-1]) + " and " + tools[-1]
-
-        result = subprocess.run(
-            "FileFilter --help", shell=True, text=True, capture_output=True
-        )
-        version = ""
-        if result.returncode == 0:
-            version = result.stderr.split("Version: ")[1].split("-")[0]
-
-        markdown.append(
-            f"""Data was processed using **{st.session_state.settings['app-name']}** ([{url}]({url})), a web application based on the OpenMS WebApps framework [1].
-OpenMS ([https://www.openms.de](https://www.openms.de)) is a free and open-source software for LC-MS data analysis [2].
-The workflow includes the **OpenMS {version}** TOPP tools {tools} as well as Python scripts. Non-default parameters are listed in the supplementary section below.
-
-[1] Müller, Tom David, et al. "OpenMS WebApps: Building User-Friendly Solutions for MS Analysis." (2025) [https://doi.org/10.1021/acs.jproteome.4c00872](https://doi.org/10.1021/acs.jproteome.4c00872).
-\\
-[2] Pfeuffer, Julianus, et al. "OpenMS 3 enables reproducible analysis of large-scale mass spectrometry data." (2024) [https://doi.org/10.1038/s41592-024-02197-7](https://doi.org/10.1038/s41592-024-02197-7).
-"""
-        )
-        markdown.append(self.non_default_params_summary())
-        return "\n".join(markdown)

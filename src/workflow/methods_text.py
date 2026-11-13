@@ -31,6 +31,11 @@ OPENMS_REFERENCE = (
     "doi:10.1038/s41592-024-02197-7"
 )
 
+WEBAPPS_REFERENCE = (
+    "Müller TD, et al. OpenMS WebApps: Building User-Friendly "
+    "Solutions for MS Analysis. J Proteome Res. 2025. doi:10.1021/acs.jproteome.4c00872"
+)
+
 # How the steps after the first are introduced, in turn
 _THEN = ("Then", "Next", "After that")
 # Input files named in the text up to this many; above it only their number
@@ -119,7 +124,8 @@ def methods_text(
     text = f"{opening} processed with {app_name or 'an OpenMS web app'}"
     if isinstance(wording.get("reference"), str) and wording["reference"]:
         text += f" {refs.cite(wording['reference'])}"
-    text += f", which runs the tools of OpenMS{f' {openms}' if openms else ''} {refs.cite(OPENMS_REFERENCE)}."
+    text += (f", a web application built on the OpenMS WebApps framework {refs.cite(WEBAPPS_REFERENCE)}"
+             f" that runs the tools of OpenMS{f' {openms}' if openms else ''} {refs.cite(OPENMS_REFERENCE)}.")
     sentences = [text]
 
     for index, step in enumerate(steps):
