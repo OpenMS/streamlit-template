@@ -83,12 +83,16 @@ class DatasetKind:
     experiment's selector while it shows this kind. ``states(ctx)`` returns the
     selection state of an experiment, so views keep its zoom and selection
     (None: none kept). ``max_experiments`` 1 makes the kind fill the page alone.
+    ``components``, ``presets`` and ``default_layout`` may also be functions of
+    the context, for views that depend on the dataset shown (the views of a
+    comparison of labelled samples, say); the first experiment's context
+    decides the view bar.
     """
 
     name: str
-    components: Sequence[Dict[str, Any]]
-    presets: Sequence[Dict[str, Any]]
-    default_layout: List[List[str]]
+    components: Any  # Sequence[Dict] or ctx -> Sequence[Dict]
+    presets: Any  # Sequence[Dict] or ctx -> Sequence[Dict]
+    default_layout: Any  # rows, or ctx -> rows
     views_path: Path
     renderers: Optional[Callable[["ViewerContext"], Mapping[str, Callable[[], Any]]]] = None
     render: Optional[Callable[["ViewerContext", List[List[str]]], Any]] = None
@@ -330,10 +334,16 @@ def _row(spec: ViewerSpec, index: int, datasets: Mapping[str, str], label: str,
 
 # -- the page -----------------------------------------------------------------
 
+def _of(value: Any, ctx: ViewerContext) -> Any:
+    """A kind's attribute that may be a function of the context."""
+    return value(ctx) if callable(value) else value
+
+
 def _default_rows(ctx: ViewerContext) -> Optional[List[List[str]]]:
     kind = ctx.kind
     name = kind.default_view(ctx) if kind.default_view else None
-    return next((p["layout"] for p in kind.presets if p["name"] == name), None) if name else None
+    presets = _of(kind.presets, ctx)
+    return next((p["layout"] for p in presets if p["name"] == name), None) if name else None
 
 
 def _later_datasets(spec: ViewerSpec, kind: DatasetKind) -> Mapping[str, str]:
@@ -373,8 +383,9 @@ def show_viewer(spec: ViewerSpec) -> List[ViewerContext]:
         ctx = context(index)
         return ctx.kind.states(ctx) if ctx is not None and ctx.kind.states else None
 
+    components, default_layout = _of(kind.components, first), _of(kind.default_layout, first)
     view_bar(
-        kind.views_path, kind.components, kind.presets, kind.default_layout, key=first.view_key,
+        kind.views_path, components, _of(kind.presets, first), default_layout, key=first.view_key,
         actions=kind.actions, help_text=kind.help_text,
         default_view=kind.default_view(first) if kind.default_view else None,
         available=kind.available(first) if kind.available else None,
@@ -385,7 +396,7 @@ def show_viewer(spec: ViewerSpec) -> List[ViewerContext]:
         link=kind.link, max_experiments=kind.max_experiments, target=kind.target,
         experiment_label=kind.experiment_label,
     )
-    layout, side_by_side = resolve_layout(kind.views_path, kind.components, kind.default_layout)
+    layout, side_by_side = resolve_layout(kind.views_path, components, default_layout)
     saved = load_layout(kind.views_path) is not None
     layout = layout[:max(1, kind.max_experiments)]
 
@@ -405,7 +416,7 @@ def show_viewer(spec: ViewerSpec) -> List[ViewerContext]:
         else:
             k = ctx.kind
             render_layout(
-                rows, k.renderers(ctx) if k.renderers else {}, k.labels, components=k.components,
+                rows, k.renderers(ctx) if k.renderers else {}, k.labels, components=_of(k.components, ctx),
                 available=k.available(ctx) if k.available else None, analyses=k.analyses,
                 on_missing=lambda missing, name, c=ctx: c.request_analysis(missing, name),
                 key=f"{spec.key}_{index}", dataset_label=k.dataset_label,

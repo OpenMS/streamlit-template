@@ -190,3 +190,23 @@ def test_files_of_is_kept_per_experiment(tmp_path):
     at.selectbox(key="v_experiment_0_select").set_value("r3").run()
     at.selectbox(key="v_experiment_0_select").set_value("r1").run()
     assert _texts(at)[0] == "0:run:r1:r2:plot"
+
+
+def test_presets_follow_the_shown_dataset(tmp_path):
+    # A kind's presets, components and default layout may depend on what is shown
+    at = AppTest.from_string(
+        "from pathlib import Path\n"
+        "import streamlit as st\n"
+        "from src.layout_manager.viewer import DatasetKind, ViewerSpec, show_viewer\n"
+        "C = [{'name': 'a', 'label': 'A', 'group': 'G'}, {'name': 'b', 'label': 'B', 'group': 'G'}]\n"
+        "K = DatasetKind(name='run', components=lambda ctx: C if ctx.dataset == 'x' else C[:1],\n"
+        "    presets=lambda ctx: [{'name': 'p', 'label': 'P', 'layout': [['a', 'b']] if ctx.dataset == 'x' else [['a']]}],\n"
+        "    default_layout=lambda ctx: [['a', 'b']] if ctx.dataset == 'x' else [['a']], views_path=Path(%r) / 'v.json', states=None,\n"
+        "    renderers=lambda ctx: {n: (lambda n=n: st.markdown(f'{ctx.dataset}:{n}')) for n in ('a', 'b')})\n"
+        "show_viewer(ViewerSpec(key='v', kinds=[K], datasets={'x': 'X', 'y': 'Y'}))\n" % str(tmp_path)
+    ).run()
+    assert not at.exception
+    assert _texts(at) == ["x:a", "x:b"]
+    at.selectbox(key="v_experiment_0_select").set_value("y").run()
+    assert not at.exception
+    assert _texts(at) == ["y:a"]
