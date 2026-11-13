@@ -146,16 +146,33 @@ def test_allow_tags_skip_everything_else():
         assert not allow.fullmatch(tag), tag
 
 
+
+PROJECTS = ROOT / "k8s" / "argocd-projects"
+
+
 def _projects():
-    return {p["metadata"]["name"]: p for p in _docs().get("AppProject", [])}
+    if not (PROJECTS / "kustomization.yaml").exists():
+        return {}
+    resources = yaml.safe_load(
+        (PROJECTS / "kustomization.yaml").read_text(encoding="utf-8")
+    )["resources"]
+    docs = [
+        yaml.safe_load((PROJECTS / r).read_text(encoding="utf-8")) for r in resources
+    ]
+    return {d["metadata"]["name"]: d for d in docs if d["kind"] == "AppProject"}
 
 
 def _needs_projects():
     if not _projects():
         pytest.skip(
-            "no AppProject in k8s/argocd yet: add appproject.yaml and "
-            "argocd-appproject.yaml (docs/kubernetes-deployment.md)"
+            "no k8s/argocd-projects yet: add the app's AppProjects "
+            "(docs/kubernetes-deployment.md)"
         )
+
+
+def test_projects_are_not_synced_from_git():
+    # In k8s/argocd/ a merge could widen them; an admin applies them instead.
+    assert "AppProject" not in _docs()
 
 
 def test_applications_run_in_their_own_projects():
@@ -205,9 +222,6 @@ def test_folder_project_allows_only_the_folders_kinds():
     allowed = {(e["group"], e["kind"]) for e in spec["namespaceResourceWhitelist"]}
     groups = {
         "Application": "argoproj.io",
-        "AppProject": "argoproj.io",
         "ImageUpdater": "argocd-image-updater.argoproj.io",
     }
-    in_folder = {(groups[kind], kind) for kind in _docs()}
-    assert in_folder <= allowed, in_folder - allowed
-    assert allowed <= set((g, k) for k, g in groups.items())
+    assert allowed == {(groups[kind], kind) for kind in _docs()}

@@ -1,0 +1,17 @@
+# The Argo CD projects this app's Applications run in (k8s/argocd/): what
+# the app may deploy, and where. Kept out of k8s/argocd/ on purpose: that
+# folder is synced from git, so a project there could be widened by a merge.
+# These are cluster configuration, applied by an admin:
+#
+#   kubectl apply -k 'https://github.com/OpenMS/streamlit-template//k8s/argocd-projects?ref=main'
+#
+# once per cluster, before the k8s/argocd/ bootstrap, and again after a
+# change here was reviewed. Then restrict Argo CD's `default` project, so
+# an Application cannot switch back to it (docs/kubernetes-deployment.md,
+# "GitOps with Argo CD").
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - argocd-appproject.yaml
+  - appproject.yaml

@@ -8,15 +8,13 @@
 # An app generated from the template deletes that file, and with it the
 # clusterResourceWhitelist entry below.
 #
-# Synced from git by `streamlit-template-argocd`: change this file in a PR.
+# Applied by an admin (k8s/argocd-projects/kustomization.yaml), never synced
+# from git: a merge cannot widen what the app may deploy.
 apiVersion: argoproj.io/v1alpha1
 kind: AppProject
 metadata:
   name: streamlit-template
   namespace: argocd
-  annotations:
-    # Deleting the project would leave the app's Application without one.
-    argocd.argoproj.io/sync-options: Prune=false,Delete=false
 spec:
   description: streamlit-template, deployed from k8s/overlays/prod
   sourceRepos:
