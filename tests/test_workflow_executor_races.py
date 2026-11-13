@@ -256,7 +256,7 @@ def test_concurrent_conversions_do_not_share_or_remove_partial_output(executor, 
     barrier = Barrier(2)
     partials = []
 
-    def convert(_tool, io):
+    def convert(_tool, io, **_):
         partial = Path(io['out'][0])
         partials.append(partial)
         content = f'complete conversion {partial.parent.name}'
@@ -267,13 +267,15 @@ def test_concurrent_conversions_do_not_share_or_remove_partial_output(executor, 
         return True
 
     monkeypatch.setattr(executor, 'run_topp', convert)
+    monkeypatch.setattr(executor, 'thermo_reader_args', dict)
     with ThreadPoolExecutor(max_workers=2) as pool:
         results = list(pool.map(lambda _: executor.convert_to_mzml([str(raw)]), range(2)))
     destination = raw.parent / 'converted-mzML/sample.mzML'
     assert results == [[str(destination)], [str(destination)]]
     assert len(set(partials)) == 2
     assert destination.read_text().startswith('complete conversion ')
-    assert list(destination.parent.iterdir()) == [destination]
+    # Only the mzML and the record of the reader that made it are left.
+    assert sorted(p.name for p in destination.parent.iterdir()) == ['.sample.mzML.reader', 'sample.mzML']
 
 
 def test_conversion_exception_removes_only_its_private_partial_output(executor, monkeypatch):
@@ -284,11 +286,12 @@ def test_conversion_exception_removes_only_its_private_partial_output(executor, 
     evidence = output / 'another-complete.mzML'
     evidence.write_text('previous result')
 
-    def fail(_tool, io):
+    def fail(_tool, io, **_):
         Path(io['out'][0]).write_text('partial conversion')
         raise RuntimeError('native conversion failure')
 
     monkeypatch.setattr(executor, 'run_topp', fail)
+    monkeypatch.setattr(executor, 'thermo_reader_args', dict)
     with pytest.raises(RuntimeError, match='native conversion failure'):
         executor.convert_to_mzml([str(raw)])
     assert list(output.iterdir()) == [evidence]

@@ -9,8 +9,9 @@ If you're using Claude Code, the `configure-app-settings` and `configure-docker-
 
 ### Thermo RawFileReader in the full image
 
-The full image (`Dockerfile`, `Dockerfile.arm`) includes Thermo's RawFileReader in
-`/thirdparty/ThermoRawFileParser`, which FileConverter uses for Thermo `.raw` files. Its
+The full image (`Dockerfile`, `Dockerfile.arm`) includes Thermo's RawFileReader twice:
+with OpenMS's built-in reader in `/openms/share/openms_thermo_bridge/managed`, which
+FileConverter uses for Thermo `.raw` files, and in `/thirdparty/ThermoRawFileParser`. Its
 license asks that users see Thermo's notice and terms, so the image keeps
 `docker/THERMO-NOTICE.txt` as `NOTICE.txt` next to Thermo's `THERMO_LICENSE` and the
 container prints the notice when it starts, so whoever deploys the image sees it. People who only use a hosted app (`online_deployment: true`)
