@@ -48,7 +48,7 @@ jobs:
       apptainer: ${{ steps.images.outputs.apptainer }}
       kind_tests: ${{ steps.images.outputs.kind_tests }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Check app.yaml against the repository
         # The same check ci.yml runs, here as well because every build and
@@ -105,7 +105,7 @@ jobs:
   lint-manifests:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Install kubeconform
         run: |
@@ -118,7 +118,7 @@ jobs:
         # Unpinned, setup-kubectl@v3 resolves `latest` from the frozen legacy
         # GCS bucket - kubectl v1.31.0, kustomize 5.4.2 - and the static gates
         # then validate output the kind clusters never see.
-        uses: azure/setup-kubectl@v3
+        uses: azure/setup-kubectl@901a10e89ea615cf61f57ac05cecdf23e7de06d8 # v3.2
         with:
           version: v1.35.0
 
@@ -139,7 +139,7 @@ jobs:
         # render with no metadata.namespace - contradicting the namespace both
         # storage roots set, and landing the CSI drivers in `default` for
         # anyone using the documented `kustomize | kubectl apply -f -` pipe.
-        uses: azure/setup-helm@v4
+        uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
         with:
           # renovate: datasource=github-releases depName=helm/helm
           version: v3.21.4
@@ -314,7 +314,7 @@ jobs:
     # not collide.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Install kubectl
         # Pinned to the version helm/kind-action installs in the kind jobs, so
@@ -322,7 +322,7 @@ jobs:
         # Unpinned, setup-kubectl@v3 resolves `latest` from the frozen legacy
         # GCS bucket - kubectl v1.31.0, kustomize 5.4.2 - and the static gates
         # then validate output the kind clusters never see.
-        uses: azure/setup-kubectl@v3
+        uses: azure/setup-kubectl@901a10e89ea615cf61f57ac05cecdf23e7de06d8 # v3.2
         with:
           version: v1.35.0
 
@@ -343,7 +343,7 @@ jobs:
         # render with no metadata.namespace - contradicting the namespace both
         # storage roots set, and landing the CSI drivers in `default` for
         # anyone using the documented `kustomize | kubectl apply -f -` pipe.
-        uses: azure/setup-helm@v4
+        uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
         with:
           # renovate: datasource=github-releases depName=helm/helm
           version: v3.21.4
@@ -543,7 +543,7 @@ jobs:
         run: echo "IMAGE_NAME_LC=${IMAGE_NAME,,}" >> "$GITHUB_ENV"
 
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -551,7 +551,7 @@ jobs:
 
       - name: Compute manifest tags
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           # No automatic `latest`: on a tag push metadata-action would add a
@@ -634,7 +634,7 @@ jobs:
       matrix:
         variant: ${{ fromJSON(needs.images.outputs.apptainer) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Free disk space
         # ubuntu-latest has ~14 GB free; the full image (5-8 GB) plus kind
@@ -661,7 +661,7 @@ jobs:
           df -h
 
       - name: Download image artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: openms-streamlit-${{ matrix.variant }}-amd64-image
           path: /tmp
@@ -684,7 +684,7 @@ jobs:
 
       - name: Download image artifact again
         if: steps.archive.outputs.ok == 'false'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: openms-streamlit-${{ matrix.variant }}-amd64-image
           path: /tmp
@@ -694,7 +694,7 @@ jobs:
         run: tar -tf /tmp/image.tar >/dev/null
 
       - name: Install apptainer
-        uses: eWaterCycle/setup-apptainer@v2
+        uses: eWaterCycle/setup-apptainer@3f706d898c9db585b1d741b4692e66755f3a1b40 # v2
         with:
           apptainer-version: 1.3.4
 
@@ -822,7 +822,7 @@ jobs:
 
       - name: Upload validated SIF artifact (push events only)
         if: success() && github.event_name != 'pull_request'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: openms-streamlit-${{ matrix.variant }}-sif
           path: /tmp/openms.sif
@@ -850,19 +850,19 @@ jobs:
         variant: ${{ fromJSON(needs.images.outputs.apptainer) }}
     steps:
       - name: Download validated SIF artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: openms-streamlit-${{ matrix.variant }}-sif
           path: /tmp
 
       - name: Install apptainer
-        uses: eWaterCycle/setup-apptainer@v2
+        uses: eWaterCycle/setup-apptainer@3f706d898c9db585b1d741b4692e66755f3a1b40 # v2
         with:
           apptainer-version: 1.3.4
 
       - name: Compute SIF tags
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/sif
           # No automatic `latest`: on a tag push metadata-action would add a
@@ -939,7 +939,7 @@ jobs:
       matrix:
         include: ${{ fromJSON(needs.images.outputs.kind) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Read the storage namespace
         # The namespace of the CI NFS server, read from k8s/ci-storage/ rather
@@ -983,7 +983,7 @@ jobs:
 
       - name: Download image artifact
         id: download-image
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: openms-streamlit-${{ matrix.variant }}-${{ matrix.arch }}-image
           path: /tmp
@@ -1006,7 +1006,7 @@ jobs:
 
       - name: Download image artifact again
         if: steps.archive.outputs.ok == 'false'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: openms-streamlit-${{ matrix.variant }}-${{ matrix.arch }}-image
           path: /tmp
@@ -1027,7 +1027,7 @@ jobs:
           exit 1
 
       - name: Create kind cluster
-        uses: helm/kind-action@v1
+        uses: helm/kind-action@ef37e7f390d99f746eb8b610417061a60e82a6cc # v1.14.0
         with:
           # Pinned to what the action picks today. kubectl_version must stay
           # equal to the `Install kubectl` pin above, or the static jobs and
@@ -1099,7 +1099,7 @@ jobs:
         # render with no metadata.namespace - contradicting the namespace both
         # storage roots set, and landing the CSI drivers in `default` for
         # anyone using the documented `kustomize | kubectl apply -f -` pipe.
-        uses: azure/setup-helm@v4
+        uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
         with:
           # renovate: datasource=github-releases depName=helm/helm
           version: v3.21.4
@@ -1696,7 +1696,7 @@ jobs:
       matrix:
         include: ${{ fromJSON(needs.images.outputs.kind) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Read the storage namespace
         # The namespace of the CI NFS server, read from k8s/ci-storage/ rather
@@ -1740,7 +1740,7 @@ jobs:
 
       - name: Download image artifact
         id: download-image
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: openms-streamlit-${{ matrix.variant }}-${{ matrix.arch }}-image
           path: /tmp
@@ -1763,7 +1763,7 @@ jobs:
 
       - name: Download image artifact again
         if: steps.archive.outputs.ok == 'false'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: openms-streamlit-${{ matrix.variant }}-${{ matrix.arch }}-image
           path: /tmp
@@ -1784,7 +1784,7 @@ jobs:
           exit 1
 
       - name: Create kind cluster
-        uses: helm/kind-action@v1
+        uses: helm/kind-action@ef37e7f390d99f746eb8b610417061a60e82a6cc # v1.14.0
         with:
           # Keep in lockstep with the nginx job and the `Install kubectl` pins.
           version: v0.31.0
@@ -1811,7 +1811,7 @@ jobs:
         # for the same reason - see the long note on the first of them. This one
         # also drives `helm install traefik` below; chart 41.x declares a
         # `Helm v3.9.0+` prerequisite, which v3.21.4 clears comfortably.
-        uses: azure/setup-helm@v4
+        uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
         with:
           # renovate: datasource=github-releases depName=helm/helm
           version: v3.21.4

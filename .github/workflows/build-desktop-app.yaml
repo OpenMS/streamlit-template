@@ -55,7 +55,7 @@ jobs:
     outputs:
       run: ${{ steps.decide.outputs.run }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           sparse-checkout: app.yaml
           sparse-checkout-cone-mode: false
@@ -148,7 +148,7 @@ jobs:
 
     steps:
     - name: Checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       with:
         persist-credentials: false
 
@@ -163,7 +163,7 @@ jobs:
 
     - name: Download the OpenMS build
       if: needs.openms.outputs.source == 'build'
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
       with:
         name: openms-${{ matrix.platform }}
         path: openms-package
@@ -205,7 +205,7 @@ jobs:
         du -sh "$p"
 
     - name: Set up Node.js
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
       with:
         node-version: '22'
         cache: 'npm'
@@ -266,14 +266,14 @@ jobs:
 
     - name: Archive end-to-end screenshots
       if: always()
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
       with:
         name: electron-e2e-screenshots-${{ matrix.platform }}
         path: e2e-output
         if-no-files-found: ignore
 
     - name: Archive installer
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
       with:
         name: OpenMS-App-${{ matrix.platform }}
         path: ${{ steps.package.outputs.installer }}
@@ -289,7 +289,7 @@ jobs:
       contents: write
     steps:
     - name: Download installers
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
       with:
         pattern: OpenMS-App-*
         merge-multiple: true
