@@ -23,11 +23,16 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: openms
-  # The admin password is patched into this Secret on the cluster; without
-  # this, self-heal would reset it to the empty value from git.
+  # The admin and Redis passwords are patched into these Secrets on the
+  # cluster; without this, self-heal would reset them to the empty values from git.
   ignoreDifferences:
     - kind: Secret
       name: template-app-streamlit-secrets
+      namespace: openms
+      jsonPointers:
+        - /data
+    - kind: Secret
+      name: template-app-redis-auth
       namespace: openms
       jsonPointers:
         - /data

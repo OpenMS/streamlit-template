@@ -100,8 +100,10 @@ def _redis_client(redis_url: str):
     """Connect to Redis with every socket operation bounded."""
     from redis import Redis
 
+    from src.workflow.redis_auth import redis_url_with_password
+
     return Redis.from_url(
-        redis_url,
+        redis_url_with_password(redis_url),
         socket_connect_timeout=REDIS_SOCKET_TIMEOUT,
         socket_timeout=REDIS_SOCKET_TIMEOUT,
     )

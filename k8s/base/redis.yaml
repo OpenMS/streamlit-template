@@ -17,6 +17,19 @@ spec:
       containers:
         - name: redis
           image: redis:7.4.12-alpine
+          # The image's entrypoint is kept (it drops to the redis user); the
+          # password, when the redis-auth Secret has one, is passed to it.
+          args:
+            - sh
+            - -c
+            - exec docker-entrypoint.sh redis-server ${REDIS_PASSWORD:+--requirepass "$REDIS_PASSWORD"}
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: redis-auth
+                  key: password
+                  optional: true
           ports:
             - containerPort: 6379
           resources:
@@ -28,12 +41,12 @@ spec:
               cpu: "100m"
           readinessProbe:
             exec:
-              command: ["redis-cli", "ping"]
+              command: ["sh", "-c", "redis-cli ${REDIS_PASSWORD:+--no-auth-warning -a \"$REDIS_PASSWORD\"} ping | grep -q PONG"]
             initialDelaySeconds: 5
             periodSeconds: 10
           livenessProbe:
             exec:
-              command: ["redis-cli", "ping"]
+              command: ["sh", "-c", "redis-cli ${REDIS_PASSWORD:+--no-auth-warning -a \"$REDIS_PASSWORD\"} ping | grep -q PONG"]
             initialDelaySeconds: 15
             periodSeconds: 20
 ---
