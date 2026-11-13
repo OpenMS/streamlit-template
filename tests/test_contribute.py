@@ -1,5 +1,6 @@
 """The "Want to contribute?" prompt and the skill it points at."""
 
+import pytest
 from pathlib import Path
 
 from src.common.contribute import SKILL_URL, app_repository, contribute_prompt
@@ -52,6 +53,12 @@ def test_readme_shows_the_templates_prompt():
     import json
 
     settings = json.loads((ROOT / "settings.json").read_text(encoding="utf-8"))
+    if (settings.get("github-user"), settings.get("repository-name")) != (
+        "OpenMS",
+        "streamlit-template",
+    ):
+        # An app keeps its own README; only the template's shows this prompt.
+        pytest.skip("README prompt is checked in the template only")
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     assert contribute_prompt(settings) in readme
 

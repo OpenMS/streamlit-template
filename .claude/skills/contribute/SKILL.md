@@ -147,6 +147,9 @@ can use it:
   then runs `ssh-add $HOME\.ssh\id_ed25519`. Git for Windows brings its own
   `ssh`, which does not see that service, so point Git at the Windows one:
   `git config --global core.sshCommand "C:/Windows/System32/OpenSSH/ssh.exe"`.
+  That setting changes only what Git runs, so on Windows run every `ssh`
+  check below with that executable too
+  (`C:/Windows/System32/OpenSSH/ssh.exe -o BatchMode=yes -T git@github.com`).
 - Linux: `eval "$(ssh-agent -s)" && ssh-add ~/.ssh/id_ed25519` in their
   terminal; a desktop session usually runs an agent already.
 
@@ -206,7 +209,9 @@ right repository is kept: add the missing remotes, do not clone again.
 The apps need Python 3.11. In the app's clone:
 
 ```bash
-python3.11 -m venv .venv && . .venv/bin/activate   # Windows: .venv\Scripts\activate
+python3.11 -m venv .venv && . .venv/bin/activate   # macOS/Linux
+# Git Bash on Windows: . .venv/Scripts/activate
+# PowerShell on Windows: .venv\Scripts\Activate.ps1
 pip install -r requirements.txt && pip install pytest fakeredis
 python -m pytest test_gui.py tests/ -q
 streamlit run app.py      # in the background; it serves http://localhost:8501
