@@ -159,6 +159,7 @@ def _selection(listing: dict, targets: Dict[str, dict], job_dir: Path, settings_
             job_dir, chosen, targets, guard=_online(),
             allowed_hosts=settings_.get("allowed_hosts") or None, max_bytes=limit,
             parallel=int(settings_.get("parallel_downloads", 4)),
+            connections=int(settings_.get("download_connections", job.CONNECTIONS)),
         )
         st.rerun()
 

@@ -782,3 +782,77 @@ def test_pride_example_comes_from_settings(monkeypatch):
     assert ui.pride_example() == "PXD000001"
     monkeypatch.setattr(ui, "settings", lambda: {"pride_example": "PXD078120"})
     assert ui.pride_example() == "PXD078120"
+
+
+# ---------------------------------------------------------------------------
+# Large files over several connections
+# ---------------------------------------------------------------------------
+
+def test_segments_split_only_large_files(monkeypatch):
+    from src.data_import import download as dl
+    monkeypatch.setattr(dl, "SEGMENT_SIZE", 100)
+    assert dl.segments(150, 4) == [(0, 150)]
+    parts = dl.segments(1000, 2)
+    assert len(parts) == 4 and parts[0] == (0, 250) and sum(n for _, n in parts) == 1000
+    assert [s for s, _ in parts] == [0, 250, 500, 750]
+    assert len(dl.segments(10_000, 4)) == 8  # twice the connections, each at least SEGMENT_SIZE
+
+
+def test_large_file_is_fetched_in_ranges_over_several_connections(tmp_path, server, monkeypatch):
+    from src.data_import import download as dl
+    monkeypatch.setattr(dl, "SEGMENT_SIZE", 100_000)
+    server.add("/big.mzML", MZML_B)
+    t = targets(tmp_path)
+    items = [{"id": "x", "name": "big.mzML", "path": "big.mzML", "kind": "file", "size": len(MZML_B),
+              "target": "mzML-files",
+              "files": [{"path": "big.mzML", "size": len(MZML_B), "url": server.url("/big.mzML"),
+                         "md5": hashlib.md5(MZML_B).hexdigest()}]}]
+    status = job.run_import(str(Path(tmp_path, "job")), items, t, guard=False, connections=4)
+    assert status["state"] == "done", status["errors"]
+    assert Path(t["mzML-files"]["dir"], "big.mzML").read_bytes() == MZML_B
+    ranges = [r for p, r in server.requests if p == "/big.mzML" and r and r != "bytes=0-0"]
+    assert len(ranges) == 8  # 1 MB in 8 ranges of 125 kB
+    assert not list(Path(tmp_path, "job").rglob("*.seg*"))
+
+
+def test_ranges_resume_and_retry_on_their_own(tmp_path, server, monkeypatch):
+    from src.data_import import download as dl
+    monkeypatch.setattr(dl, "SEGMENT_SIZE", 200_000)
+    server.add("/big.mzML", MZML_B)
+    dest = Path(tmp_path, "big.mzML")
+    dl.segment_path(dest, 0).write_bytes(MZML_B[:250_000])  # finished in an earlier run
+    server.cut_once["/big.mzML"] = 100_000  # the next range breaks once
+    seen = []
+    path, md5 = dl.download_parallel(plain(), server.url("/big.mzML"), dest, len(MZML_B),
+                                     connections=2, etag=server.etags["/big.mzML"],
+                                     on_progress=seen.append, sleep=lambda s: None)
+    assert path.read_bytes() == MZML_B and md5 == hashlib.md5(MZML_B).hexdigest()
+    assert not any(r and r.startswith("bytes=0-") and r != "bytes=0-0" for _, r in server.requests)
+    assert seen[-1] == len(MZML_B)
+
+
+def test_parallel_checksum_mismatch_is_an_error(tmp_path, server, monkeypatch):
+    from src.data_import import download as dl
+    monkeypatch.setattr(dl, "SEGMENT_SIZE", 100_000)
+    server.add("/big.mzML", MZML_B)
+    t = targets(tmp_path)
+    items = [{"id": "x", "name": "big.mzML", "path": "big.mzML", "kind": "file", "size": len(MZML_B),
+              "target": "mzML-files",
+              "files": [{"path": "big.mzML", "size": len(MZML_B), "url": server.url("/big.mzML"),
+                         "md5": "0" * 32}]}]
+    status = job.run_import(str(Path(tmp_path, "job")), items, t, guard=False)
+    assert status["state"] == "failed" and "checksum" in status["errors"][0]
+
+
+def test_server_without_ranges_gets_one_connection(tmp_path, server, monkeypatch):
+    from src.data_import import download as dl
+    monkeypatch.setattr(dl, "SEGMENT_SIZE", 100_000)
+    server.add("/big.mzML", MZML_B)
+    server.ranges = False
+    t = targets(tmp_path)
+    items = [{"id": "x", "name": "big.mzML", "path": "big.mzML", "kind": "file", "size": len(MZML_B),
+              "target": "mzML-files",
+              "files": [{"path": "big.mzML", "size": len(MZML_B), "url": server.url("/big.mzML")}]}]
+    status = job.run_import(str(Path(tmp_path, "job")), items, t, guard=False)
+    assert status["state"] == "done"
+    assert Path(t["mzML-files"]["dir"], "big.mzML").read_bytes() == MZML_B
