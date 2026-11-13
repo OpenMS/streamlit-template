@@ -1,6 +1,6 @@
 """
 Streamlit widgets for multi-run workflows: pick the run(s) a page shows, and
-manage the runs (rename, download, delete).
+manage the runs (history, rename, download, delete).
 
 The selection is shared by every page of a workflow: choosing a run on one
 results page shows the same run on the others. It lives in a plain
@@ -9,11 +9,12 @@ widgets that are not drawn on the current page.
 """
 
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 import streamlit as st
 
-from src.workflow.report_ui import report_buttons
+from src.workflow.report_ui import report_buttons, run_report
+from src.workflow.run_history import changed_settings, timeline
 
 from src.workflow.RunManager import (
     CANCELLED,
@@ -142,19 +143,72 @@ def select_run(
     return st.session_state[widget]
 
 
+def run_history_section(
+    runs: RunManager,
+    run_id: str,
+    key: str,
+    on_start_again: Optional[Callable[[str], None]] = None,
+) -> None:
+    """How ``run_id`` came about, its settings that differ from the defaults,
+    its processing report and, with ``on_start_again``, **Start again with
+    these settings** (which calls it with the run's id)."""
+    st.markdown("**How this run came about**")
+    events = timeline(runs, run_id)
+    st.markdown("\n".join(f"{i}. {e}" for i, e in enumerate(events, start=1)) if events
+                else "Nothing was recorded about this run.")
+
+    running = (runs.get(run_id) or {}).get("status") == RUNNING
+    report = {} if running else run_report(runs.workflow_dir, run_id)
+    rows = changed_settings(report)
+    st.markdown("**Settings that differ from the defaults**")
+    if rows:
+        st.dataframe(
+            [{"Tool": r[0], "Parameter": r[1], "This run": r[2]} for r in rows],
+            hide_index=True, width="stretch",
+        )
+    elif running:
+        st.caption("Shown once the run has ended.")
+    elif report.get("steps"):
+        st.caption("Every tool ran with its default settings.")
+    else:
+        st.caption("This run recorded no tool settings.")
+
+    with st.container(horizontal=True, vertical_alignment="center"):
+        if not running:
+            report_buttons(runs.workflow_dir, run_id, key=f"{key}-report")
+        if on_start_again is not None and st.button(
+            "Start again with these settings", icon=":material/replay:", type="primary",
+            key=f"{key}-again", disabled=running or not runs.params(run_id),
+            help="Open the configure page with this run's files and settings. "
+                 "The new run is kept next to this one.",
+        ):
+            on_start_again(run_id)
+
+
+@st.dialog("History", width="large")
+def _history_dialog(runs: RunManager, run_id: str, on_start_again=None) -> None:
+    st.markdown(f"#### {(runs.get(run_id) or {}).get('name', run_id)}")
+    run_history_section(runs, run_id, key=f"runs-{_slug(runs)}-history-{run_id}",
+                        on_start_again=on_start_again)
+
+
 def run_manager_section(
     runs: RunManager,
     workflow_running: bool = False,
     exclude: Optional[list[str]] = None,
+    on_start_again: Optional[Callable[[str], None]] = None,
 ) -> None:
     """
     One row per run with its name, start time and status, and buttons to show
-    it, rename it, download it as a ZIP and delete it.
+    it, open its history, rename it, download it as a ZIP and delete it.
 
     Args:
         runs: The workflow's RunManager.
         workflow_running: True while a run executes; its row cannot be deleted.
         exclude: Names left out of the ZIP downloads (e.g. caches).
+        on_start_again: Called with a run's id by **Start again with these
+            settings** in its history (``WorkflowManager.start_again``);
+            without it the history has no such button.
     """
     run_import(runs)
     all_runs = runs.list_runs()
@@ -180,7 +234,7 @@ def run_manager_section(
         )
         c_status.write(STATUS_LABELS.get(status, status))
 
-        b_show, b_rename, b_report, b_download, b_delete = c_actions.columns(5, gap="small")
+        b_show, b_history, b_rename, b_download, b_delete = c_actions.columns(5, gap="small")
 
         if b_show.button(
             "👁️", key=f"runs-{slug}-show-{run_id}", help="Show this run on the results pages",
@@ -199,9 +253,12 @@ def run_manager_section(
                     st.rerun()
                 st.error("The name can not be empty.")
 
-        with b_report.popover("📄", help="Processing report: how each input file was processed",
-                              width="stretch", disabled=status == RUNNING):
-            report_buttons(runs.workflow_dir, run_id, key=f"runs-{slug}-report-{run_id}", compact=True)
+        if b_history.button(
+            "🕘", key=f"runs-{slug}-history-{run_id}", width="stretch",
+            help="History: how this run came about, its settings and its processing report"
+                 + (", and starting again with its settings" if on_start_again else ""),
+        ):
+            _history_dialog(runs, run_id, on_start_again)
 
         prepared = f"_runs-{slug}-zip-{run_id}"
         zip_path = Path(runs.workflow_dir, "downloads", f"{run_id}.zip")
