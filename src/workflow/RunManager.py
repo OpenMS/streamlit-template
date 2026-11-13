@@ -24,12 +24,15 @@ import json
 import re
 import shutil
 import stat
+import time
 import uuid
 import zipfile
 import zlib
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
+
+from .file_lock import file_lock
 
 RUN_FILE = "run.json"
 DESIGN_FILE = "experimental-design.tsv"
@@ -93,14 +96,18 @@ class RunManager:
                 run = json.load(f)
         except (OSError, ValueError):
             return None
+        if not isinstance(run, dict):
+            return None
         run["id"] = run_id
         return run
 
     def list_runs(self, status: Optional[str] = None) -> list[dict]:
         """All runs, newest first. Pass ``status`` to keep only runs in that state."""
-        if not self.runs_dir.is_dir():
+        try:
+            directories = list(self.runs_dir.iterdir())
+        except (FileNotFoundError, NotADirectoryError):
             return []
-        runs = [self.get(d.name) for d in self.runs_dir.iterdir() if d.is_dir()]
+        runs = [self.get(d.name) for d in directories if not d.name.startswith(".") and d.is_dir()]
         runs = [r for r in runs if r is not None]
         if status is not None:
             runs = [r for r in runs if r.get("status") == status]
@@ -172,26 +179,39 @@ class RunManager:
                 results can be read with the parameters that produced them.
             adds_to: A run whose experiment this run adds files to.
         """
+        with self._lock():
+            run_id = self._reserve_run()
+            try:
+                self.results_dir(run_id).mkdir()
+                name = _clean_name(name) or self.default_name()
+                run = {"name": name, "created": _now(), "status": RUNNING}
+                root = self.experiment_root(adds_to) if adds_to else None
+                if root:
+                    run[ADDS_TO] = root
+                if params_file is not None and Path(params_file).exists():
+                    shutil.copy2(params_file, self.params_file(run_id))
+                # The experimental design is part of the run's settings too
+                design = Path(self.workflow_dir, DESIGN_FILE)
+                if design.exists():
+                    shutil.copy2(design, Path(self.run_dir(run_id), DESIGN_FILE))
+                self._write(run_id, run)
+            except BaseException:
+                shutil.rmtree(self.run_dir(run_id), ignore_errors=True)
+                raise
+        return run_id
+
+    def _reserve_run(self) -> str:
+        """Claim a new ID with mkdir, including against older uncoordinated writers."""
         self.runs_dir.mkdir(parents=True, exist_ok=True)
         base = datetime.now().strftime("%Y%m%d-%H%M%S")
         run_id, n = base, 1
-        while self.run_dir(run_id).exists():
-            n += 1
-            run_id = f"{base}-{n}"
-        self.results_dir(run_id).mkdir(parents=True)
-        name = _clean_name(name) or self.default_name()
-        run = {"name": name, "created": _now(), "status": RUNNING}
-        root = self.experiment_root(adds_to) if adds_to else None
-        if root:
-            run[ADDS_TO] = root
-        self._write(run_id, run)
-        if params_file is not None and Path(params_file).exists():
-            shutil.copy2(params_file, self.params_file(run_id))
-        # The experimental design is part of the run's settings too
-        design = Path(self.workflow_dir, DESIGN_FILE)
-        if design.exists():
-            shutil.copy2(design, Path(self.run_dir(run_id), DESIGN_FILE))
-        return run_id
+        while True:
+            try:
+                self.run_dir(run_id).mkdir()
+                return run_id
+            except FileExistsError:
+                n += 1
+                run_id = f"{base}-{n}"
 
     def restore_settings(self, run_id: str, changes: Optional[dict] = None,
                          note: str = "", add_files: Optional[str] = None,
@@ -247,24 +267,31 @@ class RunManager:
 
     def finish(self, run_id: Optional[str], status: str) -> None:
         """Record how a run ended and keep a copy of its logs."""
-        run = self.get(run_id)
-        # A cancelled run stays cancelled when its dying process reports failure.
-        if run is None or run.get("status") == CANCELLED:
+        if not run_id or not _is_safe_id(run_id):
             return
-        run.update(status=status, finished=_now())
-        self._write(run_id, run)
-        logs = Path(self.workflow_dir, "logs")
-        if logs.is_dir():
-            shutil.copytree(logs, Path(self.run_dir(run_id), "logs"), dirs_exist_ok=True)
+        with self._lock():
+            run = self.get(run_id)
+            # Check terminal state under the same lock as the update. A stale
+            # cancellation request cannot cancel a run that already finished.
+            if run is None or run.get("status") == CANCELLED or (
+                status == CANCELLED and run.get("status") != RUNNING
+            ):
+                return
+            run.update(status=status, finished=_now())
+            self._write(run_id, run)
+        self._copy_logs(run_id, status)
 
     def rename(self, run_id: str, name: str) -> bool:
         """Set a run's display name. False if the name is empty or too long."""
-        run = self.get(run_id)
         name = _clean_name(name)
-        if run is None or not name or len(name) > MAX_NAME_LENGTH:
+        if not _is_safe_id(run_id) or not name or len(name) > MAX_NAME_LENGTH:
             return False
-        run["name"] = name
-        self._write(run_id, run)
+        with self._lock():
+            run = self.get(run_id)
+            if run is None:
+                return False
+            run["name"] = name
+            self._write(run_id, run)
         return True
 
     def delete(self, run_id: str) -> bool:
@@ -273,24 +300,30 @@ class RunManager:
         The runs that added files to its experiment then form one of their own,
         started by the oldest finished one of them (else the oldest).
         """
-        if self.get(run_id) is None:
+        if not _is_safe_id(run_id):
             return False
-        if self.experiment_root(run_id) == run_id:
-            added = self.added_runs(run_id, status=None)
-            if added:
-                # The others point at the oldest finished one (else the oldest),
-                # and it becomes the root last: a write that fails leaves one
-                # experiment to delete again
-                first = next((r for r in added if r.get("status") == FINISHED), added[0])
-                for other in added:
-                    if other is first:
-                        continue
-                    other[ADDS_TO] = first["id"]
-                    self._write(other["id"], {k: v for k, v in other.items() if k != "id"})
-                first.pop(ADDS_TO, None)
-                self._write(first["id"], {k: v for k, v in first.items() if k != "id"})
-        shutil.rmtree(self.run_dir(run_id), ignore_errors=True)
-        Path(self.workflow_dir, "downloads", f"{run_id}.zip").unlink(missing_ok=True)
+        removed = self.workflow_dir / f".run-delete-{uuid.uuid4().hex}"
+        with self._lock():
+            if self.get(run_id) is None:
+                return False
+            if self.experiment_root(run_id) == run_id:
+                added = self.added_runs(run_id, status=None)
+                if added:
+                    # The others point at the oldest finished one (else the oldest),
+                    # and it becomes the root last: a write that fails leaves one
+                    # experiment to delete again
+                    first = next((r for r in added if r.get("status") == FINISHED), added[0])
+                    for other in added:
+                        if other is first:
+                            continue
+                        other[ADDS_TO] = first["id"]
+                        self._write(other["id"], {k: v for k, v in other.items() if k != "id"})
+                    first.pop(ADDS_TO, None)
+                    self._write(first["id"], {k: v for k, v in first.items() if k != "id"})
+            # Renamed under the lock, so no reader sees half a run
+            self.run_dir(run_id).rename(removed)
+            Path(self.workflow_dir, "downloads", f"{run_id}.zip").unlink(missing_ok=True)
+        shutil.rmtree(removed, ignore_errors=True)
         return True
 
     def zip(self, run_id: str, exclude: Optional[list[str]] = None) -> Path:
@@ -308,14 +341,26 @@ class RunManager:
         run_dir = self.run_dir(run_id)
         zip_path = Path(self.workflow_dir, "downloads", f"{run_id}.zip")
         zip_path.parent.mkdir(parents=True, exist_ok=True)
-        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-            for path in sorted(run_dir.rglob("*")):
-                rel = path.relative_to(run_dir)
-                if path.is_file() and not any(
-                    fnmatch(part, p) for part in rel.parts for p in exclude
-                ):
-                    zf.write(path, rel)
-            self._write_report(zf, run_id)
+        temporary = zip_path.with_name(f".{run_id}-{uuid.uuid4().hex}.zip")
+        try:
+            if self.get(run_id) is None:
+                raise FileNotFoundError("The selected run is no longer available.")
+            # A second tab can prepare a ZIP too. Readers retain the previous
+            # complete archive until this private replacement is ready.
+            with zipfile.ZipFile(temporary, "w", zipfile.ZIP_DEFLATED) as zf:
+                for path in sorted(run_dir.rglob("*")):
+                    rel = path.relative_to(run_dir)
+                    if path.is_file() and not any(
+                        fnmatch(part, p) for part in rel.parts for p in exclude
+                    ):
+                        zf.write(path, rel)
+                self._write_report(zf, run_id)
+            with self._lock():
+                if self.get(run_id) is None:
+                    raise FileNotFoundError("The run was deleted while preparing its archive.")
+                temporary.replace(zip_path)
+        finally:
+            temporary.unlink(missing_ok=True)
         return zip_path
 
     def _write_report(self, zf: zipfile.ZipFile, run_id: str) -> None:
@@ -452,17 +497,17 @@ class RunManager:
             }
             if _iso_time(meta.get("finished")):
                 run["finished"] = _iso_time(meta["finished"])
-            run["name"] = self._unique_name(run["name"])
-
-            self.runs_dir.mkdir(parents=True, exist_ok=True)
-            base = datetime.now().strftime("%Y%m%d-%H%M%S")
-            run_id, n = base, 1
-            while self.run_dir(run_id).exists():
-                n += 1
-                run_id = f"{base}-{n}"
-            with open(Path(tmp, RUN_FILE), "w", encoding="utf-8") as f:
-                json.dump(run, f, indent=2)
-            tmp.rename(self.run_dir(run_id))
+            with self._lock():
+                run["name"] = self._unique_name(run["name"])
+                self.runs_dir.mkdir(parents=True, exist_ok=True)
+                base = datetime.now().strftime("%Y%m%d-%H%M%S")
+                run_id, n = base, 1
+                while self.run_dir(run_id).exists():
+                    n += 1
+                    run_id = f"{base}-{n}"
+                with open(Path(tmp, RUN_FILE), "w", encoding="utf-8") as f:
+                    json.dump(run, f, indent=2)
+                tmp.rename(self.run_dir(run_id))
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
         return run_id
@@ -489,41 +534,111 @@ class RunManager:
         or None if there was nothing to adopt.
         """
         legacy = Path(self.workflow_dir, "results")
-        if not legacy.is_dir() or not any(legacy.iterdir()) or self.list_runs():
-            return None
-        created = datetime.fromtimestamp(legacy.stat().st_mtime)
-        run_id = created.strftime("%Y%m%d-%H%M%S")
-        self.runs_dir.mkdir(parents=True, exist_ok=True)
+        # Empty workspaces are checked before opening a lock so merely viewing
+        # an unused workflow does not create run state.
         try:
-            shutil.move(str(legacy), str(self.results_dir(run_id)))
-        except OSError:
+            if not any(legacy.iterdir()):
+                return None
+        except (FileNotFoundError, NotADirectoryError):
             return None
-        self._write(
-            run_id,
-            {
-                "name": "Earlier run",
-                "created": created.isoformat(timespec="seconds"),
-                "finished": created.isoformat(timespec="seconds"),
-                "status": FINISHED,
-            },
-        )
-        params = Path(self.workflow_dir, "params.json")
-        if params.exists():
-            shutil.copy2(params, self.params_file(run_id))
-        return run_id
+        with self._lock():
+            try:
+                if not any(legacy.iterdir()) or self.list_runs():
+                    return None
+                created = datetime.fromtimestamp(legacy.stat().st_mtime)
+            except (FileNotFoundError, NotADirectoryError):
+                return None
+            run_id = self._reserve_run()
+            try:
+                shutil.move(str(legacy), str(self.results_dir(run_id)))
+            except OSError:
+                shutil.rmtree(self.run_dir(run_id), ignore_errors=True)
+                return None
+            self._write(
+                run_id,
+                {
+                    "name": "Earlier run",
+                    "created": created.isoformat(timespec="seconds"),
+                    "finished": created.isoformat(timespec="seconds"),
+                    "status": FINISHED,
+                },
+            )
+            params = Path(self.workflow_dir, "params.json")
+            try:
+                shutil.copy2(params, self.params_file(run_id))
+            except FileNotFoundError:
+                pass
+            return run_id
 
     # Internals
 
     def default_name(self) -> str:
         return f"Run {len(self.list_runs()) + 1}"
 
+    def _lock(self):
+        # Stable across RunManager instances and worker processes; deletion of
+        # a run must not remove the lock another process is still holding.
+        return file_lock(self.runs_dir / ".locks" / "metadata.lock")
+
+    def _copy_logs(self, run_id: str, status: str) -> None:
+        """Copy logs off-lock, then publish only if this run still exists."""
+        staged = self.workflow_dir / f".run-logs-{uuid.uuid4().hex}"
+        retired = self.workflow_dir / f".run-logs-old-{uuid.uuid4().hex}"
+        try:
+            try:
+                shutil.copytree(self.workflow_dir / "logs", staged)
+            except FileNotFoundError:
+                # A new run may have cleared the shared log folder. Its
+                # disappearance cannot turn the completed tool into a failure.
+                return
+            except shutil.Error as error:
+                # copytree aggregates per-file failures and drops errno. A
+                # missing source after the copy attempt identifies the same
+                # log-clearing race; existing sources retain genuine errors.
+                failures = error.args[0]
+                if not isinstance(failures, list) or not failures or any(
+                    not isinstance(item, (tuple, list)) or len(item) != 3
+                    or Path(item[0]).exists()
+                    for item in failures
+                ):
+                    raise
+                return
+            with self._lock():
+                current = self.get(run_id)
+                if current is None or current.get("status") != status:
+                    return
+                target = self.run_dir(run_id) / "logs"
+                if target.exists():
+                    target.rename(retired)
+                try:
+                    staged.rename(target)
+                except OSError:
+                    if retired.exists() and not target.exists():
+                        retired.rename(target)
+                    raise
+        finally:
+            shutil.rmtree(staged, ignore_errors=True)
+            shutil.rmtree(retired, ignore_errors=True)
+
     def _write(self, run_id: str, run: dict) -> None:
         run = {k: v for k, v in run.items() if k != "id"}
         path = Path(self.run_dir(run_id), RUN_FILE)
-        tmp = path.with_suffix(".tmp")
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(run, f, indent=2)
-        tmp.replace(path)
+        tmp = path.with_name(f".{RUN_FILE}-{uuid.uuid4().hex}.tmp")
+        try:
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(run, f, indent=2)
+            # Windows can briefly deny replacement while a status reader has
+            # run.json open. Keep the previous complete JSON during retries.
+            for attempt in range(20):
+                try:
+                    tmp.replace(path)
+                    break
+                except PermissionError:
+                    if attempt == 19:
+                        raise
+                    time.sleep(0.05)
+        finally:
+            tmp.unlink(missing_ok=True)
 
 
 def same_files_info(key: str, files: list, keep: Optional[list] = None,

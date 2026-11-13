@@ -56,6 +56,42 @@ def test_thermo_notice_only_when_rawfilereader_is_shipped(tmp_path):
     assert sorted(f.name for f in thermo.files) == ["LICENSE", "THERMO_LICENSE"]
 
 
+def test_thermo_notice_with_the_built_in_thermo_reader(tmp_path):
+    data = tmp_path / "share" / "OpenMS"
+    env = {"OPENMS_DATA_PATH": str(data), "PATH": ""}
+    _tool(data / "openms_thermo_bridge", "managed", "ThermoFisher.CommonCore.RawFileReader.dll")
+    (data / "LICENSES").mkdir()
+    (data / "LICENSES" / "ThermoRawFileReader-License.doc").write_bytes(b"\xd0\xcf\x11\xe0")
+    assert third_party.thermo_notice(env) == third_party.THERMO_NOTICE
+    reader = third_party.third_party_programs(env)[-1]
+    assert reader.name == "Thermo RawFileReader" and reader.files == []
+    (data / "LICENSES" / "ThermoRawFileReader-License.txt").write_text("terms")
+    assert third_party.license_text(third_party.thermo_reader(env)) == "terms"
+
+
+def test_no_thermo_reader_without_its_assemblies(tmp_path):
+    data = tmp_path / "share" / "OpenMS"
+    (data / "openms_thermo_bridge").mkdir(parents=True)
+    env = {"OPENMS_DATA_PATH": str(data), "PATH": ""}
+    assert third_party.thermo_reader(env) is None
+    assert third_party.thermo_notice(env) == ""
+
+
+def test_bundled_dotnet_runtime_is_a_library(tmp_path):
+    root = tmp_path / "dotnet"
+    for version in ("10.0.2", "8.0.11", "10.0.10"):
+        (root / "shared" / "Microsoft.NETCore.App" / version).mkdir(parents=True)
+    (root / "LICENSE.txt").write_text("MIT")
+    (root / "ThirdPartyNotices.txt").write_text("notices")
+    (root / "dotnet").write_text("")
+    env = {"DOTNET_ROOT": str(root), "PATH": ""}
+    dotnet = third_party.libraries(env)[-1]
+    assert (dotnet.name, dotnet.version, dotnet.license) == (".NET runtime", "10.0.10", "MIT")
+    assert [f.name for f in dotnet.files] == ["LICENSE.txt", "ThirdPartyNotices.txt"]
+    assert third_party.dotnet_runtime({"DOTNET_ROOT": str(tmp_path / "missing")}) is None
+    assert third_party.dotnet_runtime({}) is None
+
+
 def test_no_tools_without_data_path_or_path():
     assert third_party.third_party_programs({}) == []
     assert third_party.thermo_notice({}) == ""
@@ -157,3 +193,20 @@ def test_installed_packages_have_names_and_licenses():
     assert pytest_pkg.version
     assert "MIT" in pytest_pkg.license
     assert pytest_pkg.files and "MIT" in third_party.license_text(pytest_pkg)
+
+
+def test_full_images_ship_thermo_notice():
+    """The full images put Thermo's notice next to RawFileReader, and it carries Thermo's line."""
+    from pathlib import Path
+
+    from src.common import third_party
+
+    root = Path(__file__).resolve().parents[1]
+    notice = (root / "docker" / "THERMO-NOTICE.txt").read_text(encoding="utf-8")
+    assert third_party.THERMO_NOTICE in notice
+    assert third_party._LICENSE_FILE.search("NOTICE.txt")
+    for dockerfile in ("Dockerfile", "Dockerfile.arm"):
+        text = (root / dockerfile).read_text(encoding="utf-8")
+        assert "COPY docker/THERMO-NOTICE.txt /thirdparty/ThermoRawFileParser/NOTICE.txt" in text
+    entrypoint = (root / "docker" / "entrypoint.sh").read_text(encoding="utf-8")
+    assert "/thirdparty/ThermoRawFileParser/NOTICE.txt" in entrypoint

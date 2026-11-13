@@ -81,14 +81,14 @@ def execute_workflow(
         _update_progress(job, 0.0, "Initializing workflow...")
 
         # Import required modules
-        from src.workflow.CommandExecutor import CommandExecutor
-        from src.workflow.FileManager import FileManager
-        from src.workflow.ParameterManager import ParameterManager
-        from src.workflow.Logger import Logger
-        from src.workflow.RunManager import RunManager
-
         # Load the workflow class dynamically
         import importlib
+
+        from src.workflow.CommandExecutor import CommandExecutor
+        from src.workflow.FileManager import FileManager
+        from src.workflow.Logger import Logger
+        from src.workflow.ParameterManager import ParameterManager
+        from src.workflow.RunManager import RunManager
         module = importlib.import_module(workflow_module)
         WorkflowClass = getattr(module, workflow_class)
 
@@ -136,6 +136,13 @@ def execute_workflow(
         parameter_manager.params_file = params_file
         executor = CommandExecutor(workflow_path, logger, parameter_manager)
         executor.pid_dir.mkdir(parents=True, exist_ok=True)
+        if job is not None:
+            # Record the work-horse too, not only its native tool children.
+            # Local queue recovery must not admit another analysis in the
+            # gaps between commands while this worker is still active.
+            from src.workflow.process_state import register_process_marker
+
+            register_process_marker(executor.pid_dir / str(os.getpid()), os.getpid())
 
         _update_progress(job, 0.1, "Starting workflow execution...")
 
@@ -268,16 +275,24 @@ def _is_timeout(e: BaseException) -> bool:
 
 
 def _end_tools(pid_dir: Path) -> None:
-    """SIGTERM the tools a run started (pids/<pid>), which outlive a timed-out job."""
+    """SIGTERM the tools a run started (pids/<pid>), which outlive a timed-out job.
+
+    Only processes whose marker proves they are the ones this run started are
+    signalled (a reused PID is left alone), and never this work-horse itself,
+    whose own marker sits in the same folder.
+    """
     import signal
+    from src.workflow.process_state import pid_markers, signal_owned_process
     try:
-        pids = [int(p.name) for p in pid_dir.iterdir() if p.name.isdigit()]
+        markers = pid_markers(pid_dir)
     except OSError:
         return
-    for pid in pids:
+    for marker in markers:
+        if marker.name == str(os.getpid()):
+            continue
         try:
-            os.kill(pid, signal.SIGTERM)
-        except (OSError, ProcessLookupError):
+            signal_owned_process(marker, signal.SIGTERM)
+        except PermissionError:
             pass
 
 

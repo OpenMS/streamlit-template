@@ -55,6 +55,7 @@ _MOCKED_MODULES = {
     "src.common.admin": MagicMock(),
 }
 _saved_modules = {name: sys.modules.get(name) for name in _MOCKED_MODULES}
+_modules_before = set(sys.modules)
 sys.modules.update(_MOCKED_MODULES)
 
 # Force a FRESH import of src.common.common under the streamlit mock, even if an
@@ -71,6 +72,11 @@ for _name, _orig in _saved_modules.items():
         sys.modules.pop(_name, None)
     else:
         sys.modules[_name] = _orig
+# Drop every module first imported under the mocks (src.common.theme and the
+# like), so later AppTests import them again against the real streamlit.
+for _name in set(sys.modules) - _modules_before:
+    if _name.startswith("src."):
+        sys.modules.pop(_name, None)
 # Restore the original cached common module (the real-streamlit-bound one, if
 # any) so AppTest-based test modules keep getting the genuine package.
 # local_workspaces_dir keeps working: it holds a reference to the freshly-imported
