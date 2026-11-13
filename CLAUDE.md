@@ -130,6 +130,8 @@ Every session gets a **workspace directory** holding that user's files and param
 - **Local** (`online_deployment: false`): workspace is a named dir (default `default`) under `../workspaces-<repository-name>`; the sidebar offers a create/switch/delete UI.
 - **Online** (`online_deployment: true`): a fresh UUID workspace per session, exposed as the `?workspace=` query param so URLs are shareable. Root comes from `$WORKSPACES_DIR` (default `/workspaces-streamlit-template`).
 
+**Starting from a demo.** `demo_workspaces.new_workspace` in settings.json names a demo workspace that every new online workspace starts from (and the local `default` workspace, with every other demo beside it), via `seed_new_workspace()`. On Linux `copy_demo_workspace()` links files of at least `LINK_MIN_BYTES` (1 MiB) and copies smaller ones (settings, the cache index, file lists), so a new session does not wait for the example data to be copied and writing a small file never changes the shared demo; an app that writes large result files in place must replace a link first. Without the key a new workspace starts empty.
+
 `st.session_state.location` is `"local"` or `"online"` derived **solely from `online_deployment` in settings.json** (`src/common/common.py:466`). Workspace names are validated against path traversal by `is_safe_workspace_name()`. `clean-up-workspaces.py` deletes workspaces older than 7 days (k8s CronJob at 03:00; skips dot-dirs like `.demos/`).
 
 ### Local vs online differences
