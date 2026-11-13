@@ -2,9 +2,13 @@
 from __future__ import annotations
 
 import hashlib
+import math
 import os
+import threading
 import time
 import zlib
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -18,6 +22,12 @@ CHUNK_SIZE = 256 * 1024
 # without any progress (the workspace sync uses the same numbers).
 MAX_BACKOFF = 60
 GIVE_UP_AFTER = 15 * 60
+# A large file is fetched as several byte ranges over parallel connections:
+# one connection to a distant server is limited by its round-trip time (a few
+# MB/s to the PRIDE archive), and the throughput grows with the connections.
+# Ranges of this size keep the extra requests negligible; a file needs two of
+# them before it is split.
+SEGMENT_SIZE = 64 * 1024 * 1024
 
 
 class Cancelled(Exception):
@@ -111,7 +121,10 @@ def _transfer(session, url, part, done, start, length, ranged, etag, max_bytes,
     if done or ranged:
         end = "" if length is None else str(start + length - 1)
         headers["Range"] = f"bytes={start + done}-{end}"
-        if done and etag:
+        if etag and (done or not etag.startswith("W/")):
+            # A file that changed on the server is answered whole, never with
+            # a part of its new version (a weak ETag never matches If-Range,
+            # so it is sent only to resume, as before).
             headers["If-Range"] = etag
     with session.get(url, headers=headers, stream=True, timeout=REQUEST_TIMEOUT) as response:
         if response.status_code == 416 and done and length is None:
@@ -153,6 +166,103 @@ def _transfer(session, url, part, done, start, length, ranged, etag, max_bytes,
     elif total_expected is not None and done < total_expected:
         return done
     return None
+
+
+def segment_path(dest: Path, index: int) -> Path:
+    return dest.with_name(f".{dest.name}.seg{index}")
+
+
+def segments(size: int, connections: int):
+    """(start, length) of the ranges a file of ``size`` bytes is fetched in:
+    one when it is small, otherwise at least ``SEGMENT_SIZE`` bytes each and
+    twice as many as connections, so a slow connection holds up little."""
+    count = min(math.ceil(size / SEGMENT_SIZE), 2 * max(1, connections))
+    if size < 2 * SEGMENT_SIZE or count < 2:
+        return [(0, size)]
+    step = math.ceil(size / count)
+    return [(start, min(step, size - start)) for start in range(0, size, step)]
+
+
+def download_parallel(
+    session: requests.Session,
+    url: str,
+    dest: Path,
+    size: int,
+    *,
+    connections: int = 4,
+    slots: Optional[threading.Semaphore] = None,
+    etag: str = "",
+    max_bytes: Optional[int] = None,
+    on_progress: Callable[[int], None] = None,
+    on_retry: Callable[[str], None] = None,
+    should_cancel: Callable[[], bool] = None,
+    give_up_after: float = GIVE_UP_AFTER,
+    sleep: Callable[[float], None] = time.sleep,
+):
+    """Download ``url`` (``size`` bytes, served in ranges) over up to
+    ``connections`` connections at once; returns ``dest`` and its MD5.
+
+    Each range is its own ``download`` into a hidden ``.seg<n>`` file, so it
+    resumes and retries on its own, also after a restart. ``slots``, shared by
+    the downloads of one import, caps the connections all of them hold. The
+    ranges are joined in order while the MD5 is computed, so the file is not
+    read a second time to check it.
+    """
+    dest = Path(dest)
+    if max_bytes is not None and size > max_bytes:
+        raise TooLarge(f"{dest.name} is larger than the {max_bytes / 1e9:.1f} GB limit.")
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    ranges = segments(size, connections)
+    lock = threading.Lock()
+    done = [0] * len(ranges)
+    failed = threading.Event()
+
+    def cancelled():
+        return failed.is_set() or bool(should_cancel and should_cancel())
+
+    def fetch(index):
+        start, length = ranges[index]
+        path = segment_path(dest, index)
+        if path.exists() and path.stat().st_size == length:
+            done[index] = length
+            return
+
+        def progress(n):
+            with lock:
+                done[index] = n
+                total = sum(done)
+            if on_progress:
+                on_progress(total)
+
+        with slots or nullcontext():
+            try:
+                download(session, url, path, start=start, length=length, etag=etag,
+                         on_progress=progress, on_retry=on_retry, should_cancel=cancelled,
+                         give_up_after=give_up_after, sleep=sleep)
+            except BaseException:
+                failed.set()
+                raise
+
+    with ThreadPoolExecutor(max_workers=max(1, min(connections, len(ranges)))) as pool:
+        futures = [pool.submit(fetch, i) for i in range(len(ranges))]
+    errors = [f.exception() for f in futures if f.exception() is not None]
+    if errors:
+        # The first real error, not the Cancelled it caused in the other ranges
+        raise next((e for e in errors if not isinstance(e, Cancelled)), errors[0])
+    digest = hashlib.md5()
+    part = part_path(dest)
+    with open(part, "wb") as out:
+        for index in range(len(ranges)):
+            with open(segment_path(dest, index), "rb") as f:
+                for chunk in iter(lambda: f.read(CHUNK_SIZE * 4), b""):
+                    digest.update(chunk)
+                    out.write(chunk)
+    if part.stat().st_size != size:
+        raise IOError(f"{dest.name}: got {part.stat().st_size} bytes, expected {size}.")
+    os.replace(part, dest)
+    for index in range(len(ranges)):
+        segment_path(dest, index).unlink(missing_ok=True)
+    return dest, digest.hexdigest()
 
 
 def md5sum(path: Path) -> str:

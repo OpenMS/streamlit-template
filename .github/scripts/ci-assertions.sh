@@ -27,10 +27,11 @@
 #                                    device-based-fsids off
 #   assert_storage_identity_values   static; the CI NFS server is one pod on a
 #                                    fixed backing claim, reclaiming Retain
-#   assert_storage_class_contract    static; the workspace PVC, the Manila
-#                                    StorageClass in k8s/storage/ and the CI
-#                                    stand-in in k8s/ci-storage/ agree on the
-#                                    class name, Retain and the mount options
+#   assert_storage_class_contract    static; the workspace PVC and the CI
+#                                    stand-in in k8s/ci-storage/ agree with the
+#                                    production class (cluster configuration,
+#                                    pinned below) on the class name, Retain
+#                                    and the mount options
 #   assert_no_node_pinning_anywhere  static; no nodeSelector, nodeName,
 #                                    nodeAffinity or memory tier
 #   assert_doc_links_resolve         static; every backticked *.md path in
@@ -58,8 +59,13 @@
 #                           $CI_ASSERT_STORAGE_ROOT/kustomization.yaml, read
 #                           with yq; empty if it cannot be read)
 #   CI_ASSERT_STORAGE_ROOT  kustomize root serving it    (default: k8s/ci-storage)
-#   CI_ASSERT_PROD_STORAGE_ROOT
-#                           the production storage root  (default: k8s/storage)
+#   CI_ASSERT_PROD_MOUNT_OPTIONS
+#                           mount options of the production StorageClass,
+#                           sorted (default: hard nconnect=4 nfsvers=3
+#                           retrans=2 timeo=30). The
+#                           class itself is cluster configuration, kept
+#                           outside this repository; change this together
+#                           with it.
 
 CI_ASSERT_NS="${CI_ASSERT_NS:-openms}"
 CI_ASSERT_OVERLAY="${CI_ASSERT_OVERLAY:-k8s/overlays/prod}"
@@ -71,7 +77,7 @@ CI_ASSERT_MOUNT="${CI_ASSERT_MOUNT:-/workspaces-streamlit-template}"
 CI_ASSERT_TIMEOUT="${CI_ASSERT_TIMEOUT:-180}"
 CI_ASSERT_BASE="${CI_ASSERT_BASE:-k8s/base}"
 CI_ASSERT_STORAGE_ROOT="${CI_ASSERT_STORAGE_ROOT:-k8s/ci-storage}"
-CI_ASSERT_PROD_STORAGE_ROOT="${CI_ASSERT_PROD_STORAGE_ROOT:-k8s/storage}"
+CI_ASSERT_PROD_MOUNT_OPTIONS="${CI_ASSERT_PROD_MOUNT_OPTIONS:-hard nconnect=4 nfsvers=3 retrans=2 timeo=30}"
 # Read, never assumed, so a renamed CI storage namespace does not silently
 # point every runtime assertion at a namespace that no longer exists.
 # Parsed with yq so a quoted value is read correctly. Sourcing must not fail, so
@@ -235,7 +241,7 @@ _ci_pinning_files() {
     #
     # git-tracked files PLUS untracked ones that are not gitignored. The
     # ignored half is the part that matters: `kubectl kustomize --enable-helm`
-    # on k8s/ci-storage/ or k8s/storage/ makes kustomize vendor the charts into
+    # on k8s/ci-storage/ makes kustomize vendor the charts into
     # a `charts/` directory beside them, and those charts carry its own `nodeSelector: {}`
     # default plus the template and README lines that go with it. Scanning the
     # raw working tree therefore turns this assertion permanently red on any
@@ -247,7 +253,7 @@ _ci_pinning_files() {
     # Tracked-only would have been simpler and was wrong: a new manifest is
     # untracked until `git add`, so a nodeSelector added in a new file under
     # k8s/ would have reported PASS right up to the moment it was committed -
-    # and k8s/overlays/ci/ and k8s/storage/*.yaml were themselves untracked
+    # and k8s/overlays/ci/ and the storage manifests were themselves untracked
     # while this branch was being built, i.e. unscanned exactly when they were
     # being written. The one thing still skipped is deliberately-ignored
     # files, and the pass message says so.
@@ -763,11 +769,8 @@ assert_no_node_pinning_anywhere() {
     # NFS server in k8s/ci-storage/, whose vendored chart the text half below
     # cannot see (git prunes it through .gitignore).
     #
-    # The production storage root, k8s/storage/, is deliberately NOT among
-    # them. It holds two CSI node-plugin DaemonSets, which csi-driver-nfs
-    # restricts to `kubernetes.io/os: linux`. That selects an operating
-    # system, not a node, and a DaemonSet runs on every node it selects; it is
-    # not the pinning this check exists to keep out of the app's pods. k8s/overlays/ci/ was equally unseen, and it is what
+    # The production storage tier is cluster configuration, kept outside this
+    # repository, and not scanned here. k8s/overlays/ci/ was once unseen, and it is what
     # the kind jobs actually apply - a nodeSelector reintroduced there would pin
     # every pod CI ever schedules while prod stayed clean.
     _ci_hits=""
@@ -1760,10 +1763,12 @@ CLEAN
 }
 
 assert_storage_class_contract() {
-    # Static. The workspace PVC in the base, the production StorageClass in
-    # k8s/storage/ (OpenStack Manila) and the CI stand-in in k8s/ci-storage/
-    # (Ganesha, for the kind jobs) are three files that must agree on one
-    # name, and the two classes on the mount the app gets. If the CI class
+    # Static. The workspace PVC in the base and the CI stand-in in
+    # k8s/ci-storage/ (Ganesha, for the kind jobs) must agree with the
+    # production StorageClass (OpenStack Manila) on one name, and the two
+    # classes on the mount the app gets. The production class is cluster
+    # configuration kept outside this repository, so its mount options are
+    # pinned here as CI_ASSERT_PROD_MOUNT_OPTIONS. If the CI class
     # drifted from the production one, every cross-node and restart assertion
     # in the kind jobs would test a mount production never uses; if the PVC
     # drifted from both, every app pod would sit Pending on a class nothing
@@ -1784,31 +1789,26 @@ assert_storage_class_contract() {
         _ci_rc=1
     fi
 
-    _ci_prod="$(mktemp)"
     _ci_ci="$(mktemp)"
     _ci_err="$(mktemp)"
-    if ! kubectl kustomize --enable-helm "$CI_ASSERT_PROD_STORAGE_ROOT" > "$_ci_prod" 2>"$_ci_err"; then
-        _ci_fail "kubectl kustomize --enable-helm $CI_ASSERT_PROD_STORAGE_ROOT failed"
-        cat "$_ci_err" >&2 || true
-        rm -f "$_ci_prod" "$_ci_ci" "$_ci_err"
-        return 1
-    fi
     if ! _ci_kustomize_storage > "$_ci_ci" 2>"$_ci_err"; then
         _ci_fail "kubectl kustomize --enable-helm $CI_ASSERT_STORAGE_ROOT failed"
         cat "$_ci_err" >&2 || true
-        rm -f "$_ci_prod" "$_ci_ci" "$_ci_err"
+        rm -f "$_ci_ci" "$_ci_err"
         return 1
     fi
     rm -f "$_ci_err"
 
-    for _ci_pair in "$CI_ASSERT_PROD_STORAGE_ROOT|$_ci_prod" "$CI_ASSERT_STORAGE_ROOT|$_ci_ci"; do
-        _ci_root="${_ci_pair%%|*}"
-        _ci_file="${_ci_pair#*|}"
+    _ci_root="$CI_ASSERT_STORAGE_ROOT"
+    _ci_file="$_ci_ci"
+    _ci_ci_opts=""
+    # One pass; `break` leaves it early when the class is missing.
+    while :; do
         _ci_sc="select(.kind == \"StorageClass\" and .metadata.name == \"$_ci_want\")"
         if [ -z "$(yq "$_ci_sc | .metadata.name" "$_ci_file" | grep -v '^---$' || true)" ]; then
             _ci_fail "$_ci_root publishes no StorageClass '$_ci_want', which $CI_ASSERT_BASE/workspace-pvc.yaml claims (it has: $(yq 'select(.kind == "StorageClass") | .metadata.name' "$_ci_file" | grep -v '^---$' | tr '\n' ' '))"
             _ci_rc=1
-            continue
+            break
         fi
         _ci_reclaim="$(yq "$_ci_sc | .reclaimPolicy" "$_ci_file" | grep -v '^---$' || true)"
         if [ "$_ci_reclaim" != "Retain" ]; then
@@ -1825,20 +1825,18 @@ assert_storage_class_contract() {
                 *) _ci_fail "$_ci_root: '$_ci_want' does not set mount option '$_ci_o' (has: $_ci_opts)"; _ci_rc=1 ;;
             esac
         done
-        if [ "$_ci_root" = "$CI_ASSERT_PROD_STORAGE_ROOT" ]; then
-            _ci_prod_opts="$_ci_opts"
-        else
-            _ci_ci_opts="$_ci_opts"
-        fi
+        _ci_ci_opts="$_ci_opts"
+        break
     done
-    rm -f "$_ci_prod" "$_ci_ci"
+    rm -f "$_ci_ci"
+    _ci_prod_opts="$(printf '%s\n' $CI_ASSERT_PROD_MOUNT_OPTIONS | sort | tr '\n' ' ')"
 
     if [ "$_ci_rc" -eq 0 ] && [ "${_ci_prod_opts:-}" != "${_ci_ci_opts:-}" ]; then
         _ci_fail "the CI stand-in mounts with '${_ci_ci_opts:-}' but production with '${_ci_prod_opts:-}'; the kind jobs would test a mount production never uses"
         _ci_rc=1
     fi
     if [ "$_ci_rc" -eq 0 ]; then
-        _ci_pass "workspace PVC, $CI_ASSERT_PROD_STORAGE_ROOT and $CI_ASSERT_STORAGE_ROOT agree: ReadWriteMany on '$_ci_want', Retain, mount options ${_ci_prod_opts}"
+        _ci_pass "workspace PVC, $CI_ASSERT_STORAGE_ROOT and the production class agree: ReadWriteMany on '$_ci_want', Retain, mount options ${_ci_prod_opts}"
     fi
     return "$_ci_rc"
 }

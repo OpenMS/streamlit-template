@@ -15,7 +15,7 @@ It is when **any** of these holds:
 
 - it touches a template-owned file (anything not in `sync.app_owned` of the
   app's `app.yaml`): `src/workflow/`, `src/common/`, `src/data_import/`,
-  `docker/`, `k8s/base`, `k8s/storage`, `k8s/ci-storage`, CI, `electron/`, `.claude/`;
+  `docker/`, `k8s/base`, `k8s/ci-storage`, CI, `electron/`, `.claude/`;
 - a second app would want it;
 - it fixes a bug the template also has.
 

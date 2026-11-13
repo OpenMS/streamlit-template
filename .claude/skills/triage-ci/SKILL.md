@@ -34,7 +34,7 @@ cause, and never make CI green by skipping, disabling or weakening a check.
 6. **Recurring patterns:**
    - `FAIL:` lines from `ci-assertions.sh` say which file and field; the
      assertion is the contract, change the manifest, not the assertion.
-   - Storage class: `assert_storage_class_contract` → `k8s/base/workspace-pvc.yaml`, `k8s/storage/storageclass.yaml` and `k8s/ci-storage/ganesha-values.yaml` must agree.
+   - Storage class: `assert_storage_class_contract` → `k8s/base/workspace-pvc.yaml`, `k8s/ci-storage/ganesha-values.yaml` and the production class pinned as `CI_ASSERT_PROD_MOUNT_OPTIONS` must agree.
    - `No space left on device` on kind/build jobs: the "Free disk space" step
      did not free enough; image size grew.
    - Windows smoke test names a TOPP tool: it is missing from `TOPP_TOOLS`.

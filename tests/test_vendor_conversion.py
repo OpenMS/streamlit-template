@@ -35,7 +35,7 @@ if _original_pyopenms is None:
 
 from src.workflow.ParameterManager import ParameterManager
 from src.workflow.CommandExecutor import CommandExecutor
-from src.workflow.vendor_files import extract_bruker_zip, vendor_format
+from src.workflow.vendor_files import extract_bruker_zip, thermo_reader_available, vendor_format
 
 if _original_streamlit is not None:
     sys.modules["streamlit"] = _original_streamlit
@@ -101,6 +101,46 @@ def test_raw_is_converted_with_fileconverter(tmp_path):
     assert not Path(io["out"][0]).exists()
 
 
+def _fileconverter_ini(path, restrictions):
+    """A FileConverter .ini holding only RawToMzML:reader, or nothing with None."""
+    item = (
+        f'<ITEM name="reader" value="external" type="string" restrictions="{restrictions}" />'
+        if restrictions is not None else ""
+    )
+    path.write_text(
+        '<?xml version="1.0" encoding="UTF-8"?><PARAMETERS version="1.7.0">'
+        '<NODE name="FileConverter"><NODE name="1">'
+        f'<NODE name="RawToMzML">{item}</NODE>'
+        "</NODE></NODE></PARAMETERS>"
+    )
+    return path
+
+
+@pytest.mark.parametrize(
+    "restrictions, available",
+    [("external,inprocess", True), ("external", False), (None, False)],
+)
+def test_thermo_reader_available_reads_the_valid_strings(tmp_path, restrictions, available):
+    ini = _fileconverter_ini(tmp_path / "FileConverter.ini", restrictions)
+    assert thermo_reader_available(ini) is available
+    assert thermo_reader_available(tmp_path / "missing.ini") is False
+
+
+@pytest.mark.parametrize(
+    "restrictions, params",
+    [("external,inprocess", {"RawToMzML:reader": "inprocess"}), ("external", {})],
+)
+def test_raw_conversion_names_the_built_in_reader(tmp_path, restrictions, params):
+    raw = tmp_path / "run1.raw"
+    raw.write_text("raw")
+    executor = _executor(tmp_path)
+    ini = _fileconverter_ini(executor.parameter_manager.ini_dir / "FileConverter.ini", restrictions)
+    executor.parameter_manager.create_ini = MagicMock(return_value=ini.exists())
+
+    assert executor.convert_to_mzml([str(raw)])
+    assert executor.run_topp.call_args.kwargs["custom_params"] == params
+
+
 def test_d_folder_is_converted_with_the_python_tool(tmp_path):
     d = tmp_path / "run2.d"
     d.mkdir()
@@ -125,6 +165,61 @@ def test_conversion_is_reused_until_the_input_changes(tmp_path):
 
     later = time.time() + 10
     os.utime(raw, (later, later))
+    executor.convert_to_mzml([str(raw)])
+    assert executor.run_topp.call_count == 2
+
+
+def test_mzml_of_another_reader_is_converted_again(tmp_path):
+    raw = tmp_path / "run1.raw"
+    raw.write_text("raw")
+    executor = _executor(tmp_path)
+    executor.thermo_reader_args = MagicMock(return_value={})
+    executor.convert_to_mzml([str(raw)])
+    assert executor.run_topp.call_count == 1
+
+    # The same app now reads with the built-in reader: the cached mzML is stale.
+    executor.thermo_reader_args = MagicMock(return_value={"RawToMzML:reader": "inprocess"})
+    executor.convert_to_mzml([str(raw)])
+    assert executor.run_topp.call_count == 2
+    executor.convert_to_mzml([str(raw)])
+    assert executor.run_topp.call_count == 2
+    stamp = tmp_path / "converted-mzML" / ".run1.mzML.reader"
+    assert stamp.read_text() == "inprocess"
+
+
+@pytest.mark.parametrize(
+    "default, retried",
+    [("external", True), ("inprocess", False)],
+)
+def test_built_in_reader_failure_falls_back_to_the_default_reader(tmp_path, default, retried):
+    raw = tmp_path / "run1.raw"
+    raw.write_text("raw")
+    executor = _executor(tmp_path)
+    executor.thermo_reader_args = MagicMock(return_value={"RawToMzML:reader": "inprocess"})
+    ini = _fileconverter_ini(executor.parameter_manager.ini_dir / "FileConverter.ini", "external,inprocess")
+    ini.write_text(ini.read_text().replace('value="external"', f'value="{default}"'))
+
+    def fake_topp(tool, input_output, custom_params={}, tool_instance_name=None):
+        if custom_params.get("RawToMzML:reader") == "inprocess":
+            return False  # no .NET runtime
+        Path(input_output["out"][0]).write_text("converted")
+        return True
+
+    executor.run_topp = MagicMock(side_effect=fake_topp)
+    result = executor.convert_to_mzml([str(raw)])
+    calls = [c.kwargs["custom_params"] for c in executor.run_topp.call_args_list]
+    if not retried:
+        # The default is the built-in reader too: a retry would fail the same way.
+        assert result is None
+        assert calls == [{"RawToMzML:reader": "inprocess"}]
+        return
+    assert result == [str(tmp_path / "converted-mzML" / "run1.mzML")]
+    # The retry names the default reader, so a stored reader cannot replace it.
+    assert calls == [{"RawToMzML:reader": "inprocess"}, {"RawToMzML:reader": "external"}]
+    stamp = tmp_path / "converted-mzML" / ".run1.mzML.reader"
+    assert stamp.read_text() == "fallback:external"
+
+    # The next run keeps that mzML instead of failing over again.
     executor.convert_to_mzml([str(raw)])
     assert executor.run_topp.call_count == 2
 

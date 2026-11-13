@@ -23,6 +23,16 @@ experiments and renders each below its own dataset selector::
             max_experiments=MAX_EXPERIMENTS) if i == 0 else None,
     )
 
+A Viewer whose first experiment's selector belongs at the top of the page,
+with the buttons that act on what it shows, draws it above the view bar and
+tells ``render_experiments`` so::
+
+    experiment_selector(DATASETS, key="viewer", buttons=lambda i: history_button())
+    view_bar(LAYOUT_PATH, COMPONENTS, PRESETS, DEFAULT_LAYOUT, key="viewer_view")
+    layout, side_by_side = resolve_layout(LAYOUT_PATH, COMPONENTS, DEFAULT_LAYOUT)
+    render_experiments(layout, side_by_side, DATASETS, renderers, key="viewer",
+                       first_selector=False)
+
 A page with ready-made layouts (presets) draws ``view_bar`` instead of a
 layout button: as many views as fit in one row, the rest in More, and ✏️,
 which opens ``views_editor``, where users order the views, keep some out of
@@ -54,6 +64,10 @@ plots of an openms-insight whose constructor takes ``zoom_identifier`` keep
 their zoom there; check the signature before passing it. A preset may ship
 ``defaults`` of its own, which come back when the user removes theirs.
 
+``view_bar(link=True)`` adds 🔗: a link that opens the page on the current
+view with each experiment's dataset, zoom and selection. A page with dataset
+selectors of its own sets them from ``linked_datasets(key)`` before the bar.
+
 ``layout_presets`` is the earlier, simpler selector of presets.
 
 ``layout.py`` is Streamlit-free; ``ui.py`` holds the editor and the grid.
@@ -75,12 +89,15 @@ from src.layout_manager.layout import (
     has_defaults,
     has_own_defaults,
     clear_layout,
+    link_params,
+    link_url,
     load_layout,
     load_views,
     match_preset,
     missing_analyses,
     needs,
     normalize_zoom,
+    read_link,
     resolve_layout,
     save_layout,
     save_views,
@@ -92,9 +109,11 @@ from src.layout_manager.layout import (
 )
 from src.layout_manager.ui import (
     experiment_state,
+    experiment_selector,
     layout_button,
     layout_editor,
     layout_presets,
+    linked_datasets,
     missing_analysis_dialog,
     missing_note,
     render_experiments,
@@ -118,12 +137,16 @@ __all__ = [
     "clean_defaults",
     "clear_layout",
     "differs_from_defaults",
+    "experiment_selector",
     "experiment_state",
     "has_defaults",
     "has_own_defaults",
     "layout_button",
     "layout_editor",
     "layout_presets",
+    "link_params",
+    "link_url",
+    "linked_datasets",
     "load_layout",
     "load_views",
     "match_preset",
@@ -132,6 +155,7 @@ __all__ = [
     "missing_note",
     "needs",
     "normalize_zoom",
+    "read_link",
     "render_experiments",
     "render_layout",
     "request_analysis",

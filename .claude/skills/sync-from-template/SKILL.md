@@ -72,7 +72,7 @@ Recurring hot spots:
 | `settings.json` | keep the app's values, add new template keys with their defaults |
 | `.github/workflows/build-windows-executable-app.yaml` | take the template's, then restore the app's `APP_NAME` and `TOPP_TOOLS` |
 | `Dockerfile*` | take the template's; they are template-owned. The installer repository comes from `settings.json`, conda-forge tools go in the app's `conda-requirements.txt`. An app that still owns its Dockerfiles moves its extra steps there and drops them from `sync.app_owned` |
-| `k8s/storage/*`, `k8s/ci-storage/*` | take the template's; they carry no app names. A cluster's two storage values (share type, node subnet) live in the copy the operator applies, not in the app |
+| `k8s/ci-storage/*` | take the template's; it carries no app names. The production storage tier and the `openms` namespace are cluster configuration, not in any app; a modify/delete conflict on `k8s/storage/*` or `k8s/overlays/prod/namespace.yaml` resolves by deleting them |
 | `.claude/skills/*` | always the template's; an app-specific skill gets its own directory name |
 
 **New template features** the app should adopt (a new storage tier, a new

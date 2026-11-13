@@ -373,3 +373,10 @@ class TestFlagSourceContract:
         )
         assert is_bare_flag(cmd, "force")
         assert "True" not in cmd
+
+    def test_custom_value_replaces_a_stored_one(self):
+        """A value in custom_params is the only one on the command line, even
+        when the workflow's parameters store another for the same key."""
+        cmd = build_command({TOOL: {"reader": "inprocess"}}, custom_params={"reader": "external"})
+        assert cmd.count("-reader") == 1
+        assert values_after(cmd, "reader") == ["external"]

@@ -137,6 +137,37 @@ def _run_name(path: str) -> str:
     return name.rsplit(".", 1)[0] if "." in name else name
 
 
+def _md5(checksum) -> str:
+    checksum = (checksum or "").lower()
+    return checksum if re.fullmatch(r"[0-9a-f]{32}", checksum) else ""
+
+
+def _pride_file_entries(session, accession: str) -> list:
+    """Every file entry of a dataset.
+
+    ``files/all`` answers in one request; the paged ``files`` endpoint gives
+    at most 100 entries a request, so a dataset of a few thousand files took
+    dozens of round trips (over 20 s). Paging is kept for when ``all`` fails.
+    """
+    try:
+        entries = _json(session, f"{PRIDE_API}/projects/{accession}/files/all")
+        if isinstance(entries, list):
+            return entries[:MAX_LISTED_FILES + 1]
+    except (LookupError, requests.RequestException, ValueError):
+        pass
+    entries, page = [], 0
+    while len(entries) <= MAX_LISTED_FILES:
+        chunk = _json(session, f"{PRIDE_API}/projects/{accession}/files",
+                      params={"pageSize": PRIDE_PAGE_SIZE, "page": page})
+        if isinstance(chunk, dict):  # older HAL responses
+            chunk = (chunk.get("_embedded") or {}).get("files", [])
+        entries.extend(chunk)
+        if len(chunk) < PRIDE_PAGE_SIZE:
+            break
+        page += 1
+    return entries
+
+
 def pride(session, link: str) -> Optional[Listing]:
     """A PRIDE Archive dataset: its files, with the project's description as notes.
 
@@ -150,21 +181,10 @@ def pride(session, link: str) -> Optional[Listing]:
         project = _json(session, f"{PRIDE_API}/projects/{accession}")
     except LookupError:
         raise LookupError(f"{accession} was not found in PRIDE, or is not public yet.") from None
-    files, page = [], 0
-    while len(files) <= MAX_LISTED_FILES:
-        entries = _json(session, f"{PRIDE_API}/projects/{accession}/files",
-                        params={"pageSize": PRIDE_PAGE_SIZE, "page": page})
-        if isinstance(entries, dict):  # older HAL responses
-            entries = (entries.get("_embedded") or {}).get("files", [])
-        for entry in entries:
-            checksum = (entry.get("checksum") or "").lower()
-            files.append(RemoteFile(
-                path=entry.get("fileName", ""), size=int(entry.get("fileSizeBytes") or 0) or None,
-                url=_pride_url(entry), md5=checksum if re.fullmatch(r"[0-9a-f]{32}", checksum) else "",
-            ))
-        if len(entries) < PRIDE_PAGE_SIZE:
-            break
-        page += 1
+    files = [RemoteFile(
+        path=entry.get("fileName", ""), size=int(entry.get("fileSizeBytes") or 0) or None,
+        url=_pride_url(entry), md5=_md5(entry.get("checksum")),
+    ) for entry in _pride_file_entries(session, accession)]
     mzml_runs = {_run_name(f.path) for f in files
                  if f.path.lower().removesuffix(".gz").endswith(".mzml")}
     for f in files:

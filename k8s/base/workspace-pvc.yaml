@@ -2,8 +2,9 @@
 # every workspace-using pod of this app (streamlit, rq-worker, sync, cleanup),
 # so the scheduler is free to place them on any node.
 #
-# The class `openms-manila-nfs` is published once per cluster by k8s/storage/
-# (openstack-manila-csi + csi-driver-nfs); the kind jobs publish a stand-in of
+# The class `openms-manila-nfs` is published once per cluster by the storage
+# tier, which is cluster configuration (openstack-manila-csi + csi-driver-nfs,
+# docs/kubernetes-deployment.md section 3b); the kind jobs publish a stand-in of
 # the same name from k8s/ci-storage/. Each app's claim gets its own share, so
 # apps share the class, never the data.
 #
@@ -34,9 +35,9 @@ metadata:
 spec:
   accessModes:
     - ReadWriteMany
-  # Must equal metadata.name in k8s/storage/storageclass.yaml and
-  # storageClass.name in k8s/ci-storage/ganesha-values.yaml;
-  # assert_storage_class_contract checks all three.
+  # Must equal the production StorageClass and storageClass.name in
+  # k8s/ci-storage/ganesha-values.yaml; assert_storage_class_contract checks
+  # the two files.
   storageClassName: openms-manila-nfs
   resources:
     requests:

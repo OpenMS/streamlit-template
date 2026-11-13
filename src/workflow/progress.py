@@ -116,6 +116,7 @@ class RunProgress:
         threads: int = 1,
         parallel: int = 1,
         provenance: Optional[dict] = None,
+        allow_failed: bool = False,
     ) -> int:
         """Record a tool call with one entry per label; returns the step index.
 
@@ -140,6 +141,8 @@ class RunProgress:
             }
             if provenance:
                 step["provenance"] = provenance
+            if allow_failed:
+                step["allow_failed"] = True
             state["steps"].append(step)
             return len(state["steps"]) - 1
 
@@ -311,10 +314,17 @@ def key_message(output: List[str]) -> str:
     return short[:300]
 
 
-def failures(state: Optional[dict]) -> List[dict]:
-    """Every failed file: {"context", "message", "returncode", "output"}."""
+def failures(state: Optional[dict], left_out: Optional[bool] = None) -> List[dict]:
+    """Every failed file: {"context", "message", "returncode", "output",
+    "tool", "file"}.
+
+    ``left_out=True`` gives only the files of steps the run went on without
+    (``allow_failed``), ``False`` only the others, ``None`` all of them.
+    """
     found = []
     for step in (state or {}).get("steps", []):
+        if left_out is not None and bool(step.get("allow_failed")) != left_out:
+            continue
         for i, entry in enumerate(step["files"]):
             if entry["status"] == FAILED:
                 output = entry.get("output", [])
@@ -324,9 +334,23 @@ def failures(state: Optional[dict]) -> List[dict]:
                         "message": key_message(output),
                         "returncode": entry.get("returncode"),
                         "output": output,
+                        "tool": step["tool"],
+                        "file": entry["name"],
                     }
                 )
     return found
+
+
+def failures_by_tool(state: Optional[dict]) -> List[dict]:
+    """The failed files grouped by tool, in the order the tools ran:
+    {"tool", "total" (files the tool ran on), "failures"}."""
+    groups = {}
+    for step in (state or {}).get("steps", []):
+        group = groups.setdefault(step["tool"], {"tool": step["tool"], "total": 0, "failures": []})
+        group["total"] += len(step["files"])
+    for failure in failures(state):
+        groups[failure["tool"]]["failures"].append(failure)
+    return [g for g in groups.values() if g["failures"]]
 
 
 def sample_counts(state: Optional[dict]) -> dict:
@@ -385,3 +409,49 @@ def format_duration(seconds: float) -> str:
     h, rest = divmod(seconds, 3600)
     m, s = divmod(rest, 60)
     return f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
+
+
+# Files or samples listed one per line on the Run page; a longer list shows
+# the failed and running ones, the next waiting and the latest finished, and
+# counts the rest
+LIST_LIMIT = 12
+
+
+def list_entries(entries: List[dict], limit: int = LIST_LIMIT) -> tuple:
+    """(indices, left_out) for listing ``entries`` (files or samples).
+
+    Up to ``limit`` entries all show, in their order. Beyond it the list keeps
+    the failed ones first, then the running, the next waiting and the latest
+    finished, so a study of 200 files still fits on the page; ``left_out``
+    counts the others by status.
+    """
+    if len(entries) <= limit:
+        return list(range(len(entries))), {}
+    by_status = {PENDING: [], RUNNING: [], DONE: [], FAILED: []}
+    for i, entry in enumerate(entries):
+        by_status.setdefault(entry["status"], []).append(i)
+    latest_done = sorted(
+        by_status[DONE], key=lambda i: entries[i].get("ended") or 0, reverse=True
+    )
+    order = by_status[FAILED] + by_status[RUNNING] + by_status[PENDING][:3] + latest_done
+    order += by_status[PENDING][3:]
+    shown = order[:limit]
+    left_out = {}
+    for i in order[limit:]:
+        status = entries[i]["status"]
+        left_out[status] = left_out.get(status, 0) + 1
+    return shown, left_out
+
+
+def left_out_line(left_out: dict) -> str:
+    """'… and 120 more: 100 done, 20 waiting' for what list_entries left out."""
+    if not left_out:
+        return ""
+    words = {DONE: "done", FAILED: "failed", RUNNING: "running", PENDING: "waiting"}
+    parts = [
+        f"{left_out[status]} {words[status]}"
+        for status in (FAILED, RUNNING, DONE, PENDING)
+        if left_out.get(status)
+    ]
+    return f"… and {sum(left_out.values())} more: " + ", ".join(parts)
+

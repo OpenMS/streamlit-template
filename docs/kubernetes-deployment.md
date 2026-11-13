@@ -11,7 +11,7 @@ The template ships a full Kubernetes deployment stack for an OpenStack-based clu
 - An RQ worker Deployment running background workflows
 - A nightly cleanup CronJob for stale workspaces
 - A shared `ReadWriteMany` PersistentVolumeClaim holding per-user workspace data
-- A cluster-wide storage tier (`k8s/storage/`): the OpenStack Manila CSI driver and a `ReadWriteMany` StorageClass, so each app's workspace volume is a Manila NFS share and the pods above can be placed on any node
+- A cluster-wide storage tier (section 3b, cluster configuration outside this repository): the OpenStack Manila CSI driver and a `ReadWriteMany` StorageClass, so each app's workspace volume is a Manila NFS share and the pods above can be placed on any node
 - A Traefik IngressRoute routing external traffic to the Streamlit service (with session affinity)
 
 Every production OpenMS webapp (quantms-web, umetaflow, FLASHApp) deploys via this stack.
@@ -83,7 +83,7 @@ Every production OpenMS webapp (quantms-web, umetaflow, FLASHApp) deploys via th
 
 ### Pod placement and the shared workspace volume
 
-All workspace-using pods (Streamlit, RQ worker, sync, Cleanup) of a given fork mount the same `<slug>-workspaces-manila-pvc`, which is `ReadWriteMany` on the `openms-manila-nfs` StorageClass published by the storage tier in `k8s/storage/`. Because it is RWX it imposes **no** placement constraint: any number of pods on any number of nodes can hold it at once, and the scheduler alone decides where they land.
+All workspace-using pods (Streamlit, RQ worker, sync, Cleanup) of a given fork mount the same `<slug>-workspaces-manila-pvc`, which is `ReadWriteMany` on the `openms-manila-nfs` StorageClass published by the cluster's storage tier (section 3b). Because it is RWX it imposes **no** placement constraint: any number of pods on any number of nodes can hold it at once, and the scheduler alone decides where they land.
 
 That is what the storage tier is for. A Cinder volume (`cinder-csi`, `ReadWriteOnce`) attaches to exactly one node, so with it every workspace-using pod ended up on that node whether it fitted there or not. A Manila share is an NFS export served by OpenStack itself: there is no NFS server pod in the cluster, and losing a node costs only the pods on that node.
 
@@ -111,7 +111,7 @@ Both Traefik and nginx attach a per-host `stroute` sticky cookie to bind a user 
 ## 3. Manifest reference (`k8s/base/`)
 
 ### Namespace
-All resources deploy into the shared `openms` namespace (`namespace: openms` in `k8s/base/kustomization.yaml`). The Namespace object itself is defined only in `k8s/overlays/prod/namespace.yaml` of the streamlit-template, so on a cluster with Argo CD exactly one Application (the template's) manages it. If several apps carried it, every sync would take it over from the previous app (labels and Argo CD tracking), and with self-heal on they would overwrite each other continuously. An app generated from the template deletes `namespace.yaml` and its line in `k8s/overlays/prod/kustomization.yaml`; on a cluster without the template, create the namespace once with `kubectl create namespace openms`.
+All resources deploy into the shared `openms` namespace (`namespace: openms` in `k8s/base/kustomization.yaml`). The Namespace object itself is cluster configuration, like the storage tier: no app's deployment carries it, so no app's Argo CD project needs to allow a cluster-scoped kind, and no two apps can take it over from each other. On the OpenMS cluster it is kept with the rest of the cluster configuration, with the Pod Security labels `warn` and `audit` at `baseline` (never `enforce`, since every app shares it). On a cluster of your own, create it once before the first app with `kubectl create namespace openms`.
 
 ### `configmap.yaml`
 `streamlit-config` ConfigMap holding `settings-overrides.json`, merged into the app's `settings.json` at pod startup. Currently sets `online_deployment: true`.
@@ -125,7 +125,7 @@ NetworkPolicy that admits connections to Redis on 6379 only from this app's `str
 ### `workspace-pvc.yaml`
 PersistentVolumeClaim `workspaces-manila-pvc`:
 - `accessModes: [ReadWriteMany]`
-- `storageClassName: openms-manila-nfs` — published once per cluster by `k8s/storage/`; the same for every app
+- `storageClassName: openms-manila-nfs` — published once per cluster by the storage tier (section 3b); the same for every app
 - `resources.requests.storage: 50Gi` — the size of this app's Manila share, counted against the OpenStack project's share quota, which every app on the cluster shares. Start near the space the app really uses. Manila grows a share in place, so raising the number and re-applying is enough. Shrinking is not possible: Kubernetes rejects a request below the claim's current capacity, and Argo CD does not retry a sync that failed, so the app stays OutOfSync. To make a share smaller, delete the claim and the pods that use it, delete its PV (`kubectl get pv | grep <slug>-workspaces-manila-pvc`), and delete the share in Horizon. The class uses `Retain`, so deleting the PV leaves the share and its quota in place. Then sync again: under Argo CD, run `kubectl -n argocd patch application <app> --type merge -p '{"operation":{"initiatedBy":{"username":"<you>"},"sync":{}}}'`. The new claim starts with an empty share.
 
 This is a **different object** from the claims earlier releases used (`workspaces-pvc`, `ReadWriteOnce` on `cinder-csi`, and then `workspaces-nfs-pvc` on a per-app Ganesha server). A bound PVC's spec is immutable apart from `resources.requests`, so the class cannot be changed in place. The old claim is left alone, which is also what makes rollback a single re-apply of the previous manifests. Delete it by hand once the cutover has been stable for a week. Workspaces expire after 7 days, so nothing is migrated.
@@ -189,47 +189,16 @@ Lists all base resources under the `openms` namespace.
 ### `streamlit-secrets.yaml`
 Ships with an empty admin password by default and is included in `k8s/base/kustomization.yaml`, so `kubectl apply -k` always creates the `streamlit-secrets` Secret. The Streamlit Deployment mounts it at `/app/admin-secrets/`, and `.streamlit/config.toml` registers that path under `[secrets].files` so `st.secrets` picks it up. The admin password gates the "Save as Demo" feature — when empty (default), that UI is hidden entirely; set a password to enable it. The volume mount keeps `optional: true` so forks that inject the Secret out-of-band (Vault, External Secrets Operator) or rename it still boot. See "Configuring the admin password" below.
 
-## 3b. The storage tier (`k8s/storage/`)
+## 3b. The storage tier
 
-**One per cluster, not one per app.** Everything in this root is cluster scoped or lives in `kube-system`, so it is applied once, by whoever operates the cluster, before the first app overlay. Every app on the cluster claims the same StorageClass and gets its own share.
+**One per cluster, not one per app, and not in this repository.** The storage tier is cluster configuration: whoever operates the cluster applies it once, before the first app overlay, and no app's deployment carries or changes it. On the OpenMS cluster it is kept, together with the shared `openms` namespace and the Argo CD projects, in a private repository applied by an admin. Every app on the cluster claims the same StorageClass and gets its own share.
 
-| File | Purpose |
-|------|---------|
-| `storageclass.yaml` | `openms-manila-nfs`: provisioner `nfs.manila.csi.openstack.org`, `reclaimPolicy: Retain`, volume expansion on, mount options `hard`, `nfsvers=3` (works with backends that serve no NFSv4), `nconnect=4`. Two values are **cluster-specific** and ship as `CHANGE-ME-…` placeholders: `type` (the name of an NFS share type, from `openstack share type list` or Horizon's *Create Share* dialog) and `nfs-shareClient` (the CIDR that gets the share's IP access rule: the source range the NFS backend sees from the nodes, i.e. the node subnet, or the floating-IP / egress range when the nodes reach the storage through a NAT router). Both are parameters of the StorageClass and cannot be changed in place: to change one, delete and re-apply the class while no PVC uses it. |
-| `manila-csi-values.yaml` | Helm values for `openstack-manila-csi` 2.36.3: NFS only, forwarding mounts to the csi-driver-nfs node plugin. |
-| `csi-driver-nfs-values.yaml` | Helm values for `csi-driver-nfs` 4.11.0, used only as the node plugin that does the mount. Its own controller is scaled to zero. |
-| `kustomization.yaml` | Inflates both charts into `kube-system` and adds the StorageClass. |
+What the apps rely on, and what a cluster of your own has to provide:
 
-How a volume comes about: the workspace PVC asks for `openms-manila-nfs`; the manila-csi controller creates an NFS share of that size through the Manila API and adds an IP access rule for `nfs-shareClient`; on every node that runs a pod using it, the csi-driver-nfs node plugin mounts the share's export.
-
-**Cluster-specific values.** Before the first apply, replace the two `CHANGE-ME-…` placeholders in `k8s/storage/storageclass.yaml`:
-
-```bash
-openstack share type list    # type: an NFS share type
-openstack subnet list        # nfs-shareClient: the node subnet (direct route)
-openstack floating ip list   # ... or the floating-IP range (NAT router)
-```
-
-Use a share type with `driver_handles_share_servers=False`, or also set `shareNetworkID`. Keep the edited file in your own checkout or fork of the operator repository; the template ships only the placeholders, so a class applied unchanged fails at the first PVC (`share type not found`) instead of granting access to the wrong addresses. A rule for the wrong range shows up later as `access denied` when a node mounts the share: check which source address the backend sees, not which address the node has.
-
-**Credentials.** manila-csi talks to the Manila API with an OpenStack *application credential*, kept in the Secret `manila-csi-credentials` in `kube-system`. It is never committed. Create the credential in Horizon (*Identity → Application Credentials*, role `member`) and then:
-
-```bash
-kubectl -n kube-system create secret generic manila-csi-credentials \
-  --from-literal=os-authURL=https://<keystone>/v3 \
-  --from-literal=os-region=<region> \
-  --from-literal=os-applicationCredentialID=<id> \
-  --from-literal=os-applicationCredentialSecret=<secret>
-```
-
-Rendering this root needs Helm on `PATH`, because of the `helmCharts` block, and `kubectl apply -k` accepts no `--enable-helm` flag:
-
-```bash
-kubectl kustomize --enable-helm k8s/storage/            # inspect
-kubectl kustomize --enable-helm k8s/storage/ | kubectl apply -f -
-```
-
-Rendering also writes the vendored charts into `k8s/storage/charts/`. That directory is gitignored and must never be committed.
+- A StorageClass `openms-manila-nfs` handing out `ReadWriteMany` volumes. On OpenStack this is the Manila CSI driver (`openstack-manila-csi`, NFS only) with the `csi-driver-nfs` node plugin doing the mounts; one NFS share is created per claim.
+- `reclaimPolicy: Retain` (deleting a claim must not delete every workspace in it) and volume expansion on.
+- Mount options `hard`, `nfsvers=3` (works with backends that serve no NFSv4), `nconnect=4`, `retrans=2` and `timeo=30`. CI's stand-in in `k8s/ci-storage/` publishes a class of the same name with the same options, and `assert_storage_class_contract` (`.github/scripts/ci-assertions.sh`, `CI_ASSERT_PROD_MOUNT_OPTIONS`) pins them, so the kind jobs test the mount production uses.
+- Credentials for the storage API (on OpenStack an application credential in a `kube-system` Secret) are created by hand on the cluster and never committed anywhere.
 
 ### NFS client on Linux 6.19 and newer
 
@@ -285,7 +254,7 @@ kubectl -n openms create secret generic workspaces-s3-gateway \
 
 **One trust domain.** The gateway has one credential pair, and it reaches the folder of every app. Each app mounts only its own folder, but any pod with the `WORKSPACES_S3_*` variables can read and write the workspaces of every S3-enabled app through the gateway, and presigned links are signed with that pair. The apps share the `openms` namespace and its secrets anyway, so treat all S3-enabled apps on a cluster as one trust domain for workspace data.
 
-**Install**, once per cluster (Helm on `PATH`, as for `k8s/storage/`):
+**Install**, once per cluster (Helm on `PATH`):
 
 ```bash
 kubectl kustomize --enable-helm k8s/storage-s3/                 # inspect
@@ -320,7 +289,7 @@ works unchanged on either storage. Writes keep going to the mounted path. `presi
 ### Prerequisites
 
 - `kubectl` configured for the target cluster
-- OpenStack Manila with an NFS share type and share quota for the project (Horizon shows a *Share* section under *Project*), and the storage tier in `k8s/storage/` applied once on the cluster (section 3b)
+- OpenStack Manila with an NFS share type and share quota for the project (Horizon shows a *Share* section under *Project*), and the storage tier applied once on the cluster (section 3b)
 - An ingress controller (Traefik, or nginx if you patch the nginx Ingress instead)
 - Read access to GHCR for pulling the app image
 - A DNS record pointing to the cluster's ingress load balancer
@@ -385,7 +354,7 @@ patches:
 
 ### Step 4c — Storage needs no per-fork renaming
 
-The storage tier is shared by every app on the cluster and carries no app name, so a fork changes nothing in `k8s/storage/`. Its workspace claim gets the overlay's `namePrefix` like every other object, and with it a Manila share of its own. Size it with the claim patch in `k8s/overlays/prod/kustomization.yaml` (and `deploy.k8s.storage` in `app.yaml`, which `python -m utils.app_spec` compares with it). Do not edit `k8s/base/workspace-pvc.yaml` for this.
+The storage tier is shared by every app on the cluster and carries no app name, so a fork changes nothing in it. Its workspace claim gets the overlay's `namePrefix` like every other object, and with it a Manila share of its own. Size it with the claim patch in `k8s/overlays/prod/kustomization.yaml` (and `deploy.k8s.storage` in `app.yaml`, which `python -m utils.app_spec` compares with it). Do not edit `k8s/base/workspace-pvc.yaml` for this.
 
 ### App values belong in the overlay
 
@@ -435,11 +404,10 @@ kubectl -n openms rollout restart deployment/<your-app-name>-streamlit
 
 ### Step 6 — Deploy
 
-**The storage tier first, once per cluster.** If no other app on the cluster has applied it yet, set the two cluster-specific values in `k8s/storage/storageclass.yaml`, create the credentials Secret (section 3b) and apply the root. It publishes the StorageClass the workspace PVC claims; applied in the other order, every pod sits `Pending` on a class that does not exist yet:
+**The namespace and the storage tier first, once per cluster.** Both are cluster configuration (section 3b), applied by the cluster's admin before the first app. The storage tier publishes the StorageClass the workspace PVC claims; applied in the other order, every pod sits `Pending` on a class that does not exist yet. Check that both are there:
 
 ```bash
-kubectl kustomize --enable-helm k8s/storage/ | kubectl apply -f -
-kubectl -n kube-system rollout status statefulset -l app=openstack-manila-csi --timeout=300s
+kubectl get namespace openms
 kubectl get storageclass openms-manila-nfs
 ```
 
@@ -480,7 +448,7 @@ Smoke-test the ingress URL in a browser — the app should load, a session cooki
 Instead of running Step 6 by hand on every change, Argo CD can apply the overlay from git:
 
 - One Application per app on `k8s/overlays/prod`, with automatic sync, prune, self-heal and a sync retry (5 attempts, 30s to 5m backoff), since Argo CD otherwise tries each commit or image only once. Turn automatic sync on only after a first manual sync whose diff you have read.
-- The storage root is one Application per cluster on `k8s/storage`, **without** automatic sync. It needs `kustomize.buildOptions: --enable-helm` in `argocd-cm`.
+- The storage tier and the `openms` namespace are not synced by Argo CD: they are cluster configuration, applied by an admin (section 3b).
 - The `openms` namespace, the workspace PVC and the StorageClass carry `argocd.argoproj.io/sync-options: Prune=false,Delete=false`. All apps share the namespace and the class, and the claim holds every workspace, so Argo CD must never remove them.
 - Ignore the data of `<prefix>-streamlit-secrets` (`ignoreDifferences` plus `RespectIgnoreDifferences=true`). The admin password is patched live (Step 5), and self-heal would reset it.
 - Argo CD rolls out changes in git; a new image is not one. Every new release is deployed by [Argo CD Image Updater](https://argocd-image-updater.readthedocs.io/) instead, with no PR and no pin: one `ImageUpdater` per app with `updateStrategy: newest-build`, `allowTags` a regular expression matching that app's release images and nothing else, pre-releases included (here `regexp:^v[0-9]+(\.[0-9]+)+(-[0-9A-Za-z.]+)?-full$`, matching `v2.1.0-full` and `v3.0.0-alpha-full`; the version needs a dot, because a short commit SHA tag such as `0193571-full` can be all digits; an app with app-prefixed tags such as `OpenDDA-1.3.0` starts it with `^OpenDDA-`), `manifestTargets.kustomize.name: openms-streamlit`, and `writeBackConfig.method: argocd`, which sets the tag on the Application rather than committing it. `newest-build` and not `semver`, because with the `-full` suffix every tag is a semver pre-release and `2.0.0-rc-full` would sort above `2.0.0-full`. `images[0].newTag` in the overlay is only where a new Application starts and the name CI loads its test image under; it need not follow releases. To hold a release, narrow `allowTags` to it; to pause, add `ignoreTags: ["*"]`.
@@ -504,7 +472,7 @@ One unified workflow owns manifest lint, Docker build, push, and kind integratio
   - `kubeconform` runs against `k8s/base/*.yaml` with strict mode and Kubernetes 1.28 schemas (excluding `kustomization.yaml` and the Traefik CRD `traefik-ingressroute.yaml`).
   - `kubectl kustomize k8s/overlays/prod/` must succeed; the kustomized output is re-validated through `kubeconform` (with `IngressRoute` skipped).
   - `kubectl kustomize k8s/overlays/ci/` — the overlay the kind jobs apply — must succeed and validate the same way. Because a `patches:` entry whose target matches nothing is not an error in kustomize, the step additionally checks that the rendered CI worker is actually *smaller* than prod's and still has `requests == limits`; otherwise a renamed patch target would hand the kind jobs a full-sized worker no runner can schedule, an hour before anything noticed.
-  - `kubectl kustomize --enable-helm` on `k8s/storage/` (Manila) and on `k8s/ci-storage/` (the CI stand-in) must succeed and their output is validated the same way, so the charts' own rendered objects are covered too.
+  - `kubectl kustomize --enable-helm` on `k8s/ci-storage/` (the CI stand-in) and `k8s/storage-s3/` must succeed and their output is validated the same way, so the charts' own rendered objects are covered too.
 - **Job 1b — `assert-invariants`:** static assertions from `.github/scripts/ci-assertions.sh` over the manifests — that the workspace PVC, the Manila StorageClass and the CI stand-in agree on the class name, `Retain` and the mount options (`assert_storage_class_contract`), that the CI NFS server pins `device-based-fsids` off, and that nothing anywhere pins a pod to a node. It deliberately has no `needs:` and nothing needs it, so a red invariant cannot hide the build.
   - Takes ~30s. Fails fast so manifest typos never trigger the hours-long full Docker build.
 - **Job 2 — `build`** (`needs: lint-manifests`, matrix over `[full, simple]`):

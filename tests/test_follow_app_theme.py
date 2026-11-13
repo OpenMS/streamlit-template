@@ -89,8 +89,9 @@ def _light_mode_figure():
 def test_uses_streamlit_template_and_clears_backgrounds():
     fig = follow_app_theme(_light_mode_figure())
     layout = fig.to_dict()["layout"]
-    assert "plot_bgcolor" not in layout
-    assert "paper_bgcolor" not in layout
+    # Transparent, so the page's panel shows through in both themes
+    assert layout["plot_bgcolor"] == "rgba(0,0,0,0)"
+    assert layout["paper_bgcolor"] == "rgba(0,0,0,0)"
     assert fig.layout.template == pio.templates["streamlit"]
 
 

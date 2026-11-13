@@ -3,7 +3,6 @@ import pyopenms as poms
 from pathlib import Path
 import shutil
 import filecmp
-import subprocess
 from typing import Any, Callable, Dict, List, Literal, Union
 import json
 import math
@@ -19,14 +18,16 @@ from datetime import datetime
 
 from src.common.common import (
     OS_PLATFORM,
-    TK_AVAILABLE,
+    native_dialog_available,
     export_files,
     export_folder_input,
     tk_directory_dialog,
     tk_file_dialog,
 )
 from src.workflow._log_status import classify_log_outcome
-from src.workflow.report_ui import report_buttons
+from src.workflow import run_notice
+from src.workflow.report_ui import methods_section, report_buttons, run_methods
+from src.workflow.input_check import clash_message, name_clashes
 from src.workflow.RunManager import FOLLOW_UP_KEY
 from src.workflow.progress import (
     DONE,
@@ -34,8 +35,11 @@ from src.workflow.progress import (
     RUNNING,
     current_step,
     failures,
+    failures_by_tool,
     file_counts,
     format_duration,
+    left_out_line,
+    list_entries,
     read_progress,
     sample_counts,
     tool_progress,
@@ -58,9 +62,10 @@ from src.workflow.ExperimentalDesign import (
     save_design,
     to_openms_design,
 )
+from src.workflow.host_paths import folder_reference
 from src.workflow.vendor_files import extract_bruker_zip, has_type
+from src.workflow.process_state import local_workflow_running
 from src.workflow.settings_io import (
-    THREADS_USER_MARKER,
     local_thread_default,
     local_threads_pinned,
     usable_cpu_count,
@@ -77,6 +82,17 @@ from src.workflow.parameter_names import display_name as _display_name
 def _txt(value) -> str:
     """Text from pyOpenMS: bytes up to pyOpenMS 3.5, str from 3.6 (nanobind)."""
     return value.decode() if isinstance(value, bytes) else str(value)
+
+
+def _read_workflow_log(path: Path):
+    """Read content and timestamp from one open file during log rotation."""
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            created = os.fstat(handle.fileno()).st_ctime
+            return created, handle.readlines()
+    except FileNotFoundError:
+        # Starting a workflow replaces its logs; the next poll can read them.
+        return None
 
 
 def _tags(param, key) -> list[str]:
@@ -142,6 +158,16 @@ def _mounted_data_root() -> Union[Path, None]:
     if not os.path.ismount(p):
         return None
     return p
+
+
+def _local_folder_files(raw: str, file_types: list[str]) -> list[Path]:
+    """Validate a folder before attempting a local/server-side import."""
+    if not raw or not raw.strip():
+        raise ValueError("Enter a folder path, or upload files from your computer.")
+    folder = Path(raw).expanduser()
+    if not folder.is_dir():
+        raise ValueError("This folder is not available to the app. Use Upload file(s), or choose an accessible folder.")
+    return [path for path in folder.iterdir() if has_type(path, file_types)]
 
 
 def _plain(value):
@@ -232,6 +258,7 @@ class StreamlitUI:
         fallback: Union[List, str, Dict[str, str]] = None,
         suggest_folders: bool = False,
         list_files: bool = True,
+        manual_import_sources: tuple[str, ...] = (),
     ) -> None:
         """
         Handles file uploads through the Streamlit interface, supporting both direct
@@ -256,6 +283,9 @@ class StreamlitUI:
                 as conditions.
             list_files (bool, optional): Show the current files below the
                 upload. ``select_input_file(upload=...)`` lists them itself.
+            manual_import_sources (tuple[str, ...], optional): Import sources
+                such as ``"pride"`` that require an explicit destination for
+                this input instead of matching its extension automatically.
         """
         files_dir = Path(self.workflow_dir, "input-files", key)
 
@@ -283,17 +313,26 @@ class StreamlitUI:
             "file_types": list(file_types),
             "dir": str(files_dir),
             "fallback": [str(Path(f).resolve()) for f in ([fallback] if isinstance(fallback, str) else fallback or [])],
+            "manual_import_sources": list(manual_import_sources),
         }
 
-        c1, c2 = st.columns(2)
+        local_mode = st.session_state.location == "local"
+        native_picker = local_mode and native_dialog_available()
+        mount_root = _mounted_data_root()
+        external_files = Path(files_dir, "external_files.txt")
 
-        mount_root = _mounted_data_root() if st.session_state.location == "online" else None
+        if mount_root is not None:
+            # The shared data folder is the main route for large acquisitions.
+            # Keep it full width, with browser uploads available underneath.
+            c2 = st.container()
+            c1 = st.expander("Or add a file from your computer")
+        else:
+            c1, c2 = st.columns(2)
 
-        if st.session_state.location == "local":
-            # A local install reads files straight from disk, so the browser
-            # upload widget (which streams every byte through the browser) is
-            # not offered. Files are picked from disk and copied or referenced.
-            c1.markdown("**Add file(s) from your computer**")
+        if local_mode and mount_root is None:
+            # Desktop installs offer native pickers. Headless local installs
+            # use browser uploads and accessible folder paths instead.
+            c1.markdown("**Add file(s) from your computer**" if native_picker else "**Upload file(s)**")
             c2_text, c2_checkbox = c2.columns([1.5, 1], gap="large")
             c2_text.markdown("**OR add files from local folder**")
             use_copy = c2_checkbox.checkbox(
@@ -306,7 +345,7 @@ class StreamlitUI:
             c1.markdown("**Upload file(s)**")
             use_copy = True
 
-        if st.session_state.location != "local":
+        if not native_picker:
             with c1.form(f"{key}-upload", clear_on_submit=True):
                 # Streamlit file uploader accepts file types as a list or None.
                 # A .d folder cannot be uploaded from a browser, only a zip of it.
@@ -348,7 +387,6 @@ class StreamlitUI:
                     else:
                         st.error("Nothing to add, please upload file.")
         else:
-            external_files = Path(files_dir, "external_files.txt")
             c1.write("\n")
             with c1.container(border=True):
                 dialog_button = st.button(
@@ -357,7 +395,7 @@ class StreamlitUI:
                     use_container_width=True,
                     key=f"local_browse_single_{key}",
                     help="Browse for your local MS data files.",
-                    disabled=not TK_AVAILABLE,
+                    disabled=not native_picker,
                 )
 
                 # Tk file dialog requires file types to be a list of tuples.
@@ -399,29 +437,26 @@ class StreamlitUI:
                         st.session_state["previous_dir"] = Path(local_files[0]).parent
 
         # Local file upload option: via directory path
-        if st.session_state.location == "local":
-            # c2_text, c2_checkbox = c2.columns([1.5, 1], gap="large")
-            # c2_text.markdown("**OR add files from local folder**")
-            # use_copy = c2_checkbox.checkbox("Make a copy of files", key=f"{key}-copy_files", value=True, help="Create a copy of files in workspace.")
+        if local_mode and mount_root is None:
             with c2.container(border=True):
-                st_cols = st.columns([0.05, 0.55], gap="small")
-                with st_cols[0]:
-                    st.write("\n")
-                    st.write("\n")
-                    dialog_button = st.button(
-                        "📁",
-                        key=f"local_browse_{key}",
-                        help="Browse for your local directory with MS data.",
-                        disabled=not TK_AVAILABLE,
-                    )
-                    if dialog_button:
-                        st.session_state["local_dir"] = tk_directory_dialog(
-                            "Select directory with your MS data",
-                            st.session_state["previous_dir"],
+                st_cols = st.columns([0.05, 0.55] if native_picker else [1], gap="small")
+                if native_picker:
+                    with st_cols[0]:
+                        st.write("\n")
+                        st.write("\n")
+                        dialog_button = st.button(
+                            "📁",
+                            key=f"local_browse_{key}",
+                            help="Browse for your local directory with MS data.",
                         )
-                        st.session_state["previous_dir"] = st.session_state["local_dir"]
+                        if dialog_button:
+                            st.session_state["local_dir"] = tk_directory_dialog(
+                                "Select directory with your MS data",
+                                st.session_state["previous_dir"],
+                            )
+                            st.session_state["previous_dir"] = st.session_state["local_dir"]
 
-                with st_cols[1]:
+                with st_cols[-1]:
                     local_dir = st.text_input(
                         f"path to folder with **{name}** files",
                         key=f"path_to_folder_{key}",
@@ -434,45 +469,37 @@ class StreamlitUI:
                     key=f"add_files_from_local_{key}",
                     help="Add files from local directory.",
                 ):
-                    files = []
-                    local_dir = Path(
-                        local_dir
-                    ).expanduser()  # Expand ~ to full home directory path
-
-                    for ft in file_types:
-                        # Search for both files and directories with the specified extension
-                        for path in local_dir.iterdir():
-                            if has_type(path, [ft]):
-                                files.append(path)
-
-                    if not files:
-                        st.warning(
-                            f"No files with type **{', '.join(file_types)}** found in specified folder."
-                        )
+                    try:
+                        files = _local_folder_files(local_dir, file_types)
+                    except (OSError, ValueError) as error:
+                        st.error(f"Could not add files: {error}")
                     else:
-                        my_bar = st.progress(0)
-                        for i, f in enumerate(files):
-                            my_bar.progress((i + 1) / len(files))
-                            if use_copy:
-                                if os.path.isfile(f):
-                                    shutil.copy(f, Path(files_dir, f.name))
-                                elif os.path.isdir(f):
-                                    shutil.copytree(
-                                        f, Path(files_dir, f.name), dirs_exist_ok=True
-                                    )
+                        if not files:
+                            st.warning(
+                                f"No files with type **{', '.join(file_types)}** found in specified folder."
+                            )
+                        else:
+                            my_bar = st.progress(0)
+                            try:
+                                for i, f in enumerate(files):
+                                    my_bar.progress((i + 1) / len(files))
+                                    if use_copy:
+                                        if os.path.isfile(f):
+                                            shutil.copy(f, Path(files_dir, f.name))
+                                        elif os.path.isdir(f):
+                                            shutil.copytree(f, Path(files_dir, f.name), dirs_exist_ok=True)
+                                    else:
+                                        with open(external_files, "a") as f_handle:
+                                            f_handle.write(f"{f}\n")
+                            except OSError as error:
+                                st.error(f"Could not add files: {error}")
                             else:
-                                # Write the path to the local directories to the file
-                                with open(external_files, "a") as f_handle:
-                                    f_handle.write(f"{f}\n")
-                        my_bar.empty()
-                        st.success("Successfully copied files!")
+                                st.success("Successfully added files!")
+                            finally:
+                                my_bar.empty()
 
-            if not TK_AVAILABLE:
-                c2.warning(
-                    "**Warning**: Failed to import tkinter, either it is not installed, or this is being called from a cloud context. "
-                    "This function is not available in a Streamlit Cloud context. "
-                    "You will have to manually enter the path to the folder with the MS files."
-                )
+            if not native_picker:
+                c2.caption("Upload files from your computer, or use a folder path that is available to this app.")
 
             if not use_copy:
                 c2.warning(
@@ -749,7 +776,10 @@ class StreamlitUI:
             labels = ["📁 Your files"]
             if uniprot:
                 labels.append("🔎 Import from UniProt proteome")
-            labels.append("💻 Data on your computer")
+            computer_label = (
+                "📂 Data folder" if _mounted_data_root() else "💻 Data on your computer"
+            )
+            labels.append(computer_label)
             if importing:
                 labels.append("☁️ Cloud data")
             if pride:
@@ -804,7 +834,7 @@ class StreamlitUI:
             # The upload widget fills self.upload_targets, so it is drawn
             # first and the import tabs route files by it.
             self.upload_targets = {}
-            with tabs["💻 Data on your computer"]:
+            with tabs[computer_label]:
                 # Unwrapped from its fragment: adding files reruns the whole
                 # dialog, so "Your files" lists them at once.
                 StreamlitUI.upload_widget.__wrapped__(
@@ -861,6 +891,13 @@ class StreamlitUI:
         cwd = self._resolve_browser_cwd(key, mount_root)
         sess_cwd_key = f"mounted_cwd_{key}"
 
+        def changed():
+            # This browser also runs inside dialogs and during full app runs.
+            try:
+                st.rerun(scope="fragment")
+            except st.errors.StreamlitAPIException:
+                st.rerun()
+
         st.markdown(
             """
             <style>
@@ -876,10 +913,12 @@ class StreamlitUI:
         )
 
         with st.container(border=True):
-            st.markdown(
-                f"**Add {name} files from mounted directory** "
-                f"`{mount_root}`"
-            )
+            st.markdown(f"**Choose {name} from the data folder**")
+            if host_folder := os.environ.get("LOCAL_DATA_HOST_DIR"):
+                st.caption(f"On your computer: {folder_reference(host_folder)}")
+            st.caption("Move files into your data folder, then refresh this list. Selected files are read in place.")
+            # Clicking already reruns this widget and re-reads the directory.
+            st.button("Refresh folder", key=f"mounted_refresh_{key}")
 
             # Breadcrumbs: compact tertiary buttons separated by »,
             # with a right-aligned Parent button.
@@ -894,7 +933,6 @@ class StreamlitUI:
                 ratios.append(max(len(segments[i]), 3))
                 if i < n - 1:
                     ratios.append(1)
-            ratios.append(20)  # flexible spacer
             ratios.append(6)   # parent button slot
             crumb_cols = st.columns(ratios, vertical_alignment="center")
             col_idx = 0
@@ -906,7 +944,7 @@ class StreamlitUI:
                     type="tertiary",
                 ):
                     st.session_state[sess_cwd_key] = str(target)
-                    st.rerun(scope="fragment")
+                    changed()
                 col_idx += 1
                 if i < n - 1:
                     crumb_cols[col_idx].markdown(
@@ -914,8 +952,6 @@ class StreamlitUI:
                         unsafe_allow_html=True,
                     )
                     col_idx += 1
-            # spacer column
-            col_idx += 1
             if cwd != mount_root:
                 if crumb_cols[col_idx].button(
                     "⬆ Parent",
@@ -923,7 +959,7 @@ class StreamlitUI:
                     type="tertiary",
                 ):
                     st.session_state[sess_cwd_key] = str(cwd.parent)
-                    st.rerun(scope="fragment")
+                    changed()
 
             try:
                 entries = sorted(
@@ -949,7 +985,7 @@ class StreamlitUI:
                     type="tertiary",
                 ):
                     st.session_state[sess_cwd_key] = str(d)
-                    st.rerun(scope="fragment")
+                    changed()
 
             selectable = bundled + files
             selected_paths: List[str] = []
@@ -999,7 +1035,7 @@ class StreamlitUI:
                 for f in selectable:
                     st.session_state.pop(f"mounted_pick_{key}_{f}", None)
                 st.success(f"Added {added} file(s) from `{cwd}`.")
-                st.rerun(scope="fragment")
+                changed()
 
     def uniprot_proteome_download(self, key: str, name: str = "") -> None:
         """Search UniProt proteomes by organism name or taxonomy ID and download
@@ -1130,7 +1166,18 @@ class StreamlitUI:
             save_folders(self.workflow_dir, key, {**folders, **missing})
 
     def _select_input_file_impl(self, key, name, multiple, display_file_path, reactive, upload=None):
-        """Internal implementation of select_input_file - contains all the widget logic."""
+        """Internal implementation of select_input_file: the widgets, then a
+        warning when selected files would write to the same results."""
+        self._select_input_file_widgets(key, name, multiple, display_file_path, reactive, upload)
+        if multiple:
+            groups = name_clashes(st.session_state.get(
+                f"{self.parameter_manager.param_prefix}{key}", self.params.get(key)
+            ))
+            if groups:
+                st.warning(clash_message(groups), icon=":material/content_copy:")
+
+    def _select_input_file_widgets(self, key, name, multiple, display_file_path, reactive, upload=None):
+        """The widgets of select_input_file."""
         if not name:
             name = f"**{key}**"
         if upload is not None:
@@ -1164,7 +1211,7 @@ class StreamlitUI:
             value = st.session_state.pop(pending)
             st.session_state[widget] = (
                 [v for v in value if v in options] if multiple
-                else (value if value in options else (options[0] if options else None))
+                else (value if value in options else None)
             )
             self.params[key] = st.session_state[widget]
         if upload is None and not Path(self.workflow_dir, "input-files", key).exists():
@@ -1174,11 +1221,21 @@ class StreamlitUI:
             self.params[key] = [f for f in self.params[key] if f in options]
         if upload is not None:
             # A selected file can be gone (an example replaced by own files).
-            current = st.session_state.get(widget)
+            current = st.session_state.get(widget, self.params.get(key))
             if isinstance(current, list):
                 st.session_state[widget] = [f for f in current if f in options]
             elif current is not None and current not in options:
-                del st.session_state[widget]
+                st.warning(
+                    f"The selected {name.replace('*', '')} is no longer available: {Path(str(current)).name}. Choose a file again."
+                )
+                st.session_state[widget] = None
+                self.params[key] = None
+                self.parameter_manager.save_parameters()
+            elif not multiple and current is None and key in self.params:
+                # A cleared or removed file must not become the first remaining
+                # option when this page is revisited.
+                if widget not in st.session_state:
+                    st.session_state[widget] = None
 
         widget_type = "multiselect" if multiple else "selectbox"
         if multiple:
@@ -2847,8 +2904,9 @@ class StreamlitUI:
             return
         # The upload widgets fill self.upload_targets, so the Upload tab is
         # drawn first and the import tabs route files by it.
+        local_label = "📂 Data folder" if _mounted_data_root() else "💻 Data on your computer"
         upload, cloud, pride = st.tabs(
-            ["💻 Data on your computer", "☁️ Cloud data", "🧬 Import from PRIDE"]
+            [local_label, "☁️ Cloud data", "🧬 Import from PRIDE"]
         )
         with upload:
             self._upload_tab(custom_upload_function)
@@ -2972,40 +3030,50 @@ class StreamlitUI:
                         help="Export parameter, can be used to import to this workflow.",
                         use_container_width=True,
                     )
-            text = self.export_parameters_markdown()
+            text, stem = run_methods(self.workflow_dir)
             st.download_button(
-                "📑 Method summary",
+                "📑 Methods",
                 data=text,
-                file_name="method-summary.md",
-                mime="text/md",
-                help="Download method summary for publications.",
+                file_name=f"{stem or 'run'}-methods.txt",
+                mime="text/plain",
+                help=("A methods section for a publication, written from the last run."
+                      if text else "Written from a run, once a tool of a run has finished."),
+                disabled=not text,
                 use_container_width=True,
             )
 
         with cols[2]:
+            import_key = f"{self.workflow_dir.resolve()}-parameter-import"
+            generation = st.session_state.get(import_key, 0)
             up = st.file_uploader(
                 "⬆️ Import parameters",
                 help="Import previously exported parameters.",
-                key="param_import_uploader"
+                key=f"{import_key}-{generation}",
             )
             if up is not None:
-                # encoding="utf-8" explicitly: the payload is decoded as utf-8
-                # just above, and writing it back in the platform codepage
-                # produced a params.json that no later utf-8 read could decode.
-                text = up.read().decode("utf-8")
-                try:
-                    # An export made while a follow-up was prepared names the run
-                    # it followed: imported settings start no follow-up
-                    imported = json.loads(text)
-                    if isinstance(imported, dict) and imported.pop(FOLLOW_UP_KEY, None) is not None:
-                        text = json.dumps(imported, indent=4)
-                except ValueError:
-                    pass
-                with open(self.parameter_manager.params_file, "w", encoding="utf-8") as f:
-                    f.write(text)
-                self.parameter_manager.clear_parameter_session_state()
-                st.toast("Parameters imported")
-                st.rerun()
+                if self._import_parameters(up):
+                    self.parameter_manager.clear_parameter_session_state()
+                    st.session_state[import_key] = generation + 1
+                    st.toast("Parameters imported")
+                    st.rerun()
+
+    def _import_parameters(self, upload) -> bool:
+        """Check an imported file, then replace the saved settings atomically.
+
+        A file that is not a JSON object keeps the current settings. An
+        export made while a follow-up was prepared names the run it
+        followed: imported settings start no follow-up.
+        """
+        try:
+            params = json.loads(upload.getvalue().decode("utf-8"))
+            if not isinstance(params, dict):
+                raise ValueError("Parameters must be a JSON object.")
+            params.pop(FOLLOW_UP_KEY, None)
+            self.parameter_manager.write_parameters(params)
+        except (OSError, ValueError) as error:
+            st.error(f"Could not import parameters: {error} Existing settings were kept.")
+            return False
+        return True
 
     def execution_section(
         self,
@@ -3016,16 +3084,23 @@ class StreamlitUI:
         results_page=None,
         results_label: str = "Open results",
         on_open_results=None,
+        blocked: str = "",
+        name: str = "The workflow",
     ) -> None:
         """Start/Stop, progress and log of the workflow.
 
         ``autostart`` starts the workflow on this render unless one is running
         (the Run button of the configure page). ``results_page`` is linked
         below the success message of a finished run; ``on_open_results`` runs
-        before that button switches to it.
+        before that button switches to it. ``blocked`` says why the workflow
+        cannot start: it is shown, and Start is disabled. While a run is going
+        the page offers browser notifications; when a run this session saw
+        running ends, a hidden tab gets the outcome in its title and, if
+        allowed, a notification naming ``name`` (``run_notice``).
         """
-        with st.expander("**Summary**"):
-            st.markdown(self.export_parameters_markdown())
+        if blocked:
+            st.error(blocked, icon=":material/block:")
+        methods_section(self.workflow_dir, key=f"{self.workflow_dir.name}-run-methods")
 
         c1, c2 = st.columns(2)
         # Select log level, this can be changed at run time or later without re-running the workflow
@@ -3053,21 +3128,20 @@ class StreamlitUI:
         is_running = status.get("running", False)
         job_status = status.get("status", "idle")
 
-        # Fallback to PID check for backward compatibility
-        pid_exists = self.executor.pid_dir.exists() and list(self.executor.pid_dir.iterdir())
-        if not is_running and pid_exists:
+        # A supplied queue/local status is authoritative. Legacy callers that
+        # omit it can still use PID files, after checking process liveness.
+        if "running" not in status and local_workflow_running(self.executor.pid_dir):
             is_running = True
             job_status = "running"
 
         log_path = Path(self.workflow_dir, "logs", log_level.replace(" ", "-") + ".log")
-        log_exists = log_path.exists()
 
         # Show queue status if available (online mode)
         if status.get("job_id"):
             self._show_queue_status(status)
 
         # Started from the configure page's Run button
-        if autostart and not is_running:
+        if autostart and not is_running and not blocked:
             start_workflow_function()
             with st.spinner("**Workflow starting...**"):
                 time.sleep(1)
@@ -3081,7 +3155,8 @@ class StreamlitUI:
                 else:
                     self.executor.stop()
                 st.rerun()
-        elif c1.button("Start Workflow", type="primary", use_container_width=True):
+        elif c1.button("Start Workflow", type="primary", use_container_width=True,
+                       disabled=bool(blocked)):
             start_workflow_function()
             with st.spinner("**Workflow starting...**"):
                 time.sleep(1)
@@ -3091,14 +3166,26 @@ class StreamlitUI:
         # running view replaces the finished one completely: st.rerun()
         # below ends the script early, which otherwise leaves the earlier
         # view's trailing elements on the page.
+        watched_key = f"run-watched::{self.workflow_dir}"
         status_area = st.empty()
         with status_area.container():
+            try:
+                log_snapshot = _read_workflow_log(log_path)
+            except (OSError, UnicodeError) as error:
+                log_snapshot = None
+                st.info(f"Workflow log is temporarily unavailable: {error}")
             if is_running:
+                st.session_state[watched_key] = True
+                st.html(run_notice.ask_html(), unsafe_allow_javascript=True)
                 # Real-time display during execution
                 spinner_text = "**Workflow running...**"
                 if job_status == "queued":
                     pos = status.get("queue_position", "?")
                     spinner_text = f"**Waiting in queue (position {pos})...**"
+                elif job_status == "unknown":
+                    spinner_text = "**Waiting for queue status...**"
+                elif job_status == "stopping":
+                    spinner_text = "**Waiting for workflow processes to exit...**"
 
                 if job_status != "queued":
                     self._show_run_progress()
@@ -3106,9 +3193,8 @@ class StreamlitUI:
                     st.empty()  # keeps the place of the progress panel
                 with st.spinner(spinner_text):
                     log_slot = st.empty()
-                    if log_exists:
-                        with open(log_path, "r", encoding="utf-8") as f:
-                            lines = f.readlines()
+                    if log_snapshot is not None:
+                        _, lines = log_snapshot
                         if log_lines_count == "all":
                             display_lines = lines
                         else:
@@ -3122,15 +3208,20 @@ class StreamlitUI:
                     time.sleep(1)
                     st.rerun()
 
-            elif log_exists:
+            elif log_snapshot is not None:
                 # Static display after completion
+                created, lines = log_snapshot
                 st.markdown(
-                    f"**Workflow log file: {datetime.fromtimestamp(log_path.stat().st_ctime).strftime('%Y-%m-%d %H:%M')} CET**"
+                    f"**Workflow log file: {datetime.fromtimestamp(created).strftime('%Y-%m-%d %H:%M')} CET**"
                 )
-                with open(log_path, "r", encoding="utf-8") as f:
-                    lines = f.readlines()
                 content = "".join(lines)
                 outcome = classify_log_outcome(content)
+                if st.session_state.pop(watched_key, False):
+                    # A queued job that failed before it cleared the logs
+                    # leaves the previous run's FINISHED marker in them.
+                    notice = "error" if job_status == "failed" else outcome
+                    st.html(run_notice.notice_html(notice, name),
+                            unsafe_allow_javascript=True)
                 if outcome == "finished":
                     st.success("**Workflow completed successfully.**")
                     if results_page is not None:
@@ -3140,7 +3231,8 @@ class StreamlitUI:
                 else:
                     st.error("**Errors occurred, check log file.**")
                 self._show_run_summary(show_failures=outcome != "finished")
-                report_buttons(self.workflow_dir, key=f"{self.workflow_dir.name}-run-report")
+                report_buttons(self.workflow_dir, key=f"{self.workflow_dir.name}-run-report",
+                               methods=False)
                 # Apply line limit to static display
                 if log_lines_count == "all":
                     display_lines = lines
@@ -3222,7 +3314,8 @@ class StreamlitUI:
                     self._show_tool_progress(tool)
             if n > 1 or step["ended"] is not None:
                 lines = []
-                for f in files:
+                shown, left_out = list_entries(files)
+                for f in (files[i] for i in shown):
                     if f["status"] == DONE:
                         lines.append(f":green[:material/check_circle:] {f['name']} :gray[{format_duration(f['ended'] - f['started'])}]")
                     elif f["status"] == FAILED:
@@ -3231,6 +3324,8 @@ class StreamlitUI:
                         lines.append(f":blue[:material/progress_activity:] **{f['name']}** :gray[{format_duration(now - f['started'])}]")
                     else:
                         lines.append(f":gray[:material/radio_button_unchecked: {f['name']}]")
+                if left_out:
+                    lines.append(f":gray[{left_out_line(left_out)}]")
                 file_list.markdown("  \n".join(lines))
             earlier = state["steps"][:-1]
             if earlier:
@@ -3285,13 +3380,16 @@ class StreamlitUI:
             )
             if one_command:
                 self._show_tool_progress(tool)
-            sample_list.markdown("  \n".join(self._sample_lines(state, now)))
+            sample_list.markdown("  \n".join(self._sample_lines(state, now, compact=True)))
 
     @staticmethod
-    def _sample_lines(state: dict, now: float) -> list:
-        """A markdown line per sample, with its time and, while it runs, its tool."""
+    def _sample_lines(state: dict, now: float, compact: bool = False) -> list:
+        """A markdown line per sample, with its time and, while it runs, its
+        tool; ``compact`` lists a long run's samples as ``list_entries`` does."""
         lines = []
-        for s in state["samples"]:
+        samples = state["samples"]
+        shown, left_out = list_entries(samples) if compact else (range(len(samples)), {})
+        for s in (samples[i] for i in shown):
             if s["status"] == DONE:
                 lines.append(f":green[:material/check_circle:] {s['name']} :gray[{format_duration(s['ended'] - s['started'])}]")
             elif s["status"] == FAILED:
@@ -3304,6 +3402,8 @@ class StreamlitUI:
                 lines.append(f":blue[:material/progress_activity:] **{s['name']}** :gray[{format_duration(now - s['started'])}{tool}]")
             else:
                 lines.append(f":gray[:material/radio_button_unchecked: {s['name']}]")
+        if left_out:
+            lines.append(f":gray[{left_out_line(left_out)}]")
         return lines
 
     @staticmethod
@@ -3325,21 +3425,78 @@ class StreamlitUI:
         if not state or not state.get("steps"):
             return
         if show_failures:
-            for failure in failures(state):
-                st.error(
-                    f"**{failure['context']}**"
-                    + (f": {failure['message']}" if failure["message"] else "")
-                )
-                if failure["output"]:
-                    with st.expander(
-                        f"Tool output (exit code {failure['returncode']})"
-                    ):
-                        st.code("\n".join(failure["output"]), language="neon")
+            self._show_failures(state)
+        else:
+            self._show_left_out(failures(state, left_out=True))
+        # The per-sample lines are for following a run; afterwards the
+        # failures above and the totals say what happened
         if len(state.get("samples") or []) > 1:
-            st.markdown("  \n".join(self._sample_lines(state, time.time())))
             st.caption(self._tool_totals(state["steps"]))
             return
         st.caption(" · ".join(self._step_summary(s) for s in state["steps"]))
+
+    def _show_failures(self, state: dict) -> None:
+        """One failed file: its error and tool output. More: per tool one
+        line with the count, a table of the files and their errors, and the
+        tool output of the file picked below it."""
+        found = failures(state)
+        if len(found) == 1:
+            (failure,) = found
+            st.error(
+                f"**{failure['context']}**"
+                + (f": {failure['message']}" if failure["message"] else "")
+            )
+            if failure["output"]:
+                with st.expander(f"Tool output (exit code {failure['returncode']})"):
+                    st.code("\n".join(failure["output"]), language="neon")
+            return
+        for group in failures_by_tool(state):
+            failed = group["failures"]
+            st.error(
+                f"**{group['tool']} failed on {len(failed)} of {group['total']} "
+                f"{'file' if group['total'] == 1 else 'files'}.**"
+            )
+            st.dataframe(
+                [{"File": f["file"] or f["context"], "Error": f["message"]} for f in failed],
+                hide_index=True,
+                width="stretch",
+            )
+            with_output = [f for f in failed if f["output"]]
+            if with_output:
+                with st.expander("Tool output"):
+                    names = [f["file"] or f["context"] for f in with_output]
+                    picked = st.selectbox(
+                        "File",
+                        range(len(with_output)),
+                        format_func=lambda i: names[i],
+                        key=f"{Path(self.workflow_dir).name}-failure-output-{group['tool']}",
+                    )
+                    failure = with_output[picked]
+                    st.caption(f"Exit code {failure['returncode']}")
+                    st.code("\n".join(failure["output"]), language="neon")
+
+    @staticmethod
+    def _show_left_out(left: list) -> None:
+        """A finished run that went on without some files: which, and why."""
+        if not left:
+            return
+        n = len(left)
+        st.warning(
+            f"**{n} file{'s were' if n > 1 else ' was'} left out after an error.** "
+            "The run went on without "
+            + ("them" if n > 1 else "it")
+            + ", so the results do not include "
+            + ("these files" if n > 1 else "this file")
+            + ".  \n"
+            + "  \n".join(
+                f"{f['context']}" + (f": {f['message']}" if f["message"] else "")
+                for f in left
+            )
+        )
+        with st.expander("Tool output of the files left out"):
+            for f in left:
+                st.markdown(f"**{f['context']}** (exit code {f['returncode']})")
+                st.code("\n".join(f["output"]) or "(no output)", language="neon")
 
     @staticmethod
     def _tool_totals(steps: list) -> str:
@@ -3374,6 +3531,8 @@ class StreamlitUI:
             "finished": ("Completed", "success"),
             "failed": ("Failed", "error"),
             "canceled": ("Cancelled", "warning"),
+            "unknown": ("Waiting for queue status", "warning"),
+            "stopping": ("Stopping", "warning"),
         }
 
         label, msg_type = status_display.get(job_status, ("Unknown", "info"))
@@ -3409,6 +3568,9 @@ class StreamlitUI:
 
         elif job_status == "canceled":
             st.warning(f"**Status: {label}** - Workflow was cancelled.")
+        elif job_status in {"unknown", "stopping"}:
+            detail = status.get("error") or status.get("current_step") or "Wait for confirmation before starting another analysis."
+            st.warning(f"**Status: {label}** - {detail}")
 
         # Expandable job details
         with st.expander("Job Details", expanded=False):
@@ -3558,111 +3720,3 @@ Started: {status.get('started_at', 'N/A')}""")
                         key=f"{key_prefix}-zip-button",
                         width="stretch",
                     )
-
-    def non_default_params_summary(self):
-        # Display a summary of non-default TOPP parameters and all others (custom and python scripts)
-
-        def remove_full_paths(d: dict) -> dict:
-            # Create a copy to avoid modifying the original dictionary
-            cleaned_dict = {}
-
-            for key, value in d.items():
-                if isinstance(value, dict):
-                    # Recursively clean nested dictionaries
-                    nested_cleaned = remove_full_paths(value)
-                    if nested_cleaned:  # Only add non-empty dictionaries
-                        cleaned_dict[key] = nested_cleaned
-                elif isinstance(value, list):
-                    # Filter out existing paths from the list
-                    filtered_list = [
-                        item if not Path(str(item)).exists() else Path(str(item)).name
-                        for item in value
-                    ]
-                    if filtered_list:  # Only add non-empty lists
-                        cleaned_dict[key] = ", ".join(filtered_list)
-                elif not Path(str(value)).exists():
-                    # Add entries that are not existing paths
-                    cleaned_dict[key] = value
-
-            return cleaned_dict
-
-        # Don't want file paths to be shown in summary for export
-        params = remove_full_paths(
-            {k: v for k, v in self.params.items() if k != THREADS_USER_MARKER}
-        )
-
-        summary_text = ""
-        python = {}
-        topp = {}
-        general = {}
-
-        for k, v in params.items():
-            if k.startswith("_"):  # _defaults, _flag_params, _follow_up: bookkeeping
-                continue
-            if isinstance(v, dict):
-                topp[k] = v
-            elif ".py" in k:
-                script = k.split(".py")[0] + ".py"
-                if script not in python:
-                    python[script] = {}
-                python[script][k.split(".py")[1][1:]] = v
-            else:
-                general[k] = v
-
-        # Merge _defaults into topp so summary shows custom defaults + user overrides
-        defaults = params.get("_defaults", {})
-        for tool_name, default_vals in defaults.items():
-            if tool_name not in topp:
-                topp[tool_name] = {}
-            topp[tool_name] = {**default_vals, **topp.get(tool_name, {})}
-
-        markdown = []
-
-        def dict_to_markdown(d: dict):
-            for key, value in d.items():
-                if isinstance(value, dict):
-                    # Add a header for nested dictionaries
-                    markdown.append(f"> **{key}**\n")
-                    dict_to_markdown(value)
-                else:
-                    # Add key-value pairs as list items
-                    markdown.append(f">> {key}: **{value}**\n")
-
-        if len(general) > 0:
-            markdown.append("**General**")
-            dict_to_markdown(general)
-        if len(topp) > 0:
-            markdown.append("**OpenMS TOPP Tools**\n")
-            dict_to_markdown(topp)
-        if len(python) > 0:
-            markdown.append("**Python Scripts**")
-            dict_to_markdown(python)
-        return "\n".join(markdown)
-
-    def export_parameters_markdown(self):
-        markdown = []
-
-        url = f"https://github.com/{st.session_state.settings['github-user']}/{st.session_state.settings['repository-name']}"
-        tools = [p.stem for p in Path(self.parameter_manager.ini_dir).iterdir()]
-        if len(tools) > 1:
-            tools = ", ".join(tools[:-1]) + " and " + tools[-1]
-
-        result = subprocess.run(
-            "FileFilter --help", shell=True, text=True, capture_output=True
-        )
-        version = ""
-        if result.returncode == 0:
-            version = result.stderr.split("Version: ")[1].split("-")[0]
-
-        markdown.append(
-            f"""Data was processed using **{st.session_state.settings['app-name']}** ([{url}]({url})), a web application based on the OpenMS WebApps framework [1].
-OpenMS ([https://www.openms.de](https://www.openms.de)) is a free and open-source software for LC-MS data analysis [2].
-The workflow includes the **OpenMS {version}** TOPP tools {tools} as well as Python scripts. Non-default parameters are listed in the supplementary section below.
-
-[1] Müller, Tom David, et al. "OpenMS WebApps: Building User-Friendly Solutions for MS Analysis." (2025) [https://doi.org/10.1021/acs.jproteome.4c00872](https://doi.org/10.1021/acs.jproteome.4c00872).
-\\
-[2] Pfeuffer, Julianus, et al. "OpenMS 3 enables reproducible analysis of large-scale mass spectrometry data." (2024) [https://doi.org/10.1038/s41592-024-02197-7](https://doi.org/10.1038/s41592-024-02197-7).
-"""
-        )
-        markdown.append(self.non_default_params_summary())
-        return "\n".join(markdown)

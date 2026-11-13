@@ -1,6 +1,6 @@
 """
 Streamlit widgets for multi-run workflows: pick the run(s) a page shows, and
-manage the runs (rename, download, delete).
+manage the runs (history, rename, download, delete).
 
 The selection is shared by every page of a workflow: choosing a run on one
 results page shows the same run on the others. It lives in a plain
@@ -9,11 +9,12 @@ widgets that are not drawn on the current page.
 """
 
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 import streamlit as st
 
-from src.workflow.report_ui import report_buttons
+from src.workflow.report_ui import report_buttons, run_report
+from src.workflow.run_history import changed_settings, timeline
 
 from src.workflow.RunManager import (
     CANCELLED,
@@ -142,19 +143,72 @@ def select_run(
     return st.session_state[widget]
 
 
+def run_history_section(
+    runs: RunManager,
+    run_id: str,
+    key: str,
+    on_start_again: Optional[Callable[[str], None]] = None,
+) -> None:
+    """How ``run_id`` came about, its settings that differ from the defaults,
+    its processing report and, with ``on_start_again``, **Start again with
+    these settings** (which calls it with the run's id)."""
+    st.markdown("**How this run came about**")
+    events = timeline(runs, run_id)
+    st.markdown("\n".join(f"{i}. {e}" for i, e in enumerate(events, start=1)) if events
+                else "Nothing was recorded about this run.")
+
+    running = (runs.get(run_id) or {}).get("status") == RUNNING
+    report = {} if running else run_report(runs.workflow_dir, run_id)
+    rows = changed_settings(report)
+    st.markdown("**Settings that differ from the defaults**")
+    if rows:
+        st.dataframe(
+            [{"Tool": r[0], "Parameter": r[1], "This run": r[2]} for r in rows],
+            hide_index=True, width="stretch",
+        )
+    elif running:
+        st.caption("Shown once the run has ended.")
+    elif report.get("steps"):
+        st.caption("Every tool ran with its default settings.")
+    else:
+        st.caption("This run recorded no tool settings.")
+
+    with st.container(horizontal=True, vertical_alignment="center"):
+        if not running:
+            report_buttons(runs.workflow_dir, run_id, key=f"{key}-report")
+        if on_start_again is not None and st.button(
+            "Start again with these settings", icon=":material/replay:", type="primary",
+            key=f"{key}-again", disabled=running or not runs.params(run_id),
+            help="Open the configure page with this run's files and settings. "
+                 "The new run is kept next to this one.",
+        ):
+            on_start_again(run_id)
+
+
+@st.dialog("History", width="large")
+def _history_dialog(runs: RunManager, run_id: str, on_start_again=None) -> None:
+    st.markdown(f"#### {(runs.get(run_id) or {}).get('name', run_id)}")
+    run_history_section(runs, run_id, key=f"runs-{_slug(runs)}-history-{run_id}",
+                        on_start_again=on_start_again)
+
+
 def run_manager_section(
     runs: RunManager,
     workflow_running: bool = False,
     exclude: Optional[list[str]] = None,
+    on_start_again: Optional[Callable[[str], None]] = None,
 ) -> None:
     """
     One row per run with its name, start time and status, and buttons to show
-    it, rename it, download it as a ZIP and delete it.
+    it, open its history, rename it, download it as a ZIP and delete it.
 
     Args:
         runs: The workflow's RunManager.
         workflow_running: True while a run executes; its row cannot be deleted.
         exclude: Names left out of the ZIP downloads (e.g. caches).
+        on_start_again: Called with a run's id by **Start again with these
+            settings** in its history (``WorkflowManager.start_again``);
+            without it the history has no such button.
     """
     run_import(runs)
     all_runs = runs.list_runs()
@@ -180,7 +234,7 @@ def run_manager_section(
         )
         c_status.write(STATUS_LABELS.get(status, status))
 
-        b_show, b_rename, b_report, b_download, b_delete = c_actions.columns(5, gap="small")
+        b_show, b_history, b_rename, b_download, b_delete = c_actions.columns(5, gap="small")
 
         if b_show.button(
             "👁️", key=f"runs-{slug}-show-{run_id}", help="Show this run on the results pages",
@@ -199,28 +253,47 @@ def run_manager_section(
                     st.rerun()
                 st.error("The name can not be empty.")
 
-        with b_report.popover("📄", help="Processing report: how each input file was processed",
-                              width="stretch", disabled=status == RUNNING):
-            report_buttons(runs.workflow_dir, run_id, key=f"runs-{slug}-report-{run_id}", compact=True)
+        if b_history.button(
+            "🕘", key=f"runs-{slug}-history-{run_id}", width="stretch",
+            help="History: how this run came about, its settings and its processing report"
+                 + (", and starting again with its settings" if on_start_again else ""),
+        ):
+            _history_dialog(runs, run_id, on_start_again)
 
         prepared = f"_runs-{slug}-zip-{run_id}"
         zip_path = Path(runs.workflow_dir, "downloads", f"{run_id}.zip")
-        if st.session_state.get(prepared) and zip_path.exists():
-            with open(zip_path, "rb") as f:
-                b_download.download_button(
-                    "⬇️", data=f, file_name=f"{run.get('name', run_id)}.zip",
-                    mime="application/zip", key=f"runs-{slug}-dl-{run_id}",
-                    help="Download the ZIP", width="stretch", type="primary",
-                )
+        archive = None
+        if st.session_state.get(prepared):
+            try:
+                # Another session may remove or replace a prepared archive.
+                # Bind the download to one complete read, not an earlier check.
+                archive = zip_path.read_bytes()
+            except FileNotFoundError:
+                st.session_state[prepared] = False
+                row.info("The prepared ZIP is no longer available. Prepare it again to download this run.")
+            except OSError as error:
+                st.session_state[prepared] = False
+                row.error(f"Could not read this run's ZIP: {error} Try preparing it again.")
+        if archive is not None:
+            b_download.download_button(
+                "⬇️", data=archive, file_name=f"{run.get('name', run_id)}.zip",
+                mime="application/zip", key=f"runs-{slug}-dl-{run_id}",
+                help="Download the ZIP", width="stretch", type="primary",
+            )
         elif b_download.button(
             "📦", key=f"runs-{slug}-zip-{run_id}", width="stretch",
             help="Pack results, parameters and logs of this run into a ZIP",
             disabled=status == RUNNING,
         ):
-            with st.spinner("Compressing..."):
-                runs.zip(run_id, exclude=exclude)
-            st.session_state[prepared] = True
-            st.rerun()
+            try:
+                with st.spinner("Compressing..."):
+                    runs.zip(run_id, exclude=exclude)
+            except OSError as error:
+                st.session_state[prepared] = False
+                row.error(f"Could not prepare this run's ZIP: {error} Refresh the run list or try again.")
+            else:
+                st.session_state[prepared] = True
+                st.rerun()
 
         with b_delete.popover(
             "🗑️", help="Delete", width="stretch", disabled=status == RUNNING,
@@ -297,19 +370,54 @@ def run_import(runs: RunManager, expanded: bool = False) -> None:
 
 
 def run_name_key(runs: RunManager) -> str:
-    """Session-state key of the name typed for the next run."""
+    """Widget key of the name typed for the next run."""
     return f"runs-{_slug(runs)}-next-name"
+
+
+def _run_name_draft_key(runs: RunManager) -> str:
+    """A non-widget draft survives page changes and belongs to one workspace."""
+    return f"_runs-{runs.workflow_dir.resolve()}-next-name-draft"
+
+
+def pending_run_name(runs: RunManager) -> str:
+    """Read the current draft without consuming it before a run exists."""
+    widget = run_name_key(runs)
+    owner = st.session_state.get(f"_{widget}-owner")
+    if owner is None or owner == str(runs.workflow_dir.resolve()):
+        return st.session_state.get(widget, st.session_state.get(_run_name_draft_key(runs), ""))
+    return st.session_state.get(_run_name_draft_key(runs), "")
+
+
+def clear_run_name(runs: RunManager) -> None:
+    """Clear the consumed draft only after RunManager accepted the new run."""
+    st.session_state.pop(_run_name_draft_key(runs), None)
+    widget = run_name_key(runs)
+    if st.session_state.get(f"_{widget}-owner") in (None, str(runs.workflow_dir.resolve())):
+        st.session_state.pop(widget, None)
 
 
 def run_name_input(runs: RunManager, disabled: bool = False) -> None:
     """Name field for the next run, shown above the Start button."""
+    widget, draft = run_name_key(runs), _run_name_draft_key(runs)
+    owner_key = f"_{widget}-owner"
+    owner = str(runs.workflow_dir.resolve())
+    previous_owner = st.session_state.get(owner_key)
+    if widget not in st.session_state or previous_owner not in (None, owner):
+        st.session_state[widget] = st.session_state.get(draft, "")
+    st.session_state[owner_key] = owner
+
+    def keep_draft():
+        st.session_state[draft] = st.session_state[widget]
+
     st.text_input(
         "Run name",
-        key=run_name_key(runs),
+        key=widget,
         max_chars=MAX_NAME_LENGTH,
         placeholder=runs.default_name(),
         disabled=disabled,
+        on_change=keep_draft,
         help="Every run is kept as its own result set. Earlier runs stay "
         "available; switch between them on the results pages and rename, "
         "download or delete them on the Download page.",
     )
+    keep_draft()
