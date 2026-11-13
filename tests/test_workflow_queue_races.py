@@ -9,7 +9,6 @@ from threading import Event
 from types import SimpleNamespace
 from unittest.mock import Mock
 
-import fakeredis
 import psutil
 import pytest
 from rq import Queue
@@ -17,6 +16,8 @@ from rq.job import Job, JobStatus
 from streamlit.testing.v1 import AppTest
 
 from src.workflow.QueueManager import QueueManager, QueueStateUnavailableError
+
+fakeredis = pytest.importorskip("fakeredis")
 
 
 @pytest.fixture
