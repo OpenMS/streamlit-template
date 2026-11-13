@@ -124,3 +124,25 @@ def test_failed_files_after_a_run_are_one_table(tmp_path, monkeypatch):
     assert len(table.value) == 7
     assert list(table.value.columns) == ["File", "Error"]
     assert len(at.selectbox) == 1
+
+
+def test_finished_run_shows_no_sample_list(tmp_path, monkeypatch):
+    samples = _entries([DONE] * 30 + [FAILED] * 2)
+    steps = []
+    for s in samples:
+        entry = dict(s)
+        if s["status"] == FAILED:
+            entry.update(output=[f"Error: cannot read {s['name']}"], returncode=1)
+        steps.append({"tool": "FLASHDeconv", "started": s["started"], "ended": s["ended"],
+                      "threads": 1, "parallel": 1, "sample": s["name"], "files": [entry]})
+    logs = Path(tmp_path, "logs")
+    logs.mkdir()
+    (logs / "progress.json").write_text(json.dumps({"started": 900.0, "samples": samples, "steps": steps}))
+    monkeypatch.setenv("PANEL_WORKFLOW_DIR", str(tmp_path))
+    at = AppTest.from_function(_summary_script, default_timeout=60)
+    at.run()
+    assert not at.exception
+    assert [e.value for e in at.error] == ["**FLASHDeconv failed on 2 of 32 files.**"]
+    assert not at.expander or all("samples" not in e.label for e in at.expander)
+    assert not any("f0.mzML" in m.value for m in at.markdown)
+    assert any("FLASHDeconv: 32 runs" in c.value for c in at.caption)

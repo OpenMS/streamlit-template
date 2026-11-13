@@ -36,7 +36,6 @@ from src.workflow.progress import (
     failures,
     failures_by_tool,
     file_counts,
-    LIST_LIMIT,
     format_duration,
     left_out_line,
     list_entries,
@@ -3338,11 +3337,9 @@ class StreamlitUI:
             return
         if show_failures:
             self._show_failures(state)
+        # The per-sample lines are for following a run; afterwards the
+        # failures above and the totals say what happened
         if len(state.get("samples") or []) > 1:
-            st.markdown("  \n".join(self._sample_lines(state, time.time(), compact=True)))
-            if len(state["samples"]) > LIST_LIMIT:
-                with st.expander(f"All {len(state['samples'])} samples"):
-                    st.markdown("  \n".join(self._sample_lines(state, time.time())))
             st.caption(self._tool_totals(state["steps"]))
             return
         st.caption(" · ".join(self._step_summary(s) for s in state["steps"]))
