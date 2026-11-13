@@ -68,7 +68,7 @@ The user confirms or overrides each one. Do not omit the "what this controls" li
 
 ### Q3. Image tag
 
-- *What this controls:* the release image a new deployment starts from. Under Argo CD the ImageUpdater in `k8s/argocd/` then deploys every later release (pre-releases included) by itself, so this tag never needs bumping; CI also loads its test image under it. Without Argo CD it is the deployed build: a release tag like `v1.2.3-full` pins it, `main-full` follows `main` whenever the operator re-applies.
+- *What this controls:* the release image a new deployment starts from. Under Argo CD the app's ImageUpdater (cluster configuration, not in this repository) then deploys every later release (pre-releases included) by itself, so this tag never needs bumping; CI also loads its test image under it. Without Argo CD it is the deployed build: a release tag like `v1.2.3-full` pins it, `main-full` follows `main` whenever the operator re-applies.
 - *Default:* the app's current release image (`<release-tag>-full`); `main-full` only if the app has no release yet. The `-simple` variant uses a lighter `Dockerfile_simple`; pick that only if the user explicitly wants the lightweight image.
 
 ### Q4. Ingress subdomain

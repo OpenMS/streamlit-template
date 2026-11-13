@@ -195,20 +195,6 @@ jobs:
             exit 1
           fi
 
-      - name: Render the Argo CD folder
-        # k8s/argocd/ is synced by Argo CD itself (argocd-application.yaml),
-        # so a file it cannot render stops every later deploy. Its kinds are
-        # Argo CD CRDs, which kubeconform has no schema for: render only.
-        # tests/test_argocd_autodeploy.py checks the contents.
-        if: hashFiles('k8s/argocd/kustomization.yaml') != ''
-        run: |
-          kubectl kustomize k8s/argocd/ > /tmp/argocd-lint.yaml
-          if [ ! -s /tmp/argocd-lint.yaml ]; then
-            echo "::error::k8s/argocd/ rendered nothing"
-            exit 1
-          fi
-          grep -E '^kind: ' /tmp/argocd-lint.yaml
-
       - name: Validate the CI overlay
         # k8s/overlays/ci/ is what the two kind jobs actually apply, so it is
         # the overlay whose breakage takes them down - and it is the one
