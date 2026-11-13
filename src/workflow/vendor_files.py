@@ -3,6 +3,7 @@
 Kept free of Streamlit so the queue worker can import it.
 """
 import shutil
+import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
 from typing import List, Union
@@ -16,6 +17,37 @@ def vendor_format(path) -> str:
     """Returns "raw" or "d" for a vendor file that needs conversion, else None."""
     suffix = Path(path).suffix.lower().lstrip(".")
     return suffix if suffix in VENDOR_FORMATS else None
+
+
+# FileConverter's reader for Thermo .raw files. OpenMS 3.6 offers two:
+# "inprocess" (its built-in reader, openms-thermo-bridge on a .NET 8 or newer
+# runtime) and "external" (ThermoRawFileParser, on the .NET Framework on
+# Windows and on mono elsewhere). The two write slightly different mzML, and
+# each platform defaults to another one, so convert_to_mzml() names the
+# built-in reader wherever the installed FileConverter has it: the same .raw
+# file then gives the same mzML in the Docker image and every desktop app.
+THERMO_READER = "inprocess"
+
+
+def thermo_reader_available(ini_path) -> bool:
+    """True when the FileConverter .ini at ini_path offers THERMO_READER.
+
+    Reads ``RawToMzML:reader`` and its valid strings. An OpenMS before 3.6
+    (no such parameter) or one built without the built-in reader
+    (``WITH_THERMO_RAW=OFF``, valid strings ``external`` only) answers False.
+    """
+    try:
+        root = ET.parse(ini_path).getroot()
+    except (OSError, ET.ParseError):
+        return False
+    for node in root.iter("NODE"):
+        if node.get("name") != "RawToMzML":
+            continue
+        for item in node.findall("ITEM"):
+            if item.get("name") == "reader":
+                allowed = (item.get("restrictions") or "").split(",")
+                return THERMO_READER in [a.strip() for a in allowed]
+    return False
 
 
 def extract_bruker_zip(archive, files_dir: Path) -> List[str]:

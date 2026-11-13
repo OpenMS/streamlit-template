@@ -102,6 +102,18 @@ SHELL ["mamba", "run", "-n", "streamlit-env", "/bin/bash", "-c"]
 RUN git clone --depth=1 -b ${OPENMS_BRANCH} --single-branch ${OPENMS_REPO} /OpenMS
 WORKDIR /OpenMS
 
+# OpenMS's built-in Thermo .raw reader (openms-thermo-bridge, OpenMS 3.6 and
+# newer) is built against the .NET host and runs on a .NET 8 or newer runtime.
+# The .NET SDK it is built with is the one OpenMS pins in
+# tools/ci/install_dotnet_sdk_linux.sh (with checksums, for x64 and arm64);
+# it stays in the image as the runtime FileConverter starts. An OpenMS without
+# the script has no such reader and is built without it (WITH_THERMO_RAW below).
+RUN if [ -f tools/ci/install_dotnet_sdk_linux.sh ]; then \
+        bash tools/ci/install_dotnet_sdk_linux.sh /usr/share/dotnet && /usr/share/dotnet/dotnet --info; \
+    fi
+ENV DOTNET_ROOT=/usr/share/dotnet DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1
+ENV PATH="${PATH}:/usr/share/dotnet"
+
 # Python packages for the pyOpenMS build, as the checked-out source lists them.
 # OpenMS 3.6 builds pyOpenMS with nanobind (build requirements in
 # src/pyOpenMS/pyproject.toml); earlier versions with autowrap and Cython
@@ -142,8 +154,11 @@ WORKDIR /
 # Options a version does not know are ignored with a warning, so one command
 # serves 3.5 and 3.6+: OPENMS_USE_VCPKG=OFF takes the system packages,
 # WITH_UV=OFF builds against this Python instead of a uv-made venv, and
-# WITH_THERMO_RAW=OFF leaves out the .NET Thermo reader (FileConverter converts
-# Thermo RAW files with ThermoRawFileParser and mono, installed below).
+# WITH_THERMO_RAW builds the built-in Thermo reader wherever the .NET SDK was
+# installed above. CommandExecutor.convert_to_mzml() names that reader, so a
+# .raw file gives the same mzML here as in the desktop apps;
+# ThermoRawFileParser on mono (installed below) is the fallback of an OpenMS
+# without it.
 SHELL ["/bin/bash", "-c"]
 RUN cmake -S /OpenMS -B /openms-build \
         -DCMAKE_BUILD_TYPE='Release' \
@@ -152,7 +167,7 @@ RUN cmake -S /OpenMS -B /openms-build \
         -DBOOST_USE_STATIC=OFF \
         -DOPENMS_USE_VCPKG=OFF \
         -DWITH_UV=OFF \
-        -DWITH_THERMO_RAW=OFF \
+        -DWITH_THERMO_RAW=$([ -x /usr/share/dotnet/dotnet ] && echo ON || echo OFF) \
         -DPYOPENMS=ON \
         -DPY_MEMLEAK_DISABLE=On \
         -DPython_EXECUTABLE=/root/miniforge3/envs/streamlit-env/bin/python
@@ -222,7 +237,15 @@ RUN python -c "import pyopenms; print('pyOpenMS', pyopenms.__version__, pyopenms
             echo "$tool -write_ini failed:"; cat "/tmp/$tool.log"; exit 1; \
         fi; \
         rm -f "/tmp/$tool.ini" "/tmp/$tool.log"; \
-    done
+    done \
+    && if [ -x /usr/share/dotnet/dotnet ]; then \
+        FileConverter -write_ini /tmp/FileConverter.ini > /dev/null 2>&1; \
+        grep -q 'name="reader".*inprocess' /tmp/FileConverter.ini \
+            || { echo "FileConverter has no built-in Thermo reader"; exit 1; }; \
+        test -f /openms/share/openms_thermo_bridge/managed/ThermoWrapperManaged.runtimeconfig.json \
+            || { echo "The built-in Thermo reader's managed assemblies are missing"; exit 1; }; \
+        rm -f /tmp/FileConverter.ini; \
+    fi
 
 # Prepare and run streamlit app.
 FROM compile-openms AS run-app

@@ -35,7 +35,7 @@ if _original_pyopenms is None:
 
 from src.workflow.ParameterManager import ParameterManager
 from src.workflow.CommandExecutor import CommandExecutor
-from src.workflow.vendor_files import extract_bruker_zip, vendor_format
+from src.workflow.vendor_files import extract_bruker_zip, thermo_reader_available, vendor_format
 
 if _original_streamlit is not None:
     sys.modules["streamlit"] = _original_streamlit
@@ -99,6 +99,46 @@ def test_raw_is_converted_with_fileconverter(tmp_path):
     # Written under a temporary name and renamed once complete.
     assert io["out"][0].endswith(".part.mzML")
     assert not Path(io["out"][0]).exists()
+
+
+def _fileconverter_ini(path, restrictions):
+    """A FileConverter .ini holding only RawToMzML:reader, or nothing with None."""
+    item = (
+        f'<ITEM name="reader" value="external" type="string" restrictions="{restrictions}" />'
+        if restrictions is not None else ""
+    )
+    path.write_text(
+        '<?xml version="1.0" encoding="UTF-8"?><PARAMETERS version="1.7.0">'
+        '<NODE name="FileConverter"><NODE name="1">'
+        f'<NODE name="RawToMzML">{item}</NODE>'
+        "</NODE></NODE></PARAMETERS>"
+    )
+    return path
+
+
+@pytest.mark.parametrize(
+    "restrictions, available",
+    [("external,inprocess", True), ("external", False), (None, False)],
+)
+def test_thermo_reader_available_reads_the_valid_strings(tmp_path, restrictions, available):
+    ini = _fileconverter_ini(tmp_path / "FileConverter.ini", restrictions)
+    assert thermo_reader_available(ini) is available
+    assert thermo_reader_available(tmp_path / "missing.ini") is False
+
+
+@pytest.mark.parametrize(
+    "restrictions, params",
+    [("external,inprocess", {"RawToMzML:reader": "inprocess"}), ("external", {})],
+)
+def test_raw_conversion_names_the_built_in_reader(tmp_path, restrictions, params):
+    raw = tmp_path / "run1.raw"
+    raw.write_text("raw")
+    executor = _executor(tmp_path)
+    ini = _fileconverter_ini(executor.parameter_manager.ini_dir / "FileConverter.ini", restrictions)
+    executor.parameter_manager.create_ini = MagicMock(return_value=ini.exists())
+
+    assert executor.convert_to_mzml([str(raw)])
+    assert executor.run_topp.call_args.kwargs["custom_params"] == params
 
 
 def test_d_folder_is_converted_with_the_python_tool(tmp_path):

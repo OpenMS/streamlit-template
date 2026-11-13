@@ -6,7 +6,7 @@ from pathlib import Path
 from .Logger import Logger
 from .ParameterManager import ParameterManager, bool_param_paths_from_param_xml_ini
 from .settings_io import load_settings, detect_cpu_quota, resolve_thread_setting, local_thread_default
-from .vendor_files import vendor_format
+from .vendor_files import THERMO_READER, thermo_reader_available, vendor_format
 from .progress import RunProgress, read_progress, failure_context, OUTPUT_TAIL
 from .processing_report import command_io, report_params
 from collections import deque
@@ -730,15 +730,39 @@ class CommandExecutor:
         )
         return False
 
+    def thermo_reader_args(self) -> dict:
+        """
+        FileConverter parameters that read Thermo .raw files with OpenMS's
+        built-in reader, or {} when the installed FileConverter has none.
+
+        Each platform has its own default reader (ThermoRawFileParser on
+        Windows, the built-in one on macOS and Linux) and their mzML differs
+        slightly, so the reader is named explicitly: the same .raw file then
+        gives the same mzML everywhere. Without the built-in reader the tool's
+        default stays, and the log says so.
+        """
+        if self.parameter_manager.create_ini("FileConverter") and thermo_reader_available(
+            Path(self.parameter_manager.ini_dir, "FileConverter.ini")
+        ):
+            return {"RawToMzML:reader": THERMO_READER}
+        self.logger.log(
+            "WARNING: FileConverter has no built-in Thermo reader; converting with "
+            "its default reader (ThermoRawFileParser), whose mzML differs slightly.",
+            1,
+        )
+        return {}
+
     def convert_to_mzml(self, files: list[str], out_dir: str = None) -> list[str]:
         """
         Returns an mzML path for every input file, converting vendor files first.
 
         mzML files are returned unchanged. Thermo ``.raw`` files are converted
-        with the TOPP tool FileConverter: on Windows with ThermoRawFileParser,
-        elsewhere with OpenMS's built-in reader, which needs a .NET 8 or newer
-        runtime (the desktop app ships one), or, in an OpenMS built without it
-        (the Docker image), with ThermoRawFileParser on mono. Bruker timsTOF ``.d`` folders are converted with
+        with the TOPP tool FileConverter and OpenMS's built-in reader on every
+        platform (``-RawToMzML:reader inprocess``, see ``thermo_reader_args``),
+        which needs a .NET 8 or newer runtime (the desktop apps and the Docker
+        image ship one). An OpenMS without that reader (before 3.6, or built
+        with ``WITH_THERMO_RAW=OFF``) uses its default, ThermoRawFileParser.
+        Bruker timsTOF ``.d`` folders are converted with
         ``src/python-tools/bruker_to_mzml.py``. A conversion is done once: the
         mzML is kept in ``out_dir`` (default ``<workflow_dir>/converted-mzML``)
         and reused while it is newer than its input.
@@ -772,7 +796,11 @@ class CommandExecutor:
                 tmp = Path(temporary, f"{out.stem}.part.mzML")
                 self.logger.log(f"Converting {Path(f).name} to mzML...")
                 if kind == "raw":
-                    ok = self.run_topp("FileConverter", {"in": [str(f)], "out": [str(tmp)]})
+                    ok = self.run_topp(
+                        "FileConverter",
+                        {"in": [str(f)], "out": [str(tmp)]},
+                        custom_params=self.thermo_reader_args(),
+                    )
                 else:
                     ok = self.run_python("bruker_to_mzml", {"in": str(f), "out": str(tmp)})
                 if not ok or not tmp.exists():
