@@ -879,13 +879,14 @@ jobs:
       - name: Log in to GHCR for ORAS push
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
         run: |
           # apptainer reads its auth from ~/.apptainer/remote.yaml, NOT from
           # ~/.docker/config.json — so docker/login-action won't work here.
           # Login and push must both run as the runner user (no sudo) so they
           # share the same $HOME and therefore the same auth file.
           echo "$GHCR_TOKEN" | apptainer registry login \
-            --username "${{ github.actor }}" \
+            --username "$GHCR_USER" \
             --password-stdin \
             oras://ghcr.io
 
