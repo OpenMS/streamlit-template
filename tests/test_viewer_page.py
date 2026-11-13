@@ -210,3 +210,15 @@ def test_presets_follow_the_shown_dataset(tmp_path):
     at.selectbox(key="v_experiment_0_select").set_value("y").run()
     assert not at.exception
     assert _texts(at) == ["y:a"]
+
+
+def test_later_experiments_have_no_switch(tmp_path):
+    (tmp_path / "runs.json").write_text(json.dumps({
+        "layout": [[["plot"]], [["plot"]]], "side_by_side": False, "current": "plots", "experiments": 2,
+    }))
+    at = _app(tmp_path).run()
+    at.selectbox(key="v_experiment_0_select").set_value("r3").run()
+    assert not at.exception
+    # The first experiment offers the comparison locked; the second has no control
+    assert _segmented(at, "v_show_0_lone") is not None
+    assert _segmented(at, "v_show_1_lone") is None and _segmented(at, "v_show_1_widget") is None

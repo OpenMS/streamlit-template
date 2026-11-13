@@ -279,6 +279,9 @@ def _member_controls(spec: ViewerSpec, ctx: ViewerContext) -> None:
             _segmented(spec.member_label, ctx.members, member_state, f"{member_state}_widget", ctx.member,
                        label_of, spec.member_help)
         return
+    if index > 0:
+        # Later experiments show datasets of the first one's kind (``later``)
+        return
     show_state = _show_state(key, index)
     choices = [_MEMBER, _WHOLE]
     names = {_MEMBER: spec.member_choice, _WHOLE: spec.whole_choice}
@@ -290,7 +293,7 @@ def _member_controls(spec: ViewerSpec, ctx: ViewerContext) -> None:
             st.session_state[widget] = ctx.member
             st.selectbox(spec.member_select_label, ctx.members, key=widget,
                          format_func=label_of, on_change=lambda: _copy(widget, member_state))
-    elif spec.lone_whole is not None:
+    elif spec.lone_whole is not None and not _wholes(spec, ctx.experiment, ctx.members):
         widget = f"{show_state}_lone"
 
         def _lone() -> None:
