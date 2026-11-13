@@ -52,8 +52,10 @@ CSS = """
 .ctb.compact h3{font-size:1.05rem}
 .ctb.compact .lead{font-size:.8rem}
 .ctb.compact .grp{font-size:.66rem;margin:10px 0 4px 0}
-.ctb.compact .grid{gap:4px}
-.ctb.compact img.a{width:30px;height:30px;border-radius:50%;display:block;background:rgba(128,128,128,.2)}
+.ctb.compact .grid{display:grid;grid-template-columns:1fr 1fr;gap:5px 10px}
+.ctb.compact .c{display:flex;align-items:center;gap:7px;min-width:0;font-size:.74rem;line-height:1.15}
+.ctb.compact .c span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ctb.compact img.a{width:26px;height:26px;flex:none;border-radius:50%;display:block;background:rgba(128,128,128,.2)}
 </style>
 """
 
@@ -122,14 +124,16 @@ def _person(login: str, name: str) -> str:
 def _avatar(login: str, name: str) -> str:
     login_e = html.escape(login)
     tip = html.escape(f"{name} (@{login})" if name else f"@{login}")
+    label = html.escape(name or f"@{login}")
     return (
-        f'<a href="{PROFILE_URL.format(login=login_e)}" target="_blank" rel="noopener" title="{tip}">'
-        f'<img class="a" src="{AVATAR_URL.format(login=login_e)}" alt="{tip}" loading="lazy"></a>'
+        f'<a class="c" href="{PROFILE_URL.format(login=login_e)}" target="_blank" rel="noopener" title="{tip}">'
+        f'<img class="a" src="{AVATAR_URL.format(login=login_e)}" alt="" loading="lazy">'
+        f"<span>{label}</span></a>"
     )
 
 
 def to_html(content: dict[str, Any], compact: bool = False) -> str:
-    """The section as HTML; ``compact`` shows pictures only, names on hover."""
+    """The section as HTML; ``compact`` lists small pictures with names in two columns, the handle on hover."""
     person = _avatar if compact else _person
     parts = [
         CSS,

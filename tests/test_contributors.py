@@ -126,7 +126,7 @@ def test_every_build_ships_the_app_contributors_file():
     assert " contributors.json " in copy_line
 
 
-def test_compact_html_shows_names_on_hover_only():
+def test_compact_html_lists_names_with_the_handle_on_hover():
     from src.common.contributors import to_html
 
     content = {"lead": "L", "groups": [{"title": "G", "people": ["octocat"]}],
@@ -134,8 +134,11 @@ def test_compact_html_shows_names_on_hover_only():
     compact = to_html(content, compact=True)
     assert 'class="ctb compact"' in compact
     assert 'title="Mona &lt;Lisa&gt; (@octocat)"' in compact
+    assert "<span>Mona &lt;Lisa&gt;</span>" in compact
     assert '<div class="n">' not in compact
     assert '<div class="n">' in to_html(content)
+    nameless = {**content, "names": {}}
+    assert "<span>@octocat</span>" in to_html(nameless, compact=True)
 
 
 def test_strip_is_styled_by_the_theme():
