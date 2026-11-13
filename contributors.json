@@ -2,7 +2,24 @@
   "repository": "streamlit-template",
   "name": "OpenMS web app template",
   "lead": "The OpenMS web app framework is open source, built on OpenMS.",
+  "framework": "first",
   "groups": [
+    {
+      "title": "Interactive visualizations (OpenMS-Insight)",
+      "github": "t0mdavid-m/OpenMS-Insight",
+      "exclude": [
+        "claude"
+      ],
+      "extra": [
+        "JKVISION1101"
+      ],
+      "people": [
+        "t0mdavid-m",
+        "hjn0415a",
+        "PhilippKaulich",
+        "JKVISION1101"
+      ]
+    },
     {
       "title": "OpenMS tools behind the example workflow",
       "people": [
@@ -33,6 +50,10 @@
     "hendrikweisser": "Hendrik Weisser",
     "aiche": "Stephan Aiche",
     "ahmedskhalil": "Ahmed Khalil",
-    "grosenberger": "George Rosenberger"
+    "grosenberger": "George Rosenberger",
+    "t0mdavid-m": "Tom David Müller",
+    "hjn0415a": "Yoo HoJun",
+    "JKVISION1101": "Jaekwan Kim",
+    "PhilippKaulich": "Philipp T. Kaulich"
   }
 }

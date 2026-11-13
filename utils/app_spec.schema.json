@@ -200,7 +200,8 @@
         "kind_tests": {"type": "boolean", "description": "build-and-test.yml deploys the images to kind clusters behind nginx and Traefik."},
         "apptainer": {"type": "boolean", "description": "build-and-test.yml tests the amd64 images under Apptainer and publishes the SIF."},
         "example_workflow_tests": {"type": "boolean", "description": "workflow-tests.yml runs test.py (the template's example workflow, downloads an mzML) and test_gui.py."},
-        "openms_release": {"type": "boolean", "description": "openms-release.yml opens a PR when a new OpenMS release comes out."}
+        "openms_release": {"type": "boolean", "description": "openms-release.yml opens a PR when a new OpenMS release comes out."},
+        "contributors": {"type": "boolean", "description": "contributors.yml refreshes the contributor lists from GitHub every week and opens a PR when someone new contributed."}
       }
     },
     "sync": {

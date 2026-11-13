@@ -10,7 +10,9 @@ Two data files feed it:
   visualizations it uses. Its ``repository`` must match ``repository-name``
   in settings.json; a copy that belongs to another repository (the
   template's example, for instance) is ignored, so an app without its own
-  file shows the framework group only.
+  file shows the framework group only. The framework group comes after the
+  app's own groups, or before them with ``"framework": "first"`` (the
+  template does this, since the framework is what it shows).
 
 People are listed by GitHub handle; the picture is loaded from GitHub, not
 stored in the repository. ``python -m utils.contributors`` refreshes every
@@ -47,6 +49,13 @@ CSS = """
 .ctb .p .n{font-size:.74rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ctb .p .h{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ctb .p img{width:40px;height:40px;border-radius:50%;display:block;margin:0 auto 3px auto;background:rgba(128,128,128,.2)}
+.ctb.compact h3{font-size:1.05rem}
+.ctb.compact .lead{font-size:.8rem}
+.ctb.compact .grp{font-size:.66rem;margin:10px 0 4px 0}
+.ctb.compact .grid{display:grid;grid-template-columns:1fr 1fr;gap:5px 10px}
+.ctb.compact .c{display:flex;align-items:center;gap:7px;min-width:0;font-size:.74rem;line-height:1.15}
+.ctb.compact .c span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ctb.compact img.a{width:26px;height:26px;flex:none;border-radius:50%;display:block;background:rgba(128,128,128,.2)}
 </style>
 """
 
@@ -85,8 +94,12 @@ def load(
     names.update(framework.get("names", {}))
     names.update(app.get("names", {}))
 
+    if app.get("framework") == "first":
+        ordered = list(framework.get("groups", [])) + list(app.get("groups", []))
+    else:
+        ordered = list(app.get("groups", [])) + list(framework.get("groups", []))
     groups = []
-    for group in list(app.get("groups", [])) + list(framework.get("groups", [])):
+    for group in ordered:
         people = [p for p in dict.fromkeys(group.get("people", [])) if _valid_login(p)]
         if people and group.get("title"):
             groups.append({"title": group["title"], "people": people})
@@ -108,25 +121,58 @@ def _person(login: str, name: str) -> str:
     )
 
 
-def to_html(content: dict[str, Any]) -> str:
+def _avatar(login: str, name: str) -> str:
+    login_e = html.escape(login)
+    tip = html.escape(f"{name} (@{login})" if name else f"@{login}")
+    label = html.escape(name or f"@{login}")
+    return (
+        f'<a class="c" href="{PROFILE_URL.format(login=login_e)}" target="_blank" rel="noopener" title="{tip}">'
+        f'<img class="a" src="{AVATAR_URL.format(login=login_e)}" alt="" loading="lazy">'
+        f"<span>{label}</span></a>"
+    )
+
+
+def to_html(content: dict[str, Any], compact: bool = False) -> str:
+    """The section as HTML; ``compact`` lists small pictures with names in two columns, the handle on hover."""
+    person = _avatar if compact else _person
     parts = [
         CSS,
-        '<div class="ctb">',
+        f'<div class="ctb{" compact" if compact else ""}">',
         "<h3>🤝 Contributors</h3>",
         f'<p class="lead">{html.escape(content["lead"])}</p>',
     ]
     for group in content["groups"]:
         parts.append(f'<div class="grp">{html.escape(group["title"])}</div><div class="grid">')
-        parts.extend(_person(p, content["names"].get(p, "")) for p in group["people"])
+        parts.extend(person(p, content["names"].get(p, "")) for p in group["people"])
         parts.append("</div>")
     parts.append("</div>")
     return "".join(parts)
 
 
-def render_contributors() -> None:
-    """Draw the contributors section, typically at the end of the front page."""
+STRIP_KEY = "openms-side-strip"
+
+
+def render_contributors(contribute: bool = True) -> None:
+    """Draw the contributors in a strip on the right of the page.
+
+    Call it once on the front page, anywhere: on a wide window the strip is
+    fixed to the right edge (``.st-key-openms-side-strip`` in
+    ``src/common/theme.css``) and stays in view while the page scrolls; on a
+    narrow one it is drawn where it is called. ``contribute`` puts the
+    "Want to contribute?" prompt (``src/common/contribute.py``) at its top.
+    """
     import streamlit as st
 
+    from src.common.contribute import contribute_enabled, render_contribute
+
     content = load(st.session_state.get("settings"))
-    if content:
-        st.html(to_html(content))
+    show_contribute = contribute and contribute_enabled(
+        st.session_state.get("settings") or {}
+    )
+    if not content and not show_contribute:
+        return
+    with st.container(key=STRIP_KEY):
+        if show_contribute:
+            render_contribute()
+        if content:
+            st.html(to_html(content, compact=True))
