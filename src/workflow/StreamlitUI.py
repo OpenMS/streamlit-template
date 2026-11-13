@@ -3140,7 +3140,10 @@ class StreamlitUI:
                 content = "".join(lines)
                 outcome = classify_log_outcome(content)
                 if st.session_state.pop(watched_key, False):
-                    st.html(run_notice.notice_html(outcome, name),
+                    # A queued job that failed before it cleared the logs
+                    # leaves the previous run's FINISHED marker in them.
+                    notice = "error" if job_status == "failed" else outcome
+                    st.html(run_notice.notice_html(notice, name),
                             unsafe_allow_javascript=True)
                 if outcome == "finished":
                     st.success("**Workflow completed successfully.**")

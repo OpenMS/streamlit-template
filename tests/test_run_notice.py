@@ -18,6 +18,8 @@ def test_ask_button_asks_only_on_a_click_and_hides_when_answered():
     assert "display:none" in html  # shown by the script, only when it can ask
     assert "Notification.permission!=='default')return" in html
     assert "b.onclick=function(){Notification.requestPermission()" in html
+    # Still undecided (the prompt was dismissed): the button stays.
+    assert "if(p!=='default')b.style.display='none'" in html
 
 
 @pytest.mark.parametrize("outcome, mark, words", [
@@ -40,7 +42,7 @@ def test_notice_cannot_end_its_script_early():
     assert html.count("</script>") == 1
 
 
-def _section(tmp_path, running, log=None):
+def _section(tmp_path, running, log=None, status=None):
     """Draw execution_section once with Streamlit mocked; return the mock."""
     pytest.importorskip("streamlit")
     pytest.importorskip("pyopenms")
@@ -68,7 +70,8 @@ def _section(tmp_path, running, log=None):
     with mock.patch.object(ui_module, "st", st), \
             mock.patch.object(ui_module, "time"), \
             mock.patch.object(ui_module, "report_buttons"):
-        ui.execution_section(lambda: None, lambda: {"running": running},
+        ui.execution_section(lambda: None,
+                             lambda: {"running": running, **(status or {})},
                              name="Quantification")
     return [c.args[0] for c in st.html.call_args_list]
 
@@ -104,6 +107,13 @@ def test_a_failed_run_says_it_failed(tmp_path, streamlit_mock):
     _section(tmp_path, running=True)
     drawn = _section(tmp_path, running=False, log="Error: tool crashed\n")
     assert drawn == [run_notice.notice_html("error", "Quantification")]
+
+
+def test_a_failed_queued_job_is_not_reported_by_old_logs(tmp_path, streamlit_mock):
+    _section(tmp_path, running=True)
+    drawn = _section(tmp_path, running=False, log="WORKFLOW FINISHED\n",
+                     status={"status": "failed", "job_id": "j"})
+    assert run_notice.notice_html("error", "Quantification") in drawn
 
 
 def test_the_notice_names_the_run_label_else_the_workflow(tmp_path):

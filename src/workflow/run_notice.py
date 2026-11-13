@@ -46,8 +46,8 @@ def ask_html(label: str = "Notify me when it ends") -> str:
         f"var b=document.getElementById({_js(ASK_ID)});"
         "if(!b||!('Notification' in window)||Notification.permission!=='default')return;"
         "b.style.display='inline-block';"
-        "b.onclick=function(){Notification.requestPermission().then(function(){"
-        "b.style.display='none';});};"
+        "b.onclick=function(){Notification.requestPermission().then(function(p){"
+        "if(p!=='default')b.style.display='none';});};"
         "})();</script>"
     )
 
