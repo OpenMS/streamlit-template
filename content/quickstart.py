@@ -23,6 +23,7 @@ import streamlit as st
 from src.common.common import page_setup, v_space
 from src.common.contributors import render_contributors
 from src.common.installers import render_installer_buttons
+from src.common.other_apps import render_other_apps
 
 # Spell the skill out by file path rather than by name. Skills are registered
 # from .claude/skills/ when a session starts, so a repository cloned mid-session
@@ -184,5 +185,7 @@ st.page_link(
     label="How to run any command line tool as subprocess from within the OpenMS web app.",
     icon="➡️",
 )
+
+render_other_apps()
 
 render_contributors()
