@@ -187,23 +187,41 @@ def test_mzml_of_another_reader_is_converted_again(tmp_path):
     assert stamp.read_text() == "inprocess"
 
 
-def test_built_in_reader_failure_falls_back_to_the_default_reader(tmp_path):
+@pytest.mark.parametrize(
+    "default, retried",
+    [("external", True), ("inprocess", False)],
+)
+def test_built_in_reader_failure_falls_back_to_the_default_reader(tmp_path, default, retried):
     raw = tmp_path / "run1.raw"
     raw.write_text("raw")
     executor = _executor(tmp_path)
     executor.thermo_reader_args = MagicMock(return_value={"RawToMzML:reader": "inprocess"})
+    ini = _fileconverter_ini(executor.parameter_manager.ini_dir / "FileConverter.ini", "external,inprocess")
+    ini.write_text(ini.read_text().replace('value="external"', f'value="{default}"'))
 
     def fake_topp(tool, input_output, custom_params={}, tool_instance_name=None):
-        if custom_params:
+        if custom_params.get("RawToMzML:reader") == "inprocess":
             return False  # no .NET runtime
         Path(input_output["out"][0]).write_text("converted")
         return True
 
     executor.run_topp = MagicMock(side_effect=fake_topp)
-    assert executor.convert_to_mzml([str(raw)]) == [str(tmp_path / "converted-mzML" / "run1.mzML")]
-    assert [c.kwargs["custom_params"] for c in executor.run_topp.call_args_list] == [
-        {"RawToMzML:reader": "inprocess"}, {}]
-    assert (tmp_path / "converted-mzML" / ".run1.mzML.reader").read_text() == "default"
+    result = executor.convert_to_mzml([str(raw)])
+    calls = [c.kwargs["custom_params"] for c in executor.run_topp.call_args_list]
+    if not retried:
+        # The default is the built-in reader too: a retry would fail the same way.
+        assert result is None
+        assert calls == [{"RawToMzML:reader": "inprocess"}]
+        return
+    assert result == [str(tmp_path / "converted-mzML" / "run1.mzML")]
+    # The retry names the default reader, so a stored reader cannot replace it.
+    assert calls == [{"RawToMzML:reader": "inprocess"}, {"RawToMzML:reader": "external"}]
+    stamp = tmp_path / "converted-mzML" / ".run1.mzML.reader"
+    assert stamp.read_text() == "fallback:external"
+
+    # The next run keeps that mzML instead of failing over again.
+    executor.convert_to_mzml([str(raw)])
+    assert executor.run_topp.call_count == 2
 
 
 def test_failed_conversion_returns_none_and_leaves_no_mzml(tmp_path):

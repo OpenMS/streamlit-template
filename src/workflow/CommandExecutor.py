@@ -6,7 +6,12 @@ from pathlib import Path
 from .Logger import Logger
 from .ParameterManager import ParameterManager, bool_param_paths_from_param_xml_ini
 from .settings_io import load_settings, detect_cpu_quota, resolve_thread_setting, local_thread_default
-from .vendor_files import THERMO_READER, thermo_reader_available, vendor_format
+from .vendor_files import (
+    THERMO_READER,
+    thermo_default_reader,
+    thermo_reader_available,
+    vendor_format,
+)
 from .progress import RunProgress, read_progress, failure_context, OUTPUT_TAIL
 from .processing_report import command_io, report_params
 from collections import deque
@@ -497,8 +502,11 @@ class CommandExecutor:
                 # standard case, files was a list of strings, take the file name at index
                 else:
                     command += [value[i]]
-            # Add merged TOPP tool parameters (_defaults + user overrides)
+            # Add merged TOPP tool parameters (_defaults + user overrides);
+            # custom_params name a value of their own, so each appears once.
             for k, v in merged_params.items():
+                if k in custom_params:
+                    continue
                 if k in flag_params:
                     # CLI flag: include "-k" only when truthy, omit when false
                     if isinstance(v, str):
@@ -752,10 +760,38 @@ class CommandExecutor:
         )
         return {}
 
+    def thermo_fallback_args(self) -> dict:
+        """
+        FileConverter parameters naming the tool's own default Thermo reader
+        (ThermoRawFileParser on Windows), for a retry when the built-in reader
+        failed; {} when the default is the built-in reader itself, so a retry
+        would fail the same way. Named explicitly, so a reader stored in the
+        workflow's parameters cannot take its place.
+        """
+        default = thermo_default_reader(Path(self.parameter_manager.ini_dir, "FileConverter.ini"))
+        if not default or default == THERMO_READER:
+            return {}
+        return {"RawToMzML:reader": default}
+
     @staticmethod
     def _reader_label(reader: dict) -> str:
         """The Thermo reader of thermo_reader_args() as recorded with a converted file."""
         return reader.get("RawToMzML:reader", "default")
+
+    FALLBACK = "fallback:"
+
+    @classmethod
+    def _stamp_matches(cls, stamp, reader: dict) -> bool:
+        """Whether a converted file's stamp fits the reader wanted now.
+
+        A file converted with the default reader after the built-in one
+        failed (stamp ``fallback:<reader>``) is kept while the built-in reader
+        is wanted, so a machine without .NET does not convert it on every run.
+        """
+        wanted = cls._reader_label(reader)
+        if stamp == wanted:
+            return True
+        return bool(stamp) and stamp.startswith(cls.FALLBACK) and wanted == THERMO_READER
 
     @staticmethod
     def _read_stamp(stamp: Path):
@@ -803,7 +839,7 @@ class CommandExecutor:
             if (
                 out.exists()
                 and out.stat().st_mtime >= Path(f).stat().st_mtime
-                and (kind != "raw" or self._read_stamp(stamp) == self._reader_label(reader))
+                and (kind != "raw" or self._stamp_matches(self._read_stamp(stamp), reader))
             ):
                 self.logger.log(f"Using converted {out.name} for {Path(f).name}.")
                 self.progress.record_alias(str(out), str(f), "converted to mzML in an earlier run")
@@ -819,17 +855,20 @@ class CommandExecutor:
                 if kind == "raw":
                     io = {"in": [str(f)], "out": [str(tmp)]}
                     ok = self.run_topp("FileConverter", io, custom_params=reader)
-                    if not ok and reader:
+                    label = self._reader_label(reader)
+                    fallback = self.thermo_fallback_args() if not ok and reader else {}
+                    if fallback:
                         # The built-in reader needs a .NET 8 or newer runtime,
                         # which a source install on Windows may lack.
                         self.logger.log(
                             f"WARNING: The built-in Thermo reader could not convert {Path(f).name} "
                             "(it needs a .NET 8 or newer runtime); trying FileConverter's default "
-                            "reader (ThermoRawFileParser), whose mzML differs slightly.",
+                            "reader (ThermoRawFileParser), whose mzML differs slightly. The file "
+                            "is kept; delete it to convert it again once .NET is installed.",
                             0,
                         )
-                        reader = {}
-                        ok = self.run_topp("FileConverter", io, custom_params=reader)
+                        ok = self.run_topp("FileConverter", io, custom_params=fallback)
+                        label = self.FALLBACK + self._reader_label(fallback)
                 else:
                     ok = self.run_python("bruker_to_mzml", {"in": str(f), "out": str(tmp)})
                 if not ok or not tmp.exists():
@@ -837,7 +876,7 @@ class CommandExecutor:
                     return None
                 os.replace(tmp, out)
                 if kind == "raw":
-                    stamp.write_text(self._reader_label(reader), encoding="utf-8")
+                    stamp.write_text(label, encoding="utf-8")
                 # The report follows the mzML back to the file it came from
                 self.progress.record_alias(str(out), str(tmp))
             mzmls.append(str(out))

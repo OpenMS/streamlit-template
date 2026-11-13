@@ -29,6 +29,28 @@ def vendor_format(path) -> str:
 THERMO_READER = "inprocess"
 
 
+def _thermo_reader_item(ini_path):
+    """The ``RawToMzML:reader`` ITEM of a FileConverter .ini, or None."""
+    try:
+        root = ET.parse(ini_path).getroot()
+    except (OSError, ET.ParseError):
+        return None
+    for node in root.iter("NODE"):
+        if node.get("name") != "RawToMzML":
+            continue
+        for item in node.findall("ITEM"):
+            if item.get("name") == "reader":
+                return item
+    return None
+
+
+def thermo_default_reader(ini_path):
+    """FileConverter's own default Thermo reader in the .ini at ini_path
+    (``external``, ThermoRawFileParser, on Windows), or None without one."""
+    item = _thermo_reader_item(ini_path)
+    return (item.get("value") or None) if item is not None else None
+
+
 def thermo_reader_available(ini_path) -> bool:
     """True when the FileConverter .ini at ini_path offers THERMO_READER.
 
@@ -36,18 +58,11 @@ def thermo_reader_available(ini_path) -> bool:
     (no such parameter) or one built without the built-in reader
     (``WITH_THERMO_RAW=OFF``, valid strings ``external`` only) answers False.
     """
-    try:
-        root = ET.parse(ini_path).getroot()
-    except (OSError, ET.ParseError):
+    item = _thermo_reader_item(ini_path)
+    if item is None:
         return False
-    for node in root.iter("NODE"):
-        if node.get("name") != "RawToMzML":
-            continue
-        for item in node.findall("ITEM"):
-            if item.get("name") == "reader":
-                allowed = (item.get("restrictions") or "").split(",")
-                return THERMO_READER in [a.strip() for a in allowed]
-    return False
+    allowed = (item.get("restrictions") or "").split(",")
+    return THERMO_READER in [a.strip() for a in allowed]
 
 
 def extract_bruker_zip(archive, files_dir: Path) -> List[str]:
