@@ -26,6 +26,7 @@ from src.common.common import (
     tk_file_dialog,
 )
 from src.workflow._log_status import classify_log_outcome
+from src.workflow import run_notice
 from src.workflow.report_ui import report_buttons
 from src.workflow.RunManager import FOLLOW_UP_KEY
 from src.workflow.progress import (
@@ -3016,13 +3017,17 @@ class StreamlitUI:
         results_page=None,
         results_label: str = "Open results",
         on_open_results=None,
+        name: str = "The workflow",
     ) -> None:
         """Start/Stop, progress and log of the workflow.
 
         ``autostart`` starts the workflow on this render unless one is running
         (the Run button of the configure page). ``results_page`` is linked
         below the success message of a finished run; ``on_open_results`` runs
-        before that button switches to it.
+        before that button switches to it. While a run is going the page
+        offers browser notifications; when a run this session saw running
+        ends, a hidden tab gets the outcome in its title and, if allowed, a
+        notification naming ``name`` (``run_notice``).
         """
         with st.expander("**Summary**"):
             st.markdown(self.export_parameters_markdown())
@@ -3091,9 +3096,12 @@ class StreamlitUI:
         # running view replaces the finished one completely: st.rerun()
         # below ends the script early, which otherwise leaves the earlier
         # view's trailing elements on the page.
+        watched_key = f"run-watched::{self.workflow_dir}"
         status_area = st.empty()
         with status_area.container():
             if is_running:
+                st.session_state[watched_key] = True
+                st.html(run_notice.ask_html(), unsafe_allow_javascript=True)
                 # Real-time display during execution
                 spinner_text = "**Workflow running...**"
                 if job_status == "queued":
@@ -3131,6 +3139,9 @@ class StreamlitUI:
                     lines = f.readlines()
                 content = "".join(lines)
                 outcome = classify_log_outcome(content)
+                if st.session_state.pop(watched_key, False):
+                    st.html(run_notice.notice_html(outcome, name),
+                            unsafe_allow_javascript=True)
                 if outcome == "finished":
                     st.success("**Workflow completed successfully.**")
                     if results_page is not None:
