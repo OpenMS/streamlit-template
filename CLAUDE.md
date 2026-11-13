@@ -23,17 +23,35 @@ Production apps built from this template: **quantms-web** (quantitative proteomi
 
 Standing rules for an agent (Claude Code or another) working on the template or on an app made from it: which repository a change goes to, what to build it with, and what every pull request needs. What the user asks for in the session wins over these.
 
+### Four layers: where code goes
+
+Every piece of code in an app belongs to exactly one of four layers. Decide the layer before deciding the repository.
+
+| Layer | Holds | Never holds | Test |
+|---|---|---|---|
+| **OpenMS-Insight** (`t0mdavid-m/OpenMS-Insight`) | Generic plots and tables (Python class + Vue view), `StateManager`, zoom and selection mechanics, caching of a component's data, analysis helpers over a quantification matrix | Runs, workspaces, pages, settings, environment variables of the template, names of OpenMS tools or apps | Would it make sense in any Streamlit app that has a dataframe? |
+| **Visualization library** (template, `src/viz/`) | Insight components wired as *panels*: the column contract a panel reads, its defaults and styling, its stable name, the shared selection identifiers; the panel plumbing (registry, view context, cache and zoom helpers, Insight capability checks) | Where the data comes from (file formats, TOPP outputs, an app's parsers), view bars, run pickers | Would two apps write it the same way, given the same table? |
+| **Template** (the rest of `OpenMS/streamlit-template`) | Workspaces, runs and experiments, follow-up runs, the view bar and saved views, `experiment_state`, missing-analysis dialogs, the workflow framework, upload, configure and run pages | Any particular plot | Is it about how results are organised and shown, whatever is plotted? |
+| **App** | Its science: TOPP workflow, parsers, the *sources* that turn its files into the columns a library panel reads, panels only it needs, its catalog, presets and views, the mapping of its own identifiers onto the shared ones | Generic plotting or panel plumbing | Does it only make sense for this app's data? |
+
+Two rules hold the layers apart:
+
+- **Nothing imports from a layer above it.** Insight imports nothing from the template or an app; the library imports Insight and nothing app-specific; the rest of the template may use the library but no app code. An Insight component that needs a template value (a storage root, an S3 endpoint, an image format) takes it as an argument; it does not read the template's settings or environment.
+- **Code moves down a layer when a second user needs it.** A panel two apps write the same way moves from the apps into the library; a component option the library needs moves into Insight. Until `src/viz/` exists in the template, a panel stays in the first app that needs it, written against a column contract rather than the app's files, so it can move without changes. An app never edits a template-owned file, `src/viz/` included, to get a panel of its own: it registers the panel in its own code.
+
+App modules do not live in template-owned directories. An app file under `src/common/`, `src/workflow/` or `src/layout_manager/` must be listed in `sync.app_owned` of `app.yaml`, and new app code goes under an app path (`src/<app>/`, `src/viewer/`, `src/render/`) instead.
+
 ### Which repository gets the change
 
 - **Template first.** A change goes as a PR to `OpenMS/streamlit-template` when it touches a template-owned file (anything not listed in `sync.app_owned` of the app's `app.yaml`: `src/workflow/`, `src/common/`, `src/layout_manager/`, `src/data_import/`, `src/sync/`, `docker/`, the Dockerfiles, `k8s/base`, `k8s/components`, `.github/`, `electron/`, `.claude/`, this file), when a second app would want it, or when it fixes a bug the template has too. It reaches the apps through the template sync (`template-sync.yml`, or a merge of the template's `main` into the app), never by editing the template-owned file in the app. App-specific behaviour in template-owned code becomes a template option (a parameter whose default keeps the old behaviour, a `settings.json` key, a method the app overrides), not a fork of the file. Skill `upstream-to-template` splits such a change out of app work; `sync-from-template` brings it back.
 - **App repository** for what the app owns: its workflow and python tools, its result pages and viewer components, its presets and parameter names, its identity (`settings.json`, hosts, overlay patches), its own dependencies in `requirements.txt` (most apps list it in `sync.app_owned`; where one does not, `sync-from-template` resolves the conflict) and its `CLAUDE.app.md`.
-- **openms-insight** (`t0mdavid-m/OpenMS-Insight`) for visualization components and for component features any app could use: a new plot or component, an option of an existing one, a rendering or linking bug. The app then only configures the component. Until openms-insight releases the change, an app PR may depend on its branch or a dev build (see *Releases*).
+- **openms-insight** (`t0mdavid-m/OpenMS-Insight`) for visualization components and for component features any app could use: a new plot or component, an option of an existing one, a rendering or linking bug. The app then only configures the component. A panel (an Insight component configured for a column contract, with its defaults and name) goes to the template's visualization library once a second app needs it; see *Four layers* above. Until openms-insight releases the change, an app PR may depend on its branch or a dev build (see *Releases*).
 - **One PR per repository** when a change spans several, each naming the PRs it needs, merged in dependency order: openms-insight, then the template, then the app's template sync, then the app.
 - Merge template-sync PRs with a merge commit, never squash, or the next sync conflicts again.
 
 ### What to build with
 
-- **Visualizations: OpenMS-Insight first** (`Table`, `LinePlot`, `Heatmap`, `VolcanoPlot`, `SequenceView`, the spectrum components), linked through one shared `StateManager` and arranged with the layout manager's view bar. pyopenms-viz or plotly only where no Insight component fits; when a generic component is missing, add it to openms-insight rather than writing a one-off plot in the app.
+- **Visualizations: OpenMS-Insight first** (`Table`, `LinePlot`, `Heatmap`, `VolcanoPlot`, `SequenceView`, the spectrum components), linked through one shared `StateManager` and arranged with the layout manager's view bar. pyopenms-viz or plotly only where no Insight component fits; when a generic component is missing, add it to openms-insight rather than writing a one-off plot in the app. Before writing a panel, look for it in the visualization library (`src/viz/`, once it exists) and reuse it with a source of the app's own.
 - **Data processing: TOPP tools** through `executor.run_topp()`, so the run gets progress, cancellation and the processing report. **pyOpenMS for glue code**: reading and converting results, small steps between tools. A Python reimplementation of something a TOPP tool does needs a stated reason; a missing algorithm or option belongs in OpenMS.
 - **Template features before new code**: run folders and follow-up runs, the view bar, experimental design, upload and import widgets, presets, `parameter-names.json`. Extend one of them (in the template) before building a parallel mechanism in an app.
 

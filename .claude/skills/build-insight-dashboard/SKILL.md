@@ -13,6 +13,12 @@ Works standalone against an app that already has results.
 **Build one panel at a time, look at it, and design it with the user before
 building the next.**
 
+**Where each piece goes.** A panel the visualization library (`src/viz/`)
+already offers is reused with a panel source of the app's own, not rewritten.
+A panel only this app needs stays in the app. Plotting or linking a generic
+component lacks is an OpenMS-Insight change, not a workaround in the page
+(*Four layers* in `CLAUDE.md`).
+
 ## 1. Link graph
 
 **Establish Insight before you map anything.** It is a dependency of the app you
