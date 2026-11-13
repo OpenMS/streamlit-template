@@ -123,15 +123,17 @@ def selection_problem(workflow_dir: Path, params: dict) -> str:
     page checks before a local start.
 
     A selection is what the Run page checks (a parameter named like a folder
-    of ``input-files/``) or, sent by the desktop app, a list of uploaded
-    inputs (``sync-workspace://`` paths), wherever they were uploaded to.
+    of ``input-files/``) or, sent by the desktop app, a list of paths that
+    holds an uploaded input (a ``sync-workspace://`` path), wherever it was
+    uploaded to.
     """
     from src.workflow.input_check import clash_message, name_clashes, selection_clashes
     clashes = selection_clashes(workflow_dir, params)
     for key, value in (params or {}).items():
         if (key not in clashes and isinstance(value, list) and len(value) > 1
-                and all(isinstance(v, str) and v.startswith(WORKSPACE_REF) for v in value)):
-            groups = name_clashes([v[len(WORKSPACE_REF):] for v in value])
+                and all(isinstance(v, str) for v in value)
+                and any(v.startswith(WORKSPACE_REF) for v in value)):
+            groups = name_clashes([v.removeprefix(WORKSPACE_REF) for v in value])
             if groups:
                 clashes[key] = groups
     return " ".join(clash_message(groups) for groups in clashes.values())

@@ -81,6 +81,8 @@ def test_an_online_start_checks_uploads_from_any_folder(tmp_path):
     workflow_dir = Path(tmp_path, "topp-workflow")
     assert "`plate1/a.mzML`" in runs.selection_problem(workflow_dir, params)
     assert runs.selection_problem(workflow_dir, {"labels": ["a.x", "a.y"]}) == ""
+    mixed = {"mzML-files": [f"{ref}mzML-files/plate1/a.mzML", "/data/plate2/a.mzML"]}
+    assert "**a**" in runs.selection_problem(workflow_dir, mixed)
     with pytest.raises(ValueError):
         runs.start(None, tmp_path, "topp-workflow", "src.Workflow:Workflow", params)
     assert not workflow_dir.exists()
