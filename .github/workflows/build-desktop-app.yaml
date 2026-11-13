@@ -208,7 +208,8 @@ jobs:
       uses: actions/setup-node@v4
       with:
         node-version: '22'
-        cache: 'npm'
+        # Release installers are built from a clean npm install, without a restored cache.
+        cache: ${{ github.event_name != 'release' && 'npm' || '' }}
         cache-dependency-path: electron/package-lock.json
 
     - name: Install Electron dependencies
