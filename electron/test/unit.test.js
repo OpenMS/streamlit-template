@@ -90,6 +90,32 @@ test("pythonExecutable prefers the embedded interpreter", () => {
   assert.equal(payload.pythonExecutable(dir), path.join(dir, "python-3.11.0", exe));
 });
 
+test("AppImage desktop entry points at the AppImage and the copied icon", () => {
+  const { integrateAppImage } = require("../src/linux-desktop");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-"));
+  const old = process.env.XDG_DATA_HOME;
+  process.env.XDG_DATA_HOME = dir;
+  try {
+    assert.equal(integrateAppImage({ desktopName: "app.desktop" }), null);
+    const icon = path.join(dir, "src.png");
+    fs.writeFileSync(icon, "png");
+    const file = integrateAppImage({
+      appImage: '/home/u/My Apps/A"pp.AppImage',
+      desktopName: "app.desktop",
+      name: "App",
+      iconSource: icon,
+      iconDir: path.join(dir, "cfg"),
+    });
+    const entry = fs.readFileSync(file, "utf8");
+    assert.match(entry, /^Exec="\/home\/u\/My Apps\/A\\"pp\.AppImage" %U$/m);
+    assert.match(entry, /^StartupWMClass=app$/m);
+    assert.equal(fs.readFileSync(path.join(dir, "cfg", "app.png"), "utf8"), "png");
+  } finally {
+    if (old === undefined) delete process.env.XDG_DATA_HOME;
+    else process.env.XDG_DATA_HOME = old;
+  }
+});
+
 const license = require("../src/license");
 
 function fakePayload({ thermo = false, licenseText = null } = {}) {
