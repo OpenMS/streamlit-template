@@ -144,3 +144,10 @@ test("the agreement page escapes its text and links both answers", () => {
   assert.ok(html.includes(`href="${license.ANSWER_URL}accept"`));
   assert.ok(html.includes(`href="${license.ANSWER_URL}decline"`));
 });
+
+test("Streamlit starts through the launcher that preloads polars", () => {
+  const args = payload.streamlitArgs(8765);
+  assert.deepEqual(args.slice(0, 5), ["-m", "src.streamlit_launcher", "run", "app.py", "local"]);
+  assert.equal(args[args.indexOf("--server.port") + 1], "8765");
+  assert.equal(args[args.indexOf("--server.address") + 1], "127.0.0.1");
+});
