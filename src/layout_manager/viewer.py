@@ -29,7 +29,11 @@ several datasets (``members(experiment)``):
   experiment as a whole (``whole(experiment)``, e.g. a comparison of runs) and
   one of its members, which is then the dataset shown, with its own kind. An
   experiment with no whole may offer the whole as a locked choice
-  (``lone_whole(ctx)``, e.g. a dialog to process more files).
+  (``lone_whole(ctx)``, e.g. a dialog to process more files). An experiment
+  whose id is that of its first run (runs that added files to it) shows that
+  run under **Single run** with the same id: ``ctx.whole`` follows the switch,
+  and ``whole_kind`` names the kind shown for the whole when it is not the
+  members' own. ``member_switch`` draws the same switch on a page of its own.
 
 **Views the data was not processed for.** ``available(ctx)`` returns the
 analyses a dataset has; the view bar locks views needing others and a note
@@ -128,10 +132,17 @@ class ViewerContext:
     member: Optional[str] = None
     members: List[str] = field(default_factory=list)
     view_key: str = ""
+    shown_whole: Optional[bool] = None
 
     @property
     def whole(self) -> bool:
-        """True while the experiment is shown as a whole (not one of its members)."""
+        """True while the experiment is shown as a whole (not one of its members).
+
+        An experiment whose id is that of its first run (runs that added
+        files to it) shows that run as **Single run** with the same id, so
+        the switch, not the id, says which is shown."""
+        if self.shown_whole is not None:
+            return self.shown_whole
         return self.dataset == self.experiment
 
     def request_analysis(self, missing: Sequence[str], component: Optional[str] = None) -> None:
@@ -162,6 +173,7 @@ class ViewerSpec:
     switch_help: str = ""
     lone_whole: Optional[Callable[[ViewerContext], Any]] = None
     lone_help: str = ""
+    whole_kind: Optional[str] = None
     label: str = "Experiment"
     later_label: Optional[str] = None
     later: Optional[Callable[[str], Mapping[str, str]]] = None
@@ -170,8 +182,10 @@ class ViewerSpec:
     pick: Optional[str] = None
     on_pick: Optional[Callable[[ViewerContext], Any]] = None
 
-    def kind(self, dataset: str) -> DatasetKind:
+    def kind(self, dataset: str, whole: bool = False) -> DatasetKind:
         by_name = {k.name: k for k in self.kinds}
+        if whole and self.whole_kind in by_name:
+            return by_name[self.whole_kind]
         name = self.kind_of(dataset) if self.kind_of else None
         return by_name.get(name, self.kinds[0])
 
@@ -234,20 +248,22 @@ def resolve(spec: ViewerSpec, index: int, datasets: Optional[Mapping[str, str]] 
     if experiment is None:
         return None
     members = list(spec.members(experiment)) if spec.members else []
-    dataset, member = experiment, None
+    dataset, member, shown_whole = experiment, None, None
     picked = st.session_state.get(_member_state(spec.key, index, experiment))
     if spec.member_mode == FILES:
         if len(members) > 1:
             member = picked if picked in members else members[0]
             st.session_state[_member_state(spec.key, index, experiment)] = member
-    elif members and _wholes(spec, experiment, members) \
-            and st.session_state.get(_show_state(spec.key, index)) == _MEMBER:
-        member = picked if picked in members else members[0]
-        st.session_state[_member_state(spec.key, index, experiment)] = member
-        dataset = member
-    kind = spec.kind(dataset)
+    elif members and _wholes(spec, experiment, members):
+        shown_whole = st.session_state.get(_show_state(spec.key, index)) != _MEMBER
+        if not shown_whole:
+            member = picked if picked in members else members[0]
+            st.session_state[_member_state(spec.key, index, experiment)] = member
+            dataset = member
+    kind = spec.kind(dataset, whole=bool(shown_whole))
     return ViewerContext(key=spec.key, index=index, experiment=experiment, dataset=dataset, kind=kind,
-                         member=member, members=members, view_key=spec.view_key(kind))
+                         member=member, members=members, view_key=spec.view_key(kind),
+                         shown_whole=shown_whole)
 
 
 # -- the controls beside a selector -------------------------------------------
@@ -269,6 +285,43 @@ def _segmented(label: str, options: List[str], state: str, widget: str, value: s
     )
 
 
+def _switch(show_state: str, member_state: str, members: Sequence[str], whole: bool, member: Optional[str],
+            label_of: Callable[[str], str], label: str, names: Mapping[str, str], select_label: str,
+            help_text: str) -> None:
+    _segmented(label, [_MEMBER, _WHOLE], show_state, f"{show_state}_widget",
+               _WHOLE if whole else _MEMBER, names.get, help_text)
+    if not whole:
+        widget = f"{member_state}_widget"
+        st.session_state[widget] = member if member in members else members[0]
+        st.selectbox(select_label, list(members), key=widget,
+                     format_func=label_of, on_change=lambda: _copy(widget, member_state))
+
+
+def member_switch(key: str, members: Sequence[str], *, label_of: Optional[Callable[[str], str]] = None,
+                  member_choice: str = "Single run", whole_choice: str = "Comparison",
+                  label: str = "show", select_label: str = "run", help_text: str = "") -> Optional[str]:
+    """**Single run | Comparison** for an experiment of several runs, outside ``show_viewer``.
+
+    Draws the switch (and, for a single run, which one) and returns the run
+    picked, or None while the experiment is shown as a whole. With fewer than
+    two ``members`` nothing is drawn and None returned. Draw it inside a
+    horizontal container beside the experiment's selector, as the Viewer does.
+    """
+    members = list(members)
+    if len(members) < 2:
+        return None
+    show_state, member_state = f"{key}_show", f"{key}_member"
+    whole = st.session_state.get(show_state) != _MEMBER
+    picked = st.session_state.get(member_state)
+    member = picked if picked in members else members[0]
+    st.session_state[member_state] = member
+    _switch(show_state, member_state, members, whole, member, label_of or str, label,
+            {_MEMBER: member_choice, _WHOLE: whole_choice}, select_label, help_text)
+    if st.session_state.get(show_state) == _MEMBER:
+        return st.session_state.get(member_state, member)
+    return None
+
+
 def _member_controls(spec: ViewerSpec, ctx: ViewerContext) -> None:
     """**Files of**, or **Single run | Comparison** with the run, for experiment ``ctx.index``."""
     key, index = spec.key, ctx.index
@@ -286,13 +339,8 @@ def _member_controls(spec: ViewerSpec, ctx: ViewerContext) -> None:
     choices = [_MEMBER, _WHOLE]
     names = {_MEMBER: spec.member_choice, _WHOLE: spec.whole_choice}
     if ctx.members and _wholes(spec, ctx.experiment, ctx.members):
-        _segmented(spec.switch_label, choices, show_state, f"{show_state}_widget",
-                   _WHOLE if ctx.whole else _MEMBER, names.get, spec.switch_help)
-        if not ctx.whole:
-            widget = f"{member_state}_widget"
-            st.session_state[widget] = ctx.member
-            st.selectbox(spec.member_select_label, ctx.members, key=widget,
-                         format_func=label_of, on_change=lambda: _copy(widget, member_state))
+        _switch(show_state, member_state, ctx.members, ctx.whole, ctx.member, label_of,
+                spec.switch_label, names, spec.member_select_label, spec.switch_help)
     elif spec.lone_whole is not None and not _wholes(spec, ctx.experiment, ctx.members):
         widget = f"{show_state}_lone"
 

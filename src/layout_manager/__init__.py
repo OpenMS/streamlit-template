@@ -78,6 +78,11 @@ its buttons, the view bar and the experiments, each with its own state::
 
     show_viewer(ViewerSpec(key="viewer", datasets=DATASETS, kinds=[RUN]))
 
+An experiment of several runs shows **Single run | Comparison** beside its
+selector (``member_mode="switch"``; ``member_switch`` on a page of its own),
+and ``edit_comparison`` (``comparison.py``) is the **Edit comparison** dialog
+of the steps that make the comparison, one tab per step.
+
 ``layout.py`` is Streamlit-free; ``ui.py`` holds the editor and the grid.
 Ported from FLASHApp's Layout Manager.
 """
@@ -135,11 +140,17 @@ from src.layout_manager.viewer import (
     DatasetKind,
     ViewerContext,
     ViewerSpec,
+    member_switch,
     show_dataset,
     show_viewer,
 )
+from src.layout_manager.comparison import close_comparison, edit_comparison, open_comparison
 
 __all__ = [
+    "close_comparison",
+    "edit_comparison",
+    "member_switch",
+    "open_comparison",
     "DatasetKind",
     "ViewerContext",
     "ViewerSpec",

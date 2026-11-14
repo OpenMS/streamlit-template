@@ -7,7 +7,10 @@ from pathlib import Path
 import pandas as pd
 import plotly.express as px
 from src.common.common import show_fig
-from src.layout_manager import render_layout, request_analysis, resolve_layout, view_bar
+from src.layout_manager import (
+    edit_comparison, member_switch, render_layout, request_analysis, resolve_layout, view_bar,
+)
+from src.workflow.run_widgets import run_label
 
 
 def merge_feature_tables(tables: list, ppm: float = 10.0, rt_tolerance: float = 30.0):
@@ -284,8 +287,63 @@ class Workflow(WorkflowManager):
             "on_click": lambda: self.add_analysis(changes),
         }]
 
+    # How features of the runs of an experiment are matched into one table
+    # (merge_feature_tables), set in Edit comparison
+    MATCHING = {"ppm": 10.0, "rt_tolerance": 30.0}
+
+    def _members(self) -> list:
+        return self.runs.experiment(self.run_id) or [self.run_id]
+
+    def _matching_key(self, name: str) -> str:
+        return f"topp-results-matching-{self.run_id}-{name}"
+
+    def _matching(self) -> dict:
+        return {name: float(st.session_state.get(self._matching_key(name), value))
+                for name, value in self.MATCHING.items()}
+
+    def _matching_step(self) -> None:
+        st.caption("A feature of a later run joins the nearest feature of the runs before it within "
+                   "these tolerances; otherwise it is a feature of its own.")
+        left, right = st.columns(2)
+        matching = self._matching()
+        left.number_input("m/z tolerance (ppm)", 0.5, 100.0, matching["ppm"], 0.5,
+                          key=self._matching_key("ppm"))
+        right.number_input("Retention time tolerance (s)", 1.0, 600.0, matching["rt_tolerance"], 1.0,
+                           key=self._matching_key("rt_tolerance"))
+
+    def _runs_step(self) -> None:
+        for run_id in self._members():
+            st.markdown(f"- {run_label(self.runs.get(run_id) or {'id': run_id})}")
+
+    def _reset_matching(self) -> None:
+        for name in self.MATCHING:
+            st.session_state.pop(self._matching_key(name), None)
+
+    def _experiment_bar(self) -> None:
+        """Single run | Comparison for an experiment that runs added files to,
+        and Edit comparison while the comparison is shown."""
+        members = self._members()
+        self._single = None
+        if len(members) < 2:
+            return
+        with st.container(horizontal=True, vertical_alignment="bottom"):
+            self._single = member_switch(
+                f"topp-results-show-{self.run_id}", members,
+                label_of=lambda r: run_label(self.runs.get(r) or {"id": r}),
+                help_text="Comparison: the features of every run of the experiment, matched into one "
+                          "table. Single run: the features of one run.",
+            )
+            if self._single is None:
+                edit_comparison(
+                    f"topp-results-{self.run_id}",
+                    [("1. Runs", self._runs_step), ("2. Matching features", self._matching_step)],
+                    intro="How the runs of this experiment are put into one feature table.",
+                    on_reset=self._reset_matching,
+                )
+
     @st.fragment
     def results(self) -> None:
+        self._experiment_bar()
         layout_path = Path(self.workflow_dir, "layouts", "results.json")
         view_bar(
             layout_path, self.COMPONENTS, self.PRESETS, self.PRESETS[0]["layout"], key="topp-results-view",
@@ -305,18 +363,19 @@ class Workflow(WorkflowManager):
     def _feature_table(self):
         """The consensus features of the shown experiment: one run, or a run and
         the runs that added files to it, their features matched here."""
+        single = getattr(self, "_single", None)
         tables = []
-        for run_id in self.runs.experiment(self.run_id) or [self.run_id]:
+        for run_id in [single] if single else self._members():
             file = Path(self.runs.results_dir(run_id), "feature-linking", "feature_matrix.tsv")
             if file.exists():
                 tables.append(pd.read_csv(file, sep="\t", index_col=0))
-        return merge_feature_tables(tables) if tables else None
+        return merge_feature_tables(tables, **self._matching()) if tables else None
 
     def _features_key(self) -> str:
         """The feature table's widget key, one per experiment and its runs, so a
         selection never carries over to another table (files added change it)."""
-        members = self.runs.experiment(self.run_id) or [self.run_id]
-        return "topp-results-features-" + "-".join(members)
+        single = getattr(self, "_single", None)
+        return "topp-results-features-" + "-".join([single] if single else self._members())
 
     def _features(self) -> None:
         df = self._feature_table()
