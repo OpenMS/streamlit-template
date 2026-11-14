@@ -54,9 +54,9 @@ In the OpenMS web application, workspaces are designed to keep your analysis org
 ## Downloading Results
 
 You can download the results of your analyses, including data, figures and tables, directly from the application:
-- **Figures**: Click the camera icon button, appearing while hovering on the top right corner of the figure. Set the desired image format in the settings panel in the side bar.
-- **Tables**: Use the download button to save tables in *csv* format, appearing while hovering on the top right corner of the table.
-- **Data**: Use the download section in the sidebar to download the raw results of your analysis.
+- **Figures**: Click the camera icon button, appearing while hovering on the top right corner of the figure. Set the image format under **Settings** in the sidebar.
+- **Tables**: Hover over a table and use the download icon at its top right corner to save it as *csv*. Tables with a **Download Table** button below them save as *tsv*.
+- **Data**: The **Download** page of a workflow (**Export** in the desktop app) offers every result file, one at a time or all together as a ZIP. The desktop app copies the files to a folder you choose instead.
 
 ### Keeping several runs
 
