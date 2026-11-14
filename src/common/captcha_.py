@@ -2,7 +2,6 @@ import streamlit as st
 import streamlit.components.v1 as st_components
 
 from streamlit.source_util import page_icon_and_name
-from captcha.image import ImageCaptcha
 from pathlib import Path
 
 import hashlib
@@ -247,6 +246,10 @@ def captcha_control(privacy_policy_url: str = ""):
             st.info(
                 "Please enter the captcha as text. Note: If your captcha is not accepted, you might need to disable your ad blocker."
             )
+            # Only for a captcha that is shown: importing it took 0.4 to 1 s of
+            # every first page, local apps included, which never show one
+            from captcha.image import ImageCaptcha
+
             image = ImageCaptcha(width=width, height=height)
             data = image.generate(st.session_state["Captcha"])
             st.image(data)
