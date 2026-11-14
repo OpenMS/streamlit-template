@@ -100,14 +100,18 @@ test("AppImage desktop entry points at the AppImage and the copied icon", () => 
     const icon = path.join(dir, "src.png");
     fs.writeFileSync(icon, "png");
     const file = integrateAppImage({
-      appImage: '/home/u/My Apps/A"pp.AppImage',
+      appImage: '/home/u/My Apps/100%A"p\\p.AppImage',
       desktopName: "app.desktop",
       name: "App",
       iconSource: icon,
       iconDir: path.join(dir, "cfg"),
     });
     const entry = fs.readFileSync(file, "utf8");
-    assert.match(entry, /^Exec="\/home\/u\/My Apps\/A\\"pp\.AppImage" %U$/m);
+    // " is quoted as \" and that backslash escaped again (\\"), % doubled,
+    // a literal backslash written as four.
+    assert.ok(entry.split("\n").includes('Exec="/home/u/My Apps/100%%A\\\\"p\\\\\\\\p.AppImage" %U'), entry);
+    assert.match(entry, new RegExp(`^Icon=${path.join(dir, "cfg", "app.png").replace(/[.\\]/g, "\\$&")}$`, "m"));
+    assert.deepEqual(fs.readdirSync(path.join(dir, "cfg")), ["app.png"]);
     assert.match(entry, /^StartupWMClass=app$/m);
     assert.equal(fs.readFileSync(path.join(dir, "cfg", "app.png"), "utf8"), "png");
   } finally {

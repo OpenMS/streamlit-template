@@ -7,18 +7,31 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 
+// A value of a desktop entry string field: backslashes and control characters
+// escaped as the spec's value types require.
+function escapeValue(s) {
+  const codes = { "\\": "\\\\", "\n": "\\n", "\t": "\\t", "\r": "\\r" };
+  return String(s).replace(/[\\\n\t\r]/g, (c) => codes[c]);
+}
+
+// One quoted argument of Exec: the quoting rule escapes " ` $ \, a literal %
+// becomes %% so it is not read as a field code, and the string escape rule
+// applies on top (so a literal backslash ends up as four).
+function execArg(s) {
+  return `"${s.replace(/(["`$\\])/g, "\\$1").replace(/%/g, "%%")}"`;
+}
+
 function desktopEntry({ name, exec, icon, wmClass, comment }) {
-  const quote = (s) => `"${s.replace(/(["`$\\])/g, "\\$1")}"`;
   return [
     "[Desktop Entry]",
     "Type=Application",
-    `Name=${name}`,
-    comment ? `Comment=${comment}` : null,
-    `Exec=${quote(exec)} %U`,
-    `Icon=${icon}`,
+    `Name=${escapeValue(name)}`,
+    comment ? `Comment=${escapeValue(comment)}` : null,
+    `Exec=${escapeValue(execArg(exec))} %U`,
+    `Icon=${escapeValue(icon)}`,
     "Terminal=false",
     "Categories=Science;",
-    `StartupWMClass=${wmClass}`,
+    `StartupWMClass=${escapeValue(wmClass)}`,
     "",
   ]
     .filter((line) => line !== null)
@@ -32,7 +45,16 @@ function writeIfChanged(file, data) {
     // missing: write it
   }
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, data);
+  // Written next to the target and renamed over it, so a desktop that reads
+  // the entry or icon meanwhile never sees a partial file.
+  const tmp = path.join(path.dirname(file), `.${path.basename(file)}.${process.pid}.tmp`);
+  try {
+    fs.writeFileSync(tmp, data);
+    fs.renameSync(tmp, file);
+  } catch (err) {
+    fs.rmSync(tmp, { force: true });
+    throw err;
+  }
 }
 
 // Returns the .desktop path written, or null when not running from an AppImage.
