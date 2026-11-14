@@ -69,6 +69,29 @@ def _files_phrase(inputs: List[dict]) -> str:
     return f"The {n} input files were"
 
 
+def _scope(files: List[str], group: int, total: int) -> str:
+    """Which input files a step worked on, and whether one call took several of them.
+
+    ``files`` are the input files the step reached, ``group`` the most of them one
+    call took (0: one call per file) and ``total`` the run's input files.
+    """
+    if not files:
+        return ""
+    every = len(files) == total
+    named = len(files) <= _NAMED_FILES
+    if not group:
+        if every:
+            return " on each file"
+        if len(files) == 1:
+            return f" on {files[0]}"
+        return f" on each of {_join(files)}" if named else f" on each of {len(files)} of the files"
+    if group >= len(files):
+        if every:
+            return " on all files together"
+        return f" on {_join(files)} together" if named else f" on {len(files)} of the files together"
+    return f" on groups of up to {group} files together"
+
+
 class _References:
     """References numbered in the order the text cites them."""
 
@@ -108,10 +131,15 @@ def methods_text(
     # Steps that took several input files at once (feature linking, protein inference)
     # and how many of them each call of the step took at most
     together: Dict[int, int] = {}
+    # The input files each step worked on (a database is an input of its own step only)
+    touched: Dict[int, List[str]] = {}
     for item in report.get("inputs") or []:
         for call in item.get("calls") or []:
             if call.get("with"):
                 together[call["step"]] = max(together.get(call["step"], 0), call["with"] + 1)
+            reached = touched.setdefault(call["step"], [])
+            if item["name"] not in reached:
+                reached.append(item["name"])
 
     app = report.get("app") or {}
     app_name = " ".join(x for x in (app.get("name"), app.get("version")) if x)
@@ -155,13 +183,7 @@ def methods_text(
             subject = subject[0].lower() + subject[1:]
         sentence = lead + subject
         if len(inputs) > 1:
-            group = together.get(step["number"], 0)
-            if not group:
-                sentence += " on each file"
-            elif group >= len(inputs):
-                sentence += " on all files together"
-            else:
-                sentence += f" on groups of up to {group} files together"
+            sentence += _scope(touched.get(step["number"], []), together.get(step["number"], 0), len(inputs))
         params = step.get("params") or {}
         if params:
             parts = [f"{_param_name(program, k, instance, names)} set to {v}" for k, v in params.items()]
