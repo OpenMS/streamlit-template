@@ -762,7 +762,6 @@ class WorkflowManager:
             icon = ":material/play_arrow:"
             help = help or "Save these settings, open the Run page and start the analysis."
         info = None if running else self._follow_up()
-        disk = "" if running else self.disk_space_warning()
         if info:
             # Settings of an earlier run (adding files, an analysis, a re-run):
             # this button starts with them; say so beside it.
@@ -779,9 +778,8 @@ class WorkflowManager:
         with bar:
             if sticky and summary:
                 st.caption(summary, width="stretch")
-            if disk:
-                st.caption(f":orange[:material/hard_drive: Not enough disk space?] {disk}",
-                           width="stretch")
+            if not running and self.disk_space_factor:
+                self._disk_space_caption()
             if named:
                 st.text_input(
                     name_label, key=f"{key}-name", max_chars=MAX_NAME_LENGTH,
@@ -802,6 +800,16 @@ class WorkflowManager:
                     return
                 st.session_state[self._autostart_key()] = True
             st.switch_page(run_page)
+
+    @st.fragment(run_every=10)
+    def _disk_space_caption(self) -> None:
+        """The disk-space warning beside the Run button. A fragment of its own
+        that reruns every 10 s: the input selection above it changes in
+        configure()'s fragment, which does not redraw this bar."""
+        disk = self.disk_space_warning()
+        if disk:
+            st.caption(f":orange[:material/hard_drive: Not enough disk space?] {disk}",
+                       width="stretch")
 
     def _give_next_run_name(self, name: str) -> bool:
         """Keep the name typed beside the Run button for the start it opens.
