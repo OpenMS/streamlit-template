@@ -234,6 +234,7 @@ def test_new_panels_build_their_components(tmp_path, monkeypatch):
 
 
 def test_profile_colours_keep_a_group_whose_values_are_all_missing():
+    pytest.importorskip("openms_insight")
     from src.viz import plumbing, profile
 
     long = pd.DataFrame({"id": ["p"] * 4, "sample": ["a1", "a2", "b1", "b2"],
