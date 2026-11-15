@@ -204,7 +204,19 @@ def _chart(frame, y_column, y_label, title, cache_path, key, state_manager, help
     plot(key=f"{key}_chart", state_manager=state_manager, height=320, help=help_text)
 
 
-def _table(frames: dict, columns, sort, cache_path, key, state_manager, title):
+TERM_TABLE_HELP = (
+    "Every GO term of the selected proteins, tested against the background (all proteins of the "
+    "experiment with a GO term). Sorted by adjusted p-value; the category buttons above pick biological "
+    "process, molecular function or cellular component."
+)
+COUNT_TABLE_HELP = (
+    "Every GO term of the proteins, with how many proteins carry it and which. Sorted by the number of "
+    "proteins; the category buttons above pick biological process, molecular function or cellular "
+    "component. Select proteins elsewhere to test which terms are enriched among them."
+)
+
+
+def _table(frames: dict, columns, sort, cache_path, key, state_manager, title, help_text=None):
     # ``key`` names the mode too: a table keeps the column definitions it was first drawn with
     from openms_insight import Table
 
@@ -217,7 +229,7 @@ def _table(frames: dict, columns, sort, cache_path, key, state_manager, title):
         filters={CATEGORY_IDENTIFIER: "category"}, filter_defaults={CATEGORY_IDENTIFIER: default},
         initial_sort=list(sort), layout="fitColumns", go_to_fields=["term"], float_precision="float64",
     )
-    table(key=f"{key}_terms", state_manager=state_manager, height=380)
+    table(key=f"{key}_terms", state_manager=state_manager, height=380, help=help_text)
 
 
 def _clear(state_manager, identifier, mode_key):
@@ -280,7 +292,8 @@ def show_go_panel(
         _chart(term_chart(tables), "score", "-log10(adjusted p-value)", "{view}: the most significant terms",
                cache_path, f"{key}_selection", state_manager, help)
         _table({c: term_frame(tables.get(c), labels) for c in CATEGORIES}, TERM_COLUMNS,
-               ({"column": "padj", "dir": "asc"},), cache_path, f"{key}_selection", state_manager, "Enriched GO terms")
+               ({"column": "padj", "dir": "asc"},), cache_path, f"{key}_selection", state_manager, "Enriched GO terms",
+               TERM_TABLE_HELP)
         return
 
     annotated, tables, error = counts()
@@ -292,4 +305,5 @@ def show_go_panel(
     _chart(count_chart(tables, annotated), "proteins", "Proteins", "{view}: the most frequent terms",
            cache_path, f"{key}_all", state_manager, help)
     _table({c: count_frame(tables.get(c), labels, annotated) for c in CATEGORIES}, COUNT_COLUMNS,
-           ({"column": "count", "dir": "desc"},), cache_path, f"{key}_all", state_manager, "GO terms of all proteins")
+           ({"column": "count", "dir": "desc"},), cache_path, f"{key}_all", state_manager, "GO terms of all proteins",
+           COUNT_TABLE_HELP)

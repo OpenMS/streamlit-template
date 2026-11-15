@@ -48,6 +48,7 @@ run picked on another page).
 
 from __future__ import annotations
 
+import contextlib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence
@@ -401,8 +402,30 @@ def _later_datasets(spec: ViewerSpec, kind: DatasetKind) -> Mapping[str, str]:
     return spec.later(kind.name) if spec.later else spec.datasets
 
 
+def _one_rerun():
+    """Draw the components of the page with at most one rerun after the last one.
+
+    An Insight component that gets new data or a new selection reruns the page,
+    and drawn one after another each of them would rerun it once more (a view
+    of ten components, or the Edit comparison dialog with its tables, reran the
+    page about as often while it loaded). openms-insight's ``defer_reruns``
+    collects those into one rerun; an app without it, or an older release,
+    draws the page as before.
+    """
+    try:
+        from openms_insight import defer_reruns
+    except ImportError:
+        return contextlib.nullcontext()
+    return defer_reruns()
+
+
 def show_viewer(spec: ViewerSpec) -> List[ViewerContext]:
     """Draw the Viewer ``spec`` describes; returns the context of each experiment drawn."""
+    with _one_rerun():
+        return _show_viewer(spec)
+
+
+def _show_viewer(spec: ViewerSpec) -> List[ViewerContext]:
     if not spec.datasets:
         if spec.empty is not None:
             spec.empty()
