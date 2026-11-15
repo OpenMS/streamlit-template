@@ -148,3 +148,86 @@ def test_fingerprint_follows_row_order():
     b = pl.DataFrame({"x": [0, 2, 1], "y": [0, 0, 1]})
     assert fingerprint(a) != fingerprint(b)
     assert fingerprint(a) == fingerprint(a.clone())
+
+
+def _long():
+    wide = _wide()
+    long = wide.melt(id_vars="id", var_name="sample", value_name="value")
+    long["group"] = long["sample"].map(GROUPS)
+    return long
+
+
+def test_profile_places_samples_by_group_with_mean_lines():
+    from src.viz import profile
+    long = _long()
+    # Samples listed out of group order are still placed group by group
+    table = profile.profile_table(long, "id", log2=True, samples=["b1", "a1", "b2", "a2"])
+    p0 = table[table["id"] == "P0"]
+    points = p0[~p0["series"].str.endswith(" mean")]
+    # a2 of P0 is missing and left out
+    assert dict(zip(points["sample"], points["x"])) == {"a1": 1.0, "b1": 3.0, "b2": 4.0}
+    mean_b = p0[p0["series"] == "B mean"]
+    assert list(mean_b["x"]) == [3.0, 4.0]
+    assert np.allclose(mean_b["y"], points[points["series"] == "B"]["y"].mean())
+    # P3's b1 is 0: left out on a log scale
+    assert "b1" not in set(table[(table["id"] == "P3") & (table["series"] == "B")]["sample"])
+    assert not profile.profile_table(long, "id", means=False)["series"].str.endswith(" mean").any()
+    colors = profile.profile_colors(["B", "A"])
+    assert colors["A"] == colors["A mean"] == plumbing.group_colors(["A", "B"])["A"]
+
+
+def test_picked_set_needs_several_entries():
+    from src.viz import profile
+    state = MagicMock()
+    state.get_selection.return_value = ["P1"]
+    assert profile.picked_set(state, "set") == []
+    state.get_selection.return_value = ["P1", None, "P2"]
+    assert profile.picked_set(state, "set") == ["P1", "P2"]
+    assert profile.picked_set(None, "set") == []
+
+
+def test_comparison_table_calls_changes_and_sorts():
+    from src.viz import comparison_table as ct
+    stats = pd.DataFrame({"Protein": ["x", "y", "z", "w"], "log2FC": [1.5, -2.0, 0.1, 3.0],
+                          "p-adj": [0.01, 0.001, 0.9, None], "p-value": [0.001, 0.0001, 0.5, None]})
+    table = ct.comparison_table(stats, "B", 1.0, 0.05).to_pandas()
+    assert list(table["Protein"]) == ["y", "x", "z", "w"]
+    assert list(table["Change"]) == ["lower in B", "higher in B", "–", "–"]
+    assert ct.comparison_table(pl.from_pandas(stats).lazy(), None, 1.0, 0.05).collect()["Change"].unique().to_list() == ["–"]
+    columns = ct.comparison_columns("Proteoform", "Proteoform", after_entity=[{"field": "residues"}], p_value=False)
+    assert [c["field"] for c in columns] == ["Proteoform", "residues", "Change", "log2FC", "p-adj"]
+    assert ct.comparison_title("A", "B") == "B vs. A"
+
+
+def test_zscore_long_and_heatmap_settings():
+    matrix = np.log2(_wide().set_index("id")[SAMPLES]).dropna()
+    long = heatmap.zscore_long(matrix, "Protein", top=5, groups=GROUPS)
+    assert list(long.columns) == ["Protein", "Sample", "Z_score", "Group"]
+    assert long["Protein"].nunique() == 5 and len(long) == 20
+    settings = heatmap.heatmap_settings("Protein", toolbar_settings=[heatmap.top_setting()])
+    assert settings["y_column"] == "Protein" and settings["toolbar_settings"][0]["default"] == 50
+
+
+def test_new_panels_build_their_components(tmp_path, monkeypatch):
+    monkeypatch.setitem(sys.modules, "streamlit", MagicMock())
+    openms_insight = pytest.importorskip("openms_insight")
+    from src.viz import comparison_table as ct, profile
+    calls = []
+
+    def record(self, **kwargs):
+        calls.append((type(self).__name__, kwargs["key"]))
+
+    for cls in (openms_insight.SeriesPlot, openms_insight.Table, openms_insight.Heatmap):
+        monkeypatch.setattr(cls, "__call__", record)
+    profile.show_profile(_long(), "id", "protein", cache_path=tmp_path, key="pr",
+                         table_args={"log2": True}, y_label="log2 abundance")
+    profile.show_profile(_long(), "id", "set", cache_path=tmp_path, key="prs", several=True)
+    stats = pd.DataFrame({"Protein": ["x", "y"], "log2FC": [1.5, -2.0], "p-adj": [0.01, 0.2]})
+    ct.show_comparison_table(stats, "Protein", "Protein", cache_path=tmp_path, key="t",
+                             reference="A", compared="B", fc=1.0, padj=0.05,
+                             interactivity={"protein": "Protein"})
+    matrix = np.log2(_wide().set_index("id")[SAMPLES]).dropna()
+    state = MagicMock()
+    state.get_selection.return_value = None
+    heatmap.show_zscore_heatmap(matrix, "id", cache_path=tmp_path, key="z", top=10, groups=GROUPS)
+    assert calls == [("SeriesPlot", "pr"), ("SeriesPlot", "prs"), ("Table", "t"), ("Heatmap", "z")]
