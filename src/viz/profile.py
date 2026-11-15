@@ -99,13 +99,15 @@ def profile_settings(table: pd.DataFrame, id_column: str, filter_identifier: str
                      several: bool = False, series_column: str | None = None,
                      empty_until_picked: bool = True, title: str | None = None,
                      x_label: str = "Sample", y_label: str = "Abundance",
-                     subtitle_column: str | None = None) -> dict:
+                     subtitle_column: str | None = None, groups=None) -> dict:
     """The ``SeriesPlot`` arguments (besides data and cache).
 
     One entry: ``filter_identifier`` picks it, coloured by group with the
     group means as lines (``empty_until_picked`` draws nothing until one is
     picked). ``several``: ``filter_identifier`` is a set of entries, each
     drawn as a series (``series_column``, default the id column).
+    ``groups`` names every group of the experiment, so a group whose values
+    are all missing keeps its place in the colours (default: those in ``table``).
     """
     from openms_insight import SeriesPlot
 
@@ -118,7 +120,9 @@ def profile_settings(table: pd.DataFrame, id_column: str, filter_identifier: str
     if several:
         settings["series_column"] = series_column or id_column
         return settings
-    groups = [g for g in dict.fromkeys(table[SERIES]) if not str(g).endswith(MEAN_SUFFIX)]
+    if groups is None:
+        groups = [g for g in dict.fromkeys(table[SERIES]) if not str(g).endswith(MEAN_SUFFIX)]
+    groups = [str(g) for g in dict.fromkeys(groups)]
     settings.update(series_column=SERIES, series_colors=profile_colors(groups))
     if empty_until_picked:
         settings["filter_defaults"] = {filter_identifier: "__none__"}
@@ -138,7 +142,11 @@ def show_profile(long, id_column: str, filter_identifier: str, name: str = "abun
     go to ``profile_table``, ``settings`` to ``profile_settings``."""
     from openms_insight import SeriesPlot
 
-    table = profile_table(long, id_column, means=not several, **(table_args or {}))
+    table_args = table_args or {}
+    table = profile_table(long, id_column, means=not several, **table_args)
+    if not several:
+        settings.setdefault("groups", as_polars(long)[table_args.get("group_column", "group")]
+                            .cast(str).unique().to_list())
     arguments = profile_settings(table, id_column, filter_identifier, several=several, **settings)
     frame = as_polars(table)
     plot = SeriesPlot(

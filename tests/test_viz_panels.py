@@ -231,3 +231,16 @@ def test_new_panels_build_their_components(tmp_path, monkeypatch):
     state.get_selection.return_value = None
     heatmap.show_zscore_heatmap(matrix, "id", cache_path=tmp_path, key="z", top=10, groups=GROUPS)
     assert calls == [("SeriesPlot", "pr"), ("SeriesPlot", "prs"), ("Table", "t"), ("Heatmap", "z")]
+
+
+def test_profile_colours_keep_a_group_whose_values_are_all_missing():
+    from src.viz import plumbing, profile
+
+    long = pd.DataFrame({"id": ["p"] * 4, "sample": ["a1", "a2", "b1", "b2"],
+                         "group": ["A", "A", "B", "B"], "value": [None, None, 3.0, 4.0]})
+    table = profile.profile_table(long, "id")
+    assert "A" not in set(table["series"])
+    colors = plumbing.group_colors(["A", "B"])
+    settings = profile.profile_settings(table, "id", "protein", groups=["A", "B"])
+    assert settings["series_colors"]["B"] == colors["B"]
+    assert settings["series_colors"]["B mean"] == colors["B"]
