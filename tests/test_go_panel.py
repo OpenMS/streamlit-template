@@ -1,6 +1,9 @@
 """The GO panel's tables and charts, built from the contract frames (no Streamlit run)."""
 import pandas as pd
-import polars as pl
+import pytest
+
+# polars comes with the apps (openms-insight), not with the template
+pl = pytest.importorskip("polars")
 
 from src.viz import go_panel
 
