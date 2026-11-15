@@ -527,12 +527,9 @@ def view_bar(
 
     opened = _pending_link(key) if link else None
     if opened is not None:
-        st.session_state[f"{key}_link_seen"] = _link_token()
         if opened["view"]:
             select_view(path, opened["view"], components, presets, default_layout)
-        # The link is applied: what the page shows from here on is the user's
-        for name in (LINK_VIEW, LINK_SHOW):
-            st.query_params.pop(name, None)
+        consume_link(key)
 
     state = _views(path, components, presets, default_layout, default_view)
     missing_of = {v["name"]: missing_analyses(v["rows"], components, available) for v in state["views"]}
@@ -656,6 +653,17 @@ def _pending_link(key: str) -> Optional[Dict[str, Any]]:
     if st.session_state.get(f"{key}_link_seen") == _link_token():
         return None
     return read_link(st.query_params)
+
+
+def consume_link(key: str) -> None:
+    """Mark the link the page was opened with as applied for the bar ``key``.
+
+    What the page shows from here on is the user's: the link's parameters
+    leave the URL, so a rerun does not apply it again.
+    """
+    st.session_state[f"{key}_link_seen"] = _link_token()
+    for name in (LINK_VIEW, LINK_SHOW):
+        st.query_params.pop(name, None)
 
 
 def linked_datasets(key: str) -> List[Optional[str]]:

@@ -50,7 +50,9 @@ def fingerprint(data, *parts) -> str:
         frame = as_polars(data)
         digest.update(repr((frame.columns, frame.shape)).encode())
         if frame.height:
-            digest.update(str(int(frame.hash_rows(seed=0).sum())).encode())
+            # The row hashes in order: a sum would give tables with the same
+            # rows in another order (a different plot) the same fingerprint
+            digest.update(frame.hash_rows(seed=0).to_numpy().tobytes())
     return digest.hexdigest()[:16]
 
 

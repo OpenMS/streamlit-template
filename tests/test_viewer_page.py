@@ -341,3 +341,22 @@ def test_link_sets_every_experiment_and_a_pick_is_seen(monkeypatch):
     assert state[viewer._selection_key("v", 0)] == "b"
     viewer._apply_picks(_picks_spec(pick="a"), [])
     assert state[viewer._selection_key("v", 0)] == "a"
+
+
+def test_a_link_to_a_kind_without_links_is_applied_once(tmp_path):
+    """A link naming a dataset whose kind has no links is used up on the first run,
+    so the user's later picks stay."""
+    from src.layout_manager.layout import link_params
+    source = _APP.format(root=str(tmp_path), mode="switch").replace(
+        'buttons=lambda ctx: st.button(f"run button', 'link=True, buttons=lambda ctx: st.button(f"run button')
+    at = AppTest.from_string(source)
+    for name, value in link_params("plots", [{"dataset": "cmp"}]).items():
+        at.query_params[name] = value
+    at.run()
+    assert not at.exception
+    assert _texts(at) == ["comparison grid cmp [['plot']]"]
+    assert not any(name in at.query_params for name in link_params("plots"))
+    at.selectbox(key="v_experiment_0_select").set_value("r3").run()
+    assert _texts(at) == ["0:run:r3:None:plot"]
+    at.run()
+    assert _texts(at) == ["0:run:r3:None:plot"]

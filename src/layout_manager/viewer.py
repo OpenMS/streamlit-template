@@ -59,6 +59,7 @@ from src.layout_manager.layout import MAX_EXPERIMENTS, load_layout, resolve_layo
 from src.layout_manager.ui import (
     _picked,
     _selection_key,
+    consume_link,
     experiment_state,
     linked_datasets,
     render_layout,
@@ -475,6 +476,10 @@ def _show_viewer(spec: ViewerSpec) -> List[ViewerContext]:
         link=kind.link, max_experiments=kind.max_experiments, target=kind.target,
         experiment_label=kind.experiment_label,
     )
+    if linked and not kind.link:
+        # The link picked a dataset whose kind has no links: its bar did not use
+        # it up, so do it here, or every rerun would pick that dataset again
+        consume_link(linked_key)
     layout, side_by_side = resolve_layout(kind.views_path, components, default_layout)
     saved = load_layout(kind.views_path) is not None
     layout = layout[:max(1, kind.max_experiments)]

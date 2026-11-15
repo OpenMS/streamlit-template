@@ -139,3 +139,12 @@ def test_panels_build_their_components(tmp_path, monkeypatch):
     comparison_steps.show_pvalues(pd.DataFrame({"p-value": [0.1, 0.2]}), cache_path=tmp_path, key="p",
                                   noun="Proteins")
     assert len(list((tmp_path / "series").iterdir())) == 4
+
+
+def test_fingerprint_follows_row_order():
+    import polars as pl
+    from src.viz.plumbing import fingerprint
+    a = pl.DataFrame({"x": [0, 1, 2], "y": [0, 1, 0]})
+    b = pl.DataFrame({"x": [0, 2, 1], "y": [0, 0, 1]})
+    assert fingerprint(a) != fingerprint(b)
+    assert fingerprint(a) == fingerprint(a.clone())
