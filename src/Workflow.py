@@ -298,8 +298,13 @@ class Workflow(WorkflowManager):
         return f"topp-results-matching-{self.run_id}-{name}"
 
     def _matching(self) -> dict:
+        # Kept apart from the dialog's widget keys: Streamlit drops a widget's
+        # state on a run that does not draw it, i.e. once the dialog is closed
         return {name: float(st.session_state.get(self._matching_key(name), value))
                 for name, value in self.MATCHING.items()}
+
+    def _keep_matching(self, name: str) -> None:
+        st.session_state[self._matching_key(name)] = st.session_state[self._matching_key(name) + "-input"]
 
     def _matching_step(self) -> None:
         st.caption("A feature of a later run joins the nearest feature of the runs before it within "
@@ -307,9 +312,11 @@ class Workflow(WorkflowManager):
         left, right = st.columns(2)
         matching = self._matching()
         left.number_input("m/z tolerance (ppm)", 0.5, 100.0, matching["ppm"], 0.5,
-                          key=self._matching_key("ppm"))
+                          key=self._matching_key("ppm") + "-input",
+                          on_change=self._keep_matching, args=("ppm",))
         right.number_input("Retention time tolerance (s)", 1.0, 600.0, matching["rt_tolerance"], 1.0,
-                           key=self._matching_key("rt_tolerance"))
+                           key=self._matching_key("rt_tolerance") + "-input",
+                           on_change=self._keep_matching, args=("rt_tolerance",))
 
     def _runs_step(self) -> None:
         for run_id in self._members():
@@ -318,6 +325,7 @@ class Workflow(WorkflowManager):
     def _reset_matching(self) -> None:
         for name in self.MATCHING:
             st.session_state.pop(self._matching_key(name), None)
+            st.session_state.pop(self._matching_key(name) + "-input", None)
 
     def _experiment_bar(self) -> None:
         """Single run | Comparison for an experiment that runs added files to,
@@ -347,7 +355,7 @@ class Workflow(WorkflowManager):
         layout_path = Path(self.workflow_dir, "layouts", "results.json")
         view_bar(
             layout_path, self.COMPONENTS, self.PRESETS, self.PRESETS[0]["layout"], key="topp-results-view",
-            available=self.available(), analyses=self.ANALYSES,
+            available=self.available(getattr(self, "_single", None)), analyses=self.ANALYSES,
             unavailable_options=self.missing_options, target="the Results page",
             actions=[{"id": "add-files", "icon": "➕", "label": "Add analysis", "on_click": self.add_files,
                       "help": "Process more files with this run's settings and add them to its experiment"}],
@@ -356,9 +364,14 @@ class Workflow(WorkflowManager):
         render_layout(
             layout[0],
             {"features": self._features, "intensities": self._intensities, "top_features": self._top_features},
-            components=self.COMPONENTS, available=self.available(), analyses=self.ANALYSES,
-            on_missing=lambda missing, name: request_analysis("topp-results-view", missing, component=name),
+            components=self.COMPONENTS, available=self.available(getattr(self, "_single", None)),
+            analyses=self.ANALYSES, on_missing=lambda missing, name: request_analysis("topp-results-view", missing, component=name),
         )
+
+    def _shown_results(self) -> Path:
+        """The results of the run shown: the one picked under Single run, else this run."""
+        single = getattr(self, "_single", None)
+        return Path(self.runs.results_dir(single)) if single else Path(self.results_dir)
 
     def _feature_table(self):
         """The consensus features of the shown experiment: one run, or a run and
@@ -375,7 +388,11 @@ class Workflow(WorkflowManager):
         """The feature table's widget key, one per experiment and its runs, so a
         selection never carries over to another table (files added change it)."""
         single = getattr(self, "_single", None)
-        return "topp-results-features-" + "-".join([single] if single else self._members())
+        if single:
+            return f"topp-results-features-{single}"
+        # The matching tolerances decide the comparison's rows
+        matching = "-".join(f"{v:g}" for v in self._matching().values())
+        return "topp-results-features-" + "-".join(self._members()) + f"-{matching}"
 
     def _features(self) -> None:
         df = self._feature_table()
@@ -399,6 +416,6 @@ class Workflow(WorkflowManager):
             st.info("💡 Select one or more rows in the table to show a barplot with intensities.")
 
     def _top_features(self) -> None:
-        file = Path(self.results_dir, "custom-tool", "top-features.tsv")
+        file = Path(self._shown_results(), "custom-tool", "top-features.tsv")
         st.markdown("**Top features**")
         st.dataframe(pd.read_csv(file, sep="\t"), hide_index=True)

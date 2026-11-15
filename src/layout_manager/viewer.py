@@ -211,31 +211,36 @@ def _show_state(key: str, index: int) -> str:
     return f"{key}_show_{index}"
 
 
-def _locate(spec: ViewerSpec, dataset: str) -> bool:
-    """Make the first experiment show ``dataset``; False when no experiment holds it."""
+def _locate(spec: ViewerSpec, dataset: str, index: int = 0) -> bool:
+    """Make experiment ``index`` show ``dataset``; False when no experiment holds it."""
     if dataset in spec.datasets:
-        st.session_state[_selection_key(spec.key, 0)] = dataset
-        st.session_state[_show_state(spec.key, 0)] = _WHOLE
+        st.session_state[_selection_key(spec.key, index)] = dataset
+        st.session_state[_show_state(spec.key, index)] = _WHOLE
         return True
     for experiment in spec.datasets:
         members = list(spec.members(experiment)) if spec.members else []
         if dataset in members:
-            st.session_state[_selection_key(spec.key, 0)] = experiment
-            st.session_state[_member_state(spec.key, 0, experiment)] = dataset
-            st.session_state[_show_state(spec.key, 0)] = _MEMBER
+            st.session_state[_selection_key(spec.key, index)] = experiment
+            st.session_state[_member_state(spec.key, index, experiment)] = dataset
+            st.session_state[_show_state(spec.key, index)] = _MEMBER
             return True
     return False
 
 
-def _apply_picks(spec: ViewerSpec, linked: Optional[str]) -> None:
+def _apply_picks(spec: ViewerSpec, linked: Sequence[Optional[str]] = ()) -> None:
+    # The pick of another page is seen whichever pick wins now, so a later run
+    # does not take it for a new one and replace what the user was shown
+    seen = f"{spec.key}_pick_seen"
+    new_pick = spec.pick is not None and st.session_state.get(seen) != spec.pick
+    if spec.pick is not None:
+        st.session_state[seen] = spec.pick
     pending = st.session_state.pop(f"{spec.key}_show_pending", None)
     if pending is not None and _locate(spec, pending):
         return
-    if linked is not None and _locate(spec, linked):
+    # A link names a dataset per experiment
+    if any([_locate(spec, d, i) for i, d in enumerate(linked) if d is not None]):
         return
-    seen = f"{spec.key}_pick_seen"
-    if spec.pick is not None and st.session_state.get(seen) != spec.pick:
-        st.session_state[seen] = spec.pick
+    if new_pick:
         _locate(spec, spec.pick)
 
 
@@ -434,7 +439,7 @@ def _show_viewer(spec: ViewerSpec) -> List[ViewerContext]:
         return []
     linked_key = spec.view_key(spec.kinds[0])
     linked = linked_datasets(linked_key) if any(k.link for k in spec.kinds) else []
-    _apply_picks(spec, linked[0] if linked else None)
+    _apply_picks(spec, linked)
 
     # What is shown, with what acts on it; then how it is shown; then the components
     first = _row(spec, 0, spec.datasets, spec.label, app_buttons=True)
