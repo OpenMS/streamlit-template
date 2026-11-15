@@ -110,7 +110,9 @@ test("AppImage desktop entry points at the AppImage and the copied icon", () => 
     // " is quoted as \" and that backslash escaped again (\\"), % doubled,
     // a literal backslash written as four.
     assert.ok(entry.split("\n").includes('Exec="/home/u/My Apps/100%%A\\\\"p\\\\\\\\p.AppImage" %U'), entry);
-    assert.match(entry, new RegExp(`^Icon=${path.join(dir, "cfg", "app.png").replace(/[.\\]/g, "\\$&")}$`, "m"));
+    // The icon path's backslashes (Windows) are escaped like any string value.
+    const iconLine = `Icon=${path.join(dir, "cfg", "app.png").replace(/\\/g, "\\\\")}`;
+    assert.ok(entry.split("\n").includes(iconLine), entry);
     assert.deepEqual(fs.readdirSync(path.join(dir, "cfg")), ["app.png"]);
     assert.match(entry, /^StartupWMClass=app$/m);
     assert.equal(fs.readFileSync(path.join(dir, "cfg", "app.png"), "utf8"), "png");
