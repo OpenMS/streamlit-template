@@ -117,3 +117,19 @@ def test_a_methods_block_of_another_shape_is_ignored(tmp_path):
     for methods in (["CometAdapter"], "text", {"tools": ["x"]},
                     {"tools": {"FeatureLinkerUnlabeledKD": "Linked"}}, {"reference": 3}):
         assert methods_text(report, {"methods": methods}, names=_no_names) == plain
+
+
+def test_a_database_is_not_counted_among_the_files_a_step_took(tmp_path):
+    progress = RunProgress(tmp_path)
+    _step(progress, "DecoyDatabase", command_io({"in": [["/d/db.fasta"]], "out": ["/d/db.decoy.fasta"]}, 1))
+    _step(progress, "CometAdapter", command_io(
+        {"in": ["/d/A.mzML", "/d/B.mzML"], "database": ["/d/db.decoy.fasta"],
+         "out": ["/r/A.idXML", "/r/B.idXML"]}, 2))
+    _step(progress, "ProteomicsLFQ", command_io(
+        {"in": [["/d/A.mzML", "/d/B.mzML"]], "ids": [["/r/A.idXML", "/r/B.idXML"]],
+         "out": ["/r/out.mzTab"]}, 1))
+    text = methods_text(build_report(read_progress(tmp_path), app_name="App"), names=_no_names)
+    assert "First, DecoyDatabase was run on db.fasta, with" in text
+    assert "Then, CometAdapter was run on each of A.mzML and B.mzML, with" in text
+    assert "Finally, ProteomicsLFQ was run on A.mzML and B.mzML together, with" in text
+    assert "groups of up to" not in text
