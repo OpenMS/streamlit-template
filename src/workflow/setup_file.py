@@ -80,19 +80,32 @@ def _resolved(path: str) -> str:
         return str(path)
 
 
-def _selections(params: dict, files: Dict[str, List[str]]) -> Dict[str, dict]:
-    """The settings that pick input files, as {setting: {key, files (names), multiple}}."""
+def _selections(params: dict, files: Dict[str, List[str]], workflow_dir: Path) -> Dict[str, dict]:
+    """The settings that pick input files, as {setting: {key, files (names), multiple}}.
+
+    A picked file that is gone since still counts by its folder, so the
+    selection keeps its name and the other workspace is told about it.
+    """
     owner = {}
     for key, paths in files.items():
         for path in paths:
             owner[_resolved(path)] = key
+    root = _resolved(str(Path(workflow_dir, "input-files")))
+
+    def key_of(value: str) -> Optional[str]:
+        path = _resolved(value)
+        if path in owner:
+            return owner[path]
+        parent = Path(path).parent
+        return parent.name if str(parent.parent) == root and parent.name in files else None
+
     found = {}
     for setting, value in params.items():
         multiple = isinstance(value, list)
         values = value if multiple else [value]
         if not values or not all(isinstance(v, str) and v for v in values):
             continue
-        keys = {owner.get(_resolved(v)) for v in values}
+        keys = {key_of(v) for v in values}
         if len(keys) != 1 or None in keys:
             continue
         found[setting] = {"key": keys.pop(), "files": [_name(v) for v in values], "multiple": multiple}
@@ -119,7 +132,7 @@ def export_setup(
         "files": {
             key: [{"name": _name(p), "size": _size(p)} for p in paths] for key, paths in files.items()
         },
-        "selections": _selections(params, files),
+        "selections": _selections(params, files, workflow_dir),
     }
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
@@ -142,6 +155,23 @@ def _size(path: str) -> Optional[int]:
 def is_setup_file(data: bytes) -> bool:
     """Whether ``data`` looks like a setup file (a ZIP) rather than a parameters JSON."""
     return data[:4] == b"PK\x03\x04"
+
+
+def _check_selections(selections) -> None:
+    """Raise ValueError unless ``selections`` is a manifest's file selections (or absent)."""
+    if selections is None:
+        return
+    if not isinstance(selections, dict):
+        raise ValueError("The setup file is damaged: its file selections are not a JSON object.")
+    for setting, selection in selections.items():
+        if not (
+            isinstance(selection, dict)
+            and isinstance(selection.get("key"), str)
+            and isinstance(selection.get("files"), list)
+            and all(isinstance(name, str) for name in selection["files"])
+            and isinstance(selection.get("multiple"), bool)
+        ):
+            raise ValueError(f"The setup file is damaged: the file selection of {setting!r} is not valid.")
 
 
 def read_setup(data: bytes) -> dict:
@@ -178,6 +208,7 @@ def read_setup(data: bytes) -> dict:
         raise ValueError("The setup file is damaged: its settings are not a JSON object.")
     if manifest.get("format") != FORMAT:
         raise ValueError(f"Setup file format {manifest.get('format')!r} is not supported.")
+    _check_selections(manifest.get("selections"))
     if folders is not None and not isinstance(folders, dict):
         raise ValueError("The setup file is damaged: its folders are not a JSON object.")
     if parts[DESIGN_FILE] is not None:
@@ -211,18 +242,17 @@ def apply_setup(workflow_dir: PathLike, setup: dict) -> Tuple[dict, Dict[str, Li
     params.pop(FOLLOW_UP_KEY, None)
     here = input_files(workflow_dir)
     missing: Dict[str, List[str]] = {}
+    _check_selections(setup["manifest"].get("selections"))
     selections = setup["manifest"].get("selections") or {}
     for setting, selection in selections.items():
-        if not isinstance(selection, dict):
-            continue
-        key = str(selection.get("key", ""))
+        key = selection["key"]
         by_name = {_name(p): p for p in here.get(key, [])}
-        names = [str(n) for n in selection.get("files") or []]
+        names = selection["files"]
         picked = [by_name[n] for n in names if n in by_name]
         for name in names:
             if name not in by_name and name not in missing.setdefault(key, []):
                 missing[key].append(name)
-        if selection.get("multiple", True):
+        if selection["multiple"]:
             params[setting] = picked
         elif picked:
             params[setting] = picked[0]

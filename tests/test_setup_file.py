@@ -84,6 +84,17 @@ def test_a_single_selection_whose_file_is_missing_falls_back_to_the_default(tmp_
     assert missing == {"fasta": ["human.fasta"]}
 
 
+def test_a_picked_file_that_is_gone_still_counts_for_its_selection(tmp_path):
+    source = _workflow(tmp_path / "mine", files=("Control.mzML",))
+    mzml = source / "input-files" / "mzML-files"
+    (source / "params.json").write_text(json.dumps(
+        {"mzML-files": [str(mzml / "Control.mzML"), str(mzml / "Deleted.mzML")]}))
+    selections = json.loads(zipfile.ZipFile(io.BytesIO(export_setup(source))).read("setup.json"))["selections"]
+    assert selections["mzML-files"]["files"] == ["Control.mzML", "Deleted.mzML"]
+    _, missing = apply_setup(tmp_path / "theirs", read_setup(export_setup(source)))
+    assert missing == {"mzML-files": ["Control.mzML", "Deleted.mzML"]}
+
+
 def test_referenced_files_count_as_input_files(tmp_path):
     wf = _workflow(tmp_path)
     elsewhere = tmp_path / "data" / "Far.mzML"
@@ -100,6 +111,14 @@ def test_referenced_files_count_as_input_files(tmp_path):
     {"setup.json": '{"format": 1}', "params.json": "[]"},
     {"setup.json": '{"format": 1}', "params.json": "{", },
     {"setup.json": '{"format": 1}', "params.json": "{}", "experimental-design.tsv": "not a design"},
+    {"setup.json": '{"format": 1, "selections": []}', "params.json": "{}"},
+    {"setup.json": '{"format": 1, "selections": {"a": "x"}}', "params.json": "{}"},
+    {"setup.json": '{"format": 1, "selections": {"a": {"key": "k", "files": "x.mzML", "multiple": true}}}',
+     "params.json": "{}"},
+    {"setup.json": '{"format": 1, "selections": {"a": {"key": "k", "files": [1], "multiple": true}}}',
+     "params.json": "{}"},
+    {"setup.json": '{"format": 1, "selections": {"a": {"key": 1, "files": [], "multiple": true}}}',
+     "params.json": "{}"},
 ])
 def test_a_damaged_setup_is_refused(members):
     buffer = io.BytesIO()
@@ -159,3 +178,17 @@ def test_importing_a_setup_on_the_configure_page_names_the_files_to_upload(tmp_p
     params = json.loads((target / "params.json").read_text())
     assert params["mzML-files"] == [str(target / "input-files" / "mzML-files" / "Control.mzML")]
     assert any("Treated.mzML" in w.value for w in app.warning)
+
+
+def test_a_setup_import_draws_the_design_editor_again(tmp_path, monkeypatch):
+    import streamlit as st
+    from src.workflow.StreamlitUI import StreamlitUI
+
+    wf = _workflow(tmp_path)
+    state = {f"_design-{wf.name}-mzML-files": 2, f"_design-{wf.name}-mzML-files-refill": False}
+    monkeypatch.setattr(st, "session_state", state)
+    ui = object.__new__(StreamlitUI)
+    ui.workflow_dir = wf
+    ui._restart_design_editors()
+    assert state[f"_design-{wf.name}-mzML-files"] == 3
+    assert state[f"_design-{wf.name}-mzML-files-refill"] is False

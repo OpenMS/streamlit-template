@@ -78,7 +78,7 @@ from src.workflow.ParameterManager import (
 )
 from src.workflow.parameter_names import display_name as _display_name
 from src.workflow.setup_file import (
-    apply_setup, export_setup, is_setup_file, read_setup, still_missing,
+    apply_setup, export_setup, input_files, is_setup_file, read_setup, still_missing,
 )
 
 
@@ -3077,6 +3077,8 @@ class StreamlitUI:
                 imported = self._import_parameters(up)
                 if imported is not False:
                     self.parameter_manager.clear_parameter_session_state()
+                    if isinstance(imported, dict):
+                        self._restart_design_editors()
                     st.session_state[import_key] = generation + 1
                     st.session_state[f"{import_key}-missing"] = (
                         imported if isinstance(imported, dict) else {}
@@ -3095,6 +3097,19 @@ class StreamlitUI:
                 icon=":material/upload_file:",
             )
 
+    def _restart_design_editors(self) -> None:
+        """Draw each experimental design editor again from the saved design.
+
+        An editor keeps the table it was first drawn with (``editor_table``),
+        so after a setup replaced the design it would save its old rows over
+        the new ones. A new version number gives it a new key.
+        """
+        prefix = f"_design-{Path(self.workflow_dir).name}-"
+        for key in input_files(self.workflow_dir):
+            version_key = prefix + key
+            if isinstance(st.session_state.get(version_key), int):
+                st.session_state[version_key] += 1
+
     def _import_parameters(self, upload) -> Union[bool, Dict[str, List[str]]]:
         """Check an imported file, then replace the saved settings atomically.
 
@@ -3110,7 +3125,10 @@ class StreamlitUI:
                 params, missing = apply_setup(self.workflow_dir, read_setup(data))
                 self.parameter_manager.write_parameters(params)
             except (OSError, ValueError) as error:
-                st.error(f"Could not import the setup: {error} Existing settings were kept.")
+                st.error(
+                    f"Could not import the setup: {error} The saved parameters were kept; "
+                    "the design and folder labels may already have changed."
+                )
                 return False
             return missing
         try:
