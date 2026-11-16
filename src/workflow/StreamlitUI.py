@@ -77,6 +77,9 @@ from src.workflow.ParameterManager import (
     TransientParameterFileError,
 )
 from src.workflow.parameter_names import display_name as _display_name
+from src.workflow.setup_file import (
+    apply_setup, export_setup, input_files, is_setup_file, read_setup, still_missing,
+)
 
 
 def _txt(value) -> str:
@@ -3030,6 +3033,24 @@ class StreamlitUI:
                         help="Export parameter, can be used to import to this workflow.",
                         use_container_width=True,
                     )
+            settings = st.session_state.get("settings", {})
+            st.download_button(
+                "📦 Setup file",
+                data=export_setup(
+                    self.workflow_dir,
+                    app=settings.get("app-name", ""),
+                    version=str(settings.get("version", "")),
+                ),
+                file_name=f"{self.workflow_dir.name}-setup.zip",
+                mime="application/zip",
+                help=(
+                    "Settings, experimental design, input folders and which input files "
+                    "are picked, in one file to hand to a colleague or open later with "
+                    "⬆️ Import parameters. It holds no data and no results: the files it "
+                    "names are picked again by name where they are uploaded."
+                ),
+                use_container_width=True,
+            )
             text, stem = run_methods(self.workflow_dir)
             st.download_button(
                 "📑 Methods",
@@ -3047,25 +3068,71 @@ class StreamlitUI:
             generation = st.session_state.get(import_key, 0)
             up = st.file_uploader(
                 "⬆️ Import parameters",
-                help="Import previously exported parameters.",
+                help="Import previously exported parameters, or a setup file "
+                "(📦 Setup file), which also brings its experimental design and "
+                "input folders and picks its input files again by name.",
                 key=f"{import_key}-{generation}",
             )
             if up is not None:
-                if self._import_parameters(up):
+                imported = self._import_parameters(up)
+                if imported is not False:
                     self.parameter_manager.clear_parameter_session_state()
+                    if isinstance(imported, dict):
+                        self._restart_design_editors()
                     st.session_state[import_key] = generation + 1
-                    st.toast("Parameters imported")
+                    st.session_state[f"{import_key}-missing"] = (
+                        imported if isinstance(imported, dict) else {}
+                    )
+                    st.toast("Setup imported" if isinstance(imported, dict) else "Parameters imported")
                     st.rerun()
+        missing = still_missing(self.workflow_dir, st.session_state.get(f"{import_key}-missing"))
+        if missing:
+            lines = "\n".join(
+                f"- **{key}**: " + ", ".join(f"`{name}`" for name in names)
+                for key, names in missing.items()
+            )
+            st.warning(
+                "The setup picks files that are not in this workspace. Upload them, "
+                f"then pick them above:\n\n{lines}",
+                icon=":material/upload_file:",
+            )
 
-    def _import_parameters(self, upload) -> bool:
+    def _restart_design_editors(self) -> None:
+        """Draw each experimental design editor again from the saved design.
+
+        An editor keeps the table it was first drawn with (``editor_table``),
+        so after a setup replaced the design it would save its old rows over
+        the new ones. A new version number gives it a new key.
+        """
+        prefix = f"_design-{Path(self.workflow_dir).name}-"
+        for key in input_files(self.workflow_dir):
+            version_key = prefix + key
+            if isinstance(st.session_state.get(version_key), int):
+                st.session_state[version_key] += 1
+
+    def _import_parameters(self, upload) -> Union[bool, Dict[str, List[str]]]:
         """Check an imported file, then replace the saved settings atomically.
 
         A file that is not a JSON object keeps the current settings. An
         export made while a follow-up was prepared names the run it
-        followed: imported settings start no follow-up.
+        followed: imported settings start no follow-up. A setup file also
+        brings its design and folders; it returns the input files it picks
+        that are not here, per upload key.
         """
+        data = upload.getvalue()
+        if is_setup_file(data):
+            try:
+                params, missing = apply_setup(self.workflow_dir, read_setup(data))
+                self.parameter_manager.write_parameters(params)
+            except (OSError, ValueError) as error:
+                st.error(
+                    f"Could not import the setup: {error} The saved parameters were kept; "
+                    "the design and folder labels may already have changed."
+                )
+                return False
+            return missing
         try:
-            params = json.loads(upload.getvalue().decode("utf-8"))
+            params = json.loads(data.decode("utf-8"))
             if not isinstance(params, dict):
                 raise ValueError("Parameters must be a JSON object.")
             params.pop(FOLLOW_UP_KEY, None)
