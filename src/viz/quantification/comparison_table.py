@@ -77,7 +77,9 @@ def show_comparison_table(data, entity_field: str, entity_title: str, name: str 
     to ``comparison_columns``, ``hidden`` columns sit in the column menu."""
     from openms_insight import Table
 
-    frame = comparison_table(data, compared, fc, padj)
+    frame = comparison_table(data, compared, fc, padj,
+                             log2fc_column=columns.get("log2fc_column", "log2FC"),
+                             padj_column=columns.get("padj_column", "p-adj"))
     if isinstance(frame, pl.LazyFrame):
         frame = frame.collect()
     if index_field is None:

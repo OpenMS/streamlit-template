@@ -74,7 +74,9 @@ def show_zscore_heatmap(matrix: pd.DataFrame, id_column: str, name: str = "zscor
         else:
             toolbar = [top]
             top = int(setting_value(state_manager, top))
-    long = zscore_long(matrix, id_column, top=top, groups=groups)
+    long = zscore_long(matrix, id_column, top=top, groups=groups,
+                       sample_column=settings.get("sample_column", "Sample"),
+                       value_column=settings.get("value_column", "Z_score"))
     if long.empty:
         return None
     arguments = heatmap_settings(id_column, toolbar_settings=toolbar, **settings)
