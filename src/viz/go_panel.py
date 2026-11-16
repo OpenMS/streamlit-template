@@ -12,10 +12,13 @@ Contract (the app's source fills it, per GO category ``BP``, ``CC``, ``MF``):
   any GO term;
 - ``labels``, accession -> the name the tables show.
 
-The panel draws one line saying what is shown with a **Selection | All
-proteins** switch and **Clear selection**, a bar chart whose GO category and
-number of terms are picked on the chart, and a paginated Insight table of
-every term of the category picked on the chart.
+The panel draws a bar chart whose GO category and number of terms are picked
+on the chart, and a paginated Insight table of every term of the category
+picked on the chart. While proteins are picked, the chart's toolbar holds a
+**Selection | All proteins** switch and **Clear selection**; what is shown
+and how to pick proteins is said in the chart's info box. An openms-insight
+whose ``SeriesPlot`` has no ``switch_identifier`` gets the switch, the button
+and the line as Streamlit widgets above the chart instead.
 """
 
 from __future__ import annotations
@@ -29,6 +32,8 @@ import pandas as pd
 import polars as pl
 import streamlit as st
 
+from src.viz.plumbing import accepts
+
 CATEGORIES = {"BP": "Biological process", "CC": "Cellular component", "MF": "Molecular function"}
 TERM_COUNTS = [10, 15, 20, 30, 50]
 TOP_TERMS = 15
@@ -38,6 +43,28 @@ CATEGORY_IDENTIFIER = "go_category"
 
 SELECTION = "Selection"
 ALL = "All proteins"
+# Values of the chart's switch, kept in the state under ``mode_identifier(key)``
+MODES = {"selection": SELECTION, "all": ALL}
+
+
+def mode_identifier(key: str) -> str:
+    """The state identifier the chart's Selection | All proteins switch writes to."""
+    return f"go_mode@{key}"
+
+
+def _in_chart() -> bool:
+    """Whether the installed openms-insight draws the switch and Clear selection in the chart."""
+    try:
+        from openms_insight import SeriesPlot
+    except ImportError:
+        return False
+    return accepts(SeriesPlot, "switch_identifier") and accepts(SeriesPlot, "clear_identifiers")
+
+
+def info_text(*parts: str | None) -> str | None:
+    """The chart's info box: what is shown and how to pick proteins, then the panel's help."""
+    text = "\n\n".join(p.strip() for p in parts if p and p.strip())
+    return text or None
 
 TERM_COLUMNS = [
     {"title": "#", "field": "rank", "sorter": "number", "width": 50},
@@ -188,8 +215,9 @@ def _default_category(frame: pl.DataFrame) -> str:
     return next((c for c in CATEGORIES if c in present), DEFAULT_CATEGORY)
 
 
-def _chart(frame, y_column, y_label, title, cache_path, key, state_manager, help_text):
-    # ``key`` names the mode too: a component keeps the columns it was first drawn with
+def _chart(frame, y_column, y_label, title, cache_path, key, state_manager, help_text, toolbar=None):
+    # ``key`` names the mode too: a component keeps the columns it was first drawn with.
+    # ``toolbar``: the switch and Clear selection, given to the chart while proteins are picked
     from openms_insight import SeriesPlot
 
     default = _default_category(frame)
@@ -200,6 +228,7 @@ def _chart(frame, y_column, y_label, title, cache_path, key, state_manager, help
         hover_column="hover", title=title, x_label=" ", y_label=y_label,
         view_column="category", view_names=dict(CATEGORIES), view_identifier=CATEGORY_IDENTIFIER,
         view_default=default, top_choices=TERM_COUNTS, top_default=TOP_TERMS, bar_height=26,
+        **(toolbar or {}),
     )
     plot(key=f"{key}_chart", state_manager=state_manager, height=320, help=help_text)
 
@@ -232,7 +261,7 @@ def _table(frames: dict, columns, sort, cache_path, key, state_manager, title, h
     table(key=f"{key}_terms", state_manager=state_manager, height=380, help=help_text)
 
 
-def _clear(state_manager, identifier, mode_key):
+def _clear(state_manager, identifier, mode_key):  # the Streamlit button of an older openms-insight
     # Set to None, not removed: the components keep a selection Python no
     # longer sends and would send it back
     state_manager.set_selection(identifier, None)
@@ -259,38 +288,62 @@ def show_go_panel(
     of category -> enrichment table, or None when none of them has a GO term;
     ``counts()`` returns ``(annotated, tables, error)`` for every protein. Both
     are only called when shown, so the app may compute them there (and should
-    cache them). ``hint`` is said while nothing is picked.
+    cache them). ``hint`` says how to pick proteins; it goes in the chart's info
+    box with ``line`` and ``help``.
     """
     cache_path = Path(cache_path, "go")
-    mode_key = f"{key}_go_mode"
-    if not selected:
-        st.session_state.pop(mode_key, None)
-    with st.container(horizontal=True, vertical_alignment="center", gap="small"):
-        st.markdown(line if selected else (hint or line), width="stretch")
-        if selected:
-            mode = st.segmented_control(
-                "Show", [SELECTION, ALL], default=SELECTION, key=mode_key, label_visibility="collapsed",
-                width="content",
-            ) or SELECTION
-            st.button(
-                "Clear selection", key=f"{key}_go_clear", on_click=_clear,
-                args=(state_manager, selection_identifier, mode_key), width="content",
-            )
-        else:
+    toolbar = None
+    if _in_chart():
+        switch = mode_identifier(key)
+        if not selected:
+            # A new selection starts on its enrichment again
+            if state_manager.get_selection(switch) is not None:
+                state_manager.set_selection(switch, None)
             mode = ALL
+        else:
+            mode = MODES.get(state_manager.get_selection(switch), SELECTION)
+            toolbar = dict(
+                switch_identifier=switch, switch_names=dict(MODES), switch_default="selection",
+                clear_identifiers=[selection_identifier, switch],
+            )
+        help = info_text(line if selected else None, hint, help)
+    else:
+        mode_key = f"{key}_go_mode"
+        if not selected:
+            st.session_state.pop(mode_key, None)
+        with st.container(horizontal=True, vertical_alignment="center", gap="small"):
+            st.markdown(line if selected else (hint or line), width="stretch")
+            if selected:
+                mode = st.segmented_control(
+                    "Show", [SELECTION, ALL], default=SELECTION, key=mode_key, label_visibility="collapsed",
+                    width="content",
+                ) or SELECTION
+                st.button(
+                    "Clear selection", key=f"{key}_go_clear", on_click=_clear,
+                    args=(state_manager, selection_identifier, mode_key), width="content",
+                )
+            else:
+                mode = ALL
 
     if mode == SELECTION:
         tables, error = enrichment()
         if error:
             st.warning(error)
+        empty = None
         if tables is None:
-            st.info("None of the selected proteins has a GO annotation.")
+            empty = "None of the selected proteins has a GO annotation."
+        elif not any(t is not None and len(t) for t in tables.values()):
+            empty = "The selected proteins have no GO terms."
+        if empty and toolbar is None:
+            st.info(empty)
             return
-        if not any(t is not None and len(t) for t in tables.values()):
-            st.info("The selected proteins have no GO terms.")
-            return
+        if empty:
+            # Nothing to test: the terms of all proteins, whose chart still offers Clear selection
+            st.info(f"{empty} Showing the terms of all proteins.")
+            mode = ALL
+    if mode == SELECTION:
         _chart(term_chart(tables), "score", "-log10(adjusted p-value)", "{view}: the most significant terms",
-               cache_path, f"{key}_selection", state_manager, help)
+               cache_path, f"{key}_selection", state_manager, help, toolbar)
         _table({c: term_frame(tables.get(c), labels) for c in CATEGORIES}, TERM_COLUMNS,
                ({"column": "padj", "dir": "asc"},), cache_path, f"{key}_selection", state_manager, "Enriched GO terms",
                TERM_TABLE_HELP)
@@ -303,7 +356,7 @@ def show_go_panel(
         st.info("None of these proteins has a GO annotation.")
         return
     _chart(count_chart(tables, annotated), "proteins", "Proteins", "{view}: the most frequent terms",
-           cache_path, f"{key}_all", state_manager, help)
+           cache_path, f"{key}_all", state_manager, help, toolbar)
     _table({c: count_frame(tables.get(c), labels, annotated) for c in CATEGORIES}, COUNT_COLUMNS,
            ({"column": "count", "dir": "desc"},), cache_path, f"{key}_all", state_manager, "GO terms of all proteins",
            COUNT_TABLE_HELP)

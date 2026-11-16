@@ -57,3 +57,13 @@ def test_count_frame_accepts_pandas_and_polars():
 def test_empty_charts_keep_their_columns():
     assert "category" in go_panel.term_chart({}).columns
     assert "category" in go_panel.count_chart({}, 0).columns
+
+
+def test_info_text_joins_the_parts_that_are_set():
+    assert go_panel.info_text("Picked: 3 proteins.", None, "Select proteins …") == "Picked: 3 proteins.\n\nSelect proteins …"
+    assert go_panel.info_text(None, "") is None
+
+
+def test_the_mode_switch_has_its_own_identifier():
+    assert go_panel.mode_identifier("go") == "go_mode@go"
+    assert set(go_panel.MODES) == {"selection", "all"}
