@@ -357,6 +357,10 @@ def show_go_panel(
         st.warning(error)
     if not annotated or not any(t is not None and len(t) for t in tables.values()):
         st.info("None of these proteins has a GO annotation.")
+        if toolbar is not None:
+            # No chart to hold Clear selection, so the selection can still be cleared here
+            st.button("Clear selection", key=f"{key}_go_clear", on_click=_clear,
+                      args=(state_manager, selection_identifier, switch), width="content")
         return
     _chart(count_chart(tables, annotated), "proteins", "Proteins", "{view}: the most frequent terms",
            cache_path, f"{key}_all", state_manager, help, toolbar)

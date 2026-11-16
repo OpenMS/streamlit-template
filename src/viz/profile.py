@@ -143,10 +143,10 @@ def show_profile(long, id_column: str, filter_identifier: str, name: str = "abun
     from openms_insight import SeriesPlot
 
     table_args = table_args or {}
+    long = as_polars(long)
     table = profile_table(long, id_column, means=not several, **table_args)
-    if not several:
-        settings.setdefault("groups", as_polars(long)[table_args.get("group_column", "group")]
-                            .cast(str).unique().to_list())
+    if not several and "groups" not in settings:
+        settings["groups"] = long[table_args.get("group_column", "group")].cast(str).unique().sort().to_list()
     arguments = profile_settings(table, id_column, filter_identifier, several=several, **settings)
     frame = as_polars(table)
     plot = SeriesPlot(
