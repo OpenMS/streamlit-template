@@ -252,6 +252,8 @@ DEFAULTS = [
 ]
 ```
 
+**Setup file.** The Configure page's **📦 Setup file** download (`src/workflow/setup_file.py`, Streamlit-free) is a ZIP of the workflow's `params.json`, `experimental-design.tsv`, `input-folders.json` and a `setup.json` that lists the input files by name and size and which files each selection picked, with no data and no results. **⬆️ Import parameters** takes it as well as a parameters JSON: `read_setup` checks it, `apply_setup` writes the design and folder labels and points each selection at the files of this workflow with the same names, and the page names the picked files that are not uploaded here until they are.
+
 ### Presets
 
 `presets.json` maps a workflow name (lowercase, hyphenated) to named parameter sets, surfaced by `ui.preset_buttons()`. Users can also save their own presets (`ui.user_presets()`, stored in `<workflow_dir>/user-presets.json` with the last applied preset); a user preset is a full snapshot that leaves out input file selections and `max_threads`, and its name may not shadow a built-in one:
