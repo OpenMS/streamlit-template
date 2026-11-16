@@ -62,8 +62,11 @@ def _in_chart() -> bool:
 
 
 def info_text(*parts: str | None) -> str | None:
-    """The chart's info box: what is shown and how to pick proteins, then the panel's help."""
-    text = "\n\n".join(p.strip() for p in parts if p and p.strip())
+    """The chart's info box: what is shown and how to pick proteins, then the panel's help.
+
+    The box shows plain text, so Markdown emphasis (``**``) is left out.
+    """
+    text = "\n\n".join(p.replace("**", "").strip() for p in parts if p and p.strip())
     return text or None
 
 TERM_COLUMNS = [

@@ -62,6 +62,7 @@ def test_empty_charts_keep_their_columns():
 def test_info_text_joins_the_parts_that_are_set():
     assert go_panel.info_text("Picked: 3 proteins.", None, "Select proteins …") == "Picked: 3 proteins.\n\nSelect proteins …"
     assert go_panel.info_text(None, "") is None
+    assert go_panel.info_text("**4 selected.**") == "4 selected."
 
 
 def test_the_mode_switch_has_its_own_identifier():
