@@ -1,3 +1,3 @@
-"""Identification: proteins, peptides and proteoform-spectrum matches, their
-sequences and fragment ions, modifications, identifications across runs and
-the quality of a search."""
+"""Identification: what a database search matched to the spectra (PrSM and
+PSM tables, proteins and proteoforms, sequence tags, fragment coverage,
+mass shifts and the identification QC)."""

@@ -8,10 +8,9 @@ column per sample) and the list of sample columns.
 
 from __future__ import annotations
 
-import numpy as np
 import pandas as pd
 
-from src.viz.quantification.steps import bin_centres, histogram_lines, log2, plot_height
+from src.viz.quantification.steps import histogram_lines, log2, plot_height
 from src.viz.series import show_series
 
 

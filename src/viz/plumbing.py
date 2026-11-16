@@ -111,3 +111,12 @@ def component(cls, cache_path, cache_id: str, build: Callable[[], dict], **fixed
 def cache_name(name: str, data, *settings) -> str:
     """``<name>-<hash of data and settings>``: a cache id that changes with what is drawn."""
     return f"{name}-{fingerprint(data, *settings)}"
+
+
+def median(values):
+    """The median of ``values``, None for none."""
+    values = sorted(values)
+    n = len(values)
+    if not n:
+        return None
+    return values[n // 2] if n % 2 else (values[n // 2 - 1] + values[n // 2]) / 2
