@@ -172,7 +172,8 @@ def configure(self) -> None:
 - Example workflow: `src/Workflow.py`
 - Workflow base class: `src/workflow/WorkflowManager.py`
 - UI widget library: `src/workflow/StreamlitUI.py`
-- Example pages: `content/topp_workflow_file_upload.py`, `content/topp_workflow_parameter.py`, `content/topp_workflow_execution.py`, `content/topp_workflow_results.py`
+- Example pages (Describe experiment, Run analysis, Explore results, Export results): `content/topp_workflow_parameter.py`, `content/topp_workflow_execution.py`, `content/topp_workflow_results.py`, `content/topp_workflow_download.py`
+- Page furniture and step names: `src/workflow/guide.py`; Describe experiment helpers: `src/workflow/describe_ui.py`
 - Command executor: `src/workflow/CommandExecutor.py`
 - File manager: `src/workflow/FileManager.py`
 

@@ -1,12 +1,18 @@
-import streamlit as st
 from src.common.common import page_setup
 from src.Workflow import Workflow
+from src.workflow import guide
 
 
 params = page_setup()
 
 wf = Workflow()
 
-st.title("Export Results" if st.session_state.location == "local" else "Download Results")
+guide.page_intro("Every run with its files, settings and processing report: rename a run, "
+                 "take its files as a ZIP, or delete it.")
 
 wf.show_results_download_section()
+
+guide.next_steps(
+    wf,
+    (guide.EXPLORE, "Look at a run's results again."),
+)
