@@ -322,9 +322,11 @@ def test_show_series_takes_rows_as_dicts(monkeypatch, tmp_path):
 
 
 def test_scan_table_counts_peaks_of_a_run_not_deconvolved():
-    from src.viz.ms_data import peak_spectrum, scan_table
+    from src.viz.ms_data import scan_table, spectrum
 
     fields = [c["field"] for c in scan_table.settings(peaks=True)["column_definitions"]]
     assert fields[-1] == "#Peaks" and "#Masses" not in fields
     assert scan_table.settings()["column_definitions"][-1]["field"] == "#Masses"
-    assert peak_spectrum.settings("scan")["filters"] == {"scan": "index"}
+    # A spectrum without masses: the raw spectrum shows its peaks only
+    raw = spectrum.settings("scan", signal_column=None)
+    assert raw["filters"] == {"scan": "index"} and raw["signal_column"] is None

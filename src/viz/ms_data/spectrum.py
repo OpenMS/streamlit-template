@@ -5,6 +5,8 @@ sequence view matched.
 Insight component: ``DeconvolvedSpectrum`` (``view="annotated"``). Columns:
 ``index`` (the spectrum), ``MonoMass``/``SumIntensity`` (the masses),
 ``MonoMass_Anno``/``SumIntensity_Anno`` (the peaks), ``SignalPeaks``.
+A run that was not deconvolved gives empty mass lists and passes
+``signal_column=None``: the spectrum then shows its peaks only.
 """
 
 from __future__ import annotations
