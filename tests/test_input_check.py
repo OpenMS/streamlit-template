@@ -187,3 +187,24 @@ def test_selection_checks_follow_the_input_folders(tmp_path):
     a = _mzml(tmp_path / "a.mzML", 0)
     found = selection_checks(tmp_path, {"mzML-files": [a], "fasta": "", "other": [a]})
     assert list(found) == ["mzML-files"] and found["mzML-files"][0].errors == ["holds no spectra"]
+
+
+def test_comments_after_the_root_element_are_allowed(tmp_path):
+    path = _mzml(tmp_path / "c.mzML", 2)
+    with open(path, "a", encoding="utf-8") as f:
+        f.write("<!-- written by a converter -->\n<?pi done?>\n\n")
+    assert check_file(path).errors == []
+
+
+def test_a_read_error_is_not_remembered(tmp_path, monkeypatch):
+    import src.workflow.input_check as ic
+    path = _mzml(tmp_path / "r.mzML", 2)
+    real = ic._mzml
+
+    def fail(*_):
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr(ic, "_mzml", fail)
+    assert any("cannot be read" in e for e in check_file(path).errors)
+    monkeypatch.setattr(ic, "_mzml", real)
+    assert check_file(path).errors == []

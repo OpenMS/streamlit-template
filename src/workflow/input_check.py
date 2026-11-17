@@ -102,6 +102,22 @@ class FileCheck:
 _CACHE: Dict[Tuple[str, int, int], FileCheck] = {}
 
 
+def _strip_trailing_markup(tail: bytes) -> bytes:
+    """The tail without the whitespace, comments and processing instructions
+    XML allows after the root element."""
+    end = tail.rstrip()
+    while True:
+        if end.endswith(b"-->"):
+            start = end.rfind(b"<!--")
+        elif end.endswith(b"?>"):
+            start = end.rfind(b"<?")
+        else:
+            return end
+        if start < 0:
+            return end
+        end = end[:start].rstrip()
+
+
 def _mzml(path: Path, size: int) -> FileCheck:
     check = FileCheck(str(path), "spectra")
     if size == 0:
@@ -119,7 +135,7 @@ def _mzml(path: Path, size: int) -> FileCheck:
         check.count = int(m.group(1))
         if check.count == 0:
             check.errors.append("holds no spectra")
-    end = tail.rstrip()
+    end = _strip_trailing_markup(tail)
     if not (end.endswith(b"</mzML>") or end.endswith(b"</indexedmzML>")):
         check.errors.append("is cut off: it ends before its last spectrum (copy or download it again)")
     return check
@@ -190,7 +206,8 @@ def check_file(path) -> FileCheck:
         try:
             _CACHE[key] = (_mzml if suffix == ".mzml" else _fasta)(path, stat.st_size)
         except OSError as e:
-            _CACHE[key] = FileCheck(str(path), errors=[f"cannot be read ({e.strerror or e})"])
+            # Not cached: a file made readable again keeps its size and time.
+            return FileCheck(str(path), errors=[f"cannot be read ({e.strerror or e})"])
     return _CACHE[key]
 
 
