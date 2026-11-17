@@ -27,7 +27,9 @@ from src.common.common import (
 from src.workflow._log_status import classify_log_outcome
 from src.workflow import run_notice
 from src.workflow.report_ui import methods_section, report_buttons, run_methods
-from src.workflow.input_check import clash_message, name_clashes
+from src.workflow.input_check import (
+    check_files, clash_message, count_summary, name_clashes, unusable_message, warning_message,
+)
 from src.workflow.RunManager import FOLLOW_UP_KEY
 from src.workflow.progress import (
     DONE,
@@ -1166,13 +1168,23 @@ class StreamlitUI:
             save_folders(self.workflow_dir, key, {**folders, **missing})
 
     def _select_input_file_impl(self, key, name, multiple, display_file_path, reactive, upload=None):
-        """Internal implementation of select_input_file: the widgets, then a
-        warning when selected files would write to the same results."""
+        """Internal implementation of select_input_file: the widgets, then what
+        reading the selected files found (their spectra or proteins, a file
+        that cannot be used) and a warning when selected files would write to
+        the same results."""
         self._select_input_file_widgets(key, name, multiple, display_file_path, reactive, upload)
+        selected = st.session_state.get(f"{self.parameter_manager.param_prefix}{key}", self.params.get(key))
+        checks = check_files(selected)
+        unusable, warnings = unusable_message(checks), warning_message(checks)
+        if unusable:
+            st.error(unusable, icon=":material/block:")
+        if warnings:
+            st.warning(warnings, icon=":material/warning:")
+        summary = count_summary(checks)
+        if summary and not unusable:
+            st.caption(summary)
         if multiple:
-            groups = name_clashes(st.session_state.get(
-                f"{self.parameter_manager.param_prefix}{key}", self.params.get(key)
-            ))
+            groups = name_clashes(selected)
             if groups:
                 st.warning(clash_message(groups), icon=":material/content_copy:")
 
