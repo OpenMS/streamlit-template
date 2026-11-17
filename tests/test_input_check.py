@@ -204,7 +204,8 @@ def test_a_read_error_is_not_remembered(tmp_path, monkeypatch):
     def fail(*_):
         raise PermissionError(13, "Permission denied")
 
+    # ic.check_file, not the name imported above: other tests reload src.workflow.
     monkeypatch.setattr(ic, "_mzml", fail)
-    assert any("cannot be read" in e for e in check_file(path).errors)
+    assert any("cannot be read" in e for e in ic.check_file(path).errors)
     monkeypatch.setattr(ic, "_mzml", real)
-    assert check_file(path).errors == []
+    assert ic.check_file(path).errors == []
