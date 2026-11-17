@@ -6,18 +6,27 @@ It is unlocked with a password entered under ⚙️ Settings in the sidebar. Onl
 it stays on for that browser session only. In the local (desktop) app it stays
 on after restarts until Lock is pressed: unlocking writes ``.developer-mode``
 into the local workspaces folder, holding the hash it was unlocked against, so
-a new password locks it again. settings.json holds only the password's sha256
-(``developer_mode.password_sha256``), so the repository and the desktop
-installers never contain it. A deployment sets its own with the environment
-variable ``DEVELOPER_PASSWORD_SHA256``, which wins over settings.json; ``none``
-there turns developer mode off. No hash, no developer mode.
+a new password locks it again.
 
-    python -c "import hashlib, getpass; print(hashlib.sha256(getpass.getpass().encode()).hexdigest())"
+settings.json holds only a salted scrypt hash of the password
+(``developer_mode.password_hash``), so the repository and the desktop installers
+never contain the password and a copy of the file cannot be checked against a
+list of common passwords at sha256 speed. A deployment sets its own with the
+environment variable ``DEVELOPER_PASSWORD_HASH``, which wins over settings.json;
+``none`` there turns developer mode off. No hash, no developer mode. Make a
+hash with
+
+    python -m src.common.developer
+
+An unsalted sha256 (``password_sha256`` / ``DEVELOPER_PASSWORD_SHA256``) is
+still accepted, so existing deployments keep working until they move over.
 """
 
+import base64
 import hashlib
 import hmac
 import os
+import secrets
 from pathlib import Path
 
 import streamlit as st
@@ -26,11 +35,49 @@ _KEY = "developer-mode"
 _MARKER = ".developer-mode"
 
 
+# scrypt cost: 2**15 * 8 * 128 bytes = 32 MiB and roughly 50 ms per check.
+_SCRYPT_N, _SCRYPT_R, _SCRYPT_P = 2**15, 8, 1
+_SCRYPT_MAXMEM = 64 * 1024 * 1024
+
+
+def hash_password(password: str, salt: bytes | None = None) -> str:
+    """A salted scrypt hash: ``scrypt$<n>$<r>$<p>$<salt>$<key>`` (base64)."""
+    salt = salt or secrets.token_bytes(16)
+    key = hashlib.scrypt(password.encode(), salt=salt, n=_SCRYPT_N, r=_SCRYPT_R,
+                         p=_SCRYPT_P, maxmem=_SCRYPT_MAXMEM, dklen=32)
+    b64 = lambda b: base64.b64encode(b).decode()
+    return f"scrypt${_SCRYPT_N}${_SCRYPT_R}${_SCRYPT_P}${b64(salt)}${b64(key)}"
+
+
+def _normalized(stored: str) -> str:
+    """A legacy sha256 is compared case-insensitively, a scrypt hash as is."""
+    stored = stored.strip()
+    return stored if stored.startswith("scrypt$") else stored.lower()
+
+
+def _matches(password: str, stored: str) -> bool:
+    stored = _normalized(stored)
+    if not stored.startswith("scrypt$"):
+        given = hashlib.sha256(password.encode()).hexdigest()
+        return hmac.compare_digest(given, stored)
+    try:
+        _, n, r, p, salt, key = stored.split("$")
+        expected = base64.b64decode(key, validate=True)
+        given = hashlib.scrypt(password.encode(), salt=base64.b64decode(salt, validate=True),
+                               n=int(n), r=int(r), p=int(p), maxmem=_SCRYPT_MAXMEM,
+                               dklen=len(expected))
+    except (ValueError, TypeError):
+        return False
+    return hmac.compare_digest(given, expected)
+
+
 def _password_hash() -> str:
-    env = os.environ.get("DEVELOPER_PASSWORD_SHA256", "").strip()
-    if env:
-        return "" if env.lower() == "none" else env
-    return (st.session_state.settings.get("developer_mode") or {}).get("password_sha256", "")
+    for var in ("DEVELOPER_PASSWORD_HASH", "DEVELOPER_PASSWORD_SHA256"):
+        env = os.environ.get(var, "").strip()
+        if env:
+            return "" if env.lower() == "none" else env
+    config = st.session_state.settings.get("developer_mode") or {}
+    return config.get("password_hash") or config.get("password_sha256", "")
 
 
 def _marker_path() -> Path | None:
@@ -52,7 +99,7 @@ def _remembered() -> bool:
         stored = path.read_text(encoding="utf-8").strip()
     except OSError:
         return False
-    return hmac.compare_digest(stored, expected.strip().lower())
+    return hmac.compare_digest(stored, _normalized(expected))
 
 
 def _remember(unlocked: bool) -> None:
@@ -62,7 +109,7 @@ def _remember(unlocked: bool) -> None:
     try:
         if unlocked:
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(_password_hash().strip().lower(), encoding="utf-8")
+            path.write_text(_normalized(_password_hash()), encoding="utf-8")
         else:
             path.unlink(missing_ok=True)
     except OSError:
@@ -81,8 +128,7 @@ def verify_password(password: str) -> bool:
     expected = _password_hash()
     if not expected or not password:
         return False
-    given = hashlib.sha256(password.encode()).hexdigest()
-    return hmac.compare_digest(given, expected.strip().lower())
+    return _matches(password, expected)
 
 
 def _unlock() -> None:
@@ -113,3 +159,12 @@ def render_developer_toggle() -> None:
                   help="Shows features that are still in development.")
     if st.session_state.get("developer-mode-failed"):
         st.caption("Wrong password.")
+
+
+if __name__ == "__main__":
+    import getpass
+
+    first = getpass.getpass("Developer password: ")
+    if not first or first != getpass.getpass("Repeat: "):
+        raise SystemExit("The passwords differ or are empty.")
+    print(hash_password(first))

@@ -31,7 +31,7 @@ persistence:
 
 storageClass:
   create: true
-  # The same name as the production class in k8s/storage/storageclass.yaml,
+  # The same name as the production class (cluster configuration),
   # so k8s/base/workspace-pvc.yaml binds unchanged in CI.
   # assert_storage_class_contract checks the two agree.
   name: openms-manila-nfs

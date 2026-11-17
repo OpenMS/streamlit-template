@@ -15,9 +15,9 @@ const FALLBACK_LICENSE =
   "Copyright OpenMS Inc. -- Eberhard Karls University Tuebingen, ETH Zurich, and Freie Universitaet Berlin " +
   "2002-present.\nThis software is released under a three-clause BSD license.";
 
-// RawFileReader comes either with ThermoRawFileParser (Windows) or with
-// OpenMS's built-in reader (share/OpenMS/openms_thermo_bridge/managed, macOS and
-// Linux); the first that is there.
+// RawFileReader comes either with ThermoRawFileParser (an OpenMS without the
+// built-in reader) or with OpenMS's built-in reader
+// (share/OpenMS/openms_thermo_bridge/managed); the first that is there.
 function thermoFolder(payload) {
   const share = path.join(payload, "share", "OpenMS");
   for (const dir of [path.join(share, "THIRDPARTY", "ThermoRawFileParser"), path.join(share, "openms_thermo_bridge", "managed")]) {

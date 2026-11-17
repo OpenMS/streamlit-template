@@ -38,7 +38,11 @@ def test_this_repository_shows_its_groups_then_the_framework():
     content = c.load(settings)
     titles = [g["title"] for g in content["groups"]]
     own = [g["title"] for g in app["groups"]] if app.get("repository") == settings["repository-name"] else []
-    assert titles == own + [g["title"] for g in framework["groups"]]
+    fw = [g["title"] for g in framework["groups"]]
+    if app.get("framework") == "first":
+        assert titles == fw + own
+    else:
+        assert titles == own + fw
 
 
 def test_app_groups_come_first_and_names_merge(tmp_path):
@@ -120,3 +124,38 @@ def test_every_build_ships_the_app_contributors_file():
     desktop = Path(".github/workflows/build-desktop-app.yaml").read_text(encoding="utf-8")
     copy_line = next(l for l in desktop.splitlines() if "cp -R src utils" in l)
     assert " contributors.json " in copy_line
+
+
+def test_compact_html_lists_names_with_the_handle_on_hover():
+    from src.common.contributors import to_html
+
+    content = {"lead": "L", "groups": [{"title": "G", "people": ["octocat"]}],
+               "names": {"octocat": "Mona <Lisa>"}}
+    compact = to_html(content, compact=True)
+    assert 'class="ctb compact"' in compact
+    assert 'title="Mona &lt;Lisa&gt; (@octocat)"' in compact
+    assert "<span>Mona &lt;Lisa&gt;</span>" in compact
+    assert '<div class="n">' not in compact
+    assert '<div class="n">' in to_html(content)
+    nameless = {**content, "names": {}}
+    assert "<span>@octocat</span>" in to_html(nameless, compact=True)
+
+
+def test_strip_is_styled_by_the_theme():
+    from pathlib import Path
+
+    from src.common.contributors import STRIP_KEY
+
+    css = Path("src/common/theme.css").read_text(encoding="utf-8")
+    assert f".st-key-{STRIP_KEY}" in css
+
+
+def test_framework_first_puts_the_framework_group_on_top(tmp_path):
+    app = tmp_path / "contributors.json"
+    app.write_text(json.dumps({
+        "repository": SETTINGS["repository-name"],
+        "framework": "first",
+        "groups": [{"title": "Insight", "people": ["carol"]}, {"title": "Tools", "people": ["dave"]}],
+    }))
+    content = c.load(SETTINGS, app, _framework(tmp_path))
+    assert [g["title"] for g in content["groups"]] == ["Web app framework", "Insight", "Tools"]

@@ -19,9 +19,14 @@ import pytest  # noqa: E402
 def _real_streamlit_ui():
     """Import the real StreamlitUI for these tests only. Later test modules
     mock streamlit before importing src.workflow, so drop it again."""
+    before = {m: sys.modules[m] for m in sys.modules if m.startswith("src.workflow")}
     yield
+    # Drop only what these tests imported, so modules that other code already
+    # holds (an earlier AppTest's src.workflow) stay the ones in sys.modules.
     for name in [m for m in sys.modules if m.startswith("src.workflow")]:
-        del sys.modules[name]
+        if name not in before:
+            del sys.modules[name]
+    sys.modules.update(before)
 
 
 def editor_table(*args, **kwargs):

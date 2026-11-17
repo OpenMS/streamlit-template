@@ -52,6 +52,7 @@ class Workflow(WorkflowManager):
     # downloads and deletes them. Results are read from self.results_dir.
     multi_run = True
     run_page = Path("content", "topp_workflow_execution.py")
+    configure_page = Path("content", "topp_workflow_parameter.py")
 
     def __init__(self) -> None:
         # Initialize the parent class with the workflow name.
@@ -152,13 +153,19 @@ class Workflow(WorkflowManager):
         )
 
         # Run FeatureFinderMetabo tool with input and output files.
-        # run_topp returns False if any of the commands it ran failed.
+        # run_topp returns False if any of the commands it ran failed. With
+        # allow_failed=True a file it fails on is left out instead (the Run
+        # page says which and why), and False means it failed on every file.
         self.logger.log("Detecting features...")
         if not self.executor.run_topp(
-            "FeatureFinderMetabo", input_output={"in": in_mzML, "out": out_ffm}
+            "FeatureFinderMetabo",
+            input_output={"in": in_mzML, "out": out_ffm},
+            allow_failed=True,
         ):
             self.logger.log("ERROR: Feature detection failed.")
             return False
+        # The next steps take only the files feature detection worked on
+        out_ffm = self.executor.keep_succeeded(out_ffm)
 
         # Prepare input and output files for feature linking
         in_fl = self.file_manager.get_files(out_ffm, collect=True)

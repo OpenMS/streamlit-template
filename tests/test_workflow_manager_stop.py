@@ -88,7 +88,7 @@ def _make_workflow_manager(tmp_path, monkeypatch) -> WorkflowManager:
 
     monkeypatch.setattr(
         "rq.command.send_stop_job_command",
-        lambda *a, **kw: None,
+        lambda *a, **kw: Job.fetch("wf-job", connection=qm._redis).set_status(JobStatus.STOPPED),
     )
 
     wm = WorkflowManager.__new__(WorkflowManager)
@@ -116,11 +116,9 @@ def test_stop_workflow_clears_running_state_in_queue_mode(tmp_path, monkeypatch)
     )
 
     pid_dir = wm.executor.pid_dir
-    assert not (pid_dir.exists() and any(pid_dir.iterdir())), (
-        "stop_workflow must clean up the stale pid_dir left behind by the "
-        "killed worker; otherwise the local-mode fallback in "
-        "get_workflow_status flips running back to True."
-    )
+    # The UI can share these files with a worker in another PID namespace.
+    # An unverified marker is retained; the worker's queue ACK is authoritative.
+    assert (pid_dir / "12345").exists()
 
 
 def test_stop_workflow_writes_cancellation_marker_to_log(tmp_path, monkeypatch):

@@ -94,6 +94,9 @@ case "$(uname -s)" in
     args+=("-c.extraMetadata.name=$id")
     args+=(--linux AppImage --x64
       "-c.linux.executableName=$id"
+      # The app writes a desktop entry of this name for the AppImage on start
+      # (src/linux-desktop.js), so the dock and taskbar show the app's icon.
+      "-c.extraMetadata.desktopName=$id.desktop"
       "-c.appImage.artifactName=$INSTALLER_NAME-Linux-x86_64.\${ext}")
     ;;
 

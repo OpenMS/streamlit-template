@@ -6,13 +6,18 @@ from .ParameterManager import InvalidParameterFileError, ParameterManager
 from .CommandExecutor import CommandExecutor
 from .StreamlitUI import StreamlitUI
 from .FileManager import FileManager
+from .input_check import clash_message, selection_clashes
+from ._log_status import classify_log_outcome
 from .RunManager import RunManager, FINISHED, FAILED, CANCELLED, RUNNING, FOLLOW_UP_KEY, FOLLOW_UP_FILE, RUN_NAME_KEY, RUN_NAME_FILE, MAX_NAME_LENGTH, apply_settings, same_files_info
+from .pid_files import reap
+from .process_state import local_workflow_running, owned_workflow_running, pid_markers, prune_exited_marker, register_process_marker, signal_owned_process
+from .file_lock import file_lock
 import multiprocessing
 import streamlit as st
 import shutil
 import subprocess
 import sys
-import time
+import uuid
 import traceback
 
 # The app folder, which holds src/. Put first on sys.path in the workflow
@@ -41,6 +46,12 @@ class WorkflowManager:
     # (show_run_button). Run folders always offer it; a workflow without them
     # sets this to True and reads the name in execution() with run_name().
     name_runs = False
+    # How the notification at the end of a run names it ("<label> finished.");
+    # None: the workflow's name.
+    run_label = None
+    # The configure page. A multi-run workflow that names it offers **Start
+    # again with these settings** in the History of each run (start_again).
+    configure_page = None
 
     # Core workflow logic using the above classes
     def __init__(self, name: str, workspace: str):
@@ -90,18 +101,53 @@ class WorkflowManager:
         Online mode: Submits to Redis queue
         Local mode: Runs the workflow in a separate Python process
         """
-        # Flush the latest session state to params.json so the worker
-        # (queued) or the workflow process (local) sees the values the user
-        # just selected, not stale disk state from a previous fragment run.
-        self.parameter_manager.save_parameters()
-        if self.multi_run:
-            self._new_run()
-        else:
-            self._settle_follow_up()
-        if self._queue_manager and self._queue_manager.is_available:
-            self._start_workflow_queued()
-        else:
-            self._start_workflow_local()
+        # Two browser sessions can both render Start before either launches.
+        # Serialize the check through PID/job registration, then release it;
+        # the worker itself does not hold this short UI-operation lock.
+        acquired = False
+        try:
+            with file_lock(self.workflow_dir / ".locks" / "execution.lock", blocking=False):
+                acquired = True
+                if self.get_workflow_status().get("running", False):
+                    raise ValueError("This workflow is already running. Wait for it to finish or stop it before starting another analysis.")
+                # Flush the latest session state to params.json so the worker
+                # (queued) or the workflow process (local) sees the values the
+                # user just selected, not stale disk state.
+                if self.parameter_manager.save_parameters() is False:
+                    raise ValueError("The current settings could not be saved. Correct the parameter error before starting.")
+                problems = self.input_problems()
+                if problems:
+                    st.error(problems, icon=":material/block:")
+                    return
+                if self.multi_run:
+                    self._new_run()
+                else:
+                    self._settle_follow_up()
+                try:
+                    if self._queue_manager and self._queue_manager.is_available:
+                        self._start_workflow_queued()
+                    else:
+                        self._start_workflow_local()
+                except OSError:
+                    if self.multi_run:
+                        self.runs.finish(self.run_id, FAILED)
+                    raise
+        except BlockingIOError as error:
+            if acquired:
+                raise  # A real launch/I/O failure is not lock contention.
+            raise ValueError("Another session is starting or stopping this workflow. Wait a moment, then try again.") from error
+
+    def input_problems(self) -> str:
+        """Why the selected input files cannot be run as they are ("" when they can).
+
+        Two selected files whose names differ only in folder, extension or
+        case would write to the same result files (outputs are named after
+        the inputs), so one would replace the other's results. A subclass may
+        add checks of its own.
+        """
+        params = self.parameter_manager.get_parameters_from_json()
+        found = selection_clashes(self.workflow_dir, params)
+        return " ".join(clash_message(groups) for groups in found.values())
 
     def _settle_follow_up(self) -> None:
         """Without run folders: the start keeps which result it follows (for the
@@ -153,7 +199,7 @@ class WorkflowManager:
 
     def _new_run(self) -> None:
         """Create the run this start writes into, and show it on the results pages."""
-        from .run_widgets import run_name_key, set_selected_run
+        from .run_widgets import clear_run_name, pending_run_name, set_selected_run
 
         # A failed read leaves params.json as it is (nothing written back)
         stored = self._stored_params()
@@ -161,12 +207,14 @@ class WorkflowManager:
         # The name typed on the Run page, else the one given beside the Run
         # button of the configure page
         given = params.pop(RUN_NAME_KEY, None)
-        name = st.session_state.pop(run_name_key(self.runs), "") or (given if isinstance(given, str) else "")
+        name = pending_run_name(self.runs) or (given if isinstance(given, str) else "")
         if given is not None and stored is not None:
             self.parameter_manager.write_parameters(params)
         info = params.get(FOLLOW_UP_KEY)
         adds_to = info.get("adds_to") if isinstance(info, dict) else None
         self.run_id = self.runs.new_run(name, Path(self.workflow_dir, "params.json"), adds_to=adds_to)
+        # The name is cleared only once the run exists, so a failed start keeps it
+        clear_run_name(self.runs)
         # The run keeps which run it follows; the next settings start fresh
         if params.pop(FOLLOW_UP_KEY, None) is not None and stored is not None:
             self.parameter_manager.write_parameters(params)
@@ -281,24 +329,31 @@ class WorkflowManager:
 
     def _start_workflow_queued(self) -> None:
         """Submit workflow to Redis queue (online mode)"""
+        from .QueueManager import QueueStateUnavailableError
         from .tasks import execute_workflow
 
-        # Generate unique job ID based on workflow directory
-        job_id = f"workflow-{self.workflow_dir.name}-{int(time.time())}"
+        # Same-named workflows in different workspaces can start together.
+        job_id = f"workflow-{self.workflow_dir.name}-{uuid.uuid4().hex}"
 
         # Submit job to queue
-        submitted_id = self._queue_manager.submit_job(
-            func=execute_workflow,
-            kwargs={
-                "workflow_dir": str(self.workflow_dir),
-                "workflow_class": self.__class__.__name__,
-                "workflow_module": self.__class__.__module__,
-                "run_id": self.run_id if self.multi_run else None,
-            },
-            job_id=job_id,
-            timeout=self.job_timeout(),
-            description=f"Workflow: {self.name}"
-        )
+        try:
+            submitted_id = self._queue_manager.submit_job(
+                func=execute_workflow,
+                kwargs={
+                    "workflow_dir": str(self.workflow_dir),
+                    "workflow_class": self.__class__.__name__,
+                    "workflow_module": self.__class__.__module__,
+                    "run_id": self.run_id if self.multi_run else None,
+                },
+                job_id=job_id,
+                timeout=self.job_timeout(),
+                description=f"Workflow: {self.name}"
+            )
+        except QueueStateUnavailableError:
+            # The queue may have accepted the job before its acknowledgement
+            # was lost. Retain its ID and never start a duplicate locally.
+            self._queue_manager.store_job_id(self.workflow_dir, job_id)
+            raise
 
         if submitted_id:
             # Store job ID for status checking
@@ -323,6 +378,7 @@ class WorkflowManager:
 
     def _start_workflow_local(self) -> None:
         """Start the workflow in a separate Python process (local mode)."""
+        self.executor.pid_dir.mkdir(parents=True, exist_ok=True)
         # Delete the log file if it already exists
         shutil.rmtree(Path(self.workflow_dir, "logs"), ignore_errors=True)
         # Run the workflow in a fresh interpreter, with the same function the
@@ -347,22 +403,45 @@ class WorkflowManager:
                 stdin=subprocess.DEVNULL,
             )
         # Add workflow process id to pid dir
-        self.executor.pid_dir.mkdir(exist_ok=True)
+        def ended():
+            return (
+                workflow_process.poll() is not None
+                if hasattr(workflow_process, "poll")
+                else not workflow_process.is_alive()
+            )
+
         try:
-            Path(self.executor.pid_dir, str(workflow_process.pid)).touch()
-        except FileNotFoundError:
-            # The workflow already ended (e.g. no input files) and removed the
-            # pid dir; there is nothing left to track.
-            return
-        ended = (
-            workflow_process.poll() is not None
-            if isinstance(workflow_process, subprocess.Popen)
-            else not workflow_process.is_alive()
-        )
-        if ended:
-            # It ended before its pid was written: the pid dir made above
-            # would otherwise show the workflow as running forever.
-            shutil.rmtree(self.executor.pid_dir, ignore_errors=True)
+            register_process_marker(Path(self.executor.pid_dir, str(workflow_process.pid)), workflow_process.pid)
+        except OSError:
+            if ended():
+                # A very fast worker can remove its tracking directory first.
+                return
+            # Registration failed while the worker is still alive. Do not
+            # leave an untracked analysis running after reporting a failure.
+            try:
+                workflow_process.terminate()
+                if hasattr(workflow_process, "wait"):
+                    workflow_process.wait(timeout=5)
+                else:
+                    workflow_process.join(timeout=5)
+                    if workflow_process.is_alive():
+                        workflow_process.kill()
+                        workflow_process.join(timeout=5)
+            except subprocess.TimeoutExpired:
+                workflow_process.kill()
+                workflow_process.wait(timeout=5)
+            except ProcessLookupError:
+                if hasattr(workflow_process, "wait"):
+                    workflow_process.wait(timeout=5)
+                else:
+                    workflow_process.join(timeout=5)
+            raise
+        if ended():
+            Path(self.executor.pid_dir, str(workflow_process.pid)).unlink(missing_ok=True)
+            try:
+                self.executor.pid_dir.rmdir()
+            except OSError:
+                pass  # Other tracked children or unrelated files remain.
 
     def workflow_process(self) -> None:
         """
@@ -405,15 +484,30 @@ class WorkflowManager:
             - queue_length: total jobs in queue, None if not queued
         """
         # Check queue status first (online mode)
-        if self._queue_manager and self._queue_manager.is_available:
+        if self._queue_manager:
+            from .QueueManager import QueueStateUnavailableError
+
             job_id = self._queue_manager.load_job_id(self.workflow_dir)
             if job_id:
-                job_info = self._queue_manager.get_job_info(job_id)
+                try:
+                    if not self._queue_manager.is_available:
+                        raise QueueStateUnavailableError("The queue is unavailable; the existing job cannot be confirmed stopped.")
+                    job_info = self._queue_manager.get_job_info(job_id)
+                except QueueStateUnavailableError as error:
+                    return {
+                        "running": True, "status": "unknown", "progress": None,
+                        "current_step": "Waiting for the queue to confirm the existing job status.",
+                        "job_id": job_id, "queue_position": None, "queue_length": None,
+                        "error": str(error),
+                    }
                 if job_info:
                     is_running = job_info.status.value in ["queued", "started"]
+                    state = job_info.status.value
+                    if not is_running and owned_workflow_running(self.executor.pid_dir):
+                        is_running, state = True, "stopping"
                     return {
                         "running": is_running,
-                        "status": job_info.status.value,
+                        "status": state,
                         "progress": job_info.progress,
                         "current_step": job_info.current_step,
                         "job_id": job_id,
@@ -426,11 +520,22 @@ class WorkflowManager:
                     }
                 else:
                     # Job not found, clear the stored job ID
-                    self._queue_manager.clear_job_id(self.workflow_dir)
+                    self._queue_manager.clear_job_id(self.workflow_dir, expected_job_id=job_id)
 
         # Fallback: check PID files (local mode)
         pid_dir = self.executor.pid_dir
-        if pid_dir.exists() and list(pid_dir.iterdir()):
+        # A run whose process was killed (the app force-closed) left its pid
+        # files behind and showed as running forever. Checking the markers
+        # removes those of ended processes; online they may belong to a
+        # worker in another container, so only proven ones count there.
+        if self._is_online_mode():
+            running = local_workflow_running(pid_dir)
+        else:
+            # reap() also removes the folder once no marker is left.
+            running, removed = reap(pid_dir)
+            if removed and not running:
+                self._record_interrupted_run()
+        if running:
             return {
                 "running": True,
                 "status": "running",
@@ -451,6 +556,19 @@ class WorkflowManager:
             "queue_length": None,
         }
 
+    def _record_interrupted_run(self) -> None:
+        """Say in the log why a run whose processes are gone ended."""
+        log = Path(self.workflow_dir, "logs", "minimal.log")
+        try:
+            content = log.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            content = ""
+        if classify_log_outcome(content) == "error":
+            self.logger.log(
+                "ERROR: The workflow was interrupted: its process ended without "
+                "finishing (the app was closed or the process was killed)."
+            )
+
     def stop_workflow(self) -> bool:
         """
         Stop a running workflow.
@@ -470,21 +588,40 @@ class WorkflowManager:
         Returns:
             True if a stop action was taken (queue cancel or local kill).
         """
-        # Try to cancel queue job first (online mode)
-        if self._queue_manager and self._queue_manager.is_available:
-            job_id = self._queue_manager.load_job_id(self.workflow_dir)
-            if job_id:
-                if self._queue_manager.cancel_job(job_id):
-                    self.logger.log("WORKFLOW CANCELLED")
-                    shutil.rmtree(self.executor.pid_dir, ignore_errors=True)
-                    self._mark_running_runs_cancelled()
-                    return True
+        acquired = False
+        try:
+            with file_lock(self.workflow_dir / ".locks" / "execution.lock", blocking=False):
+                acquired = True
+                # Try to cancel queue job first (online mode).
+                if self._queue_manager:
+                    from .QueueManager import QueueStateUnavailableError
 
-        # Fallback: stop local process
-        stopped = self._stop_local_workflow()
-        if stopped:
-            self._mark_running_runs_cancelled()
-        return stopped
+                    job_id = self._queue_manager.load_job_id(self.workflow_dir)
+                    if job_id:
+                        if not self._queue_manager.is_available or not self._queue_manager.cancel_job(job_id):
+                            self.logger.log("The queued job could not be confirmed cancelled. Its tracking was retained; retry when the queue is available.")
+                            return False
+                        self.logger.log("WORKFLOW CANCELLED")
+                        self._mark_running_runs_cancelled()
+                        try:
+                            job_info = self._queue_manager.get_job_info(job_id)
+                        except QueueStateUnavailableError:
+                            job_info = None
+                        if job_info and job_info.status.value not in {"queued", "started"}:
+                            # RQ has acknowledged the stop. Any locally owned
+                            # leftovers can now be signalled without racing its
+                            # controller's work-horse termination/classification.
+                            self._stop_local_workflow(queued=True)
+                        return True
+                stopped = self._stop_local_workflow()
+                if stopped:
+                    self._mark_running_runs_cancelled()
+                return stopped
+        except BlockingIOError:
+            if acquired:
+                raise
+            self.logger.log("Another session is starting or stopping this workflow; retry Stop when it finishes.")
+            return False
 
     def _mark_running_runs_cancelled(self) -> None:
         # The stopped process can not record how its run ended, so do it here.
@@ -492,27 +629,38 @@ class WorkflowManager:
             for run in self.runs.list_runs(RUNNING):
                 self.runs.finish(run["id"], CANCELLED)
 
-    def _stop_local_workflow(self) -> bool:
+    def _stop_local_workflow(self, *, queued=False) -> bool:
         """Stop locally running workflow process"""
-        import os
         import signal
 
         pid_dir = self.executor.pid_dir
-        if not pid_dir.exists():
+        try:
+            markers = pid_markers(pid_dir)
+        except OSError as error:
+            self.logger.log(f"Cannot inspect running processes to stop this workflow: {error}")
             return False
 
         stopped = False
-        for pid_file in pid_dir.iterdir():
+        for pid_file in markers:
+            pid = int(pid_file.name)
             try:
-                pid = int(pid_file.name)
-                os.kill(pid, signal.SIGTERM)
-                pid_file.unlink()
+                if not signal_owned_process(pid_file, signal.SIGTERM, prune_stale=not queued):
+                    continue
                 stopped = True
-            except (ValueError, ProcessLookupError, PermissionError):
-                pid_file.unlink()  # Clean up stale PID file
+                # Sending a signal does not mean the process has exited. Keep
+                # live tracking so another start cannot overlap its shutdown.
+                prune_exited_marker(pid_file)
+            except (ProcessLookupError, OverflowError):
+                pid_file.unlink(missing_ok=True)  # Polling may already have cleaned it up.
+            except PermissionError as error:
+                self.logger.log(f"Cannot stop process {pid}; its tracking marker was retained: {error}")
 
-        # Clean up the pid directory
-        shutil.rmtree(pid_dir, ignore_errors=True)
+        # Another child or a denied process can still own a marker. Only
+        # remove an empty directory, rather than erasing its tracking state.
+        try:
+            pid_dir.rmdir()
+        except OSError:
+            pass
         if stopped:
             self.logger.log("WORKFLOW CANCELLED")
         return stopped
@@ -671,7 +819,9 @@ class WorkflowManager:
             name_key = run_name_key(self.runs)
         if self._run_online(name_key):
             return
+        blocked = "" if self.get_workflow_status().get("running") else self.input_problems()
         self.ui.execution_section(
+            blocked=blocked,
             start_workflow_function=self.start_workflow,
             get_status_function=self.get_workflow_status,
             stop_workflow_function=self.stop_workflow,
@@ -679,6 +829,7 @@ class WorkflowManager:
             results_page=results_page,
             results_label=results_label,
             on_open_results=self._select_newest_run if self.multi_run else None,
+            name=self.run_label or getattr(self, "name", "The workflow"),
         )
 
     def _select_newest_run(self) -> None:
@@ -756,7 +907,17 @@ class WorkflowManager:
             self.runs,
             workflow_running=self.get_workflow_status()["running"],
             exclude=exclude,
+            on_start_again=self.start_again if self.configure_page else None,
         )
+
+    def start_again(self, run_id: str) -> bool:
+        """Open ``configure_page`` with the files and settings ``run_id`` was
+        started with (``follow_up``); the next start makes a new run next to it.
+        False if the run recorded no settings."""
+        if self.follow_up(run_id, page=self.configure_page, note="to start again"):
+            return True
+        st.toast("This run recorded no settings to start from.", icon=":material/error:")
+        return False
 
     def show_results_download_section(self, exclude: list[str] | None = None) -> None:
         """

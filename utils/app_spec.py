@@ -197,7 +197,7 @@ def consistency_errors(spec: dict, root: Path | str = ".") -> list[str]:
                     f"Host(`{host}`) route"
                 )
 
-    # The storage tier (k8s/storage/) is shared by every app on a cluster and
+    # The storage tier (cluster configuration) is shared by every app on a cluster and
     # carries no app name; what is per app is the size of its workspace share.
     # The size is an app value, so it lives in the prod overlay as a patch on
     # the claim; the base value is only the default for an overlay without one.

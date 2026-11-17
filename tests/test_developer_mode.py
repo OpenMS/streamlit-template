@@ -113,3 +113,27 @@ def test_online_unlock_lasts_for_the_session_only(state, tmp_path, monkeypatch):
     assert not (tmp_path / ".developer-mode").exists()
     _restart(state)
     assert not developer.is_developer()
+
+
+def test_salted_hash_is_accepted_and_preferred(state, monkeypatch):
+    stored = developer.hash_password("salted")
+    assert stored.startswith("scrypt$") and "salted" not in stored
+    assert developer.hash_password("salted") != stored  # a new salt each time
+    state["settings"]["developer_mode"]["password_hash"] = stored
+    assert developer.verify_password("salted")
+    assert not developer.verify_password("open sesame")
+    assert not developer.verify_password("Salted")
+
+
+def test_salted_hash_from_the_environment(state, monkeypatch):
+    monkeypatch.setenv("DEVELOPER_PASSWORD_HASH", developer.hash_password("deployed"))
+    monkeypatch.setenv("DEVELOPER_PASSWORD_SHA256", hashlib.sha256(b"older").hexdigest())
+    assert developer.verify_password("deployed")
+    assert not developer.verify_password("older")
+    monkeypatch.setenv("DEVELOPER_PASSWORD_HASH", "none")
+    assert not developer.verify_password("deployed")
+
+
+def test_malformed_salted_hash_never_matches(state):
+    state["settings"]["developer_mode"]["password_hash"] = "scrypt$x$8$1$!!$!!"
+    assert not developer.verify_password("open sesame")

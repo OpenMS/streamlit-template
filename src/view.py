@@ -195,18 +195,21 @@ def view_peak_map():
         aggregate_duplicates=True,
     )
     peak_map.update_layout(dragmode="select")
-    c1, c2 = st.columns(2)
+    st.info(
+        "💡 Zoom in via rectangular selection for more details and 3D plot. Double click plot to zoom back out."
+    )
+    # The 3D plot only once few enough peaks are shown; until then the peak
+    # map takes the whole row instead of leaving half of it empty.
+    show_3d = df.shape[0] < 2500
+    c1, c2 = st.columns(2) if show_3d else (st.container(), None)
     with c1:
-        st.info(
-            "💡 Zoom in via rectangular selection for more details and 3D plot. Double click plot to zoom back out."
-        )
         show_fig(
             peak_map,
             f"peak_map_{st.session_state.view_selected_file}",
             selection_session_state_key="view_peak_map_selection",
         )
-    with c2:
-        if df.shape[0] < 2500:
+    if show_3d:
+        with c2:
             peak_map_3D = df.plot(
                 kind="peakmap",
                 plot_3d=True,

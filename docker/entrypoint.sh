@@ -17,6 +17,12 @@ cd /app
 echo "entrypoint: uid=$(id -u) gid=$(id -g) cwd=$(pwd) host=$(hostname) tty=$(tty 2>/dev/null || echo none)"
 echo "entrypoint: APPTAINER_NAME=${APPTAINER_NAME:-unset} SINGULARITY_NAME=${SINGULARITY_NAME:-unset} APPTAINER_CONTAINER=${APPTAINER_CONTAINER:-unset}"
 
+# The full image includes Thermo's RawFileReader, whose license asks that users
+# see its notice and terms.
+if [ -f /thirdparty/ThermoRawFileParser/NOTICE.txt ]; then
+    cat /thirdparty/ThermoRawFileParser/NOTICE.txt
+fi
+
 source /root/miniforge3/bin/activate streamlit-env
 echo "entrypoint: conda env activated, streamlit=$(command -v streamlit || echo NOT_FOUND)"
 
