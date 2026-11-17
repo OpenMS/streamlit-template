@@ -26,6 +26,8 @@ _ENTRIES = [
      'Total ion current, base peak and deconvolved intensity of one MS level over retention time. A click selects the spectrum.'),
     ('spectrum', 'ms_data', 'Raw spectrum', 'settings',
      "The peaks of the selected spectrum, those of a deconvolved mass marked, with the picked mass's isotope envelope and the fragment ions a sequence view matched."),
+    ('peak_spectrum', 'ms_data', 'Peak spectrum', 'settings',
+     'The measured peaks of the selected spectrum as sticks by m/z and intensity, the strongest labelled. Follows the spectrum a scan table, chromatogram or peak map picks.'),
     ('precursor_spectrum', 'ms_data', 'Precursor spectrum', 'settings',
      "The MS1 spectrum the selected fragmentation spectrum's precursor was picked from, its precursor mass marked and the isolated m/z range shaded."),
     ('acquisition_map', 'ms_data', 'Acquisition decisions', 'settings',

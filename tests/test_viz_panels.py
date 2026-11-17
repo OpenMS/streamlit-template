@@ -319,3 +319,12 @@ def test_show_series_takes_rows_as_dicts(monkeypatch, tmp_path):
                        **filter_threshold.settings("Threshold percentile (%)"))
     frame = seen["data"].collect()
     assert frame.height == 6 and set(frame["series"]) == {"Kept", "All", "Current"}
+
+
+def test_scan_table_counts_peaks_of_a_run_not_deconvolved():
+    from src.viz.ms_data import peak_spectrum, scan_table
+
+    fields = [c["field"] for c in scan_table.settings(peaks=True)["column_definitions"]]
+    assert fields[-1] == "#Peaks" and "#Masses" not in fields
+    assert scan_table.settings()["column_definitions"][-1]["field"] == "#Masses"
+    assert peak_spectrum.settings("scan")["filters"] == {"scan": "index"}
