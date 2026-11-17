@@ -35,11 +35,14 @@ def group_colors(groups) -> dict[str, str]:
 
 
 def as_polars(data) -> pl.DataFrame:
-    """A polars frame of ``data`` (pandas, polars or a LazyFrame)."""
+    """A polars frame of ``data`` (pandas, polars, a LazyFrame, or rows as a
+    list of dicts, which several components' ``rows()`` build)."""
     if isinstance(data, pl.LazyFrame):
         return data.collect()
     if isinstance(data, pd.DataFrame):
         return pl.from_pandas(data)
+    if isinstance(data, (list, tuple)):
+        return pl.DataFrame(list(data))
     return data
 
 

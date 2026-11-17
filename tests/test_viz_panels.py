@@ -297,3 +297,25 @@ def test_show_zscore_heatmap_forwards_column_names(monkeypatch):
     columns = seen["data"].collect().columns
     assert {"Run", "Z"} <= set(columns)
     assert seen["x_column"] == "Run" and seen["intensity_column"] == "Z"
+
+
+def test_show_series_takes_rows_as_dicts(monkeypatch, tmp_path):
+    """filter_threshold.rows() returns a list of dicts; the filter step's plot draws it."""
+    import sys, types
+    from src.viz import series
+    from src.viz.quantification import filter_threshold
+    seen = {}
+
+    class SeriesPlot:
+        def __init__(self, **kwargs):
+            seen.update(kwargs)
+
+        def __call__(self, **kwargs):
+            pass
+
+    monkeypatch.setitem(sys.modules, "openms_insight", types.SimpleNamespace(SeriesPlot=SeriesPlot))
+    rows = filter_threshold.rows([0.0, 50.0, 100.0], [10, 6, 0], 10, 50.0, 6)
+    series.show_series(rows, "filter-threshold", cache_path=tmp_path, key="k",
+                       **filter_threshold.settings("Threshold percentile (%)"))
+    frame = seen["data"].collect()
+    assert frame.height == 6 and set(frame["series"]) == {"Kept", "All", "Current"}
