@@ -52,6 +52,10 @@ class WorkflowManager:
     # The configure page. A multi-run workflow that names it offers **Start
     # again with these settings** in the History of each run (start_again).
     configure_page = None
+    # How much a run writes per byte of its input files, for the disk-space
+    # warning of the Run button and the Run page (src/workflow/disk_space.py).
+    # 0 turns the warning off.
+    disk_space_factor = 2.0
 
     # Core workflow logic using the above classes
     def __init__(self, name: str, workspace: str):
@@ -148,6 +152,24 @@ class WorkflowManager:
         params = self.parameter_manager.get_parameters_from_json()
         found = selection_clashes(self.workflow_dir, params)
         return " ".join(clash_message(groups) for groups in found.values())
+
+    def disk_space_warning(self) -> str:
+        """Why the disk may not hold the run about to start ("" when it may).
+
+        The selected input files times ``disk_space_factor``, against the free
+        space under the workflow folder. A subclass whose output follows
+        something else overrides it.
+        """
+        from .disk_space import space_warning
+
+        manager = getattr(self, "parameter_manager", None)
+        if manager is None or not self.disk_space_factor:
+            return ""
+        try:
+            params = manager.get_parameters_from_json()
+            return space_warning(params, self.workflow_dir, self.disk_space_factor)
+        except Exception:  # pylint: disable=broad-except
+            return ""  # A hint only: it never stands in the way of a run.
 
     def _settle_follow_up(self) -> None:
         """Without run folders: the start keeps which result it follows (for the
@@ -756,6 +778,8 @@ class WorkflowManager:
         with bar:
             if sticky and summary:
                 st.caption(summary, width="stretch")
+            if not running and self.disk_space_factor:
+                self._disk_space_caption()
             if named:
                 st.text_input(
                     name_label, key=f"{key}-name", max_chars=MAX_NAME_LENGTH,
@@ -776,6 +800,16 @@ class WorkflowManager:
                     return
                 st.session_state[self._autostart_key()] = True
             st.switch_page(run_page)
+
+    @st.fragment(run_every=10)
+    def _disk_space_caption(self) -> None:
+        """The disk-space warning beside the Run button. A fragment of its own
+        that reruns every 10 s: the input selection above it changes in
+        configure()'s fragment, which does not redraw this bar."""
+        disk = self.disk_space_warning()
+        if disk:
+            st.caption(f":orange[:material/hard_drive: Not enough disk space?] {disk}",
+                       width="stretch")
 
     def _give_next_run_name(self, name: str) -> bool:
         """Keep the name typed beside the Run button for the start it opens.
@@ -819,7 +853,12 @@ class WorkflowManager:
             name_key = run_name_key(self.runs)
         if self._run_online(name_key):
             return
-        blocked = "" if self.get_workflow_status().get("running") else self.input_problems()
+        running = self.get_workflow_status().get("running")
+        blocked = "" if running else self.input_problems()
+        if not running and not blocked:
+            disk = self.disk_space_warning()
+            if disk:
+                st.warning(disk, icon=":material/hard_drive:")
         self.ui.execution_section(
             blocked=blocked,
             start_workflow_function=self.start_workflow,
