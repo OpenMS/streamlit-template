@@ -12,7 +12,7 @@ attrs==25.3.0
     #   referencing
 blinker==1.9.0
     # via streamlit
-cachetools==5.5.2
+cachetools==6.2.1
     # via streamlit
 captcha==0.7.1
     # via src (pyproject.toml)
