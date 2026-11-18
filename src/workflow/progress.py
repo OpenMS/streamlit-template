@@ -32,6 +32,9 @@ OUTPUT_TAIL = 200
 REPLACE_ATTEMPTS = 20
 
 PENDING, RUNNING, DONE, FAILED = "pending", "running", "done", "failed"
+# A command of several files that failed and was run again file by file
+# (``run_topp(..., retry_singly=True)``): not a failure of its own
+RETRIED = "retried"
 
 
 def progress_path(workflow_dir) -> Path:
@@ -176,6 +179,17 @@ class RunProgress:
             if not ok:
                 entry["returncode"] = returncode
                 entry["output"] = list(output or [])[-OUTPUT_TAIL:]
+
+        if step >= 0:
+            self._update(change)
+
+    def file_retried(self, step: int, index: int) -> None:
+        """The failed command ``index`` runs again, one file at a time, in a later step."""
+
+        def change(state):
+            entry = state["steps"][step]["files"][index]
+            entry["status"] = RETRIED
+            entry.pop("output", None)
 
         if step >= 0:
             self._update(change)
@@ -427,13 +441,13 @@ def list_entries(entries: List[dict], limit: int = LIST_LIMIT) -> tuple:
     """
     if len(entries) <= limit:
         return list(range(len(entries))), {}
-    by_status = {PENDING: [], RUNNING: [], DONE: [], FAILED: []}
+    by_status = {PENDING: [], RUNNING: [], DONE: [], FAILED: [], RETRIED: []}
     for i, entry in enumerate(entries):
         by_status.setdefault(entry["status"], []).append(i)
     latest_done = sorted(
         by_status[DONE], key=lambda i: entries[i].get("ended") or 0, reverse=True
     )
-    order = by_status[FAILED] + by_status[RUNNING] + by_status[PENDING][:3] + latest_done
+    order = by_status[FAILED] + by_status[RETRIED] + by_status[RUNNING] + by_status[PENDING][:3] + latest_done
     order += by_status[PENDING][3:]
     shown = order[:limit]
     left_out = {}
@@ -447,10 +461,10 @@ def left_out_line(left_out: dict) -> str:
     """'… and 120 more: 100 done, 20 waiting' for what list_entries left out."""
     if not left_out:
         return ""
-    words = {DONE: "done", FAILED: "failed", RUNNING: "running", PENDING: "waiting"}
+    words = {DONE: "done", FAILED: "failed", RETRIED: "run again file by file", RUNNING: "running", PENDING: "waiting"}
     parts = [
         f"{left_out[status]} {words[status]}"
-        for status in (FAILED, RUNNING, DONE, PENDING)
+        for status in (FAILED, RETRIED, RUNNING, DONE, PENDING)
         if left_out.get(status)
     ]
     return f"… and {sum(left_out.values())} more: " + ", ".join(parts)

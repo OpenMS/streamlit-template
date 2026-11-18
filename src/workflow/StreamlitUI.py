@@ -32,6 +32,7 @@ from src.workflow.RunManager import FOLLOW_UP_KEY
 from src.workflow.progress import (
     DONE,
     FAILED,
+    RETRIED,
     RUNNING,
     current_step,
     failures,
@@ -3280,7 +3281,7 @@ class StreamlitUI:
         step = state["steps"][-1]
         files = step["files"]
         n = len(files)
-        finished = sum(f["status"] in (DONE, FAILED) for f in files)
+        finished = sum(f["status"] in (DONE, FAILED, RETRIED) for f in files)
         active = [i for i, f in enumerate(files) if f["status"] == RUNNING]
         with panel.container(border=True):
             head, bar, tool, file_list, caption = self._progress_slots()
@@ -3320,6 +3321,8 @@ class StreamlitUI:
                         lines.append(f":green[:material/check_circle:] {f['name']} :gray[{format_duration(f['ended'] - f['started'])}]")
                     elif f["status"] == FAILED:
                         lines.append(f":red[:material/cancel:] {f['name']} :red[failed]")
+                    elif f["status"] == RETRIED:
+                        lines.append(f":orange[:material/replay:] {f['name']} :gray[failed, run again file by file]")
                     elif f["status"] == RUNNING:
                         lines.append(f":blue[:material/progress_activity:] **{f['name']}** :gray[{format_duration(now - f['started'])}]")
                     else:
@@ -3412,8 +3415,12 @@ class StreamlitUI:
         n = len(step["files"])
         took = format_duration((step["ended"] or time.time()) - step["started"])
         summary = f"{step['tool']}: " + (f"{n} files in {took}" if n > 1 else took)
-        failed = file_counts(step)[FAILED]
-        if failed and n > 1:
+        counts = file_counts(step)
+        failed, retried = counts[FAILED], counts.get(RETRIED, 0)
+        if retried:
+            summary += f" ({n - failed - retried} done, {retried} run again file by file"
+            summary += f", {failed} failed)" if failed else ")"
+        elif failed and n > 1:
             summary += f" ({n - failed} done, {failed} failed)"
         elif failed:
             summary += " (failed)"
