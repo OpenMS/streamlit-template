@@ -15,7 +15,7 @@ pages = [
     "User Guide",
     "Installation",
     "Developers Guide: How to build app based on this template",
-    "Developers Guide: TOPP Workflow Framework",
+    "Developers Guide: OpenMS Workflow Framework",
     "Developer Guide: Windows Executables",
     "Developers Guide: From Notebook to Web App",
     "Developers Guide: Deployment",

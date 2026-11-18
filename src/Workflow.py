@@ -11,6 +11,7 @@ from src.layout_manager import (
     edit_comparison, member_switch, render_layout, request_analysis, resolve_layout, view_bar,
 )
 from src.workflow.run_widgets import run_label
+from src.workflow.guide import QUANTIFICATION
 
 
 def merge_feature_tables(tables: list, ppm: float = 10.0, rt_tolerance: float = 30.0):
@@ -54,8 +55,12 @@ class Workflow(WorkflowManager):
     # Results page picks which one to show and the Download page renames,
     # downloads and deletes them. Results are read from self.results_dir.
     multi_run = True
-    run_page = Path("content", "topp_workflow_execution.py")
+    # The four steps of the workflow, each a page (src/workflow/guide.py):
+    # Describe experiment -> Run analysis -> Explore results -> Export results
     configure_page = Path("content", "topp_workflow_parameter.py")
+    run_page = Path("content", "topp_workflow_execution.py")
+    results_page = Path("content", "topp_workflow_results.py")
+    export_page = Path("content", "topp_workflow_download.py")
 
     def __init__(self) -> None:
         # Initialize the parent class with the workflow name.
@@ -75,51 +80,77 @@ class Workflow(WorkflowManager):
                 suggest_folders=True,
             )
 
+    def analysis_section(self) -> None:
+        """The **Your analysis** box at the top of Describe experiment.
+
+        The input files first (their Browse dialog also takes new files, so
+        there is no upload page), then what to do with them, then one
+        sentence on what a start will do. Drawn in the page, not in the
+        ``configure()`` fragment, so a choice here reruns the page and the
+        step tabs below follow it.
+        """
+        with self.ui.analysis_box():
+            # reactive=True so the experimental design follows the selection
+            self.ui.select_input_file(
+                "mzML-files", multiple=True, reactive=True,
+                upload=dict(
+                    file_types=["mzML", "raw", "d"],
+                    fallback=[str(f) for f in Path("example-data", "mzML").glob("*.mzML")],
+                    suggest_folders=True,
+                ),
+            )
+            # What to do with them: a choice stored with the settings, which
+            # adds or removes the step it switches on
+            self.ui.choice(
+                "run-python-script", [False, True],
+                labels={False: "Features only", True: "Features and custom step"},
+                label="Analysis",
+                help="What the run does with the files.",
+                option_help={
+                    False: "detects features in each file and links them across the files.",
+                    True: "also runs the custom Python tool on the linked features.",
+                },
+            )
+            self.ui.analysis_summary(self.summary())
+
+    def steps(self) -> list:
+        """The steps the chosen analysis runs, in the order they run."""
+        steps = ["Samples and groups", "Feature detection", "Feature linking"]
+        if self.ui.current_params().get("run-python-script"):
+            steps.append("Custom step")
+        return steps
+
+    def summary(self) -> str:
+        """What a start will do, in one sentence (the box and the Run bar)."""
+        params = self.ui.current_params()
+        n = len(params.get("mzML-files") or [])
+        files = f"{n} file{'s' if n != 1 else ''}" if n else "the selected files"
+        extra = " and runs the custom Python tool on them" if params.get("run-python-script") else ""
+        return f"Detects features in {files}, links them across the files{extra}."
+
     @st.fragment
     def configure(self) -> None:
-        # Allow users to select mzML files for the analysis. reactive=True so
-        # the experimental design table follows the selection.
-        # upload= adds a Browse button: the files by folder, and adding more,
-        # without going back to the upload page.
-        self.ui.select_input_file(
-            "mzML-files", multiple=True, reactive=True,
-            upload=dict(
-                file_types=["mzML", "raw", "d"],
-                fallback=[str(f) for f in Path("example-data", "mzML").glob("*.mzML")],
-                suggest_folders=True,
-            ),
-        )
-
-        # Create tabs for different analysis steps.
-        t = st.tabs(
-            [
-                "**Feature Detection**",
-                "**Feature Linking**",
-                "**Python Custom Tool**",
-                "**Experimental Design**",
-            ]
-        )
-        with t[0]:
-            # Parameters for FeatureFinderMetabo TOPP tool.
-            self.ui.input_TOPP(
-                "FeatureFinderMetabo",
-                custom_defaults={"algorithm:common:noise_threshold_int": 1000.0},
-            )
-        with t[1]:
-            # Parameters for MetaboliteAdductDecharger TOPP tool.
-            self.ui.input_TOPP("FeatureLinkerUnlabeledKD")
-        with t[2]:
-            # A single checkbox widget for workflow logic.
-            self.ui.input_widget("run-python-script", False, "Run custom Python script")
-            # Generate input widgets for a custom Python tool, located at src/python-tools.
-            # Parameters are specified within the file in the DEFAULTS dictionary.
-            self.ui.input_python("example")
-        with t[3]:
+        # One numbered tab per step the chosen analysis runs
+        tabs = self.ui.step_tabs(self.steps())
+        with tabs["Samples and groups"]:
             # Condition, replicate and fraction per selected file, saved as an
             # OpenMS design.tsv in the workflow directory. Pass that file to a
             # TOPP tool's -design (e.g. ProteomicsLFQ), or read it in
             # execution() with src.workflow.ExperimentalDesign.load_design().
             self.ui.experimental_design("mzML-files", suggest=True)
+        with tabs["Feature detection"]:
+            # Parameters for FeatureFinderMetabo TOPP tool.
+            self.ui.input_TOPP(
+                "FeatureFinderMetabo",
+                custom_defaults={"algorithm:common:noise_threshold_int": 1000.0},
+            )
+        with tabs["Feature linking"]:
+            self.ui.input_TOPP("FeatureLinkerUnlabeledKD")
+        if "Custom step" in tabs:
+            with tabs["Custom step"]:
+                # Generate input widgets for a custom Python tool, located at src/python-tools.
+                # Parameters are specified within the file in the DEFAULTS dictionary.
+                self.ui.input_python("example")
 
     def execution(self) -> bool:
         # Return True only if every step succeeded. The caller
@@ -219,7 +250,7 @@ class Workflow(WorkflowManager):
 
     def _custom_tool(self, features: Path) -> bool:
         # Check if the custom Python tool should be run.
-        if self.params["run-python-script"]:
+        if self.params.get("run-python-script"):
             # Example for a custom Python tool, which is located in src/python-tools.
             # It writes the features with the highest mean intensity.
             out_top = self.file_manager.get_files("top-features.tsv", set_results_dir="custom-tool")
@@ -228,14 +259,15 @@ class Workflow(WorkflowManager):
                 return False
         return True
 
-    # The Results page: components arranged in views. A component that shows
+    # The Results page: components arranged in views, grouped as every
+    # Explore results page groups them (guide.COMPONENT_GROUPS). A component that shows
     # the result of an optional step names it as "needs"; views of a run
     # without it are drawn disabled, and a click offers to add it.
     COMPONENTS = [
-        {"name": "features", "label": "Consensus features", "group": "Tables"},
-        {"name": "intensities", "label": "Intensities of the selected features", "group": "Plots",
+        {"name": "features", "label": "Consensus features", "group": QUANTIFICATION},
+        {"name": "intensities", "label": "Intensities of the selected features", "group": QUANTIFICATION,
          "requires": "features"},
-        {"name": "top_features", "label": "Top features (custom Python tool)", "group": "Tables",
+        {"name": "top_features", "label": "Top features (custom Python tool)", "group": QUANTIFICATION,
          "needs": "custom-tool"},
     ]
     PRESETS = [
@@ -263,14 +295,14 @@ class Workflow(WorkflowManager):
         """Open Configure with this run's settings (and ``changes``), to pick
         files that are then processed and added to its experiment."""
         self.follow_up(
-            self.run_id, changes or {}, page=Path("content", "topp_workflow_parameter.py"),
+            self.run_id, changes or {}, page=self.configure_page,
             note="to add more files", add_files="mzML-files") or _no_settings()
 
     def add_analysis(self, changes) -> None:
         """Open Configure with this run's settings and ``changes``, to add an analysis
         to the run: its files are locked and its features reused."""
         self.follow_up(
-            self.run_id, changes, page=Path("content", "topp_workflow_parameter.py"),
+            self.run_id, changes, page=self.configure_page,
             note="with the custom Python tool switched on", same_files="mzML-files",
             keep=self.FEATURE_STEPS) or _no_settings()
 

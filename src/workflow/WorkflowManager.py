@@ -52,6 +52,11 @@ class WorkflowManager:
     # The configure page. A multi-run workflow that names it offers **Start
     # again with these settings** in the History of each run (start_again).
     configure_page = None
+    # The pages of Explore results and Export results, the last two of the
+    # four steps (src/workflow/guide.py). The Run page links the first when a
+    # run has finished; next_steps() links both.
+    results_page = None
+    export_page = None
 
     # Core workflow logic using the above classes
     def __init__(self, name: str, workspace: str):
@@ -707,7 +712,7 @@ class WorkflowManager:
 
     def show_run_button(
         self,
-        run_page,
+        run_page=None,
         label: str = "Run analysis",
         help: Optional[str] = None,
         key: str = "",
@@ -719,7 +724,7 @@ class WorkflowManager:
 
         For the end of the configure page, so a user who has described the
         experiment goes straight on: the settings are saved, ``run_page`` (a
-        page path or ``st.Page``) opens and the run starts at once. While a run
+        page path or ``st.Page``, by default the class attribute) opens and the run starts at once. While a run
         is going, the button opens the Run page to follow it instead.
 
         ``sticky`` (default) draws it in a bar that stays at the bottom of the
@@ -731,6 +736,8 @@ class WorkflowManager:
         beside the button, labelled ``name_label``: the start is given that
         name (``run_name()`` in ``execution()``).
         """
+        if run_page is None:
+            run_page = self.run_page
         running = self.get_workflow_status().get("running", False)
         if running:
             label, icon = "Follow the running analysis", ":material/hourglass_top:"
@@ -801,7 +808,7 @@ class WorkflowManager:
     def show_execution_section(
         self,
         results_page=None,
-        results_label: str = "Open results",
+        results_label: str = "Explore results",
     ) -> None:
         """
         Shows the execution section of the UI with content defined in self.execution().
@@ -810,6 +817,8 @@ class WorkflowManager:
         here at once. ``results_page`` (a page path or ``st.Page``) is linked
         when the run has finished, labelled ``results_label``.
         """
+        if results_page is None:
+            results_page = self.results_page
         autostart = bool(st.session_state.pop(self._autostart_key(), False))
         name_key = ""
         if self.multi_run:
