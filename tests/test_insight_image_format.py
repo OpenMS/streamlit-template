@@ -12,9 +12,13 @@ import sys
 import types
 
 import pytest
+from pathlib import Path
+
 from streamlit.testing.v1 import AppTest
 
-PAGE = "content/file_upload.py"
+ROOT = Path(__file__).resolve().parents[1]  # AppTest resolves relative paths against the caller from Streamlit 1.55 on
+
+PAGE = str(ROOT / "content" / "file_upload.py")
 
 
 @pytest.fixture
