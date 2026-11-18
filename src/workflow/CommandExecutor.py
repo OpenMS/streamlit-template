@@ -399,6 +399,8 @@ class CommandExecutor:
         custom_params: dict = {},
         tool_instance_name: str = None,
         allow_failed: bool = False,
+        retry_singly: bool = False,
+        _quiet: bool = False,
     ) -> bool:
         """
         Constructs and executes commands for the specified tool OpenMS TOPP tool based on the given
@@ -426,6 +428,13 @@ class CommandExecutor:
                 the indices of the failed commands, and ``keep_succeeded()``
                 drops their entries from the lists the next step takes. The
                 Run page names the files left out and why.
+            retry_singly (bool, optional): For a tool that takes several files
+                in one command (a search engine that builds its index once):
+                a failed command is run again for each of its files on its
+                own, so one bad file does not take the others of its command
+                with it. Implies ``allow_failed``; ``self.failed`` and
+                ``keep_succeeded()`` then count input files (in the order of
+                the commands' file lists, flattened), not commands.
 
         Returns:
             bool: True if all commands succeeded (with ``allow_failed``: any),
@@ -584,8 +593,12 @@ class CommandExecutor:
         finally:
             self.progress.end_step(step)
         self.failed = [i for i, ok in enumerate(results) if not ok]
+        if retry_singly:
+            return self._retry_singly(tool, input_output, custom_params, tool_instance_name, step, len(commands))
         if not allow_failed or not self.failed:
             return not self.failed
+        if _quiet:
+            return len(self.failed) < len(results)
         labels = self._command_labels(input_output, len(commands))
         if len(self.failed) == len(results):
             self.logger.log(f"ERROR: {tool} failed for every file.", 0)
@@ -597,6 +610,82 @@ class CommandExecutor:
             0,
         )
         return True
+
+    @staticmethod
+    def _command_files(input_output: dict, n_commands: int) -> list[int]:
+        """How many input files each command takes: the length of its entry
+        in the first input-like key (``_command_labels`` names it)."""
+        keys = list(input_output.keys())
+        candidates = [k for k in keys if k.lower().startswith("in")] + keys
+        key = next((k for k in candidates if len(input_output[k]) == n_commands), None)
+        if key is None:
+            return [1] * n_commands
+        return [len(v) if isinstance(v, list) else 1 for v in input_output[key]]
+
+    def _retry_singly(self, tool, input_output, custom_params, tool_instance_name, step, n_commands) -> bool:
+        """``run_topp(..., retry_singly=True)`` after its commands ran:
+        each failed command of several files runs again once per file;
+        ``self.failed`` becomes the input files that failed in the end."""
+        sizes = self._command_files(input_output, n_commands)
+        offsets = [sum(sizes[:i]) for i in range(n_commands)]
+        total = sum(sizes)
+        failed_files = []
+        retry = []
+        for i in self.failed:
+            if sizes[i] > 1:
+                retry.append(i)
+            else:
+                failed_files += range(offsets[i], offsets[i] + sizes[i])
+        if retry:
+            for i in retry:
+                self.progress.file_retried(step, i)
+            self.logger.log(
+                f"{tool} failed on {len(retry)} command(s) of several files; "
+                "running each of their files on its own", 0,
+            )
+            sub = {}
+            for key, values in input_output.items():
+                if len(values) != n_commands or (n_commands == 1 and not isinstance(values[0], list)):
+                    sub[key] = values  # one value shared by every command
+                    continue
+                entries = []
+                for i in retry:
+                    value = values[i]
+                    if isinstance(value, list) and len(value) == sizes[i]:
+                        entries += [[v] for v in value]
+                    else:
+                        entries += [value] * sizes[i]
+                sub[key] = entries
+            single = [f for i in retry for f in range(offsets[i], offsets[i] + sizes[i])]
+            self.run_topp(tool, sub, custom_params, tool_instance_name, allow_failed=True, _quiet=True)
+            failed_files += [single[j] for j in self.failed]
+        self.failed = sorted(failed_files)
+        if not self.failed:
+            return True
+        names = self._file_names(input_output, n_commands, sizes)
+        if len(self.failed) == total:
+            self.logger.log(f"ERROR: {tool} failed for every file.", 0)
+            return False
+        self.logger.log(
+            f"WARNING: {tool} failed for {len(self.failed)} of {total} "
+            f"files; the run goes on without them: "
+            + ", ".join(names[i] for i in self.failed),
+            0,
+        )
+        return True
+
+    @staticmethod
+    def _file_names(input_output: dict, n_commands: int, sizes: list) -> list[str]:
+        """The name of every input file, in the order ``_retry_singly`` counts them."""
+        keys = list(input_output.keys())
+        candidates = [k for k in keys if k.lower().startswith("in")] + keys
+        key = next((k for k in candidates if len(input_output[k]) == n_commands), None)
+        names = []
+        for i in range(n_commands):
+            value = input_output[key][i] if key else ""
+            values = value if isinstance(value, list) else [value]
+            names += [Path(str(v)).name for v in values][: sizes[i]] or [""] * sizes[i]
+        return names
 
     def keep_succeeded(self, values: list) -> list:
         """``values`` without the entries of the files the last
