@@ -502,15 +502,15 @@ class CommandExecutor:
                 command += [f"-{k}"]
                 # get value from input_output dictionary
                 value = input_output[k]
-                # when multiple input/output files exist (e.g., multiple mzMLs and featureXMLs), but only one additional input file (e.g., one input database file)
-                if len(value) == 1:
-                    i = 0
+                # when multiple input/output files exist (e.g., multiple mzMLs and featureXMLs), but only one additional input file (e.g., one input database file);
+                # its own index, so a shared value does not change the file the later keys take
+                entry = value[0] if len(value) == 1 else value[i]
                 # when the entry is a list of collected files to be passed as one [["sample1", "sample2"]]
-                if isinstance(value[i], list):
-                    command += value[i]
+                if isinstance(entry, list):
+                    command += entry
                 # standard case, files was a list of strings, take the file name at index
                 else:
-                    command += [value[i]]
+                    command += [entry]
             # Add merged TOPP tool parameters (_defaults + user overrides);
             # custom_params name a value of their own, so each appears once.
             for k, v in merged_params.items():
@@ -578,7 +578,8 @@ class CommandExecutor:
                 "params": report_params({**merged_params, **custom_params}),
                 "io": command_io(input_output, len(commands)),
             },
-            allow_failed=allow_failed,
+            # retry_singly goes on without the files that still fail
+            allow_failed=allow_failed or retry_singly,
         )
         self.failed = []
         try:
@@ -612,12 +613,21 @@ class CommandExecutor:
         return True
 
     @staticmethod
-    def _command_files(input_output: dict, n_commands: int) -> list[int]:
-        """How many input files each command takes: the length of its entry
-        in the first input-like key (``_command_labels`` names it)."""
+    def _file_key(input_output: dict, n_commands: int):
+        """The key whose entries are the input files of each command: an
+        input-like key with one entry per command, one that collects several
+        files first, so a shared value (one database) is never taken for it."""
         keys = list(input_output.keys())
         candidates = [k for k in keys if k.lower().startswith("in")] + keys
-        key = next((k for k in candidates if len(input_output[k]) == n_commands), None)
+        candidates = [k for k in candidates if len(input_output[k]) == n_commands]
+        collected = [k for k in candidates if any(isinstance(v, list) for v in input_output[k])]
+        return next(iter(collected + candidates), None)
+
+    @staticmethod
+    def _command_files(input_output: dict, n_commands: int) -> list[int]:
+        """How many input files each command takes: the length of its entry
+        under ``_file_key``."""
+        key = CommandExecutor._file_key(input_output, n_commands)
         if key is None:
             return [1] * n_commands
         return [len(v) if isinstance(v, list) else 1 for v in input_output[key]]
@@ -632,7 +642,7 @@ class CommandExecutor:
         failed_files = []
         retry = []
         for i in self.failed:
-            if sizes[i] > 1:
+            if sizes[i] > 1 and self._splittable(input_output, n_commands, i, sizes[i]):
                 retry.append(i)
             else:
                 failed_files += range(offsets[i], offsets[i] + sizes[i])
@@ -675,11 +685,23 @@ class CommandExecutor:
         return True
 
     @staticmethod
+    def _splittable(input_output: dict, n_commands: int, i: int, size: int) -> bool:
+        """Whether command ``i`` can run once per file: every value of its own
+        (not one shared by every command) names a file per input file. A
+        command that writes one output for all its files is not run again,
+        as its runs would all write that one file."""
+        for values in input_output.values():
+            if len(values) != n_commands or (n_commands == 1 and not isinstance(values[0], list)):
+                continue  # shared by every command
+            value = values[i]
+            if not (isinstance(value, list) and len(value) == size):
+                return False
+        return True
+
+    @staticmethod
     def _file_names(input_output: dict, n_commands: int, sizes: list) -> list[str]:
         """The name of every input file, in the order ``_retry_singly`` counts them."""
-        keys = list(input_output.keys())
-        candidates = [k for k in keys if k.lower().startswith("in")] + keys
-        key = next((k for k in candidates if len(input_output[k]) == n_commands), None)
+        key = CommandExecutor._file_key(input_output, n_commands)
         names = []
         for i in range(n_commands):
             value = input_output[key][i] if key else ""

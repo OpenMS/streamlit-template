@@ -52,6 +52,8 @@ for a in args[start:]:
     if a.startswith("-"):
         break
     names.append(a)
+with open("ran.txt", "a") as ran:
+    ran.write(" ".join(names) + "\\n")
 for name in names:
     if "bad" in name:
         print("Error: Unable to read file (" + name + ")", file=sys.stderr)
@@ -123,7 +125,10 @@ def test_a_failed_single_file_command_is_not_run_again(workflow):
     io = {"in": [["one.mzML", "two.mzML"], ["bad.mzML"]], "out": [["1", "2"], ["3"]]}
     assert executor.run_topp("FakeTool", io, retry_singly=True)
     assert executor.failed == [2]
-    assert len(read_progress(wf_dir)["steps"]) == 1
+    state = read_progress(wf_dir)
+    assert len(state["steps"]) == 1
+    # The Run page names it as left out, the run went on without it
+    assert [f["file"] for f in failures(state, left_out=True)] == ["bad.mzML"]
 
 
 def test_every_file_bad_fails_the_call(workflow):
@@ -140,3 +145,37 @@ def test_one_command_of_several_files(workflow):
     io = {"in": [["one.mzML", "bad.mzML"]], "out": [["1", "2"]]}
     assert executor.run_topp("FakeTool", io, retry_singly=True)
     assert executor.failed == [1]
+
+
+def _ran(wf_dir):
+    return (wf_dir.parent / "ran.txt").read_text().splitlines()
+
+
+def test_a_shared_value_before_the_inputs(workflow):
+    """A database given before the inputs does not make every command take
+    the first command's files."""
+    wf_dir, executor = workflow
+    assert executor.run_topp(
+        "FakeTool", {"db": ["x.fasta"], "in": BATCHES, "out": OUTS}, retry_singly=True
+    )
+    assert executor.failed == [1]
+    ran = _ran(wf_dir)
+    assert sorted(ran[:2]) == sorted(" ".join(b) for b in BATCHES)
+    assert sorted(ran[2:]) == ["bad.mzML", "one.mzML", "three.mzML"]
+
+
+def test_a_shared_input_is_not_taken_for_the_samples(workflow):
+    wf_dir, executor = workflow
+    io = {"in_db": ["db.fasta"], "in": [["one.mzML", "bad.mzML"]], "out": [["1", "2"]]}
+    assert executor.run_topp("FakeTool", io, retry_singly=True)
+    assert executor.failed == [1]
+    assert sorted(_ran(wf_dir)[1:]) == ["bad.mzML", "one.mzML"]
+
+
+def test_one_output_for_several_files_is_not_run_again(workflow):
+    """Its runs would all write the one output, so its files are left out."""
+    wf_dir, executor = workflow
+    io = {"in": [["one.mzML", "bad.mzML"], ["three.mzML"]], "out": ["merged", "3"]}
+    assert executor.run_topp("FakeTool", io, retry_singly=True)
+    assert executor.failed == [0, 1]
+    assert len(read_progress(wf_dir)["steps"]) == 1
