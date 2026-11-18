@@ -1,6 +1,10 @@
 import pytest
 import time
+from pathlib import Path
+
 from streamlit.testing.v1 import AppTest
+
+ROOT = Path(__file__).resolve().parents[1]  # AppTest resolves relative paths against the caller from Streamlit 1.55 on
 
 """
 Tests for the Simple Workflow page functionality.
@@ -15,7 +19,7 @@ These tests verify:
 @pytest.fixture
 def launch():
     """Launch the Simple Workflow page for testing."""
-    app = AppTest.from_file("content/simple_workflow.py")
+    app = AppTest.from_file(str(ROOT / "content" / "simple_workflow.py"))
     app.run(timeout=15)  
     return app
 
