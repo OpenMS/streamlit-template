@@ -187,3 +187,11 @@ def test_one_output_of_a_single_command_is_not_run_again(workflow):
     assert not executor.run_topp("FakeTool", io, retry_singly=True)
     assert executor.failed == [0, 1]
     assert len(read_progress(wf_dir)["steps"]) == 1
+
+
+def test_an_output_shared_by_several_commands_is_not_split(workflow):
+    wf_dir, executor = workflow
+    io = {"in": [["one.mzML", "bad.mzML"], ["three.mzML", "four.mzML"]], "out": [["1", "2"]]}
+    assert executor.run_topp("FakeTool", io, retry_singly=True)
+    assert executor.failed == [0, 1]
+    assert len(read_progress(wf_dir)["steps"]) == 1

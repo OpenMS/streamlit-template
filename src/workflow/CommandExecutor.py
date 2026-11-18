@@ -696,6 +696,8 @@ class CommandExecutor:
             shared = len(values) != n_commands or (n_commands == 1 and not isinstance(values[0], list))
             if shared and not output:
                 continue  # an input shared by every command (one database)
+            if output and len(values) != n_commands:
+                return False  # one output written by every command
             value = values[0] if len(values) == 1 else values[i]
             if not (isinstance(value, list) and len(value) == size):
                 return False
