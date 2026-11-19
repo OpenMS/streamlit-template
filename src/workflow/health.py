@@ -23,11 +23,20 @@ Three constraints hold for everything in this module:
   freeze the session rather than show it as unavailable.
 """
 
+import errno
+import hashlib
 import logging
 import os
 import socket
+import subprocess
 import sys
+import tempfile
 import time
+
+try:  # POSIX only; the mount check is never run on Windows.
+    import fcntl
+except ImportError:  # pragma: no cover - Windows desktop build
+    fcntl = None
 
 logger = logging.getLogger(__name__)
 
@@ -482,6 +491,108 @@ def probe_storage(workspaces_dir: str = "", node: str = "") -> bool:
     return True
 
 
+# How long `mount_is_disconnected()` waits for its stat before giving up and
+# calling the mount alive. Well under the liveness probe's timeoutSeconds.
+MOUNT_CHECK_DEADLINE = 5
+
+# The child that stats the mount. Exit code 107 (ENOTCONN) is the one answer
+# the parent acts on; any other error exits 2 and counts as "not this failure".
+_MOUNT_STAT_CHILD = (
+    "import errno, os, sys\n"
+    "try:\n"
+    "    os.stat(sys.argv[1])\n"
+    "except OSError as e:\n"
+    "    sys.exit(107 if e.errno == errno.ENOTCONN else 2)\n"
+)
+
+
+def _mount_check_lock_file(directory: str) -> str:
+    """The file whose lock a stat child for `directory` holds while it runs."""
+    digest = hashlib.sha256(os.path.abspath(directory).encode()).hexdigest()[:16]
+    return os.path.join(tempfile.gettempdir(), f"openms-mount-check-{digest}.lock")
+
+
+def mount_is_disconnected(workspaces_dir: str = "", deadline: float = MOUNT_CHECK_DEADLINE) -> bool:
+    """
+    True only when the shared volume reports "Transport endpoint is not
+    connected" (ENOTCONN, errno 107).
+
+    That is what a FUSE mount (JuiceFS, `k8s/components/storage-s3`) returns
+    for good once the mount process behind it has died: the driver mounts the
+    volume again for new pods, but a running container keeps the dead mount
+    until it is restarted. Unlike a slow or blocked NFS mount, which recovers
+    by itself and which the readiness probe deliberately tolerates, this state
+    never clears, so it is the one storage fault a liveness probe may act on.
+
+    The stat runs in a child process that is not waited on past `deadline`: on
+    a `hard` NFS mount a stat can block in uninterruptible sleep, and a probe
+    that waited for it would time out and restart the pod during an ordinary
+    NFS server restart. A stat that has not answered by then counts as "not
+    disconnected"; the readiness probe reports that case.
+
+    Such a child keeps running after this process exits. So that a blocked
+    mount leaves one child behind and not one per probe, every check takes an
+    exclusive lock on a file kept per directory before it starts the child, and
+    the child inherits the locked descriptor: the kernel holds the lock until
+    the child exits, whoever waits for it. A check that finds the lock taken
+    (a child still running, or another check at the same moment) starts nothing
+    and counts as "not disconnected"; so does a check that cannot open or lock
+    the file. Nothing is written after the child starts, so no failure leaves
+    an untracked child.
+
+    Args:
+        workspaces_dir: The mounted directory. Defaults to `$WORKSPACES_DIR`,
+            then `DEFAULT_WORKSPACES_DIR`.
+        deadline: Seconds to wait for the stat.
+
+    Returns:
+        bool: True if the mount answered with ENOTCONN.
+    """
+    directory = (
+        workspaces_dir
+        or os.environ.get("WORKSPACES_DIR")
+        or DEFAULT_WORKSPACES_DIR
+    )
+    if fcntl is None:
+        return False
+    try:
+        lock = os.open(_mount_check_lock_file(directory), os.O_RDWR | os.O_CREAT, 0o600)
+    except OSError as e:
+        logger.warning("Could not open the mount check lock, skipping the check: %s", e)
+        return False
+    try:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            # The last stat has not answered yet (the mount is blocked, not
+            # dead), or another check is running right now.
+            return False
+        try:
+            child = subprocess.Popen(
+                [sys.executable, "-c", _MOUNT_STAT_CHILD, directory],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+                pass_fds=(lock,),
+            )
+        except OSError as e:
+            logger.warning("Could not start the mount check: %s", e)
+            return False
+        try:
+            code = child.wait(timeout=deadline)
+        except subprocess.TimeoutExpired:
+            # Left running on purpose: a stat stuck in uninterruptible sleep
+            # cannot be killed, and waiting for it is the hang this check must
+            # not have. It keeps the lock, so the next check waits for it.
+            return False
+        return code == errno.ENOTCONN
+    finally:
+        # Closing our descriptor releases the lock only once the child, which
+        # shares it, has exited too.
+        os.close(lock)
+
+
 def get_storage_status() -> dict:
     """
     Read the shared storage heartbeats for the sidebar indicator.
@@ -614,7 +725,9 @@ def _cli(argv=None) -> int:
     Command line entry point, used by the rq-worker readiness probe.
 
     `--probe` is the probe itself: register the node, write to the shared
-    volume, and publish the heartbeat only if that write succeeded. `--status`
+    volume, and publish the heartbeat only if that write succeeded.
+    `--mount-alive` is the liveness check of every pod that mounts the
+    workspaces: it fails only on a dead FUSE mount (ENOTCONN). `--status`
     is for a human with a shell (`kubectl exec ... -- python -m
     src.workflow.health --status`).
 
@@ -638,6 +751,15 @@ def _cli(argv=None) -> int:
         ),
     )
     parser.add_argument(
+        "--mount-alive",
+        action="store_true",
+        help=(
+            "exit 1 only if the shared volume reports 'Transport endpoint is "
+            "not connected' (a dead FUSE mount that only a restart clears); "
+            "used by the liveness probes"
+        ),
+    )
+    parser.add_argument(
         "--status",
         action="store_true",
         help="print the storage status the sidebar renders, as JSON",
@@ -646,6 +768,16 @@ def _cli(argv=None) -> int:
 
     if args.status:
         print(json.dumps(get_storage_status(), indent=2))
+        return 0
+    if args.mount_alive:
+        if mount_is_disconnected():
+            directory = os.environ.get("WORKSPACES_DIR") or DEFAULT_WORKSPACES_DIR
+            print(
+                f"{directory}: Transport endpoint is not connected; the "
+                "container keeps a dead mount until it is restarted",
+                file=sys.stderr,
+            )
+            return 1
         return 0
     if args.probe:
         if probe_storage():
