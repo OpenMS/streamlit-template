@@ -56,6 +56,7 @@ no Streamlit:
   keys exist to make visible.
 """
 
+import errno
 import os
 import re
 import shutil
@@ -793,13 +794,89 @@ def test_worker_gets_its_node_name_from_the_downward_api():
     )
 
 
-def test_worker_has_no_liveness_probe():
-    manifest = RQ_WORKER_DEPLOYMENT.read_text(encoding="utf-8")
+def _liveness_probe_block(manifest: str) -> str:
+    match = re.search(r"(?ms)^( +)livenessProbe:\n(.*?)(?=^\1\S)", manifest)
+    assert match, "no livenessProbe in the manifest"
+    return match.group(2)
 
-    assert "livenessProbe" not in manifest, (
-        "never a liveness probe on rq-worker: it would kill in-flight TOPP jobs, "
-        "and restarting cannot fix NFS"
+
+def test_worker_liveness_probe_only_restarts_on_a_dead_mount():
+    """
+    A liveness failure SIGKILLs the worker mid-job, so its probe may fail for
+    one reason only: a dead workspace mount (ENOTCONN), which never clears in a
+    running container and on which every job fails anyway. A slow or blocked
+    NFS mount, which recovers by itself, must not fail it: that is the
+    readiness probe's job.
+    """
+    probe = _liveness_probe_block(RQ_WORKER_DEPLOYMENT.read_text(encoding="utf-8"))
+    assert "--mount-alive" in probe, probe
+    assert "--probe" not in probe, (
+        "the liveness probe must not write to the share: a blocked NFS write "
+        "would restart the worker during an ordinary NFS server restart"
     )
+
+
+@pytest.mark.parametrize(
+    "manifest", ["streamlit-deployment.yaml", "rq-worker-deployment.yaml", "sync-deployment.yaml"]
+)
+def test_workspace_mounts_follow_a_remount(manifest):
+    """
+    A FUSE volume mounted again on the node reaches a running container only
+    with HostToContainer propagation; without it the container keeps the dead
+    mount ("Transport endpoint is not connected") until it is restarted.
+    """
+    text = (REPO_ROOT / "k8s" / "base" / manifest).read_text(encoding="utf-8")
+    mounts = re.findall(
+        r"(?m)^( +)mountPath: /workspaces-streamlit-template\n((?:\1.*\n)*)", text
+    )
+    assert mounts, f"{manifest} mounts no workspaces"
+    for _, rest in mounts:
+        assert "mountPropagation: HostToContainer" in rest, (
+            f"a workspace mount in {manifest} does not follow a remount"
+        )
+    assert "--mount-alive" in _liveness_probe_block(text), (
+        f"{manifest} does not restart on a dead workspace mount"
+    )
+
+
+def _run_mount_child(error):
+    """Run the stat child in-process with os.stat raising `error`."""
+    with mock.patch.object(os, "stat", side_effect=error), mock.patch.object(
+        sys, "argv", ["-c", "/workspaces"]
+    ):
+        with pytest.raises(SystemExit) as exit_info:
+            exec(health._MOUNT_STAT_CHILD, {})  # noqa: S102 - our own constant
+    return exit_info.value.code
+
+
+def test_mount_child_reports_enotconn_and_nothing_else():
+    assert _run_mount_child(OSError(errno.ENOTCONN, "Transport endpoint is not connected")) == errno.ENOTCONN
+    assert _run_mount_child(OSError(errno.ENOENT, "No such file or directory")) == 2
+    assert _run_mount_child(OSError(errno.EIO, "Input/output error")) == 2
+
+
+def test_mount_is_disconnected_on_a_healthy_directory(tmp_path):
+    assert health.mount_is_disconnected(str(tmp_path)) is False
+
+
+def test_mount_is_disconnected_when_the_child_says_enotconn(tmp_path, monkeypatch):
+    monkeypatch.setattr(health, "_MOUNT_STAT_CHILD", "import sys; sys.exit(107)")
+    assert health.mount_is_disconnected(str(tmp_path)) is True
+
+
+def test_a_stat_that_hangs_counts_as_alive_and_returns_in_time(tmp_path, monkeypatch):
+    """A blocked NFS stat must not fail liveness, nor hold the probe past its deadline."""
+    monkeypatch.setattr(health, "_MOUNT_STAT_CHILD", "import time; time.sleep(30)")
+    started = time.monotonic()
+    assert health.mount_is_disconnected(str(tmp_path), deadline=0.5) is False
+    assert time.monotonic() - started < 5
+
+
+def test_mount_alive_cli_exit_codes(tmp_path, monkeypatch):
+    monkeypatch.setenv("WORKSPACES_DIR", str(tmp_path))
+    assert health._cli(["--mount-alive"]) == 0
+    monkeypatch.setattr(health, "_MOUNT_STAT_CHILD", "import sys; sys.exit(107)")
+    assert health._cli(["--mount-alive"]) == 1
 
 
 def test_probe_timing_outlasts_the_nfs_grace_period():
