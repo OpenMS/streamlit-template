@@ -543,7 +543,8 @@ def mount_is_disconnected(workspaces_dir: str = "", deadline: float = MOUNT_CHEC
     that waited for it would time out and restart the pod during an ordinary
     NFS server restart. A stat that has not answered by then counts as "not
     disconnected"; the readiness probe reports that case. Such a child keeps
-    running after this process exits, so its pid is kept in a file and, while
+    running after this process exits, so its pid is kept in a file (when that
+    file cannot be written, no child is started and the check passes) and, while
     it still runs, later checks of the same directory start no second one and
     count as "not disconnected" too: a blocked mount leaves one child behind,
     not one per probe.
@@ -565,22 +566,26 @@ def mount_is_disconnected(workspaces_dir: str = "", deadline: float = MOUNT_CHEC
     if _outstanding_mount_check(pid_file):
         # The last stat has not answered yet: the mount is blocked, not dead.
         return False
+    # Open the pid file before starting the child: a child that could not be
+    # recorded and then blocked would let every later probe start another.
     try:
-        child = subprocess.Popen(
-            [sys.executable, "-c", _MOUNT_STAT_CHILD, directory],
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True,
-        )
+        record = open(pid_file, "w", encoding="utf-8")  # pylint: disable=consider-using-with
     except OSError as e:
-        logger.warning("Could not start the mount check: %s", e)
+        logger.warning("Could not record the mount check, skipping it: %s", e)
         return False
-    try:
-        with open(pid_file, "w", encoding="utf-8") as f:
-            f.write(str(child.pid))
-    except OSError as e:
-        logger.warning("Could not record the mount check: %s", e)
+    with record:
+        try:
+            child = subprocess.Popen(
+                [sys.executable, "-c", _MOUNT_STAT_CHILD, directory],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+        except OSError as e:
+            logger.warning("Could not start the mount check: %s", e)
+            return False
+        record.write(str(child.pid))
     try:
         code = child.wait(timeout=deadline)
     except subprocess.TimeoutExpired:

@@ -932,6 +932,49 @@ def test_a_stale_pid_file_does_not_stop_the_check(tmp_path, monkeypatch):
         assert health.mount_is_disconnected(str(tmp_path)) is True, recorded
 
 
+def test_no_stat_child_starts_when_it_cannot_be_recorded(tmp_path, monkeypatch):
+    """An untracked child that blocked would let every later probe start another."""
+    monkeypatch.setattr(
+        health, "_mount_check_pid_file", lambda _d: str(tmp_path / "missing" / "check.pid")
+    )
+    popen = mock.Mock(side_effect=AssertionError("a stat child was started"))
+    monkeypatch.setattr(health.subprocess, "Popen", popen)
+    assert health.mount_is_disconnected(str(tmp_path)) is False
+    popen.assert_not_called()
+
+
+def test_a_blocked_stat_child_outlives_the_probe_and_is_still_tracked(tmp_path):
+    """
+    The probe runs as its own process and exits; the next probe, another
+    process, must still see the blocked child it left behind.
+    """
+    blocked = "import time; time.sleep(30)"
+    probe = textwrap.dedent(
+        f"""
+        import sys
+        from src.workflow import health
+        health._MOUNT_STAT_CHILD = {blocked!r}
+        sys.exit(1 if health.mount_is_disconnected({str(tmp_path)!r}, deadline=0.3) else 0)
+        """
+    )
+    pid_file = health._mount_check_pid_file(str(tmp_path))
+    for _ in range(2):
+        subprocess.run([sys.executable, "-c", probe], cwd=REPO_ROOT, check=True, timeout=30)
+    pid = int(Path(pid_file).read_text(encoding="utf-8"))
+    try:
+        stuck = []
+        for proc in Path("/proc").iterdir():
+            try:
+                cmdline = (proc / "cmdline").read_bytes()
+            except OSError:
+                continue
+            if blocked.encode() in cmdline and str(tmp_path).encode() in cmdline:
+                stuck.append(int(proc.name))
+        assert stuck == [pid], f"stat children left by two probes: {stuck}"
+    finally:
+        os.kill(pid, 9)
+
+
 def test_mount_alive_cli_exit_codes(tmp_path, monkeypatch):
     monkeypatch.setenv("WORKSPACES_DIR", str(tmp_path))
     assert health._cli(["--mount-alive"]) == 0
