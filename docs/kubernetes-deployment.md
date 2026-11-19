@@ -175,7 +175,7 @@ With S3 storage (`components/storage-s3`) the workspaces are a JuiceFS FUSE moun
 - Every workspace `volumeMount` sets `mountPropagation: HostToContainer`, so the mount the driver makes again on the node reaches running containers.
 - `streamlit`, `rq-worker` and `sync` have a liveness probe running `python -m src.workflow.health --mount-alive`. It fails only when a stat of the workspace directory answers `ENOTCONN`. The stat runs in a child process that is not waited on for more than 5 seconds, so a slow or blocked NFS mount never fails it.
 
-To recover by hand, restart the app pods: `kubectl -n openms get deploy -o name | grep -E -- '-(streamlit|rq-worker|sync)$' | xargs kubectl -n openms rollout restart`.
+To recover by hand, restart the app's pods. The overlay labels every object with `app: <slug>` (`template-app` here), and all apps share the `openms` namespace, so select by that label to leave the other apps alone: `kubectl -n openms get deploy -l app=<slug> -o name | grep -E -- '-(streamlit|rq-worker|sync)$' | xargs kubectl -n openms rollout restart`. When the mount pods of several apps died together, run it once per app.
 
 ### `cleanup-cronjob.yaml`
 CronJob that runs `python clean-up-workspaces.py` nightly at 03:00 UTC. Uses `concurrencyPolicy: Forbid`, retains 3 successful and 3 failed jobs. Shares the workspace PVC.

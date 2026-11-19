@@ -69,6 +69,7 @@ from pathlib import Path
 from unittest import mock
 
 import pytest
+import yaml
 
 fakeredis = pytest.importorskip("fakeredis")
 import redis as redis_module  # noqa: E402  (fakeredis guarantees this import)
@@ -825,18 +826,37 @@ def test_workspace_mounts_follow_a_remount(manifest):
     with HostToContainer propagation; without it the container keeps the dead
     mount ("Transport endpoint is not connected") until it is restarted.
     """
-    text = (REPO_ROOT / "k8s" / "base" / manifest).read_text(encoding="utf-8")
-    mounts = re.findall(
-        r"(?m)^( +)mountPath: /workspaces-streamlit-template\n((?:\1.*\n)*)", text
-    )
+    path = REPO_ROOT / "k8s" / "base" / manifest
+    (deployment,) = [
+        d
+        for d in yaml.safe_load_all(path.read_text(encoding="utf-8"))
+        if d and d.get("kind") == "Deployment"
+    ]
+    pod = deployment["spec"]["template"]["spec"]
+    containers = pod.get("initContainers", []) + pod["containers"]
+    mounts = [
+        m
+        for c in containers
+        for m in c.get("volumeMounts", [])
+        if m["mountPath"] == "/workspaces-streamlit-template"
+    ]
     assert mounts, f"{manifest} mounts no workspaces"
-    for _, rest in mounts:
-        assert "mountPropagation: HostToContainer" in rest, (
-            f"a workspace mount in {manifest} does not follow a remount"
+    for mount in mounts:
+        assert mount.get("mountPropagation") == "HostToContainer", (
+            f"a workspace mount in {manifest} does not follow a remount: {mount}"
         )
-    assert "--mount-alive" in _liveness_probe_block(text), (
-        f"{manifest} does not restart on a dead workspace mount"
-    )
+    for container in pod["containers"]:
+        command = container["livenessProbe"]["exec"]["command"]
+        if len(command) == 3 and os.path.basename(command[0]) in ("bash", "sh") and command[1] == "-c":
+            # Drop comments so a flag that is only mentioned there does not count.
+            script = "\n".join(line.split("#", 1)[0] for line in command[2].splitlines())
+            assert "src.workflow.health --mount-alive" in script, (
+                f"{manifest}: {container['name']} does not restart on a dead workspace mount"
+            )
+        else:
+            assert command[-3:] == ["-m", "src.workflow.health", "--mount-alive"], (
+                f"{manifest}: {container['name']} does not restart on a dead workspace mount"
+            )
 
 
 def _run_mount_child(error):
@@ -870,6 +890,46 @@ def test_a_stat_that_hangs_counts_as_alive_and_returns_in_time(tmp_path, monkeyp
     started = time.monotonic()
     assert health.mount_is_disconnected(str(tmp_path), deadline=0.5) is False
     assert time.monotonic() - started < 5
+
+
+def test_a_blocked_mount_leaves_one_stat_child_not_one_per_probe(tmp_path, monkeypatch):
+    """
+    A stat that timed out keeps running after the probe exits. Later probes of
+    the same directory must wait for it, not start another, or a long blocked
+    mount piles up one stuck process per probe period.
+    """
+    monkeypatch.setattr(health, "_MOUNT_STAT_CHILD", "import time; time.sleep(30)")
+    started = []
+    real_popen = subprocess.Popen
+
+    def counting_popen(*args, **kwargs):
+        child = real_popen(*args, **kwargs)
+        started.append(child)
+        return child
+
+    monkeypatch.setattr(health.subprocess, "Popen", counting_popen)
+    try:
+        for _ in range(3):
+            assert health.mount_is_disconnected(str(tmp_path), deadline=0.2) is False
+        assert len(started) == 1, f"{len(started)} stat children for one blocked mount"
+    finally:
+        for child in started:
+            child.kill()
+            child.wait()
+    # Once it has finished, the next probe checks the mount again.
+    monkeypatch.setattr(health, "_MOUNT_STAT_CHILD", "import sys; sys.exit(107)")
+    assert health.mount_is_disconnected(str(tmp_path)) is True
+    assert len(started) == 2
+    assert not os.path.exists(health._mount_check_pid_file(str(tmp_path)))
+
+
+def test_a_stale_pid_file_does_not_stop_the_check(tmp_path, monkeypatch):
+    """A recorded pid that is gone, or now another process, is no outstanding stat."""
+    pid_file = health._mount_check_pid_file(str(tmp_path))
+    monkeypatch.setattr(health, "_MOUNT_STAT_CHILD", "import sys; sys.exit(107)")
+    for recorded in (str(os.getpid()), "999999999", "not a pid"):
+        Path(pid_file).write_text(recorded, encoding="utf-8")
+        assert health.mount_is_disconnected(str(tmp_path)) is True, recorded
 
 
 def test_mount_alive_cli_exit_codes(tmp_path, monkeypatch):

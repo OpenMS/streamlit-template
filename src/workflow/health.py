@@ -24,11 +24,13 @@ Three constraints hold for everything in this module:
 """
 
 import errno
+import hashlib
 import logging
 import os
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 
 logger = logging.getLogger(__name__)
@@ -499,6 +501,31 @@ _MOUNT_STAT_CHILD = (
 )
 
 
+def _mount_check_pid_file(directory: str) -> str:
+    """Where the pid of a stat child still running for `directory` is kept."""
+    digest = hashlib.sha256(os.path.abspath(directory).encode()).hexdigest()[:16]
+    return os.path.join(tempfile.gettempdir(), f"openms-mount-check-{digest}.pid")
+
+
+def _outstanding_mount_check(pid_file: str) -> bool:
+    """
+    True while the stat child recorded in `pid_file` is still running.
+
+    A child that finished (gone, or a zombie its new parent has not reaped) and
+    a pid now used by another process both count as no child outstanding.
+    """
+    try:
+        with open(pid_file, encoding="utf-8") as f:
+            pid = int(f.read().strip())
+        with open(f"/proc/{pid}/stat", encoding="utf-8") as f:
+            state = f.read().rsplit(")", 1)[1].split()[0]
+        with open(f"/proc/{pid}/cmdline", "rb") as f:
+            cmdline = f.read()
+    except (OSError, ValueError, IndexError):
+        return False
+    return state != "Z" and _MOUNT_STAT_CHILD.encode() in cmdline
+
+
 def mount_is_disconnected(workspaces_dir: str = "", deadline: float = MOUNT_CHECK_DEADLINE) -> bool:
     """
     True only when the shared volume reports "Transport endpoint is not
@@ -515,7 +542,11 @@ def mount_is_disconnected(workspaces_dir: str = "", deadline: float = MOUNT_CHEC
     a `hard` NFS mount a stat can block in uninterruptible sleep, and a probe
     that waited for it would time out and restart the pod during an ordinary
     NFS server restart. A stat that has not answered by then counts as "not
-    disconnected"; the readiness probe reports that case.
+    disconnected"; the readiness probe reports that case. Such a child keeps
+    running after this process exits, so its pid is kept in a file and, while
+    it still runs, later checks of the same directory start no second one and
+    count as "not disconnected" too: a blocked mount leaves one child behind,
+    not one per probe.
 
     Args:
         workspaces_dir: The mounted directory. Defaults to `$WORKSPACES_DIR`,
@@ -530,6 +561,10 @@ def mount_is_disconnected(workspaces_dir: str = "", deadline: float = MOUNT_CHEC
         or os.environ.get("WORKSPACES_DIR")
         or DEFAULT_WORKSPACES_DIR
     )
+    pid_file = _mount_check_pid_file(directory)
+    if _outstanding_mount_check(pid_file):
+        # The last stat has not answered yet: the mount is blocked, not dead.
+        return False
     try:
         child = subprocess.Popen(
             [sys.executable, "-c", _MOUNT_STAT_CHILD, directory],
@@ -542,11 +577,21 @@ def mount_is_disconnected(workspaces_dir: str = "", deadline: float = MOUNT_CHEC
         logger.warning("Could not start the mount check: %s", e)
         return False
     try:
+        with open(pid_file, "w", encoding="utf-8") as f:
+            f.write(str(child.pid))
+    except OSError as e:
+        logger.warning("Could not record the mount check: %s", e)
+    try:
         code = child.wait(timeout=deadline)
     except subprocess.TimeoutExpired:
         # Left running on purpose: a stat stuck in uninterruptible sleep cannot
         # be killed, and waiting for it is the hang this check must not have.
+        # Its pid stays in `pid_file`, so the next check waits for it.
         return False
+    try:
+        os.remove(pid_file)
+    except OSError:
+        pass
     return code == errno.ENOTCONN
 
 
