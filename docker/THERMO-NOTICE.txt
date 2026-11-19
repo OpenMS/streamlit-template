@@ -1,9 +1,12 @@
 Thermo RawFileReader
 
-This image includes RawFileReader from Thermo Fisher Scientific, Inc. (in
-/thirdparty/ThermoRawFileParser), which FileConverter uses to read Thermo .raw
-files. It is included under a license from Thermo Fisher Scientific: see
-THERMO_LICENSE in that folder.
+This image includes RawFileReader from Thermo Fisher Scientific, Inc., which
+FileConverter uses to read Thermo .raw files: in
+/openms/share/openms_thermo_bridge/managed (FileConverter's built-in reader,
+where the image has it) and in /thirdparty/ThermoRawFileParser. It is included
+under a license from Thermo Fisher Scientific: see
+/openms/share/LICENSES/ThermoRawFileReader-License.doc and THERMO_LICENSE in
+/thirdparty/ThermoRawFileParser.
 
 RawFileReader reading tool. Copyright © 2016 by Thermo Fisher Scientific, Inc. All rights reserved.
 
