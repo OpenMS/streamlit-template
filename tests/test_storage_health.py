@@ -57,6 +57,7 @@ no Streamlit:
 """
 
 import errno
+import fcntl
 import os
 import re
 import shutil
@@ -920,22 +921,33 @@ def test_a_blocked_mount_leaves_one_stat_child_not_one_per_probe(tmp_path, monke
     monkeypatch.setattr(health, "_MOUNT_STAT_CHILD", "import sys; sys.exit(107)")
     assert health.mount_is_disconnected(str(tmp_path)) is True
     assert len(started) == 2
-    assert not os.path.exists(health._mount_check_pid_file(str(tmp_path)))
 
 
-def test_a_stale_pid_file_does_not_stop_the_check(tmp_path, monkeypatch):
-    """A recorded pid that is gone, or now another process, is no outstanding stat."""
-    pid_file = health._mount_check_pid_file(str(tmp_path))
+def test_a_lock_file_left_behind_does_not_stop_the_check(tmp_path, monkeypatch):
+    """The file outlives every check; only a held lock means a stat is outstanding."""
+    Path(health._mount_check_lock_file(str(tmp_path))).write_text("", encoding="utf-8")
     monkeypatch.setattr(health, "_MOUNT_STAT_CHILD", "import sys; sys.exit(107)")
-    for recorded in (str(os.getpid()), "999999999", "not a pid"):
-        Path(pid_file).write_text(recorded, encoding="utf-8")
-        assert health.mount_is_disconnected(str(tmp_path)) is True, recorded
+    assert health.mount_is_disconnected(str(tmp_path)) is True
+    assert health.mount_is_disconnected(str(tmp_path)) is True
 
 
-def test_no_stat_child_starts_when_it_cannot_be_recorded(tmp_path, monkeypatch):
+def test_a_check_running_at_the_same_time_starts_no_second_child(tmp_path, monkeypatch):
+    """Two probes at once must not both start a stat child."""
+    held = os.open(health._mount_check_lock_file(str(tmp_path)), os.O_RDWR | os.O_CREAT)
+    popen = mock.Mock(side_effect=AssertionError("a second stat child was started"))
+    monkeypatch.setattr(health.subprocess, "Popen", popen)
+    try:
+        fcntl.flock(held, fcntl.LOCK_EX)
+        assert health.mount_is_disconnected(str(tmp_path)) is False
+    finally:
+        os.close(held)
+    popen.assert_not_called()
+
+
+def test_no_stat_child_starts_when_it_cannot_be_tracked(tmp_path, monkeypatch):
     """An untracked child that blocked would let every later probe start another."""
     monkeypatch.setattr(
-        health, "_mount_check_pid_file", lambda _d: str(tmp_path / "missing" / "check.pid")
+        health, "_mount_check_lock_file", lambda _d: str(tmp_path / "missing" / "check.lock")
     )
     popen = mock.Mock(side_effect=AssertionError("a stat child was started"))
     monkeypatch.setattr(health.subprocess, "Popen", popen)
@@ -943,10 +955,23 @@ def test_no_stat_child_starts_when_it_cannot_be_recorded(tmp_path, monkeypatch):
     popen.assert_not_called()
 
 
+def _stat_children(marker, directory):
+    found = []
+    for proc in Path("/proc").iterdir():
+        try:
+            cmdline = (proc / "cmdline").read_bytes()
+            state = (proc / "stat").read_text().rsplit(")", 1)[1].split()[0]
+        except (OSError, IndexError):
+            continue
+        if state != "Z" and marker.encode() in cmdline and directory.encode() in cmdline:
+            found.append(int(proc.name))
+    return found
+
+
 def test_a_blocked_stat_child_outlives_the_probe_and_is_still_tracked(tmp_path):
     """
-    The probe runs as its own process and exits; the next probe, another
-    process, must still see the blocked child it left behind.
+    The probe runs as its own process and exits; the next probes, other
+    processes, must still see the blocked child it left behind.
     """
     blocked = "import time; time.sleep(30)"
     probe = textwrap.dedent(
@@ -957,22 +982,14 @@ def test_a_blocked_stat_child_outlives_the_probe_and_is_still_tracked(tmp_path):
         sys.exit(1 if health.mount_is_disconnected({str(tmp_path)!r}, deadline=0.3) else 0)
         """
     )
-    pid_file = health._mount_check_pid_file(str(tmp_path))
-    for _ in range(2):
-        subprocess.run([sys.executable, "-c", probe], cwd=REPO_ROOT, check=True, timeout=30)
-    pid = int(Path(pid_file).read_text(encoding="utf-8"))
     try:
-        stuck = []
-        for proc in Path("/proc").iterdir():
-            try:
-                cmdline = (proc / "cmdline").read_bytes()
-            except OSError:
-                continue
-            if blocked.encode() in cmdline and str(tmp_path).encode() in cmdline:
-                stuck.append(int(proc.name))
-        assert stuck == [pid], f"stat children left by two probes: {stuck}"
+        for _ in range(3):
+            subprocess.run([sys.executable, "-c", probe], cwd=REPO_ROOT, check=True, timeout=30)
+        stuck = _stat_children(blocked, str(tmp_path))
+        assert len(stuck) == 1, f"stat children left by three probes: {stuck}"
     finally:
-        os.kill(pid, 9)
+        for pid in _stat_children(blocked, str(tmp_path)):
+            os.kill(pid, 9)
 
 
 def test_mount_alive_cli_exit_codes(tmp_path, monkeypatch):

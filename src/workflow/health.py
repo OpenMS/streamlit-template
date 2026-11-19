@@ -33,6 +33,11 @@ import sys
 import tempfile
 import time
 
+try:  # POSIX only; the mount check is never run on Windows.
+    import fcntl
+except ImportError:  # pragma: no cover - Windows desktop build
+    fcntl = None
+
 logger = logging.getLogger(__name__)
 
 # Shared storage heartbeat: an inverted health check.
@@ -501,29 +506,10 @@ _MOUNT_STAT_CHILD = (
 )
 
 
-def _mount_check_pid_file(directory: str) -> str:
-    """Where the pid of a stat child still running for `directory` is kept."""
+def _mount_check_lock_file(directory: str) -> str:
+    """The file whose lock a stat child for `directory` holds while it runs."""
     digest = hashlib.sha256(os.path.abspath(directory).encode()).hexdigest()[:16]
-    return os.path.join(tempfile.gettempdir(), f"openms-mount-check-{digest}.pid")
-
-
-def _outstanding_mount_check(pid_file: str) -> bool:
-    """
-    True while the stat child recorded in `pid_file` is still running.
-
-    A child that finished (gone, or a zombie its new parent has not reaped) and
-    a pid now used by another process both count as no child outstanding.
-    """
-    try:
-        with open(pid_file, encoding="utf-8") as f:
-            pid = int(f.read().strip())
-        with open(f"/proc/{pid}/stat", encoding="utf-8") as f:
-            state = f.read().rsplit(")", 1)[1].split()[0]
-        with open(f"/proc/{pid}/cmdline", "rb") as f:
-            cmdline = f.read()
-    except (OSError, ValueError, IndexError):
-        return False
-    return state != "Z" and _MOUNT_STAT_CHILD.encode() in cmdline
+    return os.path.join(tempfile.gettempdir(), f"openms-mount-check-{digest}.lock")
 
 
 def mount_is_disconnected(workspaces_dir: str = "", deadline: float = MOUNT_CHECK_DEADLINE) -> bool:
@@ -542,12 +528,17 @@ def mount_is_disconnected(workspaces_dir: str = "", deadline: float = MOUNT_CHEC
     a `hard` NFS mount a stat can block in uninterruptible sleep, and a probe
     that waited for it would time out and restart the pod during an ordinary
     NFS server restart. A stat that has not answered by then counts as "not
-    disconnected"; the readiness probe reports that case. Such a child keeps
-    running after this process exits, so its pid is kept in a file (when that
-    file cannot be written, no child is started and the check passes) and, while
-    it still runs, later checks of the same directory start no second one and
-    count as "not disconnected" too: a blocked mount leaves one child behind,
-    not one per probe.
+    disconnected"; the readiness probe reports that case.
+
+    Such a child keeps running after this process exits. So that a blocked
+    mount leaves one child behind and not one per probe, every check takes an
+    exclusive lock on a file kept per directory before it starts the child, and
+    the child inherits the locked descriptor: the kernel holds the lock until
+    the child exits, whoever waits for it. A check that finds the lock taken
+    (a child still running, or another check at the same moment) starts nothing
+    and counts as "not disconnected"; so does a check that cannot open or lock
+    the file. Nothing is written after the child starts, so no failure leaves
+    an untracked child.
 
     Args:
         workspaces_dir: The mounted directory. Defaults to `$WORKSPACES_DIR`,
@@ -562,18 +553,20 @@ def mount_is_disconnected(workspaces_dir: str = "", deadline: float = MOUNT_CHEC
         or os.environ.get("WORKSPACES_DIR")
         or DEFAULT_WORKSPACES_DIR
     )
-    pid_file = _mount_check_pid_file(directory)
-    if _outstanding_mount_check(pid_file):
-        # The last stat has not answered yet: the mount is blocked, not dead.
+    if fcntl is None:
         return False
-    # Open the pid file before starting the child: a child that could not be
-    # recorded and then blocked would let every later probe start another.
     try:
-        record = open(pid_file, "w", encoding="utf-8")  # pylint: disable=consider-using-with
+        lock = os.open(_mount_check_lock_file(directory), os.O_RDWR | os.O_CREAT, 0o600)
     except OSError as e:
-        logger.warning("Could not record the mount check, skipping it: %s", e)
+        logger.warning("Could not open the mount check lock, skipping the check: %s", e)
         return False
-    with record:
+    try:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            # The last stat has not answered yet (the mount is blocked, not
+            # dead), or another check is running right now.
+            return False
         try:
             child = subprocess.Popen(
                 [sys.executable, "-c", _MOUNT_STAT_CHILD, directory],
@@ -581,23 +574,23 @@ def mount_is_disconnected(workspaces_dir: str = "", deadline: float = MOUNT_CHEC
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 start_new_session=True,
+                pass_fds=(lock,),
             )
         except OSError as e:
             logger.warning("Could not start the mount check: %s", e)
             return False
-        record.write(str(child.pid))
-    try:
-        code = child.wait(timeout=deadline)
-    except subprocess.TimeoutExpired:
-        # Left running on purpose: a stat stuck in uninterruptible sleep cannot
-        # be killed, and waiting for it is the hang this check must not have.
-        # Its pid stays in `pid_file`, so the next check waits for it.
-        return False
-    try:
-        os.remove(pid_file)
-    except OSError:
-        pass
-    return code == errno.ENOTCONN
+        try:
+            code = child.wait(timeout=deadline)
+        except subprocess.TimeoutExpired:
+            # Left running on purpose: a stat stuck in uninterruptible sleep
+            # cannot be killed, and waiting for it is the hang this check must
+            # not have. It keeps the lock, so the next check waits for it.
+            return False
+        return code == errno.ENOTCONN
+    finally:
+        # Closing our descriptor releases the lock only once the child, which
+        # shares it, has exited too.
+        os.close(lock)
 
 
 def get_storage_status() -> dict:
