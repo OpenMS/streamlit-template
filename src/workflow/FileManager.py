@@ -480,6 +480,8 @@ class FileManager:
         The datasets that hold all (``partial`` False) or any of the results
         named, sorted by id. Names no dataset holds are left out.
         """
+        if isinstance(name_tags, str):
+            name_tags = [name_tags]
         available = set(self._get_column_list("stored_data")) | set(
             self._get_column_list("stored_files")
         )
@@ -535,7 +537,7 @@ class FileManager:
         name no dataset holds is left out.
         """
         results = {}
-        name_tags = list(name_tags)
+        name_tags = [name_tags] if isinstance(name_tags, str) else list(name_tags)
         for table in ("stored_files", "stored_data"):
             columns = [
                 c for c in self._get_column_list(table)

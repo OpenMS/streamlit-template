@@ -170,3 +170,10 @@ def test_opens_a_store_written_before(tmp_path):
     again = FileManager(Path(tmp_path, "wf"))
     assert again.get_results("run1", ["x"])["x"] == {"a": 1}
     assert again.get_results_list(["x"]) == ["run1"]
+
+
+def test_one_name_as_a_string(tmp_path):
+    fm = _fm(tmp_path)
+    fm.store_data("run1", "layout", {"rows": 1})
+    assert fm.get_results("run1", "layout") == {"layout": {"rows": 1}}
+    assert fm.get_results_list("layout") == ["run1"]
