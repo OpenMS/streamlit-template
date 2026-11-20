@@ -20,7 +20,8 @@
         "matomo": {
             "enabled": true,
             "url": "https://cdn.matomo.cloud/openms.matomo.cloud",
-            "tag": "yDGK8bfY"
+            "tag": "yDGK8bfY",
+            "track_downloads": true
         }
     },
     "contributors": {

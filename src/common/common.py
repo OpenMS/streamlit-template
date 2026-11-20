@@ -26,6 +26,7 @@ except ImportError:
 from src.common.developer import render_developer_toggle
 from src.common.other_apps import render_other_apps_sidebar
 from src.common.captcha_ import captcha_control
+from src.common.download_tracking import tracker_script, tracking_enabled
 from src.common.admin import (
     is_admin_configured,
     verify_admin_password,
@@ -814,6 +815,12 @@ def page_setup(page: str = "") -> dict[str, Any]:
                 width=1,
                 height=1,
             )
+            if tracking_enabled(st.session_state.settings):
+                html(
+                    tracker_script(st.session_state.settings.get("app-name", "")),
+                    width=1,
+                    height=1,
+                )
 
     # Determine the workspace for the current session
     if ("workspace" not in st.session_state) or (
