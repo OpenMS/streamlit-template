@@ -1,4 +1,4 @@
-"""Download tracking: when it is on, and what the page script does."""
+"""Installer download tracking: when it is on, and what the page script does."""
 
 import re
 import subprocess
@@ -7,7 +7,7 @@ import shutil
 import pytest
 
 from src.common.download_tracking import (
-    DOWNLOAD_EXTENSIONS,
+    INSTALLER_EXTENSIONS,
     tracker_script,
     tracking_enabled,
 )
@@ -47,9 +47,12 @@ def test_script_reports_downloads_as_matomo_downloads():
     assert '"/download/"' in js
 
 
-def test_extensions_cover_results_and_installers():
-    for ext in ("csv", "tsv", "xlsx", "mzml", "zip", "exe", "dmg", "appimage", "png", "svg"):
-        assert ext in DOWNLOAD_EXTENSIONS
+def test_only_installers_are_reported():
+    for ext in ("exe", "msi", "dmg", "pkg", "appimage", "deb", "rpm"):
+        assert ext in INSTALLER_EXTENSIONS
+    for ext in ("csv", "tsv", "xlsx", "zip", "png", "mzml"):
+        assert ext not in INSTALLER_EXTENSIONS
+    assert "if (!isInstaller(name)) return;" in _script()
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
