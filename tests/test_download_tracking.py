@@ -55,6 +55,13 @@ def test_only_installers_are_reported():
     assert "if (!isInstaller(name)) return;" in _script()
 
 
+def test_middle_click_is_reported():
+    js = _script()
+    assert 'addEventListener("click", onClick, true)' in js
+    assert 'addEventListener("auxclick", onClick, true)' in js
+    assert 'ev.type === "auxclick" && ev.button !== 1' in js
+
+
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
 def test_script_is_valid_javascript(tmp_path):
     path = tmp_path / "tracker.js"

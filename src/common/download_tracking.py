@@ -116,11 +116,15 @@ def tracker_script(app_name: str) -> str:
     }}
   }}
 
-  // Links in the page: the installer buttons of a release.
-  win.document.addEventListener("click", function (ev) {{
+  // Links in the page: the installer buttons of a release. A middle click
+  // (open in a new tab) fires auxclick, not click.
+  function onClick(ev) {{
+    if (ev.type === "auxclick" && ev.button !== 1) return;
     var a = ev.target && ev.target.closest && ev.target.closest("a[href]");
     if (a) report(a);
-  }}, true);
+  }}
+  win.document.addEventListener("click", onClick, true);
+  win.document.addEventListener("auxclick", onClick, true);
 
   // Links clicked without being in the page (Streamlit's download button).
   var proto = win.HTMLAnchorElement.prototype;
