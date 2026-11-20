@@ -53,6 +53,9 @@ class Workflow(WorkflowManager):
     multi_run = True
     run_page = Path("content", "topp_workflow_execution.py")
     configure_page = Path("content", "topp_workflow_parameter.py")
+    # A file FeatureFinderMetabo fails on is left out (allow_failed); History
+    # then offers to process it again
+    input_files_key = "mzML-files"
 
     def __init__(self) -> None:
         # Initialize the parent class with the workflow name.
