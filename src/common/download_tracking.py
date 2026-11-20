@@ -1,9 +1,9 @@
 """Report installer downloads to Matomo, once the visitor has agreed to tracking.
 
 Every installer a visitor downloads from the app is sent to Matomo as a
-download (the *Downloads* report under Behaviour), named by the app's host
-and the file name, so each web app's installer downloads show up under its
-own address:
+download (the *Downloads* report under Behaviour). A link to a release file
+keeps its own URL, which names the app's repository and the release version.
+The bundled Windows installer is named by the app's host and the file name:
 
     https://<app host>/download/<file name>
 
