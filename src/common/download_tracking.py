@@ -94,8 +94,13 @@ def tracker_script(app_name: str) -> str:
   function sendMedia(url, fallback) {{
     fetch(url, {{method: "HEAD", credentials: "same-origin"}}).then(function (r) {{
       var cd = r.headers.get("Content-Disposition") || "";
-      var m = /filename\\*=utf-8''([^;]+)/i.exec(cd) || /filename="([^"]+)"/i.exec(cd);
-      send(m ? decodeURIComponent(m[1]) : fallback, url);
+      // filename* is percent-encoded UTF-8, a plain filename is not.
+      var ext = /filename\\*=utf-8''([^;]+)/i.exec(cd);
+      var plain = /filename="([^"]+)"/i.exec(cd);
+      var name = fallback;
+      try {{ name = ext ? decodeURIComponent(ext[1]) : (plain ? plain[1] : fallback); }}
+      catch (e) {{ name = plain ? plain[1] : fallback; }}
+      send(name, url);
     }}).catch(function () {{}});
   }}
 
