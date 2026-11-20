@@ -1,0 +1,172 @@
+"""The result store of FileManager: storing, reading, listing, renaming and
+removing a dataset's results, and what it leaves alone when it is unused."""
+
+import pickle
+from io import BytesIO
+from pathlib import Path
+
+import pytest
+
+from src.workflow.FileManager import FileManager, cache_path_for
+
+pd = pytest.importorskip("pandas")
+pytest.importorskip("pyarrow")
+
+
+def _fm(tmp_path):
+    return FileManager(Path(tmp_path, "wf"))
+
+
+def test_paths_only_create_no_store(tmp_path):
+    fm = _fm(tmp_path)
+    fm.get_files(["a.mzML"], set_file_type="featureXML")
+    assert not Path(tmp_path, "wf", "cache").exists()
+
+
+def test_keyword_cache_path_and_results_dir(tmp_path):
+    fm = FileManager(Path(tmp_path, "wf"), Path(tmp_path, "r"), cache_path=Path(tmp_path, "c"))
+    assert fm.results_dir == Path(tmp_path, "r")
+    assert fm.cache_path == Path(tmp_path, "c")
+    assert cache_path_for(Path(tmp_path, "ws", "wf")) == Path(tmp_path, "ws", "wf", "cache")
+    assert cache_path_for(Path(tmp_path, "ws", "wf"), True) == Path(tmp_path, "ws", "cache")
+
+
+def test_store_and_read_pandas_and_objects(tmp_path):
+    fm = _fm(tmp_path)
+    df = pd.DataFrame({"a": [1, 2]})
+    fm.store_data("run1", "table", df)
+    fm.store_data("run1", "settings", {"x": 1})
+    out = fm.get_results("run1", ["table", "settings"])
+    assert out["table"].equals(df)
+    assert out["settings"] == {"x": 1}
+    assert fm.result_exists("run1", "table")
+    assert not fm.result_exists("run1", "other")
+    assert fm.get_result_path("run1", "table").suffix == ".pq"
+    assert fm.get_result_path("run2", "table") is None
+
+
+def test_store_polars(tmp_path):
+    pl = pytest.importorskip("polars")
+    fm = _fm(tmp_path)
+    fm.store_data("run1", "frame", pl.DataFrame({"a": [1, 2]}))
+    fm.store_data("run1", "lazy", pl.DataFrame({"b": [3]}).lazy())
+    out = fm.get_results("run1", ["frame", "lazy"], use_polars=True)
+    assert out["frame"].collect()["a"].to_list() == [1, 2]
+    assert out["lazy"].collect()["b"].to_list() == [3]
+
+
+def test_store_file_path_and_buffer(tmp_path):
+    fm = _fm(tmp_path)
+    src = Path(tmp_path, "out.tsv")
+    src.write_text("x")
+    fm.store_file("run1", "out_tsv", src)
+    assert not src.exists()
+    buf = BytesIO(b"abc")
+    buf.name = "upload.fasta"
+    fm.store_file("run1", "db", buf)
+    files = fm.get_results("run1", ["out_tsv", "db"])
+    assert files["out_tsv"].name == "out_tsv.tsv" and files["out_tsv"].read_text() == "x"
+    assert files["db"].name == "db.fasta" and files["db"].read_bytes() == b"abc"
+    assert set(fm.get_all_files_except("run1", ["db"])) == {"out_tsv"}
+
+
+def test_results_list_and_missing(tmp_path):
+    fm = _fm(tmp_path)
+    fm.store_data("b", "x", 1)
+    fm.store_data("a", "x", 1)
+    fm.store_data("a", "y", 2)
+    assert fm.get_results_list(["x"]) == ["a", "b"]
+    assert fm.get_results_list(["x", "y"]) == ["a"]
+    assert fm.get_results_list(["x", "y"], partial=True) == ["a", "b"]
+    assert fm.get_results_list(["never"]) == []
+    with pytest.raises(KeyError):
+        fm.get_results("b", ["y"])
+    assert fm.get_results("b", ["y"], partial=True) == {}
+
+
+def test_names_are_not_sql(tmp_path):
+    fm = _fm(tmp_path)
+    tricky = "it's \"quoted\"; DROP TABLE stored_data"
+    fm.store_data(tricky.replace("/", ""), "x", 1)
+    assert fm.get_results(tricky, ["x"]) == {"x": 1}
+    with pytest.raises(ValueError):
+        fm.store_data("run1", 'x"; DROP TABLE stored_data; --', 1)
+    with pytest.raises(ValueError):
+        fm.store_data("../escape", "x", 1)
+
+
+def test_rename_and_display_name(tmp_path):
+    fm = _fm(tmp_path)
+    fm.store_data("run1", "x", 1)
+    assert fm.get_display_name("run1") == "run1"
+    assert fm.rename_dataset("run1", "  My run  ")
+    assert fm.get_display_name("run1") == "My run"
+    assert not fm.rename_dataset("run1", "   ")
+    assert not fm.rename_dataset("run1", "x" * 101)
+
+
+def test_remove_and_clear_with_hooks(tmp_path, monkeypatch):
+    fm = _fm(tmp_path)
+
+    def viewer_cache(cache_path, dataset_id):
+        return Path(cache_path, "viewer", dataset_id or "")
+
+    monkeypatch.setattr(FileManager, "cache_dir_hooks", [viewer_cache])
+    fm.store_data("run1", "x", 1)
+    fm.store_data("run2", "x", 1)
+    Path(fm.cache_path, "viewer", "run1").mkdir(parents=True)
+    Path(fm.cache_path, "viewer", "run2").mkdir(parents=True)
+    fm.remove_results("run1")
+    assert fm.get_results_list(["x"]) == ["run2"]
+    assert not Path(fm.cache_path, "viewer", "run1").exists()
+    assert Path(fm.cache_path, "viewer", "run2").exists()
+    fm.clear_cache()
+    assert fm.get_results_list(["x"]) == []
+    assert not Path(fm.cache_path, "viewer").exists()
+    fm.store_data("run3", "x", 1)
+    assert fm.get_results_list(["x"]) == ["run3"]
+
+
+def test_parquet_sink(tmp_path):
+    fm = _fm(tmp_path)
+    with fm.parquet_sink("run1", "t") as path:
+        pd.DataFrame({"a": [1]}).to_parquet(path)
+    assert fm.get_results("run1", ["t"])["t"]["a"].tolist() == [1]
+    with pytest.raises(RuntimeError):
+        with fm.parquet_sink("run1", "u") as path:
+            path.write_bytes(b"half")
+            raise RuntimeError
+    assert not fm.result_exists("run1", "u")
+    assert not path.exists()
+
+
+def test_writing_replaces_a_link(tmp_path):
+    shared = Path(tmp_path, "demo.pkl.gz")
+    fm = _fm(tmp_path)
+    fm.store_data("run1", "x", 1)
+    stored = fm.get_result_path("run1", "x")
+    stored.rename(shared)
+    stored.symlink_to(shared)
+    fm.store_data("run1", "x", 2)
+    assert not stored.is_symlink()
+    assert fm.get_results("run1", ["x"])["x"] == 2
+
+
+def test_pickles_and_reconnects(tmp_path):
+    # Other tests purge src.workflow.* from sys.modules; take the class that is
+    # registered now, which pickle looks up by name.
+    import importlib
+
+    module = importlib.import_module("src.workflow.FileManager")
+    fm = module.FileManager(Path(tmp_path, "wf"))
+    fm.store_data("run1", "x", 1)
+    copy = pickle.loads(pickle.dumps(fm))
+    assert copy.get_results("run1", ["x"]) == {"x": 1}
+
+
+def test_opens_a_store_written_before(tmp_path):
+    fm = _fm(tmp_path)
+    fm.store_data("run1", "x", {"a": 1})
+    again = FileManager(Path(tmp_path, "wf"))
+    assert again.get_results("run1", ["x"])["x"] == {"a": 1}
+    assert again.get_results_list(["x"]) == ["run1"]
