@@ -134,3 +134,101 @@ def test_start_again_restores_the_run_settings(tmp_path, monkeypatch):
     toasts = []
     monkeypatch.setattr(wm_module.st, "toast", lambda *a, **k: toasts.append(a))
     assert not wf.start_again("missing") and toasts
+
+
+def _left_out_run(runs, params_file, name="First", files=("a.mzML", "b.raw", "c.mzML")):
+    """A finished run whose tool failed on b (converted to b.mzML) and went on."""
+    from src.workflow.progress import RunProgress
+
+    params_file.write_text(json.dumps({"mzML-files": [str(Path("/data", f)) for f in files]}))
+    run_id = runs.new_run(name, params_file)
+    progress = RunProgress(runs.run_dir(run_id))
+    step = progress.start_step("FeatureFinderMetabo", ["a.mzML", "b.mzML", "c.mzML"], allow_failed=True)
+    progress.file_finished(step, 0, True)
+    progress.file_finished(step, 1, False, returncode=1, output=["Error: no spectra"])
+    progress.file_finished(step, 2, True)
+    progress.end_step(step)
+    # A failure of a step that did not go on is not a left-out file
+    other = progress.start_step("Other", ["c.mzML"])
+    progress.file_finished(other, 0, False, returncode=1)
+    runs.finish(run_id, FINISHED)
+    return run_id
+
+
+def test_left_out_files_are_not_part_of_the_experiment(tmp_path):
+    runs = RunManager(tmp_path)
+    params = Path(tmp_path, "params.json")
+    run_id = _left_out_run(runs, params)
+
+    assert runs.left_out_files(run_id, "mzML-files") == ["/data/b.raw"]
+    assert runs.experiment_files(run_id, "mzML-files") == ["/data/a.mzML", "/data/c.mzML"]
+    assert runs.left_out_files("missing", "mzML-files") == []
+
+    # Adding them again preselects exactly those files
+    assert runs.restore_settings(run_id, add_files="mzML-files", files=["/data/b.raw"])
+    restored = json.loads(params.read_text())
+    assert restored["mzML-files"] == ["/data/b.raw"]
+    assert restored["_follow_up"]["adds_to"] == run_id
+    assert restored["_follow_up"]["files"] == ["/data/a.mzML", "/data/c.mzML"]
+
+
+def _left_out_script(workflow_dir: str, run_id: str):
+    from pathlib import Path
+
+    import streamlit as st
+
+    from src.workflow.RunManager import RunManager
+    from src.workflow.run_widgets import run_history_section
+
+    def process(picked):
+        st.session_state["left-out"] = picked
+
+    run_history_section(RunManager(Path(workflow_dir)), run_id, key="h",
+                        files_key="mzML-files", on_process_left_out=process)
+
+
+def test_history_names_left_out_files_and_processes_them(tmp_path):
+    runs = RunManager(tmp_path)
+    run_id = _left_out_run(runs, Path(tmp_path, "params.json"))
+    at = AppTest.from_function(_left_out_script, args=(str(tmp_path), run_id)).run(timeout=30)
+    assert not at.exception
+    assert "b.raw" in at.warning[0].value
+    at.button(key="h-left-out").click().run(timeout=30)
+    assert at.session_state["left-out"] == run_id
+
+
+def test_history_without_left_out_files_offers_nothing(tmp_path):
+    runs = RunManager(tmp_path)
+    run_id = _run(runs, Path(tmp_path, "params.json"), "First", {"mzML-files": ["a.mzML"]})
+    at = AppTest.from_function(_left_out_script, args=(str(tmp_path), run_id)).run(timeout=30)
+    assert not at.exception
+    assert not at.warning
+    assert not [b for b in at.button if b.key == "h-left-out"]
+
+
+def test_process_left_out_adds_them_to_the_experiment(tmp_path, monkeypatch):
+    from src.workflow import WorkflowManager as wm_module
+    from src.workflow.WorkflowManager import WorkflowManager
+
+    params = Path(tmp_path, "params.json")
+    runs = RunManager(tmp_path)
+    run_id = _left_out_run(runs, params)
+
+    wf = object.__new__(WorkflowManager)
+    wf.multi_run = True
+    wf.runs = runs
+    wf.workflow_dir = Path(tmp_path)
+    wf.configure_page = "configure.py"
+    wf.input_files_key = "mzML-files"
+    reloaded = []
+    wf._reload_settings = reloaded.append
+    assert wf.process_left_out(run_id)
+    restored = json.loads(params.read_text())
+    assert restored["mzML-files"] == ["/data/b.raw"]
+    assert restored["_follow_up"]["note"] == "to process the files it left out"
+    assert reloaded == ["configure.py"]
+
+    plain = _run(runs, params, "Plain", {"mzML-files": ["a.mzML"]})
+    toasts = []
+    monkeypatch.setattr(wm_module.st, "toast", lambda *a, **k: toasts.append(a))
+    assert not wf.process_left_out(plain) and toasts
