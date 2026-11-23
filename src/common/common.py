@@ -304,28 +304,21 @@ def _symlink_tree(source: Path, target: Path) -> None:
     source = Path(source)
     target = Path(target)
     jobs = []
-    for root, dirs, files in os.walk(source):
+    def fail(error: OSError) -> None:
+        # A folder that cannot be listed must not yield a workspace without it
+        raise error
+
+    # followlinks: a linked folder in the demo becomes a real folder too, so
+    # its small files are copies a workspace can change
+    for root, _dirs, files in os.walk(source, onerror=fail, followlinks=True):
         rel = Path(root).relative_to(source)
         Path(target, rel).mkdir(parents=True, exist_ok=True)
         jobs.extend((Path(root, name), Path(target, rel, name)) for name in files)
-        # os.walk lists symlinked folders under dirs without entering them
-        for name in list(dirs):
-            if Path(root, name).is_symlink():
-                dirs.remove(name)
-                jobs.append((Path(root, name), Path(target, rel, name)))
     if not jobs:
         return
     with ThreadPoolExecutor(max_workers=min(SEED_WORKERS, len(jobs))) as pool:
         # list() re-raises the first error of any worker
-        list(pool.map(lambda job: _seed_link_or_copy(*job), jobs))
-
-
-def _seed_link_or_copy(item: Path, target_item: Path) -> None:
-    if item.is_dir():
-        # a symlinked folder: link it as a whole
-        target_item.symlink_to(item.resolve())
-    else:
-        _seed_file(item, target_item)
+        list(pool.map(lambda job: _seed_file(*job), jobs))
 
 
 def copy_demo_workspace(demo_name: str, target_path: Path) -> bool:
@@ -339,7 +332,8 @@ def copy_demo_workspace(demo_name: str, target_path: Path) -> bool:
     The workspace is built in a folder beside the target and renamed to it
     when complete, so a workspace that was being built when a server stopped
     is never taken for a finished one (``page_setup`` seeds only a workspace
-    that does not exist yet).
+    that does not exist yet). A workspace that exists with content when the
+    new one is complete is kept, never replaced.
 
     Args:
         demo_name: Name of the demo workspace to copy.
@@ -362,9 +356,16 @@ def copy_demo_workspace(demo_name: str, target_path: Path) -> bool:
             _symlink_tree(demo_path, staging)
         else:
             shutil.copytree(demo_path, staging)
-        if target_path.exists():
-            shutil.rmtree(target_path)
-        os.rename(staging, target_path)
+        try:
+            # Fails when the target exists with content: another session set
+            # it up meanwhile, and that workspace (and what its user added
+            # since) is kept. An empty folder is replaced.
+            os.rename(staging, target_path)
+        except OSError:
+            if not target_path.is_dir():
+                raise
+            shutil.rmtree(staging, ignore_errors=True)
+            return True
     except Exception:
         logger.exception("Could not set up workspace %s from demo %s",
                          target_path.name, demo_name)

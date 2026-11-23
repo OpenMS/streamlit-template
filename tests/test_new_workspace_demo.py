@@ -197,3 +197,47 @@ def test_seeding_leaves_no_staging_folder(demos, tmp_path):
     parent = tmp_path / "workspaces"
     common.seed_new_workspace(parent / "0f1e", "online")
     assert [p.name for p in parent.iterdir()] == ["0f1e"]
+
+
+def test_linked_folder_in_the_demo_becomes_a_real_folder(demos, tmp_path):
+    """Small files under a linked demo folder are copies, not shared files."""
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    (shared / "params.json").write_text("{}")
+    (demos / "default" / "linked").symlink_to(shared, target_is_directory=True)
+    target = tmp_path / "ws"
+    common._symlink_tree(demos / "default", target)
+    assert not (target / "linked").is_symlink()
+    assert not (target / "linked" / "params.json").is_symlink()
+
+
+def test_unreadable_demo_folder_fails_the_setup(demos, tmp_path, monkeypatch):
+    real_walk = os.walk
+
+    def walk(top, onerror=None, **kwargs):
+        if onerror is not None:
+            onerror(PermissionError("cannot list"))
+        yield from real_walk(top, **kwargs)
+
+    monkeypatch.setattr(common.os, "walk", walk)
+    _settings(demos)
+    parent = tmp_path / "workspaces"
+    parent.mkdir()
+    assert common.copy_demo_workspace("default", parent / "0f1e") is False
+    assert list(parent.iterdir()) == []
+
+
+def test_workspace_set_up_meanwhile_by_another_session_is_kept(demos, tmp_path, monkeypatch):
+    _settings(demos)
+    workspace = tmp_path / "workspaces" / "0f1e"
+    real_tree = common._symlink_tree
+
+    def other_session_first(source, target):
+        real_tree(source, target)
+        workspace.mkdir(parents=True)
+        (workspace / "mine.mzML").write_text("added by the user")
+
+    monkeypatch.setattr(common, "_symlink_tree", other_session_first)
+    assert common.copy_demo_workspace("default", workspace) is True
+    assert (workspace / "mine.mzML").read_text() == "added by the user"
+    assert [p.name for p in workspace.parent.iterdir()] == ["0f1e"]
