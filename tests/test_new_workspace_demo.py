@@ -159,3 +159,41 @@ def test_without_a_demo_a_workspace_starts_empty(demos, tmp_path, name):
     workspace = tmp_path / "workspaces" / "0f1e"
     common.seed_new_workspace(workspace, "online")
     assert not workspace.exists()
+
+
+def test_many_files_are_all_seeded_and_keep_their_times(demos, tmp_path):
+    """Files are linked and copied in parallel; every one arrives, copies keep mtime."""
+    run = demos / "default" / "cache" / "files" / "many"
+    run.mkdir(parents=True)
+    for i in range(200):
+        f = run / f"part-{i}.tsv"
+        f.write_text(str(i))
+        os.utime(f, (1_000_000, 1_000_000))
+    target = tmp_path / "ws"
+    common._symlink_tree(demos / "default", target)
+    copied = sorted((target / "cache" / "files" / "many").iterdir())
+    assert len(copied) == 200
+    assert all(not f.is_symlink() for f in copied)
+    assert (target / "cache" / "files" / "many" / "part-7.tsv").read_text() == "7"
+    assert int(copied[0].stat().st_mtime) == 1_000_000
+
+
+def test_workspace_appears_only_when_complete(demos, tmp_path, monkeypatch):
+    """A failed setup leaves neither the workspace nor its staging folder."""
+    _settings(demos)
+    parent = tmp_path / "workspaces"
+    parent.mkdir()
+
+    def broken(item, target_item):
+        raise OSError("storage gone")
+
+    monkeypatch.setattr(common, "_seed_file", broken)
+    assert common.copy_demo_workspace("default", parent / "0f1e") is False
+    assert list(parent.iterdir()) == []
+
+
+def test_seeding_leaves_no_staging_folder(demos, tmp_path):
+    _settings(demos)
+    parent = tmp_path / "workspaces"
+    common.seed_new_workspace(parent / "0f1e", "online")
+    assert [p.name for p in parent.iterdir()] == ["0f1e"]

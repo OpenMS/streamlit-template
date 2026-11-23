@@ -15,6 +15,7 @@ from pathlib import Path
 from streamlit.components.v1 import html
 
 import subprocess
+from concurrent.futures import ThreadPoolExecutor
 
 try:
     import tkinter  # noqa: F401  (the dialogs run in a child process)
@@ -263,6 +264,26 @@ def find_demo_workspace_path(demo_name: str) -> Path | None:
 LINK_MIN_BYTES = 1024 * 1024
 
 
+# Workers that link and copy a demo's files. On network storage (NFS) each
+# file costs several round trips, so a demo of a few hundred files took minutes
+# file by file; in parallel the round trips overlap.
+SEED_WORKERS = 16
+
+
+def _seed_file(item: Path, target_item: Path) -> None:
+    """Copy a small file or a settings file, link everything else."""
+    if (
+        item.name == "params.json"
+        or item.suffix == ".ini"
+        or item.stat().st_size < LINK_MIN_BYTES
+    ):
+        # Copy config files so they can be modified independently. copy2
+        # keeps the modification time, which result caches key on.
+        shutil.copy2(item, target_item)
+    else:
+        target_item.symlink_to(item.resolve())
+
+
 def _symlink_tree(source: Path, target: Path) -> None:
     """
     Recursively create directory structure and symlink files from source to target.
@@ -272,25 +293,39 @@ def _symlink_tree(source: Path, target: Path) -> None:
     params.json, .ini files and every file smaller than ``LINK_MIN_BYTES`` are
     copied instead of symlinked so they can be modified independently.
 
+    The tree is listed once and its files are linked or copied by
+    ``SEED_WORKERS`` threads, so a demo on network storage is ready in seconds
+    rather than minutes.
+
     Args:
         source: Source directory path.
         target: Target directory path.
     """
-    target.mkdir(parents=True, exist_ok=True)
-    for item in source.iterdir():
-        target_item = target / item.name
-        if item.is_dir():
-            _symlink_tree(item, target_item)
-        elif (
-            item.name == "params.json"
-            or item.suffix == ".ini"
-            or item.stat().st_size < LINK_MIN_BYTES
-        ):
-            # Copy config files so they can be modified independently
-            shutil.copy2(item, target_item)
-        else:
-            # Create symlink to the source file
-            target_item.symlink_to(item.resolve())
+    source = Path(source)
+    target = Path(target)
+    jobs = []
+    for root, dirs, files in os.walk(source):
+        rel = Path(root).relative_to(source)
+        Path(target, rel).mkdir(parents=True, exist_ok=True)
+        jobs.extend((Path(root, name), Path(target, rel, name)) for name in files)
+        # os.walk lists symlinked folders under dirs without entering them
+        for name in list(dirs):
+            if Path(root, name).is_symlink():
+                dirs.remove(name)
+                jobs.append((Path(root, name), Path(target, rel, name)))
+    if not jobs:
+        return
+    with ThreadPoolExecutor(max_workers=min(SEED_WORKERS, len(jobs))) as pool:
+        # list() re-raises the first error of any worker
+        list(pool.map(lambda job: _seed_link_or_copy(*job), jobs))
+
+
+def _seed_link_or_copy(item: Path, target_item: Path) -> None:
+    if item.is_dir():
+        # a symlinked folder: link it as a whole
+        target_item.symlink_to(item.resolve())
+    else:
+        _seed_file(item, target_item)
 
 
 def copy_demo_workspace(demo_name: str, target_path: Path) -> bool:
@@ -301,6 +336,10 @@ def copy_demo_workspace(demo_name: str, target_path: Path) -> bool:
     On other platforms, copies files normally.
 
     Searches all configured source directories for the demo (first match wins).
+    The workspace is built in a folder beside the target and renamed to it
+    when complete, so a workspace that was being built when a server stopped
+    is never taken for a finished one (``page_setup`` seeds only a workspace
+    that does not exist yet).
 
     Args:
         demo_name: Name of the demo workspace to copy.
@@ -314,18 +353,26 @@ def copy_demo_workspace(demo_name: str, target_path: Path) -> bool:
     if demo_path is None:
         return False
 
+    target_path = Path(target_path)
+    staging = target_path.with_name(f"{target_path.name}.seeding-{uuid.uuid4().hex[:8]}")
+    started = time.monotonic()
     try:
-        if target_path.exists():
-            shutil.rmtree(target_path)
-
         # Use symlinks on Linux for efficiency (not in an AppImage)
         if LINK_EXAMPLE_FILES:
-            _symlink_tree(demo_path, target_path)
+            _symlink_tree(demo_path, staging)
         else:
-            shutil.copytree(demo_path, target_path)
-        return True
+            shutil.copytree(demo_path, staging)
+        if target_path.exists():
+            shutil.rmtree(target_path)
+        os.rename(staging, target_path)
     except Exception:
+        logger.exception("Could not set up workspace %s from demo %s",
+                         target_path.name, demo_name)
+        shutil.rmtree(staging, ignore_errors=True)
         return False
+    logger.info("Workspace %s set up from demo %s in %.1f s",
+                target_path.name, demo_name, time.monotonic() - started)
+    return True
 
 
 def new_workspace_demo() -> str | None:
@@ -907,7 +954,9 @@ def page_setup(page: str = "") -> dict[str, Any]:
 
     # Make sure the necessary directories exist
     if not st.session_state.workspace.is_dir():
-        seed_new_workspace(st.session_state.workspace, st.session_state.location)
+        # A blank page while the demo is set up looks like a server that hangs
+        with st.spinner("Preparing your workspace with the example data..."):
+            seed_new_workspace(st.session_state.workspace, st.session_state.location)
     st.session_state.workspace.mkdir(parents=True, exist_ok=True)
     Path(st.session_state.workspace, "mzML-files").mkdir(parents=True, exist_ok=True)
 
