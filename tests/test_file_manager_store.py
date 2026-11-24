@@ -278,3 +278,43 @@ def test_storing_a_file_onto_itself_keeps_it(tmp_path):
     target.write_text("x")
     fm.store_file("run1", "out", target)
     assert Path(fm.get_results("run1", "out")["out"]).read_text() == "x"
+
+
+def test_a_linked_index_is_copied_before_writing(tmp_path):
+    demo = _fm(Path(tmp_path, "demo"))
+    demo.store_data("run1", "x", 1)
+    demo.cache_connection.close()
+    demo_db = Path(demo.cache_path, "cache.db")
+    before = demo_db.read_bytes()
+    ws = Path(tmp_path, "ws", "wf", "cache")
+    ws.mkdir(parents=True)
+    Path(ws, "cache.db").symlink_to(demo_db)
+    fm = FileManager(Path(tmp_path, "ws", "wf"))
+    assert fm.get_results_list(["x"]) == ["run1"]
+    fm.store_data("run2", "x", 2)
+    assert not Path(ws, "cache.db").is_symlink()
+    assert demo_db.read_bytes() == before
+
+
+def test_a_file_replaces_an_object_of_the_same_name(tmp_path):
+    fm = _fm(tmp_path)
+    fm.store_data("r", "out", {"x": 1})
+    old = fm.get_result_path("r", "out")
+    src = Path(tmp_path, "out.tsv")
+    src.write_text("t")
+    fm.store_file("r", "out", src)
+    assert Path(fm.get_results("r", "out")["out"]).read_text() == "t"
+    assert not old.exists()
+    fm.store_data("r", "out", {"y": 2})
+    assert fm.get_results("r", "out")["out"] == {"y": 2}
+    assert set(fm.get_all_files_except("r", [])) == set()
+
+
+def test_storing_another_result_keeps_its_file(tmp_path):
+    fm = _fm(tmp_path)
+    src = Path(tmp_path, "a.tsv")
+    src.write_text("a")
+    fm.store_file("run1", "tsv", src)
+    first = fm.get_result_path("run1", "tsv")
+    fm.store_file("run2", "tsv", first)
+    assert first.exists() and fm.get_result_path("run2", "tsv").read_text() == "a"

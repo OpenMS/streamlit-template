@@ -1,4 +1,5 @@
 import gzip
+import os
 import pickle as pkl
 import random
 import re
@@ -130,9 +131,18 @@ class FileManager:
 
     def _connect_to_sql(self) -> None:
         Path(self.cache_path, "files").mkdir(parents=True, exist_ok=True)
-        self._connection = sqlite3.connect(
-            Path(self.cache_path, "cache.db"), isolation_level=None
-        )
+        db = Path(self.cache_path, "cache.db")
+        if db.is_symlink():
+            # A workspace started from a demo may link a large index; SQLite
+            # would write through the link into the demo, so take a copy.
+            tmp = _staged(db)
+            try:
+                shutil.copy2(db.resolve(), tmp)
+                tmp.replace(db)
+            except BaseException:
+                tmp.unlink(missing_ok=True)
+                raise
+        self._connection = sqlite3.connect(db, isolation_level=None)
         self._cursor = self._connection.cursor()
         self._create_tables()
 
@@ -374,6 +384,17 @@ class FileManager:
             f"ON CONFLICT(id) DO UPDATE SET {column} = excluded.{column};",
             (str(dataset_id), str(path)),
         )
+        # One name is one result: storing a file under the name of a stored
+        # object (or the other way round) replaces it.
+        for other in _TABLES:
+            if other == table_name or column_name not in self._get_column_list(other):
+                continue
+            row = self._row(other, dataset_id, [column_name])
+            if row and row[0] and row[0] != str(path):
+                Path(self.cache_path, row[0]).unlink(missing_ok=True)
+                self.cache_cursor.execute(
+                    f"UPDATE {other} SET {column} = NULL WHERE id = ?;", (str(dataset_id),)
+                )
 
     def _check_owner(self, dataset_id: str, path: Path, table: str, name_tag: str) -> None:
         """Refuses to write ``path`` when another result of the dataset is stored there."""
@@ -405,6 +426,18 @@ class FileManager:
         workspace never lands in the demo every new workspace shares.
         """
         return own_folder(self._dataset_dir(dataset_id), self.cache_path)
+
+    def _in_store(self, path: Path) -> bool:
+        """True for a path below the store's files, by its name or where it leads."""
+        files = Path(self.cache_path, "files")
+        path = Path(path)
+        for inner, outer in (
+            (Path(os.path.abspath(path)), Path(os.path.abspath(files))),
+            (Path(path.parent.resolve(), path.name), files.resolve()),
+        ):
+            if inner == outer or outer in inner.parents:
+                return True
+        return False
 
     def _relative(self, path: Path) -> Path:
         # The folder is resolved, not the file: a payload may be a link into
@@ -540,7 +573,9 @@ class FileManager:
         except BaseException:
             tmp.unlink(missing_ok=True)
             raise
-        if remove and not hasattr(file, "getbuffer") and Path(file).resolve() != target_path.resolve():
+        if remove and not hasattr(file, "getbuffer") and not self._in_store(Path(file)):
+            # A file of the store itself (this result, or another one copied
+            # under a new name) stays where it is.
             Path(file).unlink()
         self._add_entry("stored_files", dataset_id, name_tag, self._relative(target_path))
 
