@@ -63,7 +63,7 @@ class WorkflowManager:
     export_page = None
 
     # Core workflow logic using the above classes
-    def __init__(self, name: str, workspace: str, share_cache: bool = None):
+    def __init__(self, name: str, workspace: str):
         self.name = name
         self.workflow_dir = Path(workspace, name.replace(" ", "-").lower())
         # Where execution() writes and results() reads. For a multi-run
@@ -79,8 +79,6 @@ class WorkflowManager:
             self.run_id = get_selected_run(self.runs)
             if self.run_id:
                 self.results_dir = self.runs.results_dir(self.run_id)
-        if share_cache is not None:
-            self.share_cache = share_cache
         self.file_manager = FileManager(
             self.workflow_dir, self.results_dir,
             cache_path=cache_path_for(self.workflow_dir, self.share_cache),
@@ -956,8 +954,17 @@ class WorkflowManager:
             exclude=exclude, results_dir=self.results_dir
         )
 
+    def analysis_section(self) -> None:
+        """
+        The "Your analysis" box of Describe experiment: input files, what to
+        do with them and the summary of a start (see describe_ui). Drawn by
+        the Describe experiment page before show_parameter_section().
+        """
+        pass
+
     def upload(self) -> None:
         """
+        Optional, for apps that keep an upload page.
         Add your file upload widgets here
         """
         ###################################

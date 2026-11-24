@@ -95,8 +95,9 @@ class DescribeMixin:
         else:
             st.segmented_control(
                 label, options, format_func=lambda o: labels[o], key=widget, help=help,
-                on_change=_keep_choice, args=(widget, default),
+                on_change=_keep_choice, args=(widget,),
             )
+        st.session_state[_last_key(widget)] = st.session_state[widget]
         self.parameter_manager.save_parameters()
         return st.session_state[widget]
 
@@ -174,7 +175,11 @@ class DescribeMixin:
         return dict(zip(steps, st.tabs(numbered(steps))))
 
 
-def _keep_choice(widget: str, default: Any) -> None:
-    # A click on the picked option clears a segmented control: keep a choice
+def _last_key(widget: str) -> str:
+    return f"_{widget}__last"
+
+
+def _keep_choice(widget: str) -> None:
+    # A click on the picked option clears a segmented control: keep that option
     if st.session_state.get(widget) is None:
-        st.session_state[widget] = default
+        st.session_state[widget] = st.session_state.get(_last_key(widget))

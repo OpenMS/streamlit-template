@@ -177,3 +177,64 @@ def test_one_name_as_a_string(tmp_path):
     fm.store_data("run1", "layout", {"rows": 1})
     assert fm.get_results("run1", "layout") == {"layout": {"rows": 1}}
     assert fm.get_results_list("layout") == ["run1"]
+
+
+def test_reserved_and_bad_names_rejected(tmp_path):
+    fm = _fm(tmp_path)
+    for name in ("id", "display_name"):
+        with pytest.raises(ValueError):
+            fm.store_data("run1", name, {"x": 1})
+    src = Path(tmp_path, "a.tsv")
+    src.write_text("x")
+    for bad in ("../a.tsv", "sub/a.tsv", "..", "", "a\\b.tsv"):
+        with pytest.raises(ValueError):
+            fm.store_file("run1", "tsv", src, remove=False, file_name=bad)
+    assert src.exists()
+
+
+def test_file_and_data_cannot_share_a_path(tmp_path):
+    fm = _fm(tmp_path)
+    fm.store_data("run1", "table", pd.DataFrame({"a": [1]}))
+    src = Path(tmp_path, "t.pq")
+    src.write_text("not parquet")
+    with pytest.raises(ValueError):
+        fm.store_file("run1", "other", src, remove=False, file_name="table.pq")
+    assert fm.get_results("run1", "table")["table"]["a"].tolist() == [1]
+
+
+def test_same_name_as_data_and_file_in_two_datasets(tmp_path):
+    fm = _fm(tmp_path)
+    fm.store_data("run1", "out", {"x": 1})
+    src = Path(tmp_path, "out.tsv")
+    src.write_text("hello")
+    fm.store_file("run2", "out", src)
+    assert fm.get_results("run1", "out")["out"] == {"x": 1}
+    assert Path(fm.get_results("run2", "out")["out"]).read_text() == "hello"
+    with pytest.raises(KeyError):
+        fm.get_results("run3", "out")
+
+
+def test_failed_write_keeps_old_payload(tmp_path):
+    fm = _fm(tmp_path)
+    fm.store_data("run1", "obj", {"x": 1})
+
+    class Bad:
+        def __reduce__(self):
+            raise RuntimeError("cannot pickle")
+
+    with pytest.raises(RuntimeError):
+        fm.store_data("run1", "obj", Bad())
+    assert fm.get_results("run1", "obj")["obj"] == {"x": 1}
+    folder = fm.get_result_path("run1", "obj").parent
+    assert not [p for p in folder.iterdir() if p.name.endswith(".tmp")]
+
+
+def test_all_files_except_leaves_data_out(tmp_path):
+    fm = _fm(tmp_path)
+    fm.store_data("run1", "obj", {"x": 1})
+    src = Path(tmp_path, "a.tsv")
+    src.write_text("a")
+    fm.store_file("run1", "tsv", src)
+    fm.store_data("run2", "tsv2", {"y": 2})
+    files = fm.get_all_files_except("run1", [])
+    assert set(files) == {"tsv"}

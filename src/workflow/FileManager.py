@@ -41,6 +41,19 @@ def _quote(name: str) -> str:
     return f'"{name}"'
 
 
+def _result_name(name: str) -> str:
+    """A name a result may be stored under: quotable and not an index column."""
+    _quote(name)
+    if name in _INTERNAL_COLUMNS:
+        raise ValueError(f"Result name {name!r} is reserved.")
+    return name
+
+
+def _staged(path: Path) -> Path:
+    """A private file beside ``path`` to write before it replaces ``path``."""
+    return path.with_name(f".{path.name}.{random.getrandbits(32):08x}.tmp")
+
+
 def _is_polars(data) -> bool:
     module = type(data).__module__ or ""
     return module.startswith("polars")
@@ -337,10 +350,16 @@ class FileManager:
 
     def _add_column(self, table_name: str, column_name: str) -> None:
         """Adds a result column to an index table unless it is there."""
-        if column_name not in self._get_column_list(table_name):
+        if column_name in self._get_column_list(table_name):
+            return
+        try:
             self._cursor.execute(
                 f"ALTER TABLE {table_name} ADD COLUMN {_quote(column_name)} TEXT;"
             )
+        except sqlite3.OperationalError:
+            # Another store sharing this cache may have added it meanwhile
+            if column_name not in self._get_column_list(table_name):
+                raise
 
     def _add_entry(
         self, table_name: str, dataset_id: str, column_name: str, path
@@ -354,6 +373,20 @@ class FileManager:
             (str(dataset_id), str(path)),
         )
 
+    def _check_owner(self, dataset_id: str, path: Path, table: str, name_tag: str) -> None:
+        """Refuses to write ``path`` when another result of the dataset is stored there."""
+        rel = str(self._relative(path))
+        for other in _TABLES:
+            columns = [c for c in self._get_column_list(other) if c not in _INTERNAL_COLUMNS]
+            if not columns:
+                continue
+            row = self._row(other, dataset_id, columns)
+            for column, value in zip(columns, row or ()):
+                if value == rel and (other, column) != (table, name_tag):
+                    raise ValueError(
+                        f"{path.name} already holds the result {column!r} of {dataset_id}."
+                    )
+
     def _dataset_dir(self, dataset_id: str) -> Path:
         dataset_id = str(dataset_id)
         if not dataset_id or Path(dataset_id).name != dataset_id or dataset_id in (".", ".."):
@@ -361,7 +394,10 @@ class FileManager:
         return Path(self.cache_path, "files", dataset_id)
 
     def _relative(self, path: Path) -> Path:
-        return Path(path).resolve().relative_to(self.cache_path.resolve())
+        # The folder is resolved, not the file: a payload may be a link into
+        # a demo workspace, and it is named by where it sits in this cache.
+        path = Path(path)
+        return Path(path.parent.resolve(), path.name).relative_to(self.cache_path.resolve())
 
     def _store_data(self, dataset_id: str, name_tag: str, data, row_group_size=None) -> Path:
         """
@@ -369,32 +405,38 @@ class FileManager:
         DataFrames and polars LazyFrames as parquet, anything else as a
         compressed pickle. Returns the path written.
         """
-        _quote(name_tag)
-        path = self._dataset_dir(dataset_id)
-        path.mkdir(parents=True, exist_ok=True)
-        for suffix in (".pq", ".pkl.gz"):
-            _unlink_if_link(Path(path, f"{name_tag}{suffix}"))
-
-        if _is_polars(data) and type(data).__name__ in ("DataFrame", "LazyFrame"):
-            path = Path(path, f"{name_tag}.pq")
-            if type(data).__name__ == "LazyFrame":
+        _result_name(name_tag)
+        folder = self._dataset_dir(dataset_id)
+        folder.mkdir(parents=True, exist_ok=True)
+        is_table = (
+            _is_polars(data) and type(data).__name__ in ("DataFrame", "LazyFrame")
+        ) or _is_pandas(data)
+        path = Path(folder, f"{name_tag}.pq" if is_table else f"{name_tag}.pkl.gz")
+        self._check_owner(dataset_id, path, "stored_data", name_tag)
+        # Write a private file first and replace the result only once it is
+        # complete, so a failed write keeps the earlier result readable (and
+        # never writes through a link into a demo workspace).
+        tmp = _staged(path)
+        try:
+            if _is_polars(data) and type(data).__name__ == "LazyFrame":
                 # Stream to disk unless bounded row groups are asked for:
                 # sink_parquet does not take row_group_size on every polars.
                 if row_group_size is None:
-                    data.sink_parquet(path)
+                    data.sink_parquet(tmp)
                 else:
-                    data.collect().write_parquet(path, row_group_size=row_group_size)
+                    data.collect().write_parquet(tmp, row_group_size=row_group_size)
+            elif _is_polars(data) and is_table:
+                data.write_parquet(tmp, row_group_size=row_group_size)
+            elif is_table:
+                with open(tmp, "wb") as f:
+                    data.to_parquet(f, row_group_size=row_group_size)
             else:
-                data.write_parquet(path, row_group_size=row_group_size)
-            return path
-        if _is_pandas(data):
-            path = Path(path, f"{name_tag}.pq")
-            with open(path, "wb") as f:
-                data.to_parquet(f, row_group_size=row_group_size)
-            return path
-        path = Path(path, f"{name_tag}.pkl.gz")
-        with gzip.open(path, "wb") as f:
-            pkl.dump(data, f)
+                with gzip.open(tmp, "wb") as f:
+                    pkl.dump(data, f)
+            tmp.replace(path)
+        except BaseException:
+            tmp.unlink(missing_ok=True)
+            raise
         return path
 
     def store_data(self, dataset_id: str, name_tag: str, data, row_group_size=None) -> None:
@@ -418,10 +460,11 @@ class FileManager:
         is moved into place and recorded; on an exception it is removed and
         nothing is recorded.
         """
-        _quote(name_tag)
+        _result_name(name_tag)
         final_path = Path(self._dataset_dir(dataset_id), f"{name_tag}.pq")
         final_path.parent.mkdir(parents=True, exist_ok=True)
-        tmp_path = final_path.with_suffix(".pq.tmp")
+        self._check_owner(dataset_id, final_path, "stored_data", name_tag)
+        tmp_path = _staged(final_path)
         try:
             yield tmp_path
             _unlink_if_link(final_path)
@@ -451,7 +494,7 @@ class FileManager:
             file_name (str, optional): The name to store it under; by default
                 the result name with the file's extension.
         """
-        _quote(name_tag)
+        _result_name(name_tag)
         if file_name is None:
             # File-like objects have no `suffix`; Streamlit's UploadedFile
             # carries the original file name in `name`.
@@ -461,18 +504,31 @@ class FileManager:
                 suffix = Path(getattr(file, "name", "") or "").suffix
             file_name = f"{name_tag}{suffix}"
 
+        file_name = str(file_name)
+        if (
+            not file_name
+            or file_name in (".", "..")
+            or Path(file_name).name != file_name
+            or "\\" in file_name
+        ):
+            raise ValueError(f"File name {file_name!r} is not a plain file name.")
         target_path = Path(self._dataset_dir(dataset_id), file_name)
+        self._check_owner(dataset_id, target_path, "stored_files", name_tag)
         target_path.parent.mkdir(parents=True, exist_ok=True)
-        _unlink_if_link(target_path)
 
-        if hasattr(file, "getbuffer"):
-            with open(target_path, "wb") as f:
-                f.write(file.getbuffer())
-        else:
-            file = Path(file)
-            shutil.copy(file, target_path)
-            if remove:
-                file.unlink()
+        tmp = _staged(target_path)
+        try:
+            if hasattr(file, "getbuffer"):
+                with open(tmp, "wb") as f:
+                    f.write(file.getbuffer())
+            else:
+                shutil.copy(Path(file), tmp)
+            tmp.replace(target_path)
+        except BaseException:
+            tmp.unlink(missing_ok=True)
+            raise
+        if remove and not hasattr(file, "getbuffer"):
+            Path(file).unlink()
         self._add_entry("stored_files", dataset_id, name_tag, self._relative(target_path))
 
     def get_results_list(self, name_tags: List[str], partial: bool = False) -> List[str]:
@@ -536,26 +592,39 @@ class FileManager:
         datasets but not this one raises ``KeyError`` unless ``partial``; a
         name no dataset holds is left out.
         """
-        results = {}
         name_tags = [name_tags] if isinstance(name_tags, str) else list(name_tags)
-        for table in ("stored_files", "stored_data"):
+        return self._results(
+            dataset_id, name_tags, _TABLES, partial, use_pyarrow, use_polars
+        )
+
+    def _results(
+        self, dataset_id, name_tags, tables, partial, use_pyarrow=False, use_polars=False
+    ) -> dict:
+        # A name may be a stored file of one dataset and data of another:
+        # look in every table before calling a result missing.
+        found, known = {}, set()
+        for table in tables:
             columns = [
                 c for c in self._get_column_list(table)
                 if c in name_tags and c not in _INTERNAL_COLUMNS
             ]
             if not columns:
                 continue
+            known.update(columns)
             row = self._row(table, dataset_id, columns) or (None,) * len(columns)
             for column, value in zip(columns, row):
-                if value is None:
-                    if partial:
-                        continue
-                    raise KeyError(f"{column} does not exist for {dataset_id}")
-                path = Path(self.cache_path, value)
-                results[column] = path if table == "stored_files" else self._read(
-                    path, use_pyarrow=use_pyarrow, use_polars=use_polars
-                )
-        return results
+                if value is not None and column not in found:
+                    found[column] = (table, Path(self.cache_path, value))
+        if not partial:
+            missing = sorted(known - set(found))
+            if missing:
+                raise KeyError(f"{missing[0]} does not exist for {dataset_id}")
+        return {
+            column: path if table == "stored_files" else self._read(
+                path, use_pyarrow=use_pyarrow, use_polars=use_polars
+            )
+            for column, (table, path) in found.items()
+        }
 
     @staticmethod
     def _read(path: Path, use_pyarrow: bool = False, use_polars: bool = False):
@@ -580,7 +649,7 @@ class FileManager:
             c for c in self._get_column_list("stored_files")
             if c not in _INTERNAL_COLUMNS and c not in exclude_tags
         ]
-        return self.get_results(dataset_id, names, partial=True)
+        return self._results(dataset_id, names, ("stored_files",), partial=True)
 
     def result_exists(self, dataset_id: str, name_tag: str) -> bool:
         """Whether a dataset holds the result named."""
