@@ -4,6 +4,9 @@ import json
 # For some reason the windows version only works if this is imported here
 import pyopenms
 
+from src.Workflow import Workflow
+from src.workflow.guide import DESCRIBE, RUN, EXPLORE, EXPORT, step_page
+
 if "settings" not in st.session_state:
         with open("settings.json", "r") as f:
             st.session_state.settings = json.load(f)
@@ -22,12 +25,12 @@ if __name__ == '__main__':
             st.Page(Path("content", "isotope_pattern_generator.py"), title="Isotopic Pattern Calculator", icon="📶"),
             st.Page(Path("content", "fragmentation.py"), title="Fragment Ion Generation", icon="💥"),
         ],
-        "TOPP Workflow Framework": [
-            st.Page(Path("content", "topp_workflow_file_upload.py"), title="File Upload", icon="📁"),
-            st.Page(Path("content", "topp_workflow_parameter.py"), title="Configure", icon="⚙️"),
-            st.Page(Path("content", "topp_workflow_execution.py"), title="Run", icon="🚀"),
-            st.Page(Path("content", "topp_workflow_results.py"), title="Results", icon="📊"),
-            st.Page(Path("content", "topp_workflow_download.py"), title=export, icon="⬇️" if export == "Download" else "📤"),
+        # Describe experiment -> Run analysis -> Explore results -> Export results
+        "OpenMS Workflow Framework": [
+            step_page(Workflow.configure_page, DESCRIBE),
+            step_page(Workflow.run_page, RUN),
+            step_page(Workflow.results_page, EXPLORE),
+            step_page(Workflow.export_page, EXPORT),
         ],
         "pyOpenMS Workflow" : [
             st.Page(Path("content", "file_upload.py"), title="File Upload", icon="📂"),

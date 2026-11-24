@@ -5,12 +5,13 @@ import streamlit as st
 from src.common.common import page_setup
 from src import view
 from src.layout_manager.viewer import DatasetKind, ViewerSpec, show_viewer
+from src.workflow.guide import MS_DATA
 
 # Components of this page, arranged in the views of the view bar
 COMPONENTS = [
-    {"name": "peak_map", "label": "Peak map (MS1)", "group": "Plots"},
-    {"name": "spectrum", "label": "Spectra (MS1 + MS2)", "group": "Plots"},
-    {"name": "chromatograms", "label": "Chromatograms (MS1)", "group": "Plots"},
+    {"name": "peak_map", "label": "Peak map (MS1)", "group": MS_DATA},
+    {"name": "spectrum", "label": "Spectra (MS1 + MS2)", "group": MS_DATA},
+    {"name": "chromatograms", "label": "Chromatograms (MS1)", "group": MS_DATA},
 ]
 DEFAULT_LAYOUT = [["peak_map"], ["spectrum"], ["chromatograms"]]
 # Ready-made views; users reorder them and add their own with ✏️
