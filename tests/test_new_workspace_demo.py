@@ -268,3 +268,21 @@ def test_workspace_set_up_meanwhile_by_another_session_is_kept(demos, tmp_path, 
     assert common.copy_demo_workspace("default", workspace) is True
     assert (workspace / "mine.mzML").read_text() == "added by the user"
     assert [p.name for p in workspace.parent.iterdir()] == ["0f1e"]
+
+
+def test_empty_folder_is_filled_where_rename_refuses_it(demos, tmp_path, monkeypatch):
+    """Windows refuses to rename onto an existing folder, even an empty one."""
+    _settings(demos)
+    workspace = tmp_path / "workspaces" / "0f1e"
+    workspace.mkdir(parents=True)
+    real_rename = os.rename
+
+    def windows_rename(src, dst):
+        if os.path.exists(dst):
+            raise FileExistsError(dst)
+        real_rename(src, dst)
+
+    monkeypatch.setattr(common.os, "rename", windows_rename)
+    assert common.copy_demo_workspace("default", workspace) is True
+    assert (workspace / "params.json").is_file()
+    assert [p.name for p in workspace.parent.iterdir()] == ["0f1e"]

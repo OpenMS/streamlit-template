@@ -81,3 +81,38 @@ def test_matches():
     assert not linked_folders.matches("cache/files", ["cache/files/*"])
     assert not linked_folders.matches("cache/files/run/sub", ["cache/files/*"])
     assert not linked_folders.matches("cache/files/run", [])
+
+
+def test_parent_traversal_is_refused(linked):
+    cache, _ = linked
+    with pytest.raises(ValueError):
+        linked_folders.own_folder(cache / "files" / ".." / ".." / "x", cache)
+
+
+def test_folder_owned_by_another_process_while_unlinking_is_kept(linked, monkeypatch):
+    cache, demo_run = linked
+    folder = cache / "files" / "run"
+    real_unlink = type(folder).unlink
+
+    def other_process_first(self, *args, **kwargs):
+        if self == folder and self.is_symlink():
+            # The other process replaced the link by its own folder
+            real_unlink(self)
+            self.mkdir()
+            (self / "theirs.pq").write_text("theirs")
+            raise IsADirectoryError(str(self))
+        return real_unlink(self, *args, **kwargs)
+
+    monkeypatch.setattr(type(folder), "unlink", other_process_first)
+    linked_folders.own_folder(folder, cache)
+    assert (folder / "theirs.pq").read_text() == "theirs"
+    assert [p.name for p in (cache / "files").iterdir()] == ["run"]
+    assert (demo_run / "data.pq").read_text() == "demo"
+
+
+def test_removing_a_folder_inside_a_linked_one_keeps_the_demo(linked):
+    cache, demo_run = linked
+    linked_folders.remove_folder(cache / "files" / "run" / "report", cache)
+    assert not (cache / "files" / "run" / "report").exists()
+    assert (cache / "files" / "run" / "data.pq").read_text() == "demo"
+    assert (demo_run / "report" / "report.md").read_text() == "demo report"

@@ -48,6 +48,8 @@ def own_folder(folder: Path, root: Path) -> Path:
     when another process owns the same folder meanwhile.
     """
     folder, root = Path(folder), Path(root)
+    if ".." in folder.parts or ".." in root.parts:
+        raise ValueError(f"{folder} must not contain '..'")
     try:
         rel = folder.relative_to(root)
     except ValueError:
@@ -75,6 +77,12 @@ def _own(folder: Path) -> None:
             folder.unlink()
         except FileNotFoundError:
             pass  # another process took the link away meanwhile
+        except OSError:
+            # Another process owned it first: keep its folder
+            if not folder.is_dir() or folder.is_symlink():
+                raise
+            shutil.rmtree(staging, ignore_errors=True)
+            return
         try:
             os.rename(staging, folder)
         except OSError:
@@ -87,9 +95,16 @@ def _own(folder: Path) -> None:
         raise
 
 
-def remove_folder(folder: Path) -> None:
-    """Remove ``folder``: a linked one loses only its link, the demo keeps its files."""
+def remove_folder(folder: Path, root: Path | None = None) -> None:
+    """Remove ``folder``: a linked one loses only its link, the demo keeps its files.
+
+    With ``root`` (as for ``own_folder``), linked folders between ``root`` and
+    ``folder`` are owned first, so removing a folder inside a linked one
+    never deletes the demo's files through that link.
+    """
     folder = Path(folder)
+    if root is not None and Path(folder.parent) != Path(root):
+        own_folder(folder.parent, root)
     if folder.is_symlink():
         folder.unlink()
     elif folder.exists():

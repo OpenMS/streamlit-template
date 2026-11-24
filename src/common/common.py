@@ -369,8 +369,13 @@ def copy_demo_workspace(demo_name: str, target_path: Path) -> bool:
         except OSError:
             if not target_path.is_dir():
                 raise
-            shutil.rmtree(staging, ignore_errors=True)
-            return True
+            if not any(target_path.iterdir()):
+                # Windows refuses to rename onto an empty folder too
+                target_path.rmdir()
+                os.rename(staging, target_path)
+            else:
+                shutil.rmtree(staging, ignore_errors=True)
+                return True
     except Exception:
         logger.exception("Could not set up workspace %s from demo %s",
                          target_path.name, demo_name)
