@@ -48,12 +48,14 @@ def own_folder(folder: Path, root: Path) -> Path:
     when another process owns the same folder meanwhile.
     """
     folder, root = Path(folder), Path(root)
-    if ".." in folder.parts or ".." in root.parts:
-        raise ValueError(f"{folder} must not contain '..'")
     try:
         rel = folder.relative_to(root)
     except ValueError:
         raise ValueError(f"{folder} is not inside {root}") from None
+    # The root itself may be relative (a local workspace below "../"); only the
+    # part below it must not climb out.
+    if ".." in rel.parts:
+        raise ValueError(f"{folder} must not contain '..' below {root}")
     current = root
     for part in rel.parts:
         current = Path(current, part)

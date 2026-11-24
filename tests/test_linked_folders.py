@@ -4,6 +4,7 @@ never changed (src/workflow/linked_folders.py)."""
 
 import os
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -123,3 +124,16 @@ def test_removing_a_folder_needs_the_workspace_root(linked):
     with pytest.raises(TypeError):
         linked_folders.remove_folder(cache / "files" / "run" / "report")  # pylint: disable=no-value-for-parameter
     assert (demo_run / "report" / "report.md").read_text() == "demo report"
+
+
+def test_a_relative_root_with_dotdot_is_accepted(tmp_path, monkeypatch):
+    # A local workspace lives below "../workspaces-<app>", so its cache path is relative.
+    (tmp_path / "app").mkdir()
+    cache = tmp_path / "ws" / "cache"
+    (cache / "files").mkdir(parents=True)
+    monkeypatch.chdir(tmp_path / "app")
+    root = Path("..", "ws", "cache")
+    folder = linked_folders.own_folder(Path(root, "files", "run"), root)
+    assert folder == Path(root, "files", "run")
+    with pytest.raises(ValueError):
+        linked_folders.own_folder(Path(root, "files", "..", "..", "x"), root)

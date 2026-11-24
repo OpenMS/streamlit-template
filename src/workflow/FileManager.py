@@ -10,6 +10,8 @@ from io import BytesIO
 from pathlib import Path
 from typing import List, Union
 
+from src.workflow.linked_folders import own_folder, remove_folder
+
 # Tables of the result index: one row per dataset, one column per result.
 _TABLES = ("stored_data", "stored_files")
 # Columns of an index table that are not results.
@@ -393,6 +395,17 @@ class FileManager:
             raise ValueError(f"Dataset id {dataset_id!r} is not a folder name.")
         return Path(self.cache_path, "files", dataset_id)
 
+    def dataset_dir(self, dataset_id: str) -> Path:
+        """The folder of ``dataset_id``'s files, the workspace's own to write into.
+
+        A workspace started from a demo links the demo's result folders whole
+        (``demo_workspaces.link_folders`` in settings.json). Before a file is
+        written there, the linked folder becomes a real one holding links to
+        the demo's files, so a result, a report or an archive written for this
+        workspace never lands in the demo every new workspace shares.
+        """
+        return own_folder(self._dataset_dir(dataset_id), self.cache_path)
+
     def _relative(self, path: Path) -> Path:
         # The folder is resolved, not the file: a payload may be a link into
         # a demo workspace, and it is named by where it sits in this cache.
@@ -406,7 +419,7 @@ class FileManager:
         compressed pickle. Returns the path written.
         """
         _result_name(name_tag)
-        folder = self._dataset_dir(dataset_id)
+        folder = self.dataset_dir(dataset_id)
         folder.mkdir(parents=True, exist_ok=True)
         is_table = (
             _is_polars(data) and type(data).__name__ in ("DataFrame", "LazyFrame")
@@ -461,7 +474,7 @@ class FileManager:
         nothing is recorded.
         """
         _result_name(name_tag)
-        final_path = Path(self._dataset_dir(dataset_id), f"{name_tag}.pq")
+        final_path = Path(self.dataset_dir(dataset_id), f"{name_tag}.pq")
         final_path.parent.mkdir(parents=True, exist_ok=True)
         self._check_owner(dataset_id, final_path, "stored_data", name_tag)
         tmp_path = _staged(final_path)
@@ -512,7 +525,7 @@ class FileManager:
             or "\\" in file_name
         ):
             raise ValueError(f"File name {file_name!r} is not a plain file name.")
-        target_path = Path(self._dataset_dir(dataset_id), file_name)
+        target_path = Path(self.dataset_dir(dataset_id), file_name)
         self._check_owner(dataset_id, target_path, "stored_files", name_tag)
         target_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -527,7 +540,7 @@ class FileManager:
         except BaseException:
             tmp.unlink(missing_ok=True)
             raise
-        if remove and not hasattr(file, "getbuffer"):
+        if remove and not hasattr(file, "getbuffer") and Path(file).resolve() != target_path.resolve():
             Path(file).unlink()
         self._add_entry("stored_files", dataset_id, name_tag, self._relative(target_path))
 
@@ -671,9 +684,13 @@ class FileManager:
         """Deletes a dataset's results, its index rows and its extra caches."""
         for table in _TABLES:
             self.cache_cursor.execute(f"DELETE FROM {table} WHERE id = ?", (str(dataset_id),))
-        shutil.rmtree(self._dataset_dir(dataset_id), ignore_errors=True)
+        # A folder linked from the demo loses only its link
+        remove_folder(self._dataset_dir(dataset_id), self.cache_path)
         for path in self.extra_cache_dirs(dataset_id):
-            shutil.rmtree(path, ignore_errors=True)
+            if Path(path).is_symlink():
+                Path(path).unlink()
+            else:
+                shutil.rmtree(path, ignore_errors=True)
 
     def clear_cache(self) -> None:
         """Deletes every stored result, the index and the extra caches."""
