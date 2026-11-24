@@ -41,7 +41,7 @@ NOTEBOOK_TO_WEBAPP_PROMPT = (
     "notebook, what to call the app, and how each page should look as you build it."
 )
 
-page_setup(page="main")
+page_setup(page="main", captcha=False)
 
 st.markdown("# 👋 Quick Start")
 st.markdown("## Mass spectrometry analysis, as web apps anyone can open")

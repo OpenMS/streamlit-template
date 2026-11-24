@@ -699,7 +699,7 @@ def apply_theme_css() -> None:
     )
 
 
-def page_setup(page: str = "") -> dict[str, Any]:
+def page_setup(page: str = "", captcha: bool = True) -> dict[str, Any]:
     """
     Set up the Streamlit page configuration and determine the workspace for the current session.
 
@@ -707,6 +707,10 @@ def page_setup(page: str = "") -> dict[str, Any]:
 
     Args:
         page (str, optional): The name of the current page, by default "".
+        captcha (bool, optional): Online, ask for the captcha (and the
+            tracking consent) before the page is drawn, once per session.
+            Pages that only explain the app (Quick Start, Documentation)
+            pass False, so they open without it; the workflow pages keep it.
 
     Returns:
         dict[str, Any]: A dictionary containing the parameters loaded from the parameter file.
@@ -915,19 +919,10 @@ def page_setup(page: str = "") -> dict[str, Any]:
     else:
         set_image_format(st.session_state.get("image-format", "svg"))
 
-    captcha_control(privacy_policy_url=get_legal_links()["privacy"])
-
-    # If run in hosted mode, show captcha as long as it has not been solved
-    # if not "local" in sys.argv:
-    #    if "controllo" not in st.session_state:
-    #        # Apply captcha by calling the captcha_control function
-    #        captcha_control()
-
-    # If run in hosted mode, show captcha as long as it has not been solved
-    if "controllo" not in st.session_state or (
-        "controllo" in params.keys() and params["controllo"] == False
-    ):
-        # Apply captcha by calling the captcha_control function
+    # Online, ask for the captcha once per session (it sets "controllo"),
+    # unless the page only explains the app.
+    # captcha_control() itself returns at once when "controllo" is set.
+    if captcha:
         captcha_control(privacy_policy_url=get_legal_links()["privacy"])
 
     return params

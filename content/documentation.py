@@ -4,7 +4,7 @@ from src.common.installers import render_installer_buttons
 from pathlib import Path
 from docs.toppframework import content as topp_framework_content
 
-page_setup()
+page_setup(captcha=False)
 
 
 st.title("Documentation")

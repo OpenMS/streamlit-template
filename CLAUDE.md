@@ -173,7 +173,7 @@ st.number_input("X", value=params["example-x-dimension"], key="example-x-dimensi
 save_params(params)
 ```
 
-`page_setup()` must be the first call — it loads settings, resolves the workspace, renders the sidebar and applies the captcha gate. Widget `key`s must exist verbatim in `default-parameters.json`; `save_params()` copies matching session-state values into `<workspace>/params.json`. Display-only pages skip `save_params()`. A page that skips `page_setup()` also misses the theme's layout style sheet (`tests/test_theme.py` checks every menu page calls it).
+`page_setup()` must be the first call — it loads settings, resolves the workspace, renders the sidebar and, online, asks for the captcha once per session; a page that only explains the app (Quick Start, Documentation) passes `page_setup(captcha=False)` and opens without it. Widget `key`s must exist verbatim in `default-parameters.json`; `save_params()` copies matching session-state values into `<workspace>/params.json`. Display-only pages skip `save_params()`. A page that skips `page_setup()` also misses the theme's layout style sheet (`tests/test_theme.py` checks every menu page calls it).
 
 Register pages in `app.py` under a named section:
 
