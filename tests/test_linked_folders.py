@@ -71,7 +71,7 @@ def test_owning_twice_keeps_the_first(linked):
 
 def test_removing_a_linked_folder_keeps_the_demo(linked):
     cache, demo_run = linked
-    linked_folders.remove_folder(cache / "files" / "run")
+    linked_folders.remove_folder(cache / "files" / "run", cache)
     assert not (cache / "files" / "run").exists()
     assert (demo_run / "data.pq").read_text() == "demo"
 
@@ -115,4 +115,11 @@ def test_removing_a_folder_inside_a_linked_one_keeps_the_demo(linked):
     linked_folders.remove_folder(cache / "files" / "run" / "report", cache)
     assert not (cache / "files" / "run" / "report").exists()
     assert (cache / "files" / "run" / "data.pq").read_text() == "demo"
+    assert (demo_run / "report" / "report.md").read_text() == "demo report"
+
+
+def test_removing_a_folder_needs_the_workspace_root(linked):
+    cache, demo_run = linked
+    with pytest.raises(TypeError):
+        linked_folders.remove_folder(cache / "files" / "run" / "report")
     assert (demo_run / "report" / "report.md").read_text() == "demo report"

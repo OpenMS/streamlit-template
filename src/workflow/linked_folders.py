@@ -95,15 +95,15 @@ def _own(folder: Path) -> None:
         raise
 
 
-def remove_folder(folder: Path, root: Path | None = None) -> None:
+def remove_folder(folder: Path, root: Path) -> None:
     """Remove ``folder``: a linked one loses only its link, the demo keeps its files.
 
-    With ``root`` (as for ``own_folder``), linked folders between ``root`` and
-    ``folder`` are owned first, so removing a folder inside a linked one
-    never deletes the demo's files through that link.
+    Linked folders between ``root`` (as for ``own_folder``) and ``folder`` are
+    owned first, so removing a folder inside a linked one never deletes the
+    demo's files through that link.
     """
     folder = Path(folder)
-    if root is not None and Path(folder.parent) != Path(root):
+    if Path(folder.parent) != Path(root):
         own_folder(folder.parent, root)
     if folder.is_symlink():
         folder.unlink()
