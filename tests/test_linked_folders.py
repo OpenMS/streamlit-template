@@ -121,5 +121,5 @@ def test_removing_a_folder_inside_a_linked_one_keeps_the_demo(linked):
 def test_removing_a_folder_needs_the_workspace_root(linked):
     cache, demo_run = linked
     with pytest.raises(TypeError):
-        linked_folders.remove_folder(cache / "files" / "run" / "report")
+        linked_folders.remove_folder(cache / "files" / "run" / "report")  # pylint: disable=no-value-for-parameter
     assert (demo_run / "report" / "report.md").read_text() == "demo report"
