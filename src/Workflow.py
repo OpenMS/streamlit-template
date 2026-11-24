@@ -111,7 +111,42 @@ class Workflow(WorkflowManager):
                     True: "also runs the custom Python tool on the linked features.",
                 },
             )
+            # Ready-made settings for the kind of data, read back from the
+            # settings (the preset they hold), never stored themselves
+            current = self.current_preset()
+            self.ui.preset_choice(
+                "feature-preset", "Detection", list(self.DETECTION_PRESETS), current,
+                labels=self.DETECTION_PRESETS,
+                help="Settings for feature detection and linking (presets.json). "
+                     "Change any of them in the steps below.",
+            )
+            # What the selected files suggest, with a button that applies it
+            n = len(self.ui.current_params().get("mzML-files") or [])
+            if n:
+                recommended = "Fast Analysis" if n >= self.MANY_FILES else "Metabolomics Default"
+                why = (f"For {n} files, **{self.DETECTION_PRESETS[recommended]}** settings keep the run short."
+                       if recommended == "Fast Analysis" else
+                       f"For {n} file{'s' if n != 1 else ''}, the **{self.DETECTION_PRESETS[recommended]}** "
+                       "settings fit most metabolomics data.")
+                self.ui.recommendation(why, recommended, current,
+                                       f"Use {self.DETECTION_PRESETS[recommended].lower()}",
+                                       "feature-preset-recommended")
             self.ui.analysis_summary(self.summary())
+
+    # The presets the Detection control offers (presets.json), with their labels
+    DETECTION_PRESETS = {
+        "Metabolomics Default": "Balanced",
+        "High Sensitivity": "Sensitive",
+        "High Specificity": "Strict",
+        "Fast Analysis": "Fast",
+    }
+    # From this many files on, the recommendation is the fast settings
+    MANY_FILES = 10
+
+    def current_preset(self):
+        """The detection preset the settings hold, None when they are the user's own."""
+        name, changed = self.parameter_manager.applied_preset_status()
+        return name if name in self.DETECTION_PRESETS and not changed else None
 
     def steps(self) -> list:
         """The steps the chosen analysis runs, in the order they run."""
@@ -146,6 +181,13 @@ class Workflow(WorkflowManager):
             )
         with tabs["Feature linking"]:
             self.ui.input_TOPP("FeatureLinkerUnlabeledKD")
+            # A setting of the workflow's own (no TOPP tool has it), stored
+            # with the run's parameters and read in execution()
+            self.ui.input_widget(
+                "min-files", 1, "Found in at least (files)",
+                help="Keep a linked feature only if it was detected in at least this many files.",
+                widget_type="number", min_value=1, max_value=100,
+            )
         if "Custom step" in tabs:
             with tabs["Custom step"]:
                 # Generate input widgets for a custom Python tool, located at src/python-tools.
@@ -224,8 +266,21 @@ class Workflow(WorkflowManager):
         ):
             self.logger.log("ERROR: Exporting consensus features failed.")
             return False
+        features = Path(out_fl[0]).with_suffix(".tsv")
+        self._keep_features_in(features, int(self.params.get("min-files", 1)))
 
-        return self._custom_tool(Path(out_fl[0]).with_suffix(".tsv"))
+        return self._custom_tool(features)
+
+    def _keep_features_in(self, table: Path, min_files: int) -> None:
+        """Drop the linked features found in fewer than ``min_files`` files
+        (the workflow's own setting ``min-files``)."""
+        if min_files <= 1:
+            return
+        df = pd.read_csv(table, sep="\t")
+        intensities = df.columns[df.columns.get_loc("quality") + 1:]
+        kept = df[df[intensities].notna().sum(axis=1) >= min_files]
+        kept.to_csv(table, sep="\t", index=False)
+        self.logger.log(f"Kept {len(kept)} of {len(df)} features found in at least {min_files} files.")
 
     # The steps whose results an analysis added to a run takes from it
     FEATURE_STEPS = ["FeatureFinderMetabo", "FeatureLinkerUnlabeledKD"]
