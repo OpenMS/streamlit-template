@@ -26,6 +26,25 @@
   [data-testid="stMainBlockContainer"] { border-radius: 0; margin-top: 0; padding: 1.5rem 1rem !important; min-height: 0; }
 }
 
+/* The front page's strip of contributors and the contribute prompt
+   (render_contributors()): a second sheet fixed to the right edge on a wide
+   window, so it stays in view; on a narrow one it stays where it is drawn. */
+@media (min-width: 1100px) {
+  [data-testid="stMain"]:has(.st-key-openms-side-strip) { padding-right: 336px; }
+  .st-key-openms-side-strip {
+    position: fixed; top: 24px; right: 12px; bottom: 12px; width: 312px; z-index: 60;
+    overflow-y: auto; overflow-x: hidden; background: #ffffff; border-radius: 22px; padding: 1.2rem 1.1rem;
+    box-shadow: 0 0 0 1px rgba(35, 31, 32, .05), 0 8px 30px -12px rgba(35, 31, 32, .16);
+  }
+}
+.st-key-openms-side-strip [data-testid="stCode"] pre { font-size: .72rem; }
+@media (prefers-color-scheme: dark) {
+  .st-key-openms-side-strip { background: #231f20; box-shadow: 0 0 0 1px #3a3335; }
+}
+@media (max-width: 1099px) {
+  .st-key-openms-side-strip { background: transparent; box-shadow: none; }
+}
+
 /* Navigation: section names in the heading face, the current page as a blue pill */
 [data-testid="stNavSectionHeader"] {
   font-family: "Montserrat Alternates", sans-serif; font-size: .9rem; font-weight: 700;

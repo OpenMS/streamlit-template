@@ -90,6 +90,38 @@ test("pythonExecutable prefers the embedded interpreter", () => {
   assert.equal(payload.pythonExecutable(dir), path.join(dir, "python-3.11.0", exe));
 });
 
+test("AppImage desktop entry points at the AppImage and the copied icon", () => {
+  const { integrateAppImage } = require("../src/linux-desktop");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-"));
+  const old = process.env.XDG_DATA_HOME;
+  process.env.XDG_DATA_HOME = dir;
+  try {
+    assert.equal(integrateAppImage({ desktopName: "app.desktop" }), null);
+    const icon = path.join(dir, "src.png");
+    fs.writeFileSync(icon, "png");
+    const file = integrateAppImage({
+      appImage: '/home/u/My Apps/100%A"p\\p.AppImage',
+      desktopName: "app.desktop",
+      name: "App",
+      iconSource: icon,
+      iconDir: path.join(dir, "cfg"),
+    });
+    const entry = fs.readFileSync(file, "utf8");
+    // " is quoted as \" and that backslash escaped again (\\"), % doubled,
+    // a literal backslash written as four.
+    assert.ok(entry.split("\n").includes('Exec="/home/u/My Apps/100%%A\\\\"p\\\\\\\\p.AppImage" %U'), entry);
+    // The icon path's backslashes (Windows) are escaped like any string value.
+    const iconLine = `Icon=${path.join(dir, "cfg", "app.png").replace(/\\/g, "\\\\")}`;
+    assert.ok(entry.split("\n").includes(iconLine), entry);
+    assert.deepEqual(fs.readdirSync(path.join(dir, "cfg")), ["app.png"]);
+    assert.match(entry, /^StartupWMClass=app$/m);
+    assert.equal(fs.readFileSync(path.join(dir, "cfg", "app.png"), "utf8"), "png");
+  } finally {
+    if (old === undefined) delete process.env.XDG_DATA_HOME;
+    else process.env.XDG_DATA_HOME = old;
+  }
+});
+
 const license = require("../src/license");
 
 function fakePayload({ thermo = false, licenseText = null } = {}) {
@@ -143,4 +175,11 @@ test("the agreement page escapes its text and links both answers", () => {
   assert.ok(html.includes("&lt;x&gt;") && html.includes("a &amp; b") && html.includes("A&lt;b&gt;"));
   assert.ok(html.includes(`href="${license.ANSWER_URL}accept"`));
   assert.ok(html.includes(`href="${license.ANSWER_URL}decline"`));
+});
+
+test("Streamlit starts through the launcher that preloads polars", () => {
+  const args = payload.streamlitArgs(8765);
+  assert.deepEqual(args.slice(0, 5), ["-m", "src.streamlit_launcher", "run", "app.py", "local"]);
+  assert.equal(args[args.indexOf("--server.port") + 1], "8765");
+  assert.equal(args[args.indexOf("--server.address") + 1], "127.0.0.1");
 });

@@ -1,0 +1,128 @@
+# Refresh the contributor lists from GitHub, and open (or update) one PR.
+#
+# Runs weekly in the template and in every app made from it. Every group of
+# the app's contributors.json that names a `github` repository is rebuilt by
+# `python -m utils.contributors` (bots and `exclude` left out, `extra` kept);
+# in the template the framework list src/common/framework-contributors.json
+# is refreshed too. An app leaves that file alone: it is template-owned and
+# reaches the app through template sync.
+#
+#   nobody new         nothing happens
+#   someone new        branch `contributors` gets one commit and one PR is
+#                      opened or updated; the front page shows them once merged
+#
+# Commits a human pushed onto `contributors` are never overwritten. Turn it off
+# with `ci: {contributors: false}` in app.yaml. The default GITHUB_TOKEN is
+# enough (only JSON files change); the organization must allow GitHub Actions
+# to create pull requests, and that PR's CI does not start by itself.
+name: Contributors
+
+on:
+  schedule:
+    - cron: "17 5 * * 1"   # Mondays 05:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: contributors
+  cancel-in-progress: false
+
+env:
+  BRANCH: contributors
+  BOT_NAME: github-actions[bot]
+  BOT_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GITHUB_TOKEN: ${{ github.token }}
+      DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+
+      - name: Read ci.contributors from app.yaml
+        id: gate
+        run: |
+          run=true
+          if [ -f app.yaml ] && [ "$(yq '.ci.contributors' app.yaml | tr '[:upper:]' '[:lower:]')" = false ]; then
+            run=false
+            echo "ci.contributors is false in app.yaml: skipped" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+
+      - name: Look at the contributors branch
+        if: steps.gate.outputs.run == 'true'
+        id: branch
+        run: |
+          set -euo pipefail
+          if git fetch --no-tags origin "$BRANCH" 2>/dev/null; then
+            REMOTE_SHA=$(git rev-parse FETCH_HEAD)
+            echo "remote_sha=$REMOTE_SHA" >> "$GITHUB_OUTPUT"
+            HUMAN=$(git log --format='%ae%n%ce' "$REMOTE_SHA" "^origin/$DEFAULT_BRANCH" | grep -vxF "$BOT_EMAIL" || true)
+            [ -z "$HUMAN" ] || echo "human=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-python@v5
+        if: steps.gate.outputs.run == 'true' && steps.branch.outputs.human != 'true'
+        with:
+          python-version: "3.11"
+
+      - name: Refresh
+        id: refresh
+        if: steps.gate.outputs.run == 'true' && steps.branch.outputs.human != 'true'
+        run: |
+          set -euo pipefail
+          pip install --quiet requests
+          git checkout -B "$BRANCH"
+          files=(contributors.json)
+          if [ "$(jq -r '."repository-name"' settings.json)" = streamlit-template ]; then
+            files+=(src/common/framework-contributors.json)
+          fi
+          python -m utils.contributors "${files[@]}"
+          if git diff --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Nobody new." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            git diff --stat >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Push and open the PR
+        if: steps.refresh.outputs.changed == 'true'
+        env:
+          REMOTE_SHA: ${{ steps.branch.outputs.remote_sha }}
+        run: |
+          set -euo pipefail
+          # Logins added in this refresh, for the PR text.
+          NEW=$(git diff -U0 -- '*.json' | grep -E '^\+ +"[A-Za-z0-9-]+",?$' | tr -d ' +",' | sort -u | sed 's/^/- @/' || true)
+          git config user.name  "$BOT_NAME"
+          git config user.email "$BOT_EMAIL"
+          git commit -am "Refresh the contributor lists"
+          git push --force-with-lease="$BRANCH:${REMOTE_SHA}" origin "$BRANCH"
+          {
+            echo "The weekly refresh found changes in the contributor lists shown on the front page."
+            echo
+            if [ -n "$NEW" ]; then echo "New:"; echo; echo "$NEW"; echo; fi
+            echo "Check the names in \`names\` and add \`exclude\` for anyone who should not be listed."
+            echo
+            echo "_Opened by \`.github/workflows/contributors.yml\`._"
+          } > /tmp/body.md
+          PR=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
+          if [ -n "$PR" ]; then
+            gh pr edit "$PR" --body-file /tmp/body.md
+          else
+            gh pr create --base "$DEFAULT_BRANCH" --head "$BRANCH" \
+              --title "Refresh the contributor lists" --body-file /tmp/body.md
+          fi
+
+      - name: Leave a human's commits alone
+        if: steps.branch.outputs.human == 'true'
+        run: echo "::warning::$BRANCH has commits not made by this workflow, so it was left as it is."

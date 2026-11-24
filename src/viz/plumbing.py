@@ -35,11 +35,14 @@ def group_colors(groups) -> dict[str, str]:
 
 
 def as_polars(data) -> pl.DataFrame:
-    """A polars frame of ``data`` (pandas, polars or a LazyFrame)."""
+    """A polars frame of ``data`` (pandas, polars, a LazyFrame, or rows as a
+    list of dicts, which several components' ``rows()`` build)."""
     if isinstance(data, pl.LazyFrame):
         return data.collect()
     if isinstance(data, pd.DataFrame):
         return pl.from_pandas(data)
+    if isinstance(data, (list, tuple)):
+        return pl.DataFrame(list(data))
     return data
 
 
@@ -111,3 +114,12 @@ def component(cls, cache_path, cache_id: str, build: Callable[[], dict], **fixed
 def cache_name(name: str, data, *settings) -> str:
     """``<name>-<hash of data and settings>``: a cache id that changes with what is drawn."""
     return f"{name}-{fingerprint(data, *settings)}"
+
+
+def median(values):
+    """The median of ``values``, None for none."""
+    values = sorted(values)
+    n = len(values)
+    if not n:
+        return None
+    return values[n // 2] if n % 2 else (values[n // 2 - 1] + values[n // 2]) / 2

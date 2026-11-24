@@ -245,3 +245,88 @@ def test_profile_colours_keep_a_group_whose_values_are_all_missing():
     settings = profile.profile_settings(table, "id", "protein", groups=["A", "B"])
     assert settings["series_colors"]["B"] == colors["B"]
     assert settings["series_colors"]["B mean"] == colors["B"]
+
+
+def test_comparison_table_uses_renamed_columns():
+    import polars as pl
+    from src.viz.quantification.comparison_table import comparison_table
+    data = pl.DataFrame({"Protein": ["a", "b"], "fc": [2.0, -0.1], "q": [0.001, 0.5]})
+    frame = comparison_table(data, "drug", 1.0, 0.05, log2fc_column="fc", padj_column="q")
+    assert frame["Change"].to_list() == ["higher in drug", "–"]
+
+
+def test_show_comparison_table_forwards_renamed_columns(monkeypatch):
+    import sys, types
+    import polars as pl
+    from src.viz.quantification import comparison_table as module
+    seen = {}
+
+    class Table:
+        def __init__(self, **kwargs):
+            seen.update(kwargs)
+
+        def __call__(self, **kwargs):
+            pass
+
+    monkeypatch.setitem(sys.modules, "openms_insight", types.SimpleNamespace(Table=Table))
+    data = pl.DataFrame({"Protein": ["a"], "fc": [2.0], "q": [0.001]})
+    module.show_comparison_table(data, "Protein", "Protein", cache_path="/tmp", key="k",
+                                 reference="ctrl", compared="drug", fc=1.0, padj=0.05,
+                                 log2fc_column="fc", padj_column="q")
+    frame = seen["data"].collect()
+    assert frame["Change"].to_list() == ["higher in drug"]
+
+
+def test_show_zscore_heatmap_forwards_column_names(monkeypatch):
+    import sys, types
+    import pandas as pd
+    from src.viz.quantification import zscore_heatmap as module
+    seen = {}
+
+    class Heatmap:
+        def __init__(self, **kwargs):
+            seen.update(kwargs)
+
+        def __call__(self, **kwargs):
+            pass
+
+    monkeypatch.setitem(sys.modules, "openms_insight", types.SimpleNamespace(Heatmap=Heatmap))
+    matrix = pd.DataFrame({"s1": [1.0, 5.0], "s2": [3.0, 2.0]}, index=["p1", "p2"])
+    module.show_zscore_heatmap(matrix, "Protein", cache_path="/tmp", key="k",
+                               sample_column="Run", value_column="Z")
+    columns = seen["data"].collect().columns
+    assert {"Run", "Z"} <= set(columns)
+    assert seen["x_column"] == "Run" and seen["intensity_column"] == "Z"
+
+
+def test_show_series_takes_rows_as_dicts(monkeypatch, tmp_path):
+    """filter_threshold.rows() returns a list of dicts; the filter step's plot draws it."""
+    import sys, types
+    from src.viz import series
+    from src.viz.quantification import filter_threshold
+    seen = {}
+
+    class SeriesPlot:
+        def __init__(self, **kwargs):
+            seen.update(kwargs)
+
+        def __call__(self, **kwargs):
+            pass
+
+    monkeypatch.setitem(sys.modules, "openms_insight", types.SimpleNamespace(SeriesPlot=SeriesPlot))
+    rows = filter_threshold.rows([0.0, 50.0, 100.0], [10, 6, 0], 10, 50.0, 6)
+    series.show_series(rows, "filter-threshold", cache_path=tmp_path, key="k",
+                       **filter_threshold.settings("Threshold percentile (%)"))
+    frame = seen["data"].collect()
+    assert frame.height == 6 and set(frame["series"]) == {"Kept", "All", "Current"}
+
+
+def test_scan_table_counts_peaks_of_a_run_not_deconvolved():
+    from src.viz.ms_data import scan_table, spectrum
+
+    fields = [c["field"] for c in scan_table.settings(peaks=True)["column_definitions"]]
+    assert fields[-1] == "#Peaks" and "#Masses" not in fields
+    assert scan_table.settings()["column_definitions"][-1]["field"] == "#Masses"
+    # A spectrum without masses: the raw spectrum shows its peaks only
+    raw = spectrum.settings("scan", signal_column=None)
+    assert raw["filters"] == {"scan": "index"} and raw["signal_column"] is None

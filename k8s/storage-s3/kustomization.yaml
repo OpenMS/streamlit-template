@@ -1,6 +1,6 @@
 # OPTIONAL storage tier: ReadWriteMany workspace volumes on S3 object storage.
 #
-# The alternative to k8s/storage/ (OpenStack Manila) for clusters that offer
+# The alternative to the Manila storage tier (docs/kubernetes-deployment.md 3b) for clusters that offer
 # S3 instead of file shares. Nothing uses it until an app overlay enables the
 # component k8s/components/storage-s3/, so it can be installed ahead of time
 # and switched to app by app.
@@ -23,7 +23,7 @@
 #                        download links use; src/common/storage.py builds the
 #                        URIs
 #
-# ONE PER CLUSTER, NOT ONE PER APP, like k8s/storage/. Apply it once:
+# ONE PER CLUSTER, NOT ONE PER APP, like the Manila tier. Apply it once:
 #
 #   1. Create the two Secrets by hand (never committed):
 #      docs/kubernetes-deployment.md, "S3 storage (optional)".

@@ -54,9 +54,12 @@ def get_demo_target_dir() -> Path:
     """
     Get the directory where demo workspaces are stored.
 
-    Reads from settings.demo_workspaces.source_dirs (first entry wins),
-    supporting both the list form and the legacy string form. Falls back
-    to example-data/workspaces when settings are unavailable (e.g. in tests).
+    Reads settings.demo_workspaces.save_dir when set, else the first entry
+    of source_dirs (the list form or the legacy string form). save_dir lets
+    a deployment read demos from the image first, where they are fast to
+    link to, and save new ones to a writable volume listed after it. Falls
+    back to example-data/workspaces when settings are unavailable (e.g. in
+    tests).
 
     Returns:
         Path: The demo workspaces directory.
@@ -67,6 +70,8 @@ def get_demo_target_dir() -> Path:
     except (AttributeError, KeyError):
         return default
 
+    if demo_config.get("save_dir"):
+        return Path(demo_config["save_dir"])
     dirs = demo_config.get("source_dirs", demo_config.get("source_dir"))
     if isinstance(dirs, str):
         return Path(dirs)
