@@ -11,11 +11,10 @@ import pandas as pd
 import streamlit as st
 
 from typing import Any
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from streamlit.components.v1 import html
 
 import subprocess
-from concurrent.futures import ThreadPoolExecutor
 
 try:
     import tkinter  # noqa: F401  (the dialogs run in a child process)
@@ -25,6 +24,7 @@ except ImportError:
     TK_AVAILABLE = False
 
 from src.common.developer import render_developer_toggle
+from src.workflow import linked_folders
 from src.common.other_apps import render_other_apps_sidebar
 from src.common.captcha_ import captcha_control
 from src.common.download_tracking import tracker_script, tracking_enabled
@@ -264,12 +264,6 @@ def find_demo_workspace_path(demo_name: str) -> Path | None:
 LINK_MIN_BYTES = 1024 * 1024
 
 
-# Workers that link and copy a demo's files. On network storage (NFS) each
-# file costs several round trips, so a demo of a few hundred files took minutes
-# file by file; in parallel the round trips overlap.
-SEED_WORKERS = 16
-
-
 def _seed_file(item: Path, target_item: Path) -> None:
     """Copy a small file or a settings file, link everything else."""
     if (
@@ -284,7 +278,7 @@ def _seed_file(item: Path, target_item: Path) -> None:
         target_item.symlink_to(item.resolve())
 
 
-def _symlink_tree(source: Path, target: Path) -> None:
+def _symlink_tree(source: Path, target: Path, link_folders=()) -> None:
     """
     Recursively create directory structure and symlink files from source to target.
 
@@ -293,32 +287,43 @@ def _symlink_tree(source: Path, target: Path) -> None:
     params.json, .ini files and every file smaller than ``LINK_MIN_BYTES`` are
     copied instead of symlinked so they can be modified independently.
 
-    The tree is listed once and its files are linked or copied by
-    ``SEED_WORKERS`` threads, so a demo on network storage is ready in seconds
-    rather than minutes.
+    A folder whose path relative to ``source`` matches one of the glob
+    patterns in ``link_folders`` (``demo_workspaces.link_folders`` in
+    settings.json, such as ``cache/files/*``) is linked whole: one link
+    however many files it holds. Code that writes into such a folder must
+    call ``src.workflow.linked_folders.own_folder`` first.
 
     Args:
         source: Source directory path.
         target: Target directory path.
+        link_folders: Glob patterns of the folders linked whole.
     """
     source = Path(source)
     target = Path(target)
-    jobs = []
+
     def fail(error: OSError) -> None:
         # A folder that cannot be listed must not yield a workspace without it
         raise error
 
     # followlinks: a linked folder in the demo becomes a real folder too, so
     # its small files are copies a workspace can change
-    for root, _dirs, files in os.walk(source, onerror=fail, followlinks=True):
+    for root, dirs, files in os.walk(source, onerror=fail, followlinks=True):
         rel = Path(root).relative_to(source)
         Path(target, rel).mkdir(parents=True, exist_ok=True)
-        jobs.extend((Path(root, name), Path(target, rel, name)) for name in files)
-    if not jobs:
-        return
-    with ThreadPoolExecutor(max_workers=min(SEED_WORKERS, len(jobs))) as pool:
-        # list() re-raises the first error of any worker
-        list(pool.map(lambda job: _seed_file(*job), jobs))
+        for name in list(dirs):
+            if linked_folders.matches(PurePosixPath(rel.as_posix(), name), link_folders):
+                dirs.remove(name)
+                Path(target, rel, name).symlink_to(
+                    Path(root, name).resolve(), target_is_directory=True
+                )
+        for name in files:
+            _seed_file(Path(root, name), Path(target, rel, name))
+
+
+def demo_link_folders() -> list:
+    """The folders of a demo a new workspace links whole (``demo_workspaces.link_folders``)."""
+    settings = st.session_state.get("settings", {})
+    return list(settings.get("demo_workspaces", {}).get("link_folders", []))
 
 
 def copy_demo_workspace(demo_name: str, target_path: Path) -> bool:
@@ -353,7 +358,7 @@ def copy_demo_workspace(demo_name: str, target_path: Path) -> bool:
     try:
         # Use symlinks on Linux for efficiency (not in an AppImage)
         if LINK_EXAMPLE_FILES:
-            _symlink_tree(demo_path, staging)
+            _symlink_tree(demo_path, staging, demo_link_folders())
         else:
             shutil.copytree(demo_path, staging)
         try:

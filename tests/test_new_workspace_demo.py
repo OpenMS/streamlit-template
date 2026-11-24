@@ -162,7 +162,7 @@ def test_without_a_demo_a_workspace_starts_empty(demos, tmp_path, name):
 
 
 def test_many_files_are_all_seeded_and_keep_their_times(demos, tmp_path):
-    """Files are linked and copied in parallel; every one arrives, copies keep mtime."""
+    """Every file arrives, and copies keep their modification time."""
     run = demos / "default" / "cache" / "files" / "many"
     run.mkdir(parents=True)
     for i in range(200):
@@ -176,6 +176,33 @@ def test_many_files_are_all_seeded_and_keep_their_times(demos, tmp_path):
     assert all(not f.is_symlink() for f in copied)
     assert (target / "cache" / "files" / "many" / "part-7.tsv").read_text() == "7"
     assert int(copied[0].stat().st_mtime) == 1_000_000
+
+
+def test_folders_named_in_settings_are_linked_whole(demos, tmp_path):
+    """One link per result folder, however many files it holds."""
+    many = demos / "default" / "cache" / "files" / "many"
+    many.mkdir()
+    for i in range(50):
+        (many / f"part-{i}.tsv").write_text(str(i))
+    target = tmp_path / "ws"
+    common._symlink_tree(demos / "default", target, ["cache/files/*"])
+    for name in ("run", "many"):
+        linked = target / "cache" / "files" / name
+        assert linked.is_symlink() and linked.resolve() == (demos / "default" / "cache" / "files" / name).resolve()
+    assert (target / "cache" / "files" / "many" / "part-7.tsv").read_text() == "7"
+    # Everything else is seeded as before
+    assert not (target / "cache" / "files").is_symlink()
+    assert not (target / "cache" / "cache.db").is_symlink()
+    assert (target / "wf" / "input-files" / "mzML-files" / "a.mzML").is_symlink()
+    assert not (target / "wf" / "input-files" / "mzML-files").is_symlink()
+
+
+def test_new_workspace_links_the_folders_settings_name(demos, tmp_path):
+    _settings(demos)
+    common.st.session_state["settings"]["demo_workspaces"]["link_folders"] = ["cache/files/*"]
+    workspace = tmp_path / "workspaces" / "0f1e"
+    common.seed_new_workspace(workspace, "online")
+    assert (workspace / "cache" / "files" / "run").is_symlink()
 
 
 def test_workspace_appears_only_when_complete(demos, tmp_path, monkeypatch):
@@ -232,8 +259,8 @@ def test_workspace_set_up_meanwhile_by_another_session_is_kept(demos, tmp_path, 
     workspace = tmp_path / "workspaces" / "0f1e"
     real_tree = common._symlink_tree
 
-    def other_session_first(source, target):
-        real_tree(source, target)
+    def other_session_first(source, target, *args):
+        real_tree(source, target, *args)
         workspace.mkdir(parents=True)
         (workspace / "mine.mzML").write_text("added by the user")
 
