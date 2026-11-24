@@ -73,3 +73,13 @@ def test_set_keeps_the_layout(tmp_path):
 def test_template_settings_version_is_a_version():
     settings = Path(__file__).resolve().parents[1] / "settings.json"
     rv.version_from_tag(json.loads(settings.read_text())["version"])
+
+
+def test_set_skips_a_nested_version_before_the_top_level_one(tmp_path):
+    p = tmp_path / "settings.json"
+    p.write_text('{\n    "meta": {\n        "version": "keep"\n    },\n    "version": "1.0.0"\n}\n')
+    assert rv.main(["set", "v2.0.0", str(p)]) == 0
+    data = json.loads(p.read_text())
+    assert data["version"] == "2.0.0"
+    assert data["meta"]["version"] == "keep"
+    assert '"meta": {\n' in p.read_text()  # layout kept

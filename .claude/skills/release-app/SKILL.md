@@ -61,4 +61,5 @@ back cleanly; do them only when the user asked for the release.
 - [ ] User-facing notes written
 - [ ] GitHub release `<tag>` (`v<version>` or `<AppName>-<version>`) created on the merge commit
 - [ ] Images, SIF and installers published; build workflows and `Release version` green
+- [ ] If `Release version` failed (the tag came before its bump): merge its `release-version` PR. The release stays as it is, since its images and installers already carry the tag's version; the failed check stays red on that tag as the record
 - [ ] On a cluster without the ImageUpdater, the overlay pins the new tag

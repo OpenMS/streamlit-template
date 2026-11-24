@@ -72,14 +72,20 @@ def read_version(settings: Path) -> str:
 def write_version(settings: Path, version: str) -> None:
     """Replace the value of the top-level "version" in place, keeping the layout."""
     text = settings.read_text(encoding="utf-8")
-    new, n = re.subn(r'^(\s*"version"\s*:\s*)"[^"]*"', lambda m: f'{m.group(1)}{json.dumps(version)}',
-                     text, count=1, flags=re.M)
-    if n == 0:
-        data = json.loads(text)
+    data = json.loads(text)
+    new = None
+    # The first "version" line may belong to a nested object: take the first
+    # one whose replacement sets the top-level value and leaves the rest.
+    for m in re.finditer(r'^(\s*"version"\s*:\s*)"[^"]*"', text, flags=re.M):
+        candidate = text[:m.start()] + m.group(1) + json.dumps(version) + text[m.end():]
+        expected = dict(data, version=version)
+        if json.loads(candidate) == expected:
+            new = candidate
+            break
+    if new is None:
         data["version"] = version
         new = json.dumps(data, indent=4, ensure_ascii=False) + "\n"
     settings.write_text(new, encoding="utf-8")
-    assert read_version(settings) == version
 
 
 def main(argv: list[str]) -> int:

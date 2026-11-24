@@ -100,6 +100,21 @@ jobs:
             echo "$DEFAULT_BRANCH already says $CURRENT, so no PR is needed." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
+          # A pending PR may already set a later version (a newer release
+          # checked first): then it is left as it is.
+          if git fetch --no-tags origin "$BRANCH" 2>/dev/null; then
+            PENDING=$(git show FETCH_HEAD:settings.json | jq -r .version)
+            if python3 - "$PENDING" "$VERSION" <<'EOF'
+          import sys
+          sys.path.insert(0, ".github/scripts")
+          from release_version import version_key
+          sys.exit(0 if version_key(sys.argv[1]) >= version_key(sys.argv[2]) else 1)
+          EOF
+            then
+              echo "\`$BRANCH\` already sets $PENDING, so it is left as it is." >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+          fi
           python3 .github/scripts/release_version.py set "$TAG" settings.json
           git config user.name  "$BOT_NAME"
           git config user.email "$BOT_EMAIL"
