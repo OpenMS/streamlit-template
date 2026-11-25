@@ -121,13 +121,10 @@ class Workflow(WorkflowManager):
                      "Change any of them in the steps below.",
             )
             # What the selected files suggest, with a button that applies it
-            n = len(self.ui.current_params().get("mzML-files") or [])
-            if n:
-                recommended = "Fast Analysis" if n >= self.MANY_FILES else "Metabolomics Default"
-                why = (f"For {n} files, **{self.DETECTION_PRESETS[recommended]}** settings keep the run short."
-                       if recommended == "Fast Analysis" else
-                       f"For {n} file{'s' if n != 1 else ''}, the **{self.DETECTION_PRESETS[recommended]}** "
-                       "settings fit most metabolomics data.")
+            recommended, why = self.recommend_preset(
+                self.ui.current_params().get("mzML-files") or []
+            )
+            if recommended:
                 self.ui.recommendation(why, recommended, current,
                                        f"Use {self.DETECTION_PRESETS[recommended].lower()}",
                                        "feature-preset-recommended")
@@ -147,6 +144,33 @@ class Workflow(WorkflowManager):
         """The detection preset the settings hold, None when they are the user's own."""
         name, changed = self.parameter_manager.applied_preset_status()
         return name if name in self.DETECTION_PRESETS and not changed else None
+
+    def recommend_preset(self, files: list) -> tuple:
+        """The detection preset the selected files suggest, and why.
+
+        Returns ``(preset, reason)``: a key of ``DETECTION_PRESETS`` and one
+        sentence (Markdown) shown beside it, or ``(None, "")`` when there is
+        nothing to suggest. The page shows the reason with a button that
+        applies the preset, or says the settings already match it.
+
+        The rule here only counts the files. A rule that looks at the data
+        goes here too: read what it needs from the files (with pyOpenMS, for
+        example the instrument or the number of spectra; cache that read,
+        since this runs on every rerun of the page) and return the preset it
+        points to. A new preset is an entry in presets.json plus its label in
+        ``DETECTION_PRESETS``.
+        """
+        n = len(files)
+        if not n:
+            return None, ""
+        if n >= self.MANY_FILES:
+            preset = "Fast Analysis"
+            return preset, (f"For {n} files, **{self.DETECTION_PRESETS[preset]}** "
+                            "settings keep the run short.")
+        preset = "Metabolomics Default"
+        return preset, (f"For {n} file{'s' if n != 1 else ''}, the "
+                        f"**{self.DETECTION_PRESETS[preset]}** settings fit most "
+                        "metabolomics data.")
 
     def steps(self) -> list:
         """The steps the chosen analysis runs, in the order they run."""
