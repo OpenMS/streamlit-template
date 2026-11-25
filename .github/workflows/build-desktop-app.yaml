@@ -97,7 +97,7 @@ jobs:
               elif echo "$LABELS" | grep -q '"desktop-build"'; then
                 run=true
               elif files=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/files" --jq '.[].filename') &&
-                   printf '%s\n' "$files" | grep -Eq '^(electron/|\.github/workflows/(build-desktop-app\.yaml|openms\.yml)$|requirements[^/]*\.txt$|settings\.json$|app\.py$)'; then
+                   printf '%s\n' "$files" | grep -Eq '^(electron/|\.github/workflows/(build-desktop-app\.yaml|openms\.yml)$|requirements[^/]*\.txt$|settings\.json$|app\.py$|app\.yaml$)'; then
                 run=true
               else
                 echo "no packaging change; add the label desktop-build to build anyway"
@@ -564,7 +564,7 @@ jobs:
   # of a published release to this job.
   publish-web-image:
     needs: release
-    if: github.event_name == 'release'
+    if: github.event_name == 'release' && !cancelled() && needs.release.result == 'success'
     permissions:
       contents: read
       packages: write

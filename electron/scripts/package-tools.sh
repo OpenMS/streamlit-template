@@ -24,6 +24,8 @@ label="${4:-OpenMS}"
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 nsi="$here/../tools/command-line-tools.nsi"
 mkdir -p "$out"
+# makensis runs in the .nsi's folder, so the installer path must be absolute.
+out=$(cd "$out" && pwd)
 made=0
 
 first() { find "$1" -maxdepth 2 -type f -name "$2" 2>/dev/null | head -n 1; }
