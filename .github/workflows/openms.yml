@@ -332,15 +332,6 @@ jobs:
         restore-keys: |
           openms-${{ runner.os == 'Windows' && 'win' || matrix.platform }}-vcpkg-
 
-    - name: Pin CMake for the vcpkg ports
-      # CMake 4.5 (now on the Windows and macOS runners) rejects boost-locale
-      # 1.91's source_group() call, so vcpkg's Boost build stops at configure.
-      # Linux keeps the image's CMake: its ports are cached under that version.
-      if: steps.package.outputs.cache-hit != 'true' && steps.route.outputs.route == 'vcpkg' && runner.os != 'Linux'
-      uses: jwlawson/actions-setup-cmake@v2
-      with:
-        cmake-version: '3.31.x'
-
     - name: Configure (vcpkg)
       if: steps.package.outputs.cache-hit != 'true' && steps.route.outputs.route == 'vcpkg'
       id: vcpkg-configure
