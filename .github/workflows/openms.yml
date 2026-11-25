@@ -309,6 +309,23 @@ jobs:
           } >> "$GITHUB_ENV"
         fi
 
+    # CMake 4.5 cannot configure vcpkg's boost-locale 1.91 (source_group TREE
+    # rejects include/boost/locale as a prefix of include/boost/locale.hpp),
+    # and vcpkg builds its ports with the CMake on PATH. Pin the 4.4 series
+    # until the baseline has a fixed port. After the dependency steps, so it
+    # comes before Homebrew's and the runner image's CMake on PATH.
+    - name: Pin CMake
+      if: steps.package.outputs.cache-hit != 'true' && steps.route.outputs.route == 'vcpkg'
+      uses: jwlawson/actions-setup-cmake@v2
+      with:
+        cmake-version: '4.4.x'
+
+    - name: Check the CMake version
+      if: steps.package.outputs.cache-hit != 'true' && steps.route.outputs.route == 'vcpkg'
+      run: |
+        cmake --version
+        cmake --version | grep -q '^cmake version 4\.4\.' || { echo "::error::expected CMake 4.4 on PATH, found $(command -v cmake)"; exit 1; }
+
     ##########################################################################
     # vcpkg route (OpenMS 3.6+), all platforms
     ##########################################################################
