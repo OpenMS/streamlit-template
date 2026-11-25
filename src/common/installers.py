@@ -163,3 +163,33 @@ def render_installer_buttons(heading: str = "", app_name: str = "") -> bool:
     if "release" in installers:
         st.caption(f"[All downloads and release notes]({installers['release']})")
     return True
+
+
+def render_tool_installer_buttons(heading: str = "", text: str = "") -> bool:
+    """One download button per platform whose OpenMS command line tools are
+    attached to the latest release, below `heading` and `text` (markdown);
+    renders nothing and returns False when the release has none.
+
+    Only shown in online deployments, like render_installer_buttons().
+    """
+    if st.session_state.get("location") != "online":
+        return False
+    found = find_tool_installers()
+    available = [p for p in TOOL_PLATFORMS if p[0] in found]
+    if not available:
+        return False
+    if heading:
+        st.markdown(heading)
+    if text:
+        st.markdown(text)
+    cols = st.columns(len(available))
+    for col, (key, label, _, help_text) in zip(cols, available):
+        with col:
+            st.link_button(
+                f"🧰 {label}",
+                found[key],
+                help=help_text,
+                type="secondary",
+                use_container_width=True,
+            )
+    return True

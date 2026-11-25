@@ -5,7 +5,8 @@ This module sets up and displays the Streamlit app for the OpenMS Template App.
 It includes:
 - Setting the app title.
 - Displaying a description.
-- Providing download buttons for the desktop app on Windows, macOS and Linux.
+- Providing download buttons for the desktop app and the OpenMS command line
+  tools on Windows, macOS and Linux.
 
 Usage:
 Run this script to launch the OpenMS Template App.
@@ -22,7 +23,10 @@ import streamlit as st
 
 from src.common.common import page_setup, v_space
 from src.common.contributors import render_contributors
-from src.common.installers import render_installer_buttons
+from src.common.installers import (
+    render_installer_buttons,
+    render_tool_installer_buttons,
+)
 from src.common.other_apps import render_other_apps
 
 # Spell the skill out by file path rather than by name. Skills are registered
@@ -82,6 +86,11 @@ c1.markdown(
 v_space(1, c2)
 c2.image("assets/openms_transparent_bg_logo.svg", width=300)
 render_installer_buttons("### Download the desktop app")
+render_tool_installer_buttons(
+    "### Download the command line tools",
+    "The OpenMS command line tools the desktop app runs, for use from a "
+    "terminal or a script.",
+)
 
 st.markdown("## 📖 Documentation")
 st.markdown(
