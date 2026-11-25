@@ -318,3 +318,69 @@ def test_storing_another_result_keeps_its_file(tmp_path):
     first = fm.get_result_path("run1", "tsv")
     fm.store_file("run2", "tsv", first)
     assert first.exists() and fm.get_result_path("run2", "tsv").read_text() == "a"
+
+
+def test_repeated_reads_reuse_the_column_list(tmp_path, monkeypatch):
+    fm = _fm(tmp_path)
+    fm.store_data("run1", "table", pd.DataFrame({"a": [1]}))
+    fm.get_results("run1", ["table"])
+    calls = []
+    real = FileManager._get_column_list
+
+    def counting(self, table_name, fresh=False):
+        cached = self._columns.get(table_name)
+        before = cached
+        out = real(self, table_name, fresh=fresh)
+        if self._columns.get(table_name) is not before:
+            calls.append(table_name)
+        return out
+
+    monkeypatch.setattr(FileManager, "_get_column_list", counting)
+    for _ in range(5):
+        fm.get_results("run1", ["table"])
+        fm.get_results_list(["table"])
+    assert calls == []
+
+
+def test_own_new_result_is_seen_at_once(tmp_path):
+    fm = _fm(tmp_path)
+    fm.store_data("run1", "table", pd.DataFrame({"a": [1]}))
+    assert fm.get_results_list(["table"]) == ["run1"]
+    fm.store_data("run1", "other", {"x": 1})
+    assert fm.get_results("run1", ["other"])["other"] == {"x": 1}
+    assert fm.get_results_list(["other"]) == ["run1"]
+
+
+def test_another_writer_is_seen_after_the_cache_expires(tmp_path, monkeypatch):
+    # The module the class was defined in, also after other tests purged it.
+    module_globals = FileManager._get_column_list.__globals__
+    reader, writer = _fm(tmp_path), _fm(tmp_path)
+    reader.store_data("run1", "table", pd.DataFrame({"a": [1]}))
+    assert reader.get_results_list(["table"]) == ["run1"]
+    writer.store_data("run2", "other", {"x": 2})
+    monkeypatch.setitem(module_globals, "COLUMN_CACHE_SECONDS", 0.0)
+    assert reader.get_results_list(["other"]) == ["run2"]
+    assert reader.get_results("run2", ["other"])["other"] == {"x": 2}
+
+
+def test_another_instance_clearing_the_cache_does_not_break_reads(tmp_path):
+    reader, other = _fm(tmp_path), _fm(tmp_path)
+    reader.store_data("run1", "table", pd.DataFrame({"a": [1]}))
+    assert reader.get_results_list(["table"]) == ["run1"]
+    assert reader.result_exists("run1", "table")
+    other.clear_cache()
+    assert reader.get_results_list(["table"]) == []
+    assert not reader.result_exists("run1", "table")
+
+
+def test_column_cache_is_not_pickled(tmp_path):
+    import importlib
+
+    module = importlib.import_module("src.workflow.FileManager")
+    fm = module.FileManager(Path(tmp_path, "wf"))
+    fm.store_data("run1", "table", pd.DataFrame({"a": [1]}))
+    fm.get_results("run1", ["table"])
+    assert fm._columns
+    copy = pickle.loads(pickle.dumps(fm))
+    assert copy._columns == {}
+    assert copy.get_results("run1", ["table"])["table"]["a"].tolist() == [1]
