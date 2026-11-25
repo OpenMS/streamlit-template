@@ -7,7 +7,11 @@ from pathlib import Path
 import pandas as pd
 import plotly.express as px
 from src.common.common import show_fig
-from src.layout_manager import render_layout, request_analysis, resolve_layout, view_bar
+from src.layout_manager import (
+    edit_comparison, member_switch, render_layout, request_analysis, resolve_layout, view_bar,
+)
+from src.workflow.run_widgets import run_label
+from src.workflow.guide import QUANTIFICATION
 
 
 def merge_feature_tables(tables: list, ppm: float = 10.0, rt_tolerance: float = 30.0):
@@ -51,8 +55,12 @@ class Workflow(WorkflowManager):
     # Results page picks which one to show and the Download page renames,
     # downloads and deletes them. Results are read from self.results_dir.
     multi_run = True
-    run_page = Path("content", "topp_workflow_execution.py")
+    # The four steps of the workflow, each a page (src/workflow/guide.py):
+    # Describe experiment -> Run analysis -> Explore results -> Export results
     configure_page = Path("content", "topp_workflow_parameter.py")
+    run_page = Path("content", "topp_workflow_execution.py")
+    results_page = Path("content", "topp_workflow_results.py")
+    export_page = Path("content", "topp_workflow_download.py")
 
     def __init__(self) -> None:
         # Initialize the parent class with the workflow name.
@@ -72,51 +80,161 @@ class Workflow(WorkflowManager):
                 suggest_folders=True,
             )
 
+    def analysis_section(self) -> None:
+        """The **Your analysis** box at the top of Describe experiment.
+
+        The input files first (their Browse dialog also takes new files, so
+        there is no upload page), then what to do with them, then one
+        sentence on what a start will do. Drawn in the page, not in the
+        ``configure()`` fragment, so a choice here reruns the page and the
+        step tabs below follow it.
+        """
+        with self.ui.analysis_box():
+            # reactive=True so the experimental design follows the selection
+            self.ui.select_input_file(
+                "mzML-files", multiple=True, reactive=True,
+                upload=dict(
+                    file_types=["mzML", "raw", "d"],
+                    fallback=[str(f) for f in Path("example-data", "mzML").glob("*.mzML")],
+                    suggest_folders=True,
+                ),
+            )
+            # What to do with them: a choice stored with the settings, which
+            # adds or removes the step it switches on
+            self.ui.choice(
+                "run-python-script", [False, True],
+                labels={False: "Features only", True: "Features and custom step"},
+                label="Analysis",
+                help="What the run does with the files.",
+                option_help={
+                    False: "detects features in each file and links them across the files.",
+                    True: "also runs the custom Python tool on the linked features.",
+                },
+            )
+            # Ready-made settings for the kind of data, read back from the
+            # settings (the preset they hold), never stored themselves
+            current = self.current_preset()
+            # What the box shows, so configure() can tell when it went stale
+            st.session_state[self.SHOWN_PRESET_KEY] = current
+            self.ui.preset_choice(
+                "feature-preset", "Detection", list(self.DETECTION_PRESETS), current,
+                labels=self.DETECTION_PRESETS,
+                help="Settings for feature detection and linking (presets.json). "
+                     "Change any of them in the steps below.",
+            )
+            # What the selected files suggest, with a button that applies it
+            recommended, why = self.recommend_preset(
+                self.ui.current_params().get("mzML-files") or []
+            )
+            if recommended:
+                self.ui.recommendation(why, recommended, current,
+                                       f"Use {self.DETECTION_PRESETS[recommended].lower()}",
+                                       "feature-preset-recommended")
+            self.ui.analysis_summary(self.summary())
+
+    # The presets the Detection control offers (presets.json), with their labels
+    DETECTION_PRESETS = {
+        "Metabolomics Default": "Balanced",
+        "High Sensitivity": "Sensitive",
+        "High Specificity": "Strict",
+        "Fast Analysis": "Fast",
+    }
+    # From this many files on, the recommendation is the fast settings
+    MANY_FILES = 10
+
+    # Session key of the preset the Detection box showed on the last full rerun
+    SHOWN_PRESET_KEY = "topp-workflow-shown-preset"
+
+    def preset_display_stale(self) -> bool:
+        """True when the settings hold another preset than the box shows."""
+        if self.SHOWN_PRESET_KEY not in st.session_state:
+            return False
+        return st.session_state[self.SHOWN_PRESET_KEY] != self.current_preset()
+
+    def current_preset(self):
+        """The detection preset the settings hold, None when they are the user's own."""
+        name, changed = self.parameter_manager.applied_preset_status()
+        return name if name in self.DETECTION_PRESETS and not changed else None
+
+    def recommend_preset(self, files: list) -> tuple:
+        """The detection preset the selected files suggest, and why.
+
+        Returns ``(preset, reason)``: a key of ``DETECTION_PRESETS`` and one
+        sentence (Markdown) shown beside it, or ``(None, "")`` when there is
+        nothing to suggest. The page shows the reason with a button that
+        applies the preset, or says the settings already match it.
+
+        The rule here only counts the files. A rule that looks at the data
+        goes here too: read what it needs from the files (with pyOpenMS, for
+        example the instrument or the number of spectra; cache that read,
+        since this runs on every rerun of the page) and return the preset it
+        points to. A new preset is an entry in presets.json plus its label in
+        ``DETECTION_PRESETS``.
+        """
+        n = len(files)
+        if not n:
+            return None, ""
+        if n >= self.MANY_FILES:
+            preset = "Fast Analysis"
+            return preset, (f"For {n} files, **{self.DETECTION_PRESETS[preset]}** "
+                            "settings keep the run short.")
+        preset = "Metabolomics Default"
+        return preset, (f"For {n} file{'s' if n != 1 else ''}, the "
+                        f"**{self.DETECTION_PRESETS[preset]}** settings fit most "
+                        "metabolomics data.")
+
+    def steps(self) -> list:
+        """The steps the chosen analysis runs, in the order they run."""
+        steps = ["Samples and groups", "Feature detection", "Feature linking"]
+        if self.ui.current_params().get("run-python-script"):
+            steps.append("Custom step")
+        return steps
+
+    def summary(self) -> str:
+        """What a start will do, in one sentence (the box and the Run bar)."""
+        params = self.ui.current_params()
+        n = len(params.get("mzML-files") or [])
+        files = f"{n} file{'s' if n != 1 else ''}" if n else "the selected files"
+        extra = " and runs the custom Python tool on them" if params.get("run-python-script") else ""
+        return f"Detects features in {files}, links them across the files{extra}."
+
     @st.fragment
     def configure(self) -> None:
-        # Allow users to select mzML files for the analysis. reactive=True so
-        # the experimental design table follows the selection.
-        # upload= adds a Browse button: the files by folder, and adding more,
-        # without going back to the upload page.
-        self.ui.select_input_file(
-            "mzML-files", multiple=True, reactive=True,
-            upload=dict(
-                file_types=["mzML", "raw", "d"],
-                fallback=[str(f) for f in Path("example-data", "mzML").glob("*.mzML")],
-                suggest_folders=True,
-            ),
-        )
-
-        # Create tabs for different analysis steps.
-        t = st.tabs(
-            [
-                "**Feature Detection**",
-                "**Feature Linking**",
-                "**Python Custom Tool**",
-                "**Experimental Design**",
-            ]
-        )
-        with t[0]:
-            # Parameters for FeatureFinderMetabo TOPP tool.
-            self.ui.input_TOPP(
-                "FeatureFinderMetabo",
-                custom_defaults={"algorithm:common:noise_threshold_int": 1000.0},
-            )
-        with t[1]:
-            # Parameters for MetaboliteAdductDecharger TOPP tool.
-            self.ui.input_TOPP("FeatureLinkerUnlabeledKD")
-        with t[2]:
-            # A single checkbox widget for workflow logic.
-            self.ui.input_widget("run-python-script", False, "Run custom Python script")
-            # Generate input widgets for a custom Python tool, located at src/python-tools.
-            # Parameters are specified within the file in the DEFAULTS dictionary.
-            self.ui.input_python("example")
-        with t[3]:
+        # One numbered tab per step the chosen analysis runs
+        tabs = self.ui.step_tabs(self.steps())
+        with tabs["Samples and groups"]:
             # Condition, replicate and fraction per selected file, saved as an
             # OpenMS design.tsv in the workflow directory. Pass that file to a
             # TOPP tool's -design (e.g. ProteomicsLFQ), or read it in
             # execution() with src.workflow.ExperimentalDesign.load_design().
             self.ui.experimental_design("mzML-files", suggest=True)
+        with tabs["Feature detection"]:
+            # Parameters for FeatureFinderMetabo TOPP tool.
+            # reactive: an edit reruns configure(), which refreshes the
+            # Detection box above only when the edit changed its preset
+            self.ui.input_TOPP(
+                "FeatureFinderMetabo",
+                custom_defaults={"algorithm:common:noise_threshold_int": 1000.0},
+                reactive=True,
+            )
+        with tabs["Feature linking"]:
+            self.ui.input_TOPP("FeatureLinkerUnlabeledKD", reactive=True)
+            # A setting of the workflow's own (no TOPP tool has it), stored
+            # with the run's parameters and read in execution()
+            self.ui.input_widget(
+                "min-files", 1, "Found in at least (files)",
+                help="Keep a linked feature only if it was detected in at least this many files.",
+                widget_type="number", min_value=1, max_value=100,
+            )
+        if "Custom step" in tabs:
+            with tabs["Custom step"]:
+                # Generate input widgets for a custom Python tool, located at src/python-tools.
+                # Parameters are specified within the file in the DEFAULTS dictionary.
+                self.ui.input_python("example")
+        # A parameter edit can make the Detection box (outside this fragment)
+        # name a preset the settings no longer hold: rerun the page then
+        if self.preset_display_stale():
+            st.rerun(scope="app")
 
     def execution(self) -> bool:
         # Return True only if every step succeeded. The caller
@@ -190,8 +308,21 @@ class Workflow(WorkflowManager):
         ):
             self.logger.log("ERROR: Exporting consensus features failed.")
             return False
+        features = Path(out_fl[0]).with_suffix(".tsv")
+        self._keep_features_in(features, int(self.params.get("min-files", 1)))
 
-        return self._custom_tool(Path(out_fl[0]).with_suffix(".tsv"))
+        return self._custom_tool(features)
+
+    def _keep_features_in(self, table: Path, min_files: int) -> None:
+        """Drop the linked features found in fewer than ``min_files`` files
+        (the workflow's own setting ``min-files``)."""
+        if min_files <= 1:
+            return
+        df = pd.read_csv(table, sep="\t")
+        intensities = df.columns[df.columns.get_loc("quality") + 1:]
+        kept = df[df[intensities].notna().sum(axis=1) >= min_files]
+        kept.to_csv(table, sep="\t", index=False)
+        self.logger.log(f"Kept {len(kept)} of {len(df)} features found in at least {min_files} files.")
 
     # The steps whose results an analysis added to a run takes from it
     FEATURE_STEPS = ["FeatureFinderMetabo", "FeatureLinkerUnlabeledKD"]
@@ -216,7 +347,7 @@ class Workflow(WorkflowManager):
 
     def _custom_tool(self, features: Path) -> bool:
         # Check if the custom Python tool should be run.
-        if self.params["run-python-script"]:
+        if self.params.get("run-python-script"):
             # Example for a custom Python tool, which is located in src/python-tools.
             # It writes the features with the highest mean intensity.
             out_top = self.file_manager.get_files("top-features.tsv", set_results_dir="custom-tool")
@@ -225,14 +356,15 @@ class Workflow(WorkflowManager):
                 return False
         return True
 
-    # The Results page: components arranged in views. A component that shows
+    # The Results page: components arranged in views, grouped as every
+    # Explore results page groups them (guide.COMPONENT_GROUPS). A component that shows
     # the result of an optional step names it as "needs"; views of a run
     # without it are drawn disabled, and a click offers to add it.
     COMPONENTS = [
-        {"name": "features", "label": "Consensus features", "group": "Tables"},
-        {"name": "intensities", "label": "Intensities of the selected features", "group": "Plots",
+        {"name": "features", "label": "Consensus features", "group": QUANTIFICATION},
+        {"name": "intensities", "label": "Intensities of the selected features", "group": QUANTIFICATION,
          "requires": "features"},
-        {"name": "top_features", "label": "Top features (custom Python tool)", "group": "Tables",
+        {"name": "top_features", "label": "Top features (custom Python tool)", "group": QUANTIFICATION,
          "needs": "custom-tool"},
     ]
     PRESETS = [
@@ -260,14 +392,14 @@ class Workflow(WorkflowManager):
         """Open Configure with this run's settings (and ``changes``), to pick
         files that are then processed and added to its experiment."""
         self.follow_up(
-            self.run_id, changes or {}, page=Path("content", "topp_workflow_parameter.py"),
+            self.run_id, changes or {}, page=self.configure_page,
             note="to add more files", add_files="mzML-files") or _no_settings()
 
     def add_analysis(self, changes) -> None:
         """Open Configure with this run's settings and ``changes``, to add an analysis
         to the run: its files are locked and its features reused."""
         self.follow_up(
-            self.run_id, changes, page=Path("content", "topp_workflow_parameter.py"),
+            self.run_id, changes, page=self.configure_page,
             note="with the custom Python tool switched on", same_files="mzML-files",
             keep=self.FEATURE_STEPS) or _no_settings()
 
@@ -284,12 +416,75 @@ class Workflow(WorkflowManager):
             "on_click": lambda: self.add_analysis(changes),
         }]
 
+    # How features of the runs of an experiment are matched into one table
+    # (merge_feature_tables), set in Edit comparison
+    MATCHING = {"ppm": 10.0, "rt_tolerance": 30.0}
+
+    def _members(self) -> list:
+        return self.runs.experiment(self.run_id) or [self.run_id]
+
+    def _matching_key(self, name: str) -> str:
+        return f"topp-results-matching-{self.run_id}-{name}"
+
+    def _matching(self) -> dict:
+        # Kept apart from the dialog's widget keys: Streamlit drops a widget's
+        # state on a run that does not draw it, i.e. once the dialog is closed
+        return {name: float(st.session_state.get(self._matching_key(name), value))
+                for name, value in self.MATCHING.items()}
+
+    def _keep_matching(self, name: str) -> None:
+        st.session_state[self._matching_key(name)] = st.session_state[self._matching_key(name) + "-input"]
+
+    def _matching_step(self) -> None:
+        st.caption("A feature of a later run joins the nearest feature of the runs before it within "
+                   "these tolerances; otherwise it is a feature of its own.")
+        left, right = st.columns(2)
+        matching = self._matching()
+        left.number_input("m/z tolerance (ppm)", 0.5, 100.0, matching["ppm"], 0.5,
+                          key=self._matching_key("ppm") + "-input",
+                          on_change=self._keep_matching, args=("ppm",))
+        right.number_input("Retention time tolerance (s)", 1.0, 600.0, matching["rt_tolerance"], 1.0,
+                           key=self._matching_key("rt_tolerance") + "-input",
+                           on_change=self._keep_matching, args=("rt_tolerance",))
+
+    def _runs_step(self) -> None:
+        for run_id in self._members():
+            st.markdown(f"- {run_label(self.runs.get(run_id) or {'id': run_id})}")
+
+    def _reset_matching(self) -> None:
+        for name in self.MATCHING:
+            st.session_state.pop(self._matching_key(name), None)
+            st.session_state.pop(self._matching_key(name) + "-input", None)
+
+    def _experiment_bar(self) -> None:
+        """Single run | Comparison for an experiment that runs added files to,
+        and Edit comparison while the comparison is shown."""
+        members = self._members()
+        self._single = None
+        if len(members) < 2:
+            return
+        with st.container(horizontal=True, vertical_alignment="bottom"):
+            self._single = member_switch(
+                f"topp-results-show-{self.run_id}", members,
+                label_of=lambda r: run_label(self.runs.get(r) or {"id": r}),
+                help_text="Comparison: the features of every run of the experiment, matched into one "
+                          "table. Single run: the features of one run.",
+            )
+            if self._single is None:
+                edit_comparison(
+                    f"topp-results-{self.run_id}",
+                    [("1. Runs", self._runs_step), ("2. Matching features", self._matching_step)],
+                    intro="How the runs of this experiment are put into one feature table.",
+                    on_reset=self._reset_matching,
+                )
+
     @st.fragment
     def results(self) -> None:
+        self._experiment_bar()
         layout_path = Path(self.workflow_dir, "layouts", "results.json")
         view_bar(
             layout_path, self.COMPONENTS, self.PRESETS, self.PRESETS[0]["layout"], key="topp-results-view",
-            available=self.available(), analyses=self.ANALYSES,
+            available=self.available(getattr(self, "_single", None)), analyses=self.ANALYSES,
             unavailable_options=self.missing_options, target="the Results page",
             actions=[{"id": "add-files", "icon": "➕", "label": "Add analysis", "on_click": self.add_files,
                       "help": "Process more files with this run's settings and add them to its experiment"}],
@@ -298,25 +493,35 @@ class Workflow(WorkflowManager):
         render_layout(
             layout[0],
             {"features": self._features, "intensities": self._intensities, "top_features": self._top_features},
-            components=self.COMPONENTS, available=self.available(), analyses=self.ANALYSES,
-            on_missing=lambda missing, name: request_analysis("topp-results-view", missing, component=name),
+            components=self.COMPONENTS, available=self.available(getattr(self, "_single", None)),
+            analyses=self.ANALYSES, on_missing=lambda missing, name: request_analysis("topp-results-view", missing, component=name),
         )
+
+    def _shown_results(self) -> Path:
+        """The results of the run shown: the one picked under Single run, else this run."""
+        single = getattr(self, "_single", None)
+        return Path(self.runs.results_dir(single)) if single else Path(self.results_dir)
 
     def _feature_table(self):
         """The consensus features of the shown experiment: one run, or a run and
         the runs that added files to it, their features matched here."""
+        single = getattr(self, "_single", None)
         tables = []
-        for run_id in self.runs.experiment(self.run_id) or [self.run_id]:
+        for run_id in [single] if single else self._members():
             file = Path(self.runs.results_dir(run_id), "feature-linking", "feature_matrix.tsv")
             if file.exists():
                 tables.append(pd.read_csv(file, sep="\t", index_col=0))
-        return merge_feature_tables(tables) if tables else None
+        return merge_feature_tables(tables, **self._matching()) if tables else None
 
     def _features_key(self) -> str:
         """The feature table's widget key, one per experiment and its runs, so a
         selection never carries over to another table (files added change it)."""
-        members = self.runs.experiment(self.run_id) or [self.run_id]
-        return "topp-results-features-" + "-".join(members)
+        single = getattr(self, "_single", None)
+        if single:
+            return f"topp-results-features-{single}"
+        # The matching tolerances decide the comparison's rows
+        matching = "-".join(f"{v:g}" for v in self._matching().values())
+        return "topp-results-features-" + "-".join(self._members()) + f"-{matching}"
 
     def _features(self) -> None:
         df = self._feature_table()
@@ -340,6 +545,6 @@ class Workflow(WorkflowManager):
             st.info("💡 Select one or more rows in the table to show a barplot with intensities.")
 
     def _top_features(self) -> None:
-        file = Path(self.results_dir, "custom-tool", "top-features.tsv")
+        file = Path(self._shown_results(), "custom-tool", "top-features.tsv")
         st.markdown("**Top features**")
         st.dataframe(pd.read_csv(file, sep="\t"), hide_index=True)
