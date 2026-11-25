@@ -465,6 +465,7 @@ def view_bar(
     states: Optional[Callable[[int], Any]] = None,
     datasets: Optional[Callable[[int], Optional[str]]] = None,
     link: bool = False,
+    not_kept: Sequence[str] = (),
     **editor_args: Any,
 ) -> str:
     """The view bar: as many views as fit, the rest in More, and ✏️ Customize.
@@ -501,8 +502,12 @@ def view_bar(
     zoom and selection shown as its defaults (📌), opening it applies them,
     and ↺ brings them back after the user changed them. Components keep their
     zoom in the state only when given ``zoom_identifier=zoom_identifier(name)``.
+    ``not_kept`` names selections neither 📌 nor a link stores: those a
+    component publishes itself whenever it is drawn (the fragments a sequence
+    view matched, say), which would only make a link long.
     Returns the name of the current view.
     """
+    states = _without(states, not_kept)
     open_key = f"{key}_dialog_open"
     new_key = f"{key}_dialog_new"
     handled_key = f"{key}_bar_handled"
@@ -1011,6 +1016,27 @@ def _stored(state: Any) -> Dict[str, Any]:
     """All of an experiment's selections, those a component keeps apart (``row@table``) too."""
     stored = getattr(state, "stored_selections", None)
     return stored() if callable(stored) else state.get_all_selections()
+
+
+class _NotKept:
+    """An experiment's state whose selections named in ``not_kept`` are not stored."""
+
+    def __init__(self, state: Any, not_kept: Sequence[str]):
+        self._state = state
+        self._not_kept = set(not_kept)
+
+    def stored_selections(self) -> Dict[str, Any]:
+        return {k: v for k, v in (_stored(self._state) or {}).items() if k not in self._not_kept}
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._state, name)
+
+
+def _without(states: Optional[Callable[[int], Any]], not_kept: Sequence[str]) -> Optional[Callable[[int], Any]]:
+    """``states`` whose states leave out the selections in ``not_kept`` when stored."""
+    if states is None or not not_kept:
+        return states
+    return lambda index: (lambda state: None if state is None else _NotKept(state, not_kept))(states(index))
 
 
 def _private_state(base: type) -> type:
