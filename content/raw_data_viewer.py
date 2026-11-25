@@ -72,7 +72,7 @@ FILES = DatasetKind(
     name="file", components=COMPONENTS, presets=PRESETS, default_layout=DEFAULT_LAYOUT,
     views_path=Path(st.session_state.workspace, "layouts", "raw_data_viewer.json"),
     renderers=lambda ctx: RENDERERS, labels={c["name"]: c["label"] for c in COMPONENTS},
-    before=load_file, states=None, link=True, view_key="raw_data_viewer_view",
+    before=load_file, states=None, view_key="raw_data_viewer_view",
     # One file is loaded at a time, so the page shows one experiment
     max_experiments=1, dataset_label="file", target="this page",
     help_text="Order the views, keep some out of the bar, or make your own, then press **Save**.",
