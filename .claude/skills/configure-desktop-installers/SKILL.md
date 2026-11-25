@@ -27,7 +27,7 @@ optional and falls back to the workflow's default:
 | `name` | installer and install-folder name, no spaces; also `appId de.openms.<name>`. Changing it on a released app gives users a second install. |
 | `installer_version` | `true` names the installers `<name>-<version>-Setup.exe` and so on, version from `settings.json` |
 | `topp_tools` | every TOPP tool the app's `execution()` calls, plus `FileConverter` if `raw` input is accepted. A tool missing here works in Docker and fails only on the desktop. |
-| `openms` | the OpenMS to bundle: a release (`"3.6.0"`) or `owner/repo@ref`; see `upgrade-openms` |
+| `openms` | the OpenMS to bundle: a release (`"3.6.0"`) or `owner/repo@ref`; see `upgrade-openms`. It must name what the full Dockerfiles build (`OPENMS_REPO`/`OPENMS_BRANCH`), so the desktop app, its command line tools and the image run one OpenMS; `python -m utils.app_spec` checks it |
 | `synopsis` | one line for the Linux AppImage |
 | `e2e_scenarios` | the app's scenario files for `e2e.js --scenario` (repository paths) |
 | `stage_script` | a bash script run as `bash <script> <python> electron/payload` once the app's requirements are installed in the embedded Python: extra wheels, import checks, package swaps. It runs on all three platforms (Git Bash on Windows); tell them apart with `uname -s` |
