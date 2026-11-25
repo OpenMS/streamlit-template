@@ -6,7 +6,7 @@ from pathlib import Path
 from src.viz import catalog
 
 ROOT = Path(__file__).resolve().parents[1] / "src" / "viz"
-SHARED = {"__init__", "steps"}
+SHARED = {"__init__", "steps", "narrowing"}
 
 
 def test_every_module_is_listed():
