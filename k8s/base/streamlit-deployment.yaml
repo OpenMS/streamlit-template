@@ -97,7 +97,10 @@ spec:
                 - |
                   set -u
                   curl -fsS -m 5 -o /dev/null http://localhost:8501/_stcore/health || exit 1
-                  exec timeout -k 3 15 /root/miniforge3/envs/streamlit-env/bin/python -m src.workflow.health --mount-alive
+                  timeout -k 3 15 /root/miniforge3/envs/streamlit-env/bin/python -m src.workflow.health --mount-alive
+                  # Only exit 1 is a dead mount. An image older than these
+                  # manifests does not know --mount-alive and exits 2: alive.
+                  [ "$?" -ne 1 ]
             initialDelaySeconds: 30
             periodSeconds: 30
             timeoutSeconds: 20

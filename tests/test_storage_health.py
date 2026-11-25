@@ -860,6 +860,39 @@ def test_workspace_mounts_follow_a_remount(manifest):
             )
 
 
+def _liveness_scripts():
+    for manifest in ("streamlit-deployment.yaml", "rq-worker-deployment.yaml", "sync-deployment.yaml"):
+        path = REPO_ROOT / "k8s" / "base" / manifest
+        for d in yaml.safe_load_all(path.read_text(encoding="utf-8")):
+            if not d or d.get("kind") != "Deployment":
+                continue
+            for c in d["spec"]["template"]["spec"]["containers"]:
+                command = c["livenessProbe"]["exec"]["command"]
+                assert os.path.basename(command[0]) == "bash" and command[1] == "-c", (
+                    f"{manifest}: {c['name']} liveness probe is not a bash script"
+                )
+                yield pytest.param(command[2], id=f"{manifest}:{c['name']}")
+
+
+@pytest.mark.skipif(shutil.which("bash") is None or os.name == "nt", reason="needs bash")
+@pytest.mark.parametrize("script", list(_liveness_scripts()))
+@pytest.mark.parametrize("code, alive", [(0, True), (1, False), (2, True)])
+def test_liveness_probe_fails_only_on_a_dead_mount(tmp_path, script, code, alive):
+    """
+    Argo CD applies these manifests from main while the pods may still run the
+    last release, whose health module does not know --mount-alive (argparse
+    exits 2). Only exit 1, a dead mount, may fail the probe; a usage error
+    restarting every pod in a loop is how the template site went down.
+    """
+    python = tmp_path / "python"
+    python.write_text(f"#!/bin/sh\nexit {code}\n")
+    python.chmod(0o755)
+    script = script.replace("/root/miniforge3/envs/streamlit-env/bin/python", str(python))
+    script = script.replace("curl ", "true ")
+    result = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=30)
+    assert (result.returncode == 0) is alive, (code, result.returncode, result.stderr)
+
+
 def _run_mount_child(error):
     """Run the stat child in-process with os.stat raising `error`."""
     with mock.patch.object(os, "stat", side_effect=error), mock.patch.object(
