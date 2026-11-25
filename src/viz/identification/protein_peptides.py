@@ -8,6 +8,7 @@ Insight component: ``Table`` (columns generated from the frame). Columns:
 
 from __future__ import annotations
 
+from src.viz.identification._hierarchy import level
 from src.viz.identification.protein_table import HIDDEN
 
 COMPONENT = "Table"
@@ -18,3 +19,9 @@ def settings(protein: str = "protein", peptide: str = "peptide", title: str = "P
         title=title, filters={protein: "accession"}, interactivity={peptide: "peptide"},
         column_overrides={"accession": HIDDEN},
     ) | overrides
+
+
+def display(cls, protein: str = "protein") -> dict:
+    """Render-time options of the table (``cls``, Insight's ``Table``): its
+    place among the protein, peptide and PSM tables (see ``_hierarchy.level``)."""
+    return level(cls, 1, {protein: "Protein"})

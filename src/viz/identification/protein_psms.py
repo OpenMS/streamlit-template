@@ -9,6 +9,7 @@ Insight component: ``Table`` (columns generated from the frame). Columns:
 
 from __future__ import annotations
 
+from src.viz.identification._hierarchy import level
 from src.viz.identification.protein_table import HIDDEN, decimals
 
 COMPONENT = "Table"
@@ -21,3 +22,9 @@ def settings(protein: str = "protein", peptide: str = "peptide", psm: str = "psm
         column_overrides={"accession": HIDDEN, "peptide": HIDDEN, "psm": HIDDEN,
                           "RT (s)": decimals(1), "m/z": decimals(4)},
     ) | overrides
+
+
+def display(cls, protein: str = "protein", peptide: str = "peptide") -> dict:
+    """Render-time options of the table (``cls``, Insight's ``Table``): its
+    place among the protein, peptide and PSM tables (see ``_hierarchy.level``)."""
+    return level(cls, 2, {protein: "Protein", peptide: "Peptide"})

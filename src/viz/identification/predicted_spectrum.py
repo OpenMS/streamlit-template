@@ -10,6 +10,8 @@ predicted), ``peak_id``, ``mass``, ``intensity`` (relative, %), ``highlight``,
 
 from __future__ import annotations
 
+from src.viz.identification.annotated_spectrum import precursor_marker  # noqa: F401 (the same marker)
+
 COMPONENT = "MirrorPlot"
 
 
