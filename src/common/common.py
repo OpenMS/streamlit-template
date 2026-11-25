@@ -11,7 +11,7 @@ import pandas as pd
 import streamlit as st
 
 from typing import Any
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from streamlit.components.v1 import html
 
 import subprocess
@@ -24,8 +24,10 @@ except ImportError:
     TK_AVAILABLE = False
 
 from src.common.developer import render_developer_toggle
+from src.workflow import linked_folders
 from src.common.other_apps import render_other_apps_sidebar
 from src.common.captcha_ import captcha_control
+from src.common.download_tracking import tracker_script, tracking_enabled
 from src.common.admin import (
     is_admin_configured,
     verify_admin_password,
@@ -262,7 +264,21 @@ def find_demo_workspace_path(demo_name: str) -> Path | None:
 LINK_MIN_BYTES = 1024 * 1024
 
 
-def _symlink_tree(source: Path, target: Path) -> None:
+def _seed_file(item: Path, target_item: Path) -> None:
+    """Copy a small file or a settings file, link everything else."""
+    if (
+        item.name == "params.json"
+        or item.suffix == ".ini"
+        or item.stat().st_size < LINK_MIN_BYTES
+    ):
+        # Copy config files so they can be modified independently. copy2
+        # keeps the modification time, which result caches key on.
+        shutil.copy2(item, target_item)
+    else:
+        target_item.symlink_to(item.resolve())
+
+
+def _symlink_tree(source: Path, target: Path, link_folders=()) -> None:
     """
     Recursively create directory structure and symlink files from source to target.
 
@@ -271,25 +287,43 @@ def _symlink_tree(source: Path, target: Path) -> None:
     params.json, .ini files and every file smaller than ``LINK_MIN_BYTES`` are
     copied instead of symlinked so they can be modified independently.
 
+    A folder whose path relative to ``source`` matches one of the glob
+    patterns in ``link_folders`` (``demo_workspaces.link_folders`` in
+    settings.json, such as ``cache/files/*``) is linked whole: one link
+    however many files it holds. Code that writes into such a folder must
+    call ``src.workflow.linked_folders.own_folder`` first.
+
     Args:
         source: Source directory path.
         target: Target directory path.
+        link_folders: Glob patterns of the folders linked whole.
     """
-    target.mkdir(parents=True, exist_ok=True)
-    for item in source.iterdir():
-        target_item = target / item.name
-        if item.is_dir():
-            _symlink_tree(item, target_item)
-        elif (
-            item.name == "params.json"
-            or item.suffix == ".ini"
-            or item.stat().st_size < LINK_MIN_BYTES
-        ):
-            # Copy config files so they can be modified independently
-            shutil.copy2(item, target_item)
-        else:
-            # Create symlink to the source file
-            target_item.symlink_to(item.resolve())
+    source = Path(source)
+    target = Path(target)
+
+    def fail(error: OSError) -> None:
+        # A folder that cannot be listed must not yield a workspace without it
+        raise error
+
+    # followlinks: a linked folder in the demo becomes a real folder too, so
+    # its small files are copies a workspace can change
+    for root, dirs, files in os.walk(source, onerror=fail, followlinks=True):
+        rel = Path(root).relative_to(source)
+        Path(target, rel).mkdir(parents=True, exist_ok=True)
+        for name in list(dirs):
+            if linked_folders.matches(PurePosixPath(rel.as_posix(), name), link_folders):
+                dirs.remove(name)
+                Path(target, rel, name).symlink_to(
+                    Path(root, name).resolve(), target_is_directory=True
+                )
+        for name in files:
+            _seed_file(Path(root, name), Path(target, rel, name))
+
+
+def demo_link_folders() -> list:
+    """The folders of a demo a new workspace links whole (``demo_workspaces.link_folders``)."""
+    settings = st.session_state.get("settings", {})
+    return list(settings.get("demo_workspaces", {}).get("link_folders", []))
 
 
 def copy_demo_workspace(demo_name: str, target_path: Path) -> bool:
@@ -300,6 +334,11 @@ def copy_demo_workspace(demo_name: str, target_path: Path) -> bool:
     On other platforms, copies files normally.
 
     Searches all configured source directories for the demo (first match wins).
+    The workspace is built in a folder beside the target and renamed to it
+    when complete, so a workspace that was being built when a server stopped
+    is never taken for a finished one (``page_setup`` seeds only a workspace
+    that does not exist yet). A workspace that exists with content when the
+    new one is complete is kept, never replaced.
 
     Args:
         demo_name: Name of the demo workspace to copy.
@@ -313,18 +352,38 @@ def copy_demo_workspace(demo_name: str, target_path: Path) -> bool:
     if demo_path is None:
         return False
 
+    target_path = Path(target_path)
+    staging = target_path.with_name(f"{target_path.name}.seeding-{uuid.uuid4().hex[:8]}")
+    started = time.monotonic()
     try:
-        if target_path.exists():
-            shutil.rmtree(target_path)
-
         # Use symlinks on Linux for efficiency (not in an AppImage)
         if LINK_EXAMPLE_FILES:
-            _symlink_tree(demo_path, target_path)
+            _symlink_tree(demo_path, staging, demo_link_folders())
         else:
-            shutil.copytree(demo_path, target_path)
-        return True
+            shutil.copytree(demo_path, staging)
+        try:
+            # Fails when the target exists with content: another session set
+            # it up meanwhile, and that workspace (and what its user added
+            # since) is kept. An empty folder is replaced.
+            os.rename(staging, target_path)
+        except OSError:
+            if not target_path.is_dir():
+                raise
+            if not any(target_path.iterdir()):
+                # Windows refuses to rename onto an empty folder too
+                target_path.rmdir()
+                os.rename(staging, target_path)
+            else:
+                shutil.rmtree(staging, ignore_errors=True)
+                return True
     except Exception:
+        logger.exception("Could not set up workspace %s from demo %s",
+                         target_path.name, demo_name)
+        shutil.rmtree(staging, ignore_errors=True)
         return False
+    logger.info("Workspace %s set up from demo %s in %.1f s",
+                target_path.name, demo_name, time.monotonic() - started)
+    return True
 
 
 def new_workspace_demo() -> str | None:
@@ -700,7 +759,7 @@ def apply_theme_css() -> None:
     )
 
 
-def page_setup(page: str = "") -> dict[str, Any]:
+def page_setup(page: str = "", captcha: bool = True) -> dict[str, Any]:
     """
     Set up the Streamlit page configuration and determine the workspace for the current session.
 
@@ -708,6 +767,10 @@ def page_setup(page: str = "") -> dict[str, Any]:
 
     Args:
         page (str, optional): The name of the current page, by default "".
+        captcha (bool, optional): Online, ask for the captcha (and the
+            tracking consent) before the page is drawn, once per session.
+            Pages that only explain the app (Quick Start, Documentation)
+            pass False, so they open without it; the workflow pages keep it.
 
     Returns:
         dict[str, Any]: A dictionary containing the parameters loaded from the parameter file.
@@ -814,6 +877,12 @@ def page_setup(page: str = "") -> dict[str, Any]:
                 width=1,
                 height=1,
             )
+            if tracking_enabled(st.session_state.settings):
+                html(
+                    tracker_script(st.session_state.settings.get("app-name", "")),
+                    width=1,
+                    height=1,
+                )
 
     # Determine the workspace for the current session
     if ("workspace" not in st.session_state) or (
@@ -900,7 +969,9 @@ def page_setup(page: str = "") -> dict[str, Any]:
 
     # Make sure the necessary directories exist
     if not st.session_state.workspace.is_dir():
-        seed_new_workspace(st.session_state.workspace, st.session_state.location)
+        # A blank page while the demo is set up looks like a server that hangs
+        with st.spinner("Preparing your workspace with the example data..."):
+            seed_new_workspace(st.session_state.workspace, st.session_state.location)
     st.session_state.workspace.mkdir(parents=True, exist_ok=True)
     Path(st.session_state.workspace, "mzML-files").mkdir(parents=True, exist_ok=True)
 
@@ -916,19 +987,10 @@ def page_setup(page: str = "") -> dict[str, Any]:
     else:
         set_image_format(st.session_state.get("image-format", "svg"))
 
-    captcha_control(privacy_policy_url=get_legal_links()["privacy"])
-
-    # If run in hosted mode, show captcha as long as it has not been solved
-    # if not "local" in sys.argv:
-    #    if "controllo" not in st.session_state:
-    #        # Apply captcha by calling the captcha_control function
-    #        captcha_control()
-
-    # If run in hosted mode, show captcha as long as it has not been solved
-    if "controllo" not in st.session_state or (
-        "controllo" in params.keys() and params["controllo"] == False
-    ):
-        # Apply captcha by calling the captcha_control function
+    # Online, ask for the captcha once per session (it sets "controllo"),
+    # unless the page only explains the app.
+    # captcha_control() itself returns at once when "controllo" is set.
+    if captcha:
         captcha_control(privacy_policy_url=get_legal_links()["privacy"])
 
     return params

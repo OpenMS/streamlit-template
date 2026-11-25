@@ -1064,6 +1064,37 @@ def test_annotations_kept_and_applied_only_for_their_dataset():
     assert elsewhere == {}
 
 
+def test_not_kept_selections_are_left_out_of_what_a_view_stores():
+    """``not_kept`` leaves selections a component publishes itself out of 📌 and links,
+    while the components still read and set them through the same state."""
+    from src.layout_manager.ui import _stored, _without
+
+    class State:
+        def __init__(self):
+            self.values = {"protein": "P1", "fragment_matches": [1, 2, 3], "zoom@plot": {"x": [1, 2]}}
+
+        def get_all_selections(self):
+            return dict(self.values)
+
+        def get_selection(self, name):
+            return self.values.get(name)
+
+    state = State()
+    assert _without(lambda i: state, ())(0) is state
+    wrapped = _without(lambda i: state, ["fragment_matches"])(0)
+    assert _stored(wrapped) == {"protein": "P1", "zoom@plot": {"x": [1, 2]}}
+    assert wrapped.get_selection("fragment_matches") == [1, 2, 3]
+    assert _without(lambda i: None, ["fragment_matches"])(0) is None
+    assert _without(None, ["fragment_matches"]) is None
+
+
+def test_a_kind_has_links_unless_it_says_otherwise():
+    from src.layout_manager.viewer import DatasetKind
+    kind = DatasetKind(name="run", components=[], presets=[], default_layout=[], views_path="v.json")
+    assert kind.link is True
+    assert tuple(kind.not_kept) == ()
+
+
 def test_link_params_round_trip():
     from src.layout_manager.layout import link_params, link_url, read_link
 
