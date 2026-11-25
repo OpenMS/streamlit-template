@@ -46,7 +46,7 @@ def test_workflow_pages_reads_class_attributes():
 
 def _example_workflow():
     try:
-        from src.Workflow import Workflow
+        from src.Workflow import Workflow  # pylint: disable=no-name-in-module
     except ModuleNotFoundError as e:
         if e.name != "src.Workflow":
             raise

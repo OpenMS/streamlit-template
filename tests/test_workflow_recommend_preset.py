@@ -8,7 +8,7 @@ import pytest
 def _example_workflow(*names):
     """The template's example workflow; an app's own workflow may lack what is tested."""
     try:
-        from src.Workflow import Workflow
+        from src.Workflow import Workflow  # pylint: disable=no-name-in-module
     except ModuleNotFoundError as e:
         if e.name != "src.Workflow":
             raise
