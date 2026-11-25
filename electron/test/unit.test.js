@@ -183,3 +183,31 @@ test("Streamlit starts through the launcher that preloads polars", () => {
   assert.equal(args[args.indexOf("--server.port") + 1], "8765");
   assert.equal(args[args.indexOf("--server.address") + 1], "127.0.0.1");
 });
+
+const loading = require("../src/loading");
+
+test("loading page shows the app name, version and every logo bar", () => {
+  const html = loading.loadingPage({ title: "Test <App>", version: "1.2.3", fontDir: null });
+  assert.match(html, /Test &#60;App&#62;/);
+  assert.doesNotMatch(html, /Test <App>/);
+  assert.match(html, /Version 1\.2\.3/);
+  // Each bar is drawn twice: in the logo gradient and in the moving sheen.
+  assert.equal((html.match(/class="bar /g) || []).length, 2 * loading.BARS.length);
+  assert.equal((html.match(/class="glyph"/g) || []).length, 6);
+  assert.match(html, /window\.__finishLoading/);
+});
+
+test("loading page inlines the theme fonts when they exist", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fonts-"));
+  fs.writeFileSync(path.join(dir, "montserrat-alternates-latin-600-normal.woff2"), "x");
+  const html = loading.loadingPage({ title: "A", version: "", fontDir: dir });
+  assert.match(html, /font-family:"Montserrat Alternates"/);
+  assert.doesNotMatch(html, /font-family:"Raleway";/);
+  assert.doesNotMatch(html, /Version /);
+});
+
+test("loading page URL is a data URL the window can load", () => {
+  const url = loading.loadingPageUrl({ title: "A", version: "1", fontDir: null });
+  assert.ok(url.startsWith("data:text/html;charset=utf-8,"));
+  assert.match(decodeURIComponent(url), /<h1>A<\/h1>/);
+});
