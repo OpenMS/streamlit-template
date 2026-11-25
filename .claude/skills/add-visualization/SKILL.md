@@ -9,6 +9,11 @@ Add mass spectrometry data visualizations using pyopenms-viz or OpenMS-Insight c
 
 MS data has specialized visualization needs: mass spectra (m/z vs intensity stick plots), chromatograms (RT vs intensity), 2D peak maps (RT vs m/z heatmaps), isotope patterns, fragment ion annotations, and statistical plots like volcano plots for differential expression.
 
+Where the code goes is set by *Four layers* in `CLAUDE.md`: reuse a panel of
+the template's visualization library (`src/viz/`) when there is one, keep an
+app-only panel in the app, and add a missing generic plot or option to
+OpenMS-Insight rather than drawing it with plotly in the app.
+
 ## Instructions
 
 1. **Ask the user** for:
@@ -24,7 +29,8 @@ MS data has specialized visualization needs: mass spectra (m/z vs intensity stic
 | Large datasets (millions of points) | **OpenMS-Insight** | Server-side pagination, intelligent downsampling |
 | Interactive tables with pagination | **OpenMS-Insight** `Table` | Tabulator.js, CSV export, server-side filtering |
 | Cross-linked views (click table row → highlight in plot) | **OpenMS-Insight** | Shared `link_id` across components |
-| Standard Plotly plots (bar, scatter, etc.) | **plotly.express** directly | Already available, use with `show_fig()` |
+| Generic plots (scatter, lines, bars, heatmaps, volcano) | **OpenMS-Insight** (`LinePlot`, `SeriesPlot`, `Heatmap`, `VolcanoPlot`) | Linked and themed like every other panel; a missing plot type or option goes to OpenMS-Insight |
+| A one-off plot no Insight component can draw yet | **plotly.express**, with `show_fig()` | Only until OpenMS-Insight has it |
 
 3. **Implement the visualization** in a page or workflow results section.
 

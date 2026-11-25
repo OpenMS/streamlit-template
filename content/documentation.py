@@ -4,7 +4,7 @@ from src.common.installers import render_installer_buttons
 from pathlib import Path
 from docs.toppframework import content as topp_framework_content
 
-page_setup()
+page_setup(captcha=False)
 
 
 st.title("Documentation")
@@ -15,7 +15,7 @@ pages = [
     "User Guide",
     "Installation",
     "Developers Guide: How to build app based on this template",
-    "Developers Guide: TOPP Workflow Framework",
+    "Developers Guide: OpenMS Workflow Framework",
     "Developer Guide: Windows Executables",
     "Developers Guide: From Notebook to Web App",
     "Developers Guide: Deployment",
