@@ -64,8 +64,21 @@ command -v cygpath >/dev/null && site=$(cygpath -u "$site")
 find "$site" -type d -name __pycache__ -prune -exec rm -rf {} +
 find "$site" -type d \( -name tests -o -name test \) -prune -exec rm -rf {} +
 # Jupyter extensions (plotly's) and Windows debug databases are never loaded.
-rm -rf "$dest/share/jupyter"
+rm -rf "$dest/share/jupyter" "$site/jupyterlab_plotly"
 find "$dest" -name '*.pdb' -type f -delete
+# pyarrow ships its C++ headers, Cython sources, a test library and Arrow
+# Flight (RPC), none of which the app imports. pyarrow itself, parquet,
+# dataset and compute do not load Flight.
+if [[ -d $site/pyarrow ]]; then
+  rm -rf "$site/pyarrow/include" "$site/pyarrow/src"
+  find "$site/pyarrow" \( -name '*flight*' -o -name '*pyarrow_cpp_tests*' -o -name '*.pxd' -o -name '*.pyx' \) -type f -delete
+fi
+# Many Linux wheels ship their libraries with symbols (pyarrow's alone are
+# about 100 MB unstripped). macOS keeps them: stripping a Mach-O file breaks
+# its signature, and the .pyd files on Windows have none.
+if [[ $triple == *linux* ]] && command -v strip >/dev/null; then
+  find "$dest" -type f -name '*.so*' -exec strip --strip-unneeded {} + 2>/dev/null || true
+fi
 
 # Compile the bytecode now on macOS and Linux: the shell runs Python with
 # PYTHONDONTWRITEBYTECODE there, because the signed macOS bundle and the
