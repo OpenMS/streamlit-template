@@ -21,6 +21,9 @@
   },
   "build": {
     "appId": "de.openms.streamlit-template",
+    "electronLanguages": [
+      "en-US"
+    ],
     "directories": {
       "output": "dist"
     },

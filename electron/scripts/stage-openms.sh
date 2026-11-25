@@ -179,6 +179,9 @@ else
     cp -L "$path" "$out/openms/lib/$name"
   done
   chmod u+w "$out"/openms/lib/* "$out"/openms/bin/*
+  # Libraries copied from system packages and the deb keep their symbols.
+  # Strip before patchelf: strip can damage a file patchelf has rewritten.
+  strip --strip-unneeded "$out"/openms/lib/* "$out"/openms/bin/* 2>/dev/null || true
   for f in "$out"/openms/bin/*; do patchelf --force-rpath --set-rpath '$ORIGIN/../lib' "$f"; done
   for f in "$out"/openms/lib/*; do patchelf --force-rpath --set-rpath '$ORIGIN' "$f"; done
 
