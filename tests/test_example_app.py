@@ -1,8 +1,15 @@
 """The helper that skips the example app's tests in an app that replaced it."""
+import json
+
+import pytest
+
 import _example_app
 
 
 def test_template_has_the_example():
+    settings = json.loads((_example_app.ROOT / "settings.json").read_text())
+    if settings.get("repository-name") != "streamlit-template":
+        pytest.skip("only the template ships the example app")
     assert _example_app.has_example("content/topp_workflow_parameter.py")
 
 
