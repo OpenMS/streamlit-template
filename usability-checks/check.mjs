@@ -309,7 +309,17 @@ for (const { ws, how } of passes) {
             await navLinks(page); // re-expands "View more" if the rerun collapsed it
             await page.locator(`[data-testid="stSidebarNav"] a[href="${l.href}"]`).first().click({ timeout: 15000 });
           };
-    const r = await visit(page, browserErrors, target, label);
+    let r = await visit(page, browserErrors, target, label);
+    // An app may put the consent banner and captcha on its workflow pages
+    // instead of the home page (OpenDDA): pass them there and look again.
+    if (args.live) {
+      const gate = await passCaptcha(page).catch((e) => ({ passed: false, tries: 0, reason: e.message.split("\n")[0] }));
+      if (gate) {
+        if (!results.captcha || !results.captcha.passed) results.captcha = gate;
+        if (gate.passed) r = await visit(page, browserErrors, async () => {}, label);
+        else r.warnings.push(`captcha not passed: ${gate.reason}`);
+      }
+    }
     r.workspace = wsLabel;
     r.page = `${l.section ? l.section + " / " : ""}${l.text}`;
     r.how = how;
