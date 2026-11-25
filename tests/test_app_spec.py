@@ -211,3 +211,30 @@ def test_deploy_images_must_build_the_overlay_variant(tmp_path):
     assert any("deploys the full image" in e for e in app_spec.consistency_errors(s, root))
     s["deploy"] = {"images": ["full", "simple"]}
     assert not any("deploys the" in e for e in app_spec.consistency_errors(s, root))
+
+
+def test_desktop_app_values(spec, tmp_path):
+    ok = copy.deepcopy(spec)
+    ok["deploy"]["desktop_app"] = {
+        "name": "MyApp", "installer_version": True, "topp_tools": ["FLASHDeconv", "FileConverter"],
+        "openms": "t0mdavid-m/OpenMS@FDmerge", "synopsis": "One line.",
+        "e2e_scenarios": ["tests/e2e/run.js"], "stage_script": "scripts/desktop-stage.sh",
+    }
+    assert app_spec.schema_errors(ok) == []
+    for key, value in (("name", "My App"), ("topp_tools", []), ("colour", "blue"),
+                       ("installer_version", "yes")):
+        bad = copy.deepcopy(spec)
+        bad["deploy"]["desktop_app"] = {key: value}
+        assert any("desktop_app" in e for e in app_spec.schema_errors(bad)), key
+
+    root = _app_tree(tmp_path)
+    s = _spec()
+    s["deploy"] = {"desktop_app": {"e2e_scenarios": ["tests/e2e/run.js"],
+                                   "stage_script": "scripts/desktop-stage.sh"}}
+    errors = app_spec.consistency_errors(s, root)
+    assert any("e2e_scenarios lists tests/e2e/run.js" in e for e in errors)
+    assert any("stage_script is scripts/desktop-stage.sh" in e for e in errors)
+    for path in ("tests/e2e/run.js", "scripts/desktop-stage.sh"):
+        (root / path).parent.mkdir(parents=True, exist_ok=True)
+        (root / path).write_text("")
+    assert not any("desktop_app" in e for e in app_spec.consistency_errors(s, root))

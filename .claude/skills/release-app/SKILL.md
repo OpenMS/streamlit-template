@@ -30,11 +30,13 @@ cluster is updated by changing the image tag the prod overlay pulls.
    commit.
 4. **Tag and release** on the merge commit: `v<version>`, or
    `<AppName>-<version>` (e.g. `OpenDDA-1.3`) for an app that names its tags
-   that way; `build-and-test.yml` builds both forms. Creating the GitHub
+   that way; `build-and-test.yml` builds both forms. Publishing the GitHub
    release (not only the tag) is what triggers the installer build
-   (`release: created`) and attaches the installers; the tag push triggers
+   (`release: published`) and attaches the installers; that run then calls
    `build-and-test.yml`, which publishes `<tag>-full`, `<tag>-simple` and the
-   multi-arch manifests to GHCR, plus the SIF.
+   multi-arch manifests to GHCR, plus the SIF, with the release's own Windows
+   installer in the images. The tag push skips its images while the release
+   exists (an app with `deploy.desktop: []` builds them from the tag push).
    `release-version.yml` compares the tag with `settings.json` on every
    release tag. A release made before its bump fails that check and gets a
    PR setting the version on the default branch (merge it); the images and
