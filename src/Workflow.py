@@ -111,7 +111,77 @@ class Workflow(WorkflowManager):
                     True: "also runs the custom Python tool on the linked features.",
                 },
             )
+            # Ready-made settings for the kind of data, read back from the
+            # settings (the preset they hold), never stored themselves
+            current = self.current_preset()
+            # What the box shows, so configure() can tell when it went stale
+            st.session_state[self.SHOWN_PRESET_KEY] = current
+            self.ui.preset_choice(
+                "feature-preset", "Detection", list(self.DETECTION_PRESETS), current,
+                labels=self.DETECTION_PRESETS,
+                help="Settings for feature detection and linking (presets.json). "
+                     "Change any of them in the steps below.",
+            )
+            # What the selected files suggest, with a button that applies it
+            recommended, why = self.recommend_preset(
+                self.ui.current_params().get("mzML-files") or []
+            )
+            if recommended:
+                self.ui.recommendation(why, recommended, current,
+                                       f"Use {self.DETECTION_PRESETS[recommended].lower()}",
+                                       "feature-preset-recommended")
             self.ui.analysis_summary(self.summary())
+
+    # The presets the Detection control offers (presets.json), with their labels
+    DETECTION_PRESETS = {
+        "Metabolomics Default": "Balanced",
+        "High Sensitivity": "Sensitive",
+        "High Specificity": "Strict",
+        "Fast Analysis": "Fast",
+    }
+    # From this many files on, the recommendation is the fast settings
+    MANY_FILES = 10
+
+    # Session key of the preset the Detection box showed on the last full rerun
+    SHOWN_PRESET_KEY = "topp-workflow-shown-preset"
+
+    def preset_display_stale(self) -> bool:
+        """True when the settings hold another preset than the box shows."""
+        if self.SHOWN_PRESET_KEY not in st.session_state:
+            return False
+        return st.session_state[self.SHOWN_PRESET_KEY] != self.current_preset()
+
+    def current_preset(self):
+        """The detection preset the settings hold, None when they are the user's own."""
+        name, changed = self.parameter_manager.applied_preset_status()
+        return name if name in self.DETECTION_PRESETS and not changed else None
+
+    def recommend_preset(self, files: list) -> tuple:
+        """The detection preset the selected files suggest, and why.
+
+        Returns ``(preset, reason)``: a key of ``DETECTION_PRESETS`` and one
+        sentence (Markdown) shown beside it, or ``(None, "")`` when there is
+        nothing to suggest. The page shows the reason with a button that
+        applies the preset, or says the settings already match it.
+
+        The rule here only counts the files. A rule that looks at the data
+        goes here too: read what it needs from the files (with pyOpenMS, for
+        example the instrument or the number of spectra; cache that read,
+        since this runs on every rerun of the page) and return the preset it
+        points to. A new preset is an entry in presets.json plus its label in
+        ``DETECTION_PRESETS``.
+        """
+        n = len(files)
+        if not n:
+            return None, ""
+        if n >= self.MANY_FILES:
+            preset = "Fast Analysis"
+            return preset, (f"For {n} files, **{self.DETECTION_PRESETS[preset]}** "
+                            "settings keep the run short.")
+        preset = "Metabolomics Default"
+        return preset, (f"For {n} file{'s' if n != 1 else ''}, the "
+                        f"**{self.DETECTION_PRESETS[preset]}** settings fit most "
+                        "metabolomics data.")
 
     def steps(self) -> list:
         """The steps the chosen analysis runs, in the order they run."""
@@ -140,17 +210,31 @@ class Workflow(WorkflowManager):
             self.ui.experimental_design("mzML-files", suggest=True)
         with tabs["Feature detection"]:
             # Parameters for FeatureFinderMetabo TOPP tool.
+            # reactive: an edit reruns configure(), which refreshes the
+            # Detection box above only when the edit changed its preset
             self.ui.input_TOPP(
                 "FeatureFinderMetabo",
                 custom_defaults={"algorithm:common:noise_threshold_int": 1000.0},
+                reactive=True,
             )
         with tabs["Feature linking"]:
-            self.ui.input_TOPP("FeatureLinkerUnlabeledKD")
+            self.ui.input_TOPP("FeatureLinkerUnlabeledKD", reactive=True)
+            # A setting of the workflow's own (no TOPP tool has it), stored
+            # with the run's parameters and read in execution()
+            self.ui.input_widget(
+                "min-files", 1, "Found in at least (files)",
+                help="Keep a linked feature only if it was detected in at least this many files.",
+                widget_type="number", min_value=1, max_value=100,
+            )
         if "Custom step" in tabs:
             with tabs["Custom step"]:
                 # Generate input widgets for a custom Python tool, located at src/python-tools.
                 # Parameters are specified within the file in the DEFAULTS dictionary.
                 self.ui.input_python("example")
+        # A parameter edit can make the Detection box (outside this fragment)
+        # name a preset the settings no longer hold: rerun the page then
+        if self.preset_display_stale():
+            st.rerun(scope="app")
 
     def execution(self) -> bool:
         # Return True only if every step succeeded. The caller
@@ -224,8 +308,21 @@ class Workflow(WorkflowManager):
         ):
             self.logger.log("ERROR: Exporting consensus features failed.")
             return False
+        features = Path(out_fl[0]).with_suffix(".tsv")
+        self._keep_features_in(features, int(self.params.get("min-files", 1)))
 
-        return self._custom_tool(Path(out_fl[0]).with_suffix(".tsv"))
+        return self._custom_tool(features)
+
+    def _keep_features_in(self, table: Path, min_files: int) -> None:
+        """Drop the linked features found in fewer than ``min_files`` files
+        (the workflow's own setting ``min-files``)."""
+        if min_files <= 1:
+            return
+        df = pd.read_csv(table, sep="\t")
+        intensities = df.columns[df.columns.get_loc("quality") + 1:]
+        kept = df[df[intensities].notna().sum(axis=1) >= min_files]
+        kept.to_csv(table, sep="\t", index=False)
+        self.logger.log(f"Kept {len(kept)} of {len(df)} features found in at least {min_files} files.")
 
     # The steps whose results an analysis added to a run takes from it
     FEATURE_STEPS = ["FeatureFinderMetabo", "FeatureLinkerUnlabeledKD"]
