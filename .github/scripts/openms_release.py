@@ -224,7 +224,10 @@ def main() -> int:
         desktop = wf / "build-desktop-app.yaml"
         if desktop.is_file():
             text = desktop.read_text()
-            new_text = text.replace(f"inputs.openms || '{fmt(old)}'", f"inputs.openms || '{fmt(newest)}'")
+            # `inputs.openms || needs.scope.outputs.openms || '3.6.0'`: the
+            # default after the dispatch input and app.yaml's desktop_app.openms.
+            new_text = re.sub(r"(inputs\.openms \|\|[^'\n]*)'" + re.escape(fmt(old)) + "'",
+                              lambda mm: mm.group(1) + f"'{fmt(newest)}'", text)
             if new_text != text:
                 desktop.write_text(new_text)
                 notes.append(f"build-desktop-app.yaml: desktop OpenMS {fmt(old)} -> {fmt(newest)}")

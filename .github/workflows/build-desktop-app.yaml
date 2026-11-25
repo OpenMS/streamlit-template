@@ -5,14 +5,20 @@ name: Build desktop app
 # The macOS job takes 35-45 minutes on a runner pool shared by every OpenMS
 # repository, so the full build runs only where it can find something new:
 #   release, manual run   always
-#   nightly               when main moved since the last successful build
+#   nightly               when the default branch moved since the last successful build
 #   pull request          when it changes packaging (electron/, this workflow,
 #                         openms.yml, requirements, settings.json, app.py) or
 #                         carries the label `desktop-build`
 # The `scope` job decides; when it says no, the run ends in seconds.
+#
+# What differs between apps is in `deploy.desktop_app` of app.yaml (the app's
+# name, its TOPP tools, the OpenMS it bundles, its end-to-end scenarios, a
+# staging script), so every app runs this file unchanged. A release then
+# builds its container images (build-and-test.yml) once its installers are
+# uploaded, so they bundle that release's Windows installer.
 on:
   pull_request:
-    branches: [ "main" ]
+    branches: [ "main", "develop" ]
     types: [opened, reopened, synchronize, labeled]
   schedule:
     - cron: "41 2 * * *"   # nightly, 02:41 UTC
@@ -37,7 +43,8 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
-  # Name of the app and its installers
+  # Name of the app and its installers; `deploy.desktop_app.name` in app.yaml
+  # replaces it (and `.topp_tools` the list below).
   APP_NAME: OpenMS-StreamlitTemplateApp
   # Define needed TOPP tools here. FileConverter converts Thermo .raw input
   # (CommandExecutor.convert_to_mzml) with OpenMS's built-in reader on the
@@ -53,6 +60,13 @@ jobs:
       actions: read
     outputs:
       run: ${{ steps.decide.outputs.run }}
+      openms: ${{ steps.app.outputs.openms }}
+      app_name: ${{ steps.app.outputs.app_name }}
+      installer_version: ${{ steps.app.outputs.installer_version }}
+      topp_tools: ${{ steps.app.outputs.topp_tools }}
+      synopsis: ${{ steps.app.outputs.synopsis }}
+      e2e_scenarios: ${{ steps.app.outputs.e2e_scenarios }}
+      stage_script: ${{ steps.app.outputs.stage_script }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -100,6 +114,23 @@ jobs:
           echo "run=$run" >> "$GITHUB_OUTPUT"
           echo "desktop build: $run" >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Read deploy.desktop_app from app.yaml
+        # Each value is empty when app.yaml does not set it, and the build
+        # then keeps this file's default.
+        id: app
+        run: |
+          set -euo pipefail
+          get() { if [ -f app.yaml ]; then yq -r "$1 // \"\"" app.yaml; fi; }
+          {
+            echo "openms=$(get .deploy.desktop_app.openms)"
+            echo "app_name=$(get .deploy.desktop_app.name)"
+            echo "installer_version=$(get .deploy.desktop_app.installer_version)"
+            echo "topp_tools=$(get '(.deploy.desktop_app.topp_tools // []) | join(" ")')"
+            echo "synopsis=$(get .deploy.desktop_app.synopsis)"
+            echo "e2e_scenarios=$(get '(.deploy.desktop_app.e2e_scenarios // []) | join(" ")')"
+            echo "stage_script=$(get .deploy.desktop_app.stage_script)"
+          } | tee -a "$GITHUB_OUTPUT"
+
   # Release or build? A released OpenMS ("3.5.0") is downloaded by the build
   # job's "Stage OpenMS TOPP tools" step on every platform, and this job only
   # takes seconds. A branch, tag or commit ("OpenMS/OpenMS@develop",
@@ -110,14 +141,14 @@ jobs:
     if: needs.scope.outputs.run == 'true'
     uses: ./.github/workflows/openms.yml
     with:
-      openms: ${{ inputs.openms || '3.6.0' }}
+      openms: ${{ inputs.openms || needs.scope.outputs.openms || '3.6.0' }}
 
   # One job for all three platforms: the same steps stage OpenMS, Python and
   # the app into electron/payload, then a single packaging step turns it into
   # this platform's installer, which the same test steps install and drive.
   build:
     name: ${{ matrix.platform }}
-    needs: openms
+    needs: [scope, openms]
     strategy:
       fail-fast: false
       matrix:
@@ -150,6 +181,14 @@ jobs:
       uses: actions/checkout@v4
       with:
         persist-credentials: false
+
+    - name: Take the app's values from app.yaml
+      env:
+        NAME: ${{ needs.scope.outputs.app_name }}
+        TOOLS: ${{ needs.scope.outputs.topp_tools }}
+      run: |
+        if [ -n "$NAME" ]; then echo "APP_NAME=$NAME" >> "$GITHUB_ENV"; fi
+        if [ -n "$TOOLS" ]; then echo "TOPP_TOOLS=$TOOLS" >> "$GITHUB_ENV"; fi
 
     - name: Set version and offline deployment in settings.json
       env:
@@ -193,6 +232,22 @@ jobs:
     - name: Stage Python with the app's requirements
       run: electron/scripts/stage-python.sh "$PYTHON_VERSION" electron/payload requirements.txt
 
+    - name: Run the app's staging script
+      # `deploy.desktop_app.stage_script`: an app-owned script that changes or
+      # checks the staged Python (a package swapped for a build that runs on
+      # more CPUs, an import that must work). Called as
+      # `bash <script> <payload python> <payload dir>` on every platform.
+      if: needs.scope.outputs.stage_script != ''
+      env:
+        STAGE_SCRIPT: ${{ needs.scope.outputs.stage_script }}
+      run: |
+        if [[ $RUNNER_OS == Windows ]]; then
+          py="electron/payload/python-$PYTHON_VERSION/python.exe"
+        else
+          py="electron/payload/python-$PYTHON_VERSION/bin/python3"
+        fi
+        bash "$STAGE_SCRIPT" "$py" electron/payload
+
     - name: Copy the app into the payload
       run: |
         p=electron/payload
@@ -211,7 +266,8 @@ jobs:
       uses: actions/setup-node@v4
       with:
         node-version: '22'
-        cache: 'npm'
+        # Release installers are built from a clean npm install, without a restored cache.
+        cache: ${{ github.event_name != 'release' && 'npm' || '' }}
         cache-dependency-path: electron/package-lock.json
 
     - name: Install Electron dependencies
@@ -226,6 +282,8 @@ jobs:
       id: package
       env:
         RELEASE_TAG: ${{ github.event.release.tag_name }}
+        INSTALLER_VERSION: ${{ needs.scope.outputs.installer_version }}
+        SYNOPSIS: ${{ needs.scope.outputs.synopsis }}
         MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
         MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
         APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY }}
@@ -234,7 +292,18 @@ jobs:
         APPLE_ID: ${{ secrets.APPLE_ID }}
         APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
         APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-      run: electron/scripts/package.sh
+      run: |
+        # A build that is no release is numbered like settings.json.
+        export RELEASE_TAG="${RELEASE_TAG:-$(jq -r .version settings.json)}"
+        # `installer_version: true`: the installer names carry the version
+        # (<APP_NAME>-<version>-Setup.exe), read from settings.json, which the
+        # release tag set above.
+        if [ "$INSTALLER_VERSION" = true ]; then
+          export INSTALLER_NAME="$APP_NAME-$(jq -r .version settings.json)"
+        fi
+        args=()
+        if [ -n "$SYNOPSIS" ]; then args+=("-c.linux.synopsis=$SYNOPSIS"); fi
+        electron/scripts/package.sh "${args[@]}"
 
     - name: Install the app
       # Silent install (Windows), mounted dmg with signature checks (macOS),
@@ -259,13 +328,36 @@ jobs:
     - name: End-to-end test in the app window
       timeout-minutes: 120
       # Drives the installed app with Playwright and opens every page; an app
-      # adds its own steps (run a workflow, check its results) with --scenario.
+      # adds its own steps (run a workflow, check its results) as scenarios,
+      # `deploy.desktop_app.e2e_scenarios` in app.yaml.
+      env:
+        SCENARIOS: ${{ needs.scope.outputs.e2e_scenarios }}
+        # A crash in the app's Python prints its traceback to the app log.
+        PYTHONFAULTHANDLER: "1"
       run: |
         run=""
         if [[ $RUNNER_OS == Linux ]]; then run="xvfb-run -a"; fi
-        $run node electron/scripts/e2e.js --exe "$E2E_EXE" --out e2e-output && code=0 || code=$?
+        scenarios=()
+        for s in $SCENARIOS; do scenarios+=(--scenario "$s"); done
+        $run node electron/scripts/e2e.js --exe "$E2E_EXE" --out e2e-output "${scenarios[@]}" && code=0 || code=$?
         tail -n 200 "$APP_LOG" || true
         exit $code
+
+    - name: Show the app and workflow logs
+      # Also after the step above timed out, which cuts off its own log tail.
+      if: failure() || cancelled()
+      run: |
+        tail -n 300 "${APP_LOG:-/dev/null}" || true
+        if [ -n "${APP_PAYLOAD:-}" ]; then
+          echo "=== DLLs and libraries next to the TOPP tools"
+          ls "$APP_PAYLOAD/openms/bin" | grep -iE '\.(dll|so|dylib)' || ls "$APP_PAYLOAD/openms/bin" | head -50 || true
+        fi
+        # The workflow logs of every run the scenarios started.
+        for dir in "$(dirname "${APP_LOG:-.}")/.." "$(dirname "${APP_PAYLOAD:-.}")"; do
+          find "$dir" -maxdepth 6 -path '*/logs/*' -name 'all.log' 2>/dev/null | while read -r f; do
+            echo "=== $f"; tail -n 150 "$f"
+          done
+        done
 
     - name: Archive end-to-end screenshots
       if: always()
@@ -291,7 +383,7 @@ jobs:
   # installer, a .pkg and a .deb; a released OpenMS's own installers are
   # passed on under these names.
   tools:
-    needs: openms
+    needs: [scope, openms]
     runs-on: ubuntu-latest
     steps:
     - name: Checkout
@@ -348,11 +440,12 @@ jobs:
 
     - name: Package the command line tools
       env:
+        NAME: ${{ needs.scope.outputs.app_name }}
         LABEL: ${{ needs.openms.outputs.source == 'build' && format('{0}@{1}', needs.openms.outputs.repository, needs.openms.outputs.sha) || format('OpenMS {0}', needs.openms.outputs.version) }}
       run: |
         sudo apt-get update -q
         sudo apt-get install -y -q nsis
-        electron/scripts/package-tools.sh "$APP_NAME" openms-packages dist-tools "${LABEL:0:60}"
+        electron/scripts/package-tools.sh "${NAME:-$APP_NAME}" openms-packages dist-tools "${LABEL:0:60}"
 
     - name: Archive the command line tool installers
       uses: actions/upload-artifact@v4
@@ -367,7 +460,7 @@ jobs:
   # tested by OpenMS itself).
   tools-test:
     name: tools ${{ matrix.platform }}
-    needs: [openms, tools]
+    needs: [scope, openms, tools]
     if: needs.openms.outputs.source == 'build'
     strategy:
       fail-fast: false
@@ -394,8 +487,13 @@ jobs:
     - name: Install, run and uninstall the tools
       env:
         PLATFORM: ${{ matrix.platform }}
+        NAME: ${{ needs.scope.outputs.app_name }}
+        TOOLS: ${{ needs.scope.outputs.topp_tools }}
       run: |
         set -euo pipefail
+        # deploy.desktop_app in app.yaml replaces the workflow's defaults.
+        APP_NAME=${NAME:-$APP_NAME}
+        TOPP_TOOLS=${TOOLS:-$TOPP_TOOLS}
         run_tools() {
           for t in $TOPP_TOOLS; do
             "$1/$t$2" -write_ini "$RUNNER_TEMP/$t.ini" >/dev/null
@@ -460,3 +558,15 @@ jobs:
         GH_TOKEN: ${{ github.token }}
         RELEASE_TAG: ${{ github.event.release.tag_name }}
       run: gh release upload "$RELEASE_TAG" dist/* --clobber -R "$GITHUB_REPOSITORY"
+
+  # The release's container images, built after its installers are attached
+  # so they bundle its Windows installer. build-and-test.yml leaves a tag push
+  # of a published release to this job.
+  publish-web-image:
+    needs: release
+    if: github.event_name == 'release'
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/build-and-test.yml
+    secrets: inherit
