@@ -53,6 +53,14 @@ Electron end-to-end test, and uploads screenshots as an artifact. A failing
 smoke test names the tool; check `TOPP_TOOLS` first. On a release
 (`release: created`) the installer is attached to the release.
 
+The same run packages the OpenMS it bundled as installers of the command line
+tools alone (job `tools`, `electron/scripts/package-tools.sh`), named
+`<APP_NAME>-command-line-tools-<platform>.exe|.pkg|.deb`; `tools-test`
+installs each and runs every `TOPP_TOOLS` entry. A release gets them beside
+the app's installers, and `installers.find_tool_installers()` offers them on a
+Quick Start page. The macOS `.pkg` of a branch build carries only an ad-hoc
+signature, so Gatekeeper asks before opening it.
+
 ## Checklist
 
 - [ ] `APP_NAME` set (and unchanged on an already released app)

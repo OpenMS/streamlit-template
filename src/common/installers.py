@@ -1,7 +1,8 @@
 """Download buttons for the desktop installers of the app's latest release.
 
 The desktop app workflow (build-desktop-app.yaml) attaches one installer per
-platform to each GitHub release. Their names
+platform to each GitHub release, and the installers of the OpenMS command line
+tools it was built with. Their names
 end in a fixed suffix, so they are found whatever the app and version are
 called. The buttons link to the release assets instead of serving files from
 the image, so a deployment does not carry several hundred MB of installers.
@@ -19,6 +20,15 @@ PLATFORMS = [
     ("windows", "Windows", "-Setup.exe", "Installer for Windows 10 and 11 (64-bit); no admin rights needed."),
     ("macos", "macOS", "-macOS-arm64.dmg", "Disk image for Macs with Apple Silicon (M1 and later)."),
     ("linux", "Linux", "-Linux-x86_64.AppImage", "AppImage for x86_64 Linux with glibc 2.35 or newer; runs without installation."),
+]
+
+# The OpenMS command line tools the desktop app was built with, packaged by
+# the same workflow (electron/scripts/package-tools.sh) for users who run them
+# from a terminal or a script. Their names never end in a suffix above.
+TOOL_PLATFORMS = [
+    ("windows", "Windows", "-command-line-tools-Windows-x86_64.exe", "Installer for Windows 10 and 11 (64-bit); no admin rights needed, puts the tools on your PATH."),
+    ("macos", "macOS", "-command-line-tools-macOS-arm64.pkg", "Package for Macs with Apple Silicon; installs to /Applications/OpenMS-<version>."),
+    ("linux", "Linux", "-command-line-tools-Linux-x86_64.deb", "Debian package for x86_64 Ubuntu; install it with sudo apt install ./<file>."),
 ]
 
 # Copied into the image by the Dockerfile of older deployments; still offered
@@ -63,19 +73,34 @@ def _fetch_release_assets(github_user: str, repository: str) -> dict:
     return assets
 
 
-def find_installers() -> dict:
-    """Platform key -> download URL of its installer in the latest release."""
+def _release_assets() -> dict:
     settings = st.session_state.get("settings", {})
     user, repo = settings.get("github-user"), settings.get("repository-name")
-    assets = latest_release_assets(user, repo) if user and repo else {}
+    return latest_release_assets(user, repo) if user and repo else {}
+
+
+def _match(assets: dict, platforms: list) -> dict:
     found = {}
-    for key, _, suffix, _ in PLATFORMS:
+    for key, _, suffix, _ in platforms:
         url = next((u for n, u in assets.items() if n.endswith(suffix)), None)
         if url:
             found[key] = url
     if assets.get("_release_page"):
         found["release"] = assets["_release_page"]
     return found
+
+
+def find_installers() -> dict:
+    """Platform key -> download URL of its installer in the latest release."""
+    return _match(_release_assets(), PLATFORMS)
+
+
+def find_tool_installers() -> dict:
+    """Platform key -> download URL of the command line tools in the latest
+    release, plus "release" (the release page) when it could be read; no
+    platform key when the release has none (e.g. one made before they were
+    built)."""
+    return _match(_release_assets(), TOOL_PLATFORMS)
 
 
 def _available():
