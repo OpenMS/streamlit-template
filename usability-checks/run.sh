@@ -42,6 +42,7 @@ for app in "${APPS[@]}"; do
   mapfile -t appenv < <(python3 -c "import json;[print(f'{k}={v}') for k,v in (json.load(open('$HERE/apps.json'))['$app'].get('env') or {}).items()]")
   appout="$OUT/$app"; mkdir -p "$appout"
   log="$appout/setup.log"
+  local_failed=""
   echo "=== $app"
 
   if [ -z "${SKIP_LOCAL:-}" ]; then
@@ -49,18 +50,25 @@ for app in "${APPS[@]}"; do
     rm -rf "$src"
     if ! git clone -q --depth 1 "https://github.com/$repo.git" "$src" >>"$log" 2>&1; then
       echo '{"app":"'"$app"'","setupError":"git clone failed","pages":[],"scenarios":[],"failed":1}' >"$appout/results.json"
-      continue
+      local_failed=1
     fi
+  fi
+  # A local setup failure does not skip the live check below.
+  if [ -z "${SKIP_LOCAL:-}" ] && [ -z "$local_failed" ]; then
     git -C "$src" log -1 --format='%H %cs %s' >"$appout/commit.txt"
     venv="$VENVS/$app"
     [ -x "$venv/bin/python" ] || uv venv -q -p 3.11 "$venv" >>"$log" 2>&1
     # The apps' images install with pip, which takes each package from whichever
     # index has the pinned version; uv's default stops at the first index that
     # lists the package (quantms-web adds the pytorch CPU index).
-    if ! UV_HTTP_TIMEOUT=600 UV_INDEX_STRATEGY=unsafe-best-match VIRTUAL_ENV="$venv" uv pip install -q -r "$src/requirements.txt" >>"$log" 2>&1; then
+    # From the clone, as the Dockerfiles do: requirements.txt may name a local
+    # wheel by a relative path (./dev-wheels/...).
+    if ! (cd "$src" && UV_HTTP_TIMEOUT=600 UV_INDEX_STRATEGY=unsafe-best-match VIRTUAL_ENV="$venv" uv pip install -q -r requirements.txt) >>"$log" 2>&1; then
       echo '{"app":"'"$app"'","setupError":"installing requirements.txt failed (see setup.log)","pages":[],"scenarios":[],"failed":1}' >"$appout/results.json"
-      continue
+      local_failed=1
     fi
+  fi
+  if [ -z "${SKIP_LOCAL:-}" ] && [ -z "$local_failed" ]; then
 
     # Workspaces live in ../workspaces-<repository-name>; names carry the app
     # because quantms-web and the template share a repository-name.
