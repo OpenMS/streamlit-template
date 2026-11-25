@@ -149,6 +149,7 @@ body.done .version{opacity:0;transition:opacity .3s}
 @media (prefers-reduced-motion:reduce){
   .bar,.glyph,.baseline,h1,.status,.progress,.version{animation:none!important;opacity:1;transform:none;stroke-dashoffset:0}
   .sheen,.progress::before{animation:none!important;display:none}
+  body.done main{transform:none}
 }
 </style></head><body>
 <main>
