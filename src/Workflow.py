@@ -5,7 +5,6 @@ from src.workflow.WorkflowManager import WorkflowManager
 # for result section:
 from pathlib import Path
 import pandas as pd
-import plotly.express as px
 from src.common.common import show_fig
 from src.layout_manager import (
     edit_comparison, member_switch, render_layout, request_analysis, resolve_layout, view_bar,
@@ -539,6 +538,8 @@ class Workflow(WorkflowManager):
         rows = (st.session_state.get(self._features_key()) or {}).get("selection", {}).get("rows", [])
         rows = [row for row in rows if 0 <= row < len(df)]
         if rows:
+            import plotly.express as px  # only for this chart; costs 0.3 to 0.7 s on first import
+
             fig = px.bar(df.iloc[rows, 4:], barmode="group", labels={"value": "intensity"})
             show_fig(fig, "consensus-feature-intensities")
         else:
