@@ -8,6 +8,10 @@ data:
       "online_deployment": true,
       "demo_workspaces": {
         "enabled": true,
-        "source_dirs": ["/workspaces-streamlit-template/.demos"]
+        "source_dirs": [
+          "/app/example-data/workspaces",
+          "/workspaces-streamlit-template/.demos"
+        ],
+        "save_dir": "/workspaces-streamlit-template/.demos"
       }
     }

@@ -86,6 +86,18 @@ One visualization region on a results page, bound to one output and one componen
 The unit of dashboard construction and of dashboard review.
 _Avoid_: widget, chart, plot, tile, card, block
 
+**Visualization library**:
+The template's `src/viz/`: panels two or more apps draw the same way, each an
+OpenMS-Insight component configured for a column contract, plus the plumbing that
+registers and draws them. Sits between Insight (generic components) and an app
+(its data); see *Four layers* in `CLAUDE.md`.
+_Avoid_: component library (Insight is that), shared plots, common viz
+
+**Panel source**:
+The app's function that turns its own result files into the columns a library
+panel reads. The one part of a shared panel an app writes itself.
+_Avoid_: loader, adapter, data provider
+
 **Role**:
 The word in the output contract that says what kind of thing a file holds —
 `table`, `mirror`, `peakmap`, `chromatogram`. A fixed vocabulary, because the

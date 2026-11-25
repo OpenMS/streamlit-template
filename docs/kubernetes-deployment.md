@@ -135,9 +135,9 @@ Demo workspaces live under a hidden `.demos/` subdirectory of this PVC (see [Dem
 ### Demo workspaces
 Demo workspaces are seeded onto the workspace PVC at `/workspaces-streamlit-template/.demos/` by the `seed-demos` initContainer on the Streamlit Deployment. The init runs `docker/seed-demos.sh` — new demos shipped in an image appear after redeploy, but existing entries on the PV (including admin-saved demos and edits) are preserved. On an empty volume the whole tree is staged in a private directory and renamed into place, so `replicas: 2` cannot corrupt it and a pod killed mid-copy leaves nothing half-written; on a volume that already has `.demos/`, only the entries it is missing are copied in, one atomic rename each. The script bounds itself with `timeout` and always exits 0, so a slow or restarting NFS server degrades the demos instead of holding the pod in `Init`.
 
-The ConfigMap override points `demo_workspaces.source_dirs` at `/workspaces-streamlit-template/.demos`, so both Streamlit pods and RQ workers read demos from the PV. The "Save as Demo" admin flow writes to the same path.
+The ConfigMap override lists two `demo_workspaces.source_dirs`: the image's own `/app/example-data/workspaces` first, then `/workspaces-streamlit-template/.demos` on the PV, and sets `save_dir` to the latter, so the "Save as Demo" admin flow writes to the PV. A demo the image ships is therefore read from the container's local disk, and a new workspace links to its files there (every Streamlit and RQ worker pod runs the same image, so the links resolve in each of them); only its few small files are written to the PV. Reading the demo from the PV instead costs a network round trip for every file and folder it holds, which on S3-backed storage kept a new workspace waiting for minutes. Demos saved by an admin, or shipped only on the PV, are still found in `.demos/`; for a name in both places the image's copy wins, so delete or rename a saved demo that should replace one the image ships. A workspace keeps pointing at the image's example data, so a new image with changed example data changes it for open workspaces too.
 
-To force a re-seed of a specific demo, delete it on the PV and restart the Streamlit Deployment:
+To force a re-seed of a specific demo on the PV, delete it on the PV and restart the Streamlit Deployment:
 ```
 kubectl exec deploy/streamlit -- rm -rf /workspaces-streamlit-template/.demos/<name>
 kubectl rollout restart deploy/streamlit
@@ -152,7 +152,7 @@ Main Streamlit Deployment. Key fields:
 - Env: `REDIS_URL`, `WORKSPACES_DIR`
 - Mounts the workspace PVC at `/workspaces-streamlit-template`
 - Mounts `settings-overrides.json` from the ConfigMap as a `subPath`
-- Readiness and liveness probes hit `/_stcore/health`
+- Readiness probe hits `/_stcore/health`; the liveness probe hits it too and also runs `python -m src.workflow.health --mount-alive`, which restarts the pod when its workspace mount is dead (see [A dead workspace mount](#a-dead-workspace-mount))
 - Mounts the RWX workspace PVC, which places no constraint on which node the pod lands on
 - `seed-demos` initContainer merges image-shipped demos into `.demos/` on the PVC (see [Demo workspaces](#demo-workspaces))
 
@@ -166,7 +166,16 @@ RQ worker Deployment, 2 replicas by default. Runs `rq worker openms-workflows --
 - `topologySpreadConstraints`, `maxSkew: 1` over `kubernetes.io/hostname`, `DoNotSchedule` — one worker per node before any node takes a second (see [Pod placement and the shared workspace volume](#pod-placement-and-the-shared-workspace-volume)).
 - `strategy: RollingUpdate` with `maxSurge: 0`, `maxUnavailable: 1`, both explicit. The defaults resolve to `maxUnavailable: 0` at this replica count, which would make one `Pending` or `NotReady` worker enough to take the Deployment out of `Available`.
 - Sized by the memory-tier component with `requests` equal to `limits`, which is what makes the pod Guaranteed QoS: `oom_score_adj` of −997 rather than the ~969 a 1Gi request against a 16Gi limit used to score. CI reads `.status.qosClass` off the **Running** worker pods (`assert_worker_qos_guaranteed`) — the class is assigned at admission and is populated on a `Pending` pod too, so a check that did not filter on phase would report a pass for workers that were never scheduled.
-- Readiness probe only, never liveness: a liveness failure would SIGKILL the container mid-TOPP-job, and a restart cannot fix a wedged NFS mount.
+- The readiness probe writes to the share and tolerates a slow or blocked NFS server. The liveness probe never fails for that: it runs only `--mount-alive`, which fails on a dead workspace mount and nothing else (see [A dead workspace mount](#a-dead-workspace-mount)). A job on such a mount has already failed, and only a restart gives the worker a working mount again.
+
+### A dead workspace mount
+
+With S3 storage (`components/storage-s3`) the workspaces are a JuiceFS FUSE mount. When the JuiceFS mount pod on a node dies, for example because the metadata database `juicefs-meta` was unreachable while it moved, the driver starts it again, but a container that was already running keeps the dead mount. Every file access then fails with `OSError: [Errno 107] Transport endpoint is not connected`, and it does not clear by itself. Two things in `k8s/base` handle it:
+
+- Every workspace `volumeMount` sets `mountPropagation: HostToContainer`, so the mount the driver makes again on the node reaches running containers.
+- `streamlit`, `rq-worker` and `sync` have a liveness probe running `python -m src.workflow.health --mount-alive`. It fails only when a stat of the workspace directory answers `ENOTCONN`. The stat runs in a child process that is not waited on for more than 5 seconds, so a slow or blocked NFS mount never fails it.
+
+To recover by hand, restart the app's pods. The overlay labels every object with `app: <slug>` (`template-app` here), and all apps share the `openms` namespace, so select by that label to leave the other apps alone: `kubectl -n openms get deploy -l app=<slug> -o name | grep -E -- '-(streamlit|rq-worker|sync)$' | xargs kubectl -n openms rollout restart`. When the mount pods of several apps died together, run it once per app.
 
 ### `cleanup-cronjob.yaml`
 CronJob that runs `python clean-up-workspaces.py` nightly at 03:00 UTC. Uses `concurrencyPolicy: Forbid`, retains 3 successful and 3 failed jobs. Shares the workspace PVC.
