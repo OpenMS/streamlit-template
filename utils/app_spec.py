@@ -157,7 +157,7 @@ def consistency_errors(spec: dict, root: Path | str = ".") -> list[str]:
 
     overlay = root / "k8s" / "overlays" / "prod" / "kustomization.yaml"
     overlay_doc = _yaml_doc(overlay)
-    rel = overlay.relative_to(root) if overlay_doc is not None else None
+    rel = overlay.relative_to(root).as_posix() if overlay_doc is not None else None
     if overlay_doc is _MISSING:
         errors.append(f"{rel} is not valid YAML")
     elif overlay_doc is not None:
@@ -197,7 +197,7 @@ def consistency_errors(spec: dict, root: Path | str = ".") -> list[str]:
                     f"Host(`{host}`) route"
                 )
 
-    # The storage tier (k8s/storage/) is shared by every app on a cluster and
+    # The storage tier (cluster configuration) is shared by every app on a cluster and
     # carries no app name; what is per app is the size of its workspace share.
     # The size is an app value, so it lives in the prod overlay as a patch on
     # the claim; the base value is only the default for an overlay without one.
@@ -205,10 +205,10 @@ def consistency_errors(spec: dict, root: Path | str = ".") -> list[str]:
     pvc = root / "k8s" / "base" / "workspace-pvc.yaml"
     pvc_doc = _yaml_doc(pvc)
     if pvc_doc is _MISSING:
-        errors.append(f"{pvc.relative_to(root)} is not valid YAML")
+        errors.append(f"{pvc.relative_to(root).as_posix()} is not valid YAML")
     elif pvc_doc is not None and want_size:
         size = _field(pvc_doc, "spec", "resources", "requests", "storage")
-        where = pvc.relative_to(root)
+        where = pvc.relative_to(root).as_posix()
         patched = _overlay_storage(overlay_doc)
         if patched is not None:
             size, where = patched, rel

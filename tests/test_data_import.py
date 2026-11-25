@@ -3,6 +3,7 @@
 A local HTTP server stands in for the object stores. It can refuse Range
 requests, drop the connection partway through a file, and redirect.
 """
+import base64
 import gzip
 import hashlib
 import io
@@ -530,6 +531,138 @@ def test_onedrive_personal_folder_is_walked(monkeypatch):
         ("run1.mzML", "file"), ("sample.d", "folder"), ("db.fasta", "file")]
 
 
+BROWSER_LINK = (
+    "https://onedrive.live.com/?id=1D8EB194B8DEBA10%21sd26d79411a4f42da8b76ddbc5749bc14"
+    "&cid=1D8EB194B8DEBA10&ithint=folder&redeem=aHR0cHM6Ly8xZHJ2Lm1zL2YvYy8xZDhlYjE5NGI4ZGViYTEw"
+    "L0lnQkJlVzNTVHhyYVFvdDIzYnhYU2J3VUFmWWZ4SGxQY2pQZ1NtaUpCZjd6dlpNP2U9ZzNLcEIz&migratedtospo=true")
+SHARE_LINK = "https://1drv.ms/f/c/1d8eb194b8deba10/IgBBeW3STxraQot23bxXSbwUAfYfxHlPcjPgSmiJBf7zvZM?e=g3KpB3"
+
+
+def test_onedrive_browser_address_gives_the_sharing_link():
+    assert sources.sharing_link(BROWSER_LINK) == SHARE_LINK
+    assert sources.sharing_link(SHARE_LINK) == SHARE_LINK
+    assert sources.sharing_link("https://onedrive.live.com/?id=A&cid=B") == "https://onedrive.live.com/?id=A&cid=B"
+    # A redeem value that is not a OneDrive link is not followed
+    bad = base64.b64encode(b"http://169.254.169.254/").decode()
+    assert sources.sharing_link(f"https://onedrive.live.com/?redeem={bad}").startswith("https://onedrive.live.com/")
+
+
+def test_onedrive_malformed_redeem_keeps_the_link():
+    bad = base64.b64encode(b"http://[abc").decode()
+    link = f"https://onedrive.live.com/?redeem={bad}"
+    assert sources.sharing_link(link) == link
+
+
+@pytest.mark.parametrize("body", [["TOK"], "TOK", {"token": 5}, {}])
+def test_onedrive_token_reply_that_is_not_a_token(monkeypatch, body):
+    monkeypatch.setattr(sources, "_badger", {})
+
+    class S:
+        def post(self, *a, **kw):
+            class R:
+                def raise_for_status(self):
+                    pass
+
+                def json(self):
+                    return body
+            return R()
+    with pytest.raises(ValueError):
+        sources._badger_headers(S())
+
+
+def test_onedrive_listing_page_that_is_not_an_object():
+    with pytest.raises(ValueError):
+        sources._page_items(["x"])
+    assert sources._page_items({"value": [1]}) == ([1], None)
+
+
+def test_onedrive_children_falls_back_after_a_malformed_drive_page(monkeypatch):
+    share = sources._Share(api=sources.ONEDRIVE_API, headers={}, id="s!1")
+    item = {"id": "F1", "parentReference": {"driveId": "D1"}}
+
+    def fake_json(session, url, headers=None, **kw):
+        if "/drives/" in url:
+            return ["not", "a", "page"]
+        return {"value": [{"name": "a.mzML"}], "@odata.nextLink": None}
+    monkeypatch.setattr(sources, "_json", fake_json)
+    assert sources._onedrive_children(None, share, item) == ([{"name": "a.mzML"}], None)
+
+
+class _TokenSession:
+    def __init__(self):
+        self.posts = []
+
+    def post(self, url, json=None, headers=None, **kw):
+        self.posts.append((url, json, headers))
+
+        class R:
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                return {"token": "TOK"}
+        return R()
+
+
+def test_onedrive_folder_shared_since_the_move_to_sharepoint(monkeypatch):
+    """New personal shares answer only with the anonymous visitor token."""
+    monkeypatch.setattr(sources, "_badger", {})
+    api = sources.ONEDRIVE_API
+    sid = sources.share_id(SHARE_LINK)
+    seen = []
+
+    def fake_json(session, url, headers=None, **kw):
+        seen.append((url, dict(headers or {})))
+        if not headers:
+            raise requests.HTTPError("401 Unauthorized")
+        assert headers == {"Authorization": "Badger TOK", "Prefer": "autoredeem"}
+        pages = {
+            f"{api}/shares/{sid}/root?$expand=children": {
+                "name": "Spectra", "folder": {"childCount": 2},
+                "children": [
+                    {"name": "a.mzML", "size": 4, "file": {}, "@content.downloadUrl": "https://dl.example/a"},
+                    {"name": "raw", "id": "R1", "folder": {"childCount": 1},
+                     "parentReference": {"driveId": "1d8eb194b8deba10"}},
+                ]},
+            f"{api}/drives/1d8eb194b8deba10/items/R1/children": {"value": [
+                {"name": "b.raw", "size": 9, "file": {}, "@content.downloadUrl": "https://dl.example/b"}]},
+        }
+        return pages[url]
+
+    monkeypatch.setattr(sources, "_json", fake_json)
+    monkeypatch.setattr(sources, "_open_archives", lambda session, listing: None)
+    session = _TokenSession()
+    listing = sources.resolve(session, BROWSER_LINK)
+    assert listing.title == "OneDrive: Spectra"
+    assert [(f.path, f.url) for f in listing.files] == [
+        ("a.mzML", "https://dl.example/a"), ("raw/b.raw", "https://dl.example/b")]
+    assert seen[0] == (f"{api}/shares/{sid}/root?$expand=children", {})
+    assert session.posts == [(sources.BADGER_TOKEN_URL, {"appId": sources.BADGER_APP_UUID},
+                              {"AppId": sources.BADGER_APP_ID, "Accept": "application/json"})]
+
+
+def test_onedrive_personal_content_api_is_tried_last(monkeypatch):
+    monkeypatch.setattr(sources, "_badger", {})
+    sid = sources.share_id(SHARE_LINK)
+    personal = sources.ONEDRIVE_PERSONAL_API
+
+    def fake_json(session, url, headers=None, **kw):
+        if not url.startswith(personal):
+            raise requests.HTTPError("403")
+        return {
+            f"{personal}/shares/{sid}/driveitem?$expand=children": {
+                "name": "Spectra", "folder": {}, "children": [
+                    {"name": "sub", "id": "S", "folder": {}, "parentReference": {"driveId": "d"}}]},
+            f"{personal}/shares/{sid}/items/S/children": {"value": [
+                {"name": "c.mzML", "size": 1, "file": {}, "@content.downloadUrl": "https://dl.example/c"}]},
+        }.get(url) or (_ for _ in ()).throw(requests.HTTPError("404"))
+
+    monkeypatch.setattr(sources, "_json", fake_json)
+    monkeypatch.setattr(sources, "_open_archives", lambda session, listing: None)
+    listing = sources.resolve(_TokenSession(), SHARE_LINK)
+    assert [(f.path, f.url) for f in listing.files] == [("sub/c.mzML", "https://dl.example/c")]
+
+
 def test_sharepoint_file_link_is_fetched_with_download(monkeypatch):
     def no_api(session, url, **kw):
         raise AssertionError("SharePoint links must not go to the shares API")
@@ -578,7 +711,7 @@ def test_pride_dataset(monkeypatch):
         "https://www.ebi.ac.uk/pride/ws/archive/v3/projects/PXD000001": {
             "title": "Top-down test", "projectDescription": "Two runs.",
             "organisms": [{"name": "Escherichia coli"}], "instruments": [{"name": "Orbitrap Eclipse"}]},
-        "https://www.ebi.ac.uk/pride/ws/archive/v3/projects/PXD000001/files": [
+        "https://www.ebi.ac.uk/pride/ws/archive/v3/projects/PXD000001/files/all": [
             {"fileName": name, "fileSizeBytes": 10, "checksum": "",
              "publicFileLocations": [
                  {"value": "prd_ascp@fasp.ebi.ac.uk:pride/data/archive/2012/03/PXD000001/" + name},
@@ -604,6 +737,28 @@ def test_pride_dataset(monkeypatch):
         ("ms", False), ("ms", True), ("ms", True), ("db", True), ("ms", False), ("ms", True)]
 
 
+def test_pride_files_fall_back_to_pages(monkeypatch):
+    base = "https://www.ebi.ac.uk/pride/ws/archive/v3/projects/PXD000003"
+    entries = [{"fileName": f"run{i}.mzML", "fileSizeBytes": 1,
+                "publicFileLocations": [{"value": f"ftp://ftp.pride.ebi.ac.uk/x/run{i}.mzML"}]}
+               for i in range(250)]
+    calls = []
+
+    def answer(session, url, params=None, **kw):
+        calls.append(url)
+        if url == base:
+            return {"title": "Paged"}
+        if url == base + "/files/all":
+            raise LookupError("404")
+        page = params["page"]
+        return entries[page * 100:(page + 1) * 100]
+    monkeypatch.setattr(sources, "_json", answer)
+    monkeypatch.setattr(sources, "_open_archives", lambda session, listing: None)
+    listing = sources.resolve(plain(), "PXD000003")
+    assert len(listing.files) == 250
+    assert calls.count(base + "/files") == 3
+
+
 def test_unknown_pride_dataset_is_explained(monkeypatch):
     def missing(session, url, **kw):
         raise LookupError("404")
@@ -614,7 +769,7 @@ def test_unknown_pride_dataset_is_explained(monkeypatch):
 
 def test_large_pride_dataset_starts_unticked(monkeypatch):
     base = "https://www.ebi.ac.uk/pride/ws/archive/v3/projects/PXD000002"
-    pages = {base: {"title": "Big"}, base + "/files": [
+    pages = {base: {"title": "Big"}, base + "/files/all": [
         {"fileName": f"run{i}.raw", "fileSizeBytes": 2 * 10**9,
          "publicFileLocations": [{"value": f"ftp://ftp.pride.ebi.ac.uk/x/run{i}.raw"}]}
         for i in range(30)]}
@@ -649,3 +804,77 @@ def test_pride_example_comes_from_settings(monkeypatch):
     assert ui.pride_example() == "PXD000001"
     monkeypatch.setattr(ui, "settings", lambda: {"pride_example": "PXD078120"})
     assert ui.pride_example() == "PXD078120"
+
+
+# ---------------------------------------------------------------------------
+# Large files over several connections
+# ---------------------------------------------------------------------------
+
+def test_segments_split_only_large_files(monkeypatch):
+    from src.data_import import download as dl
+    monkeypatch.setattr(dl, "SEGMENT_SIZE", 100)
+    assert dl.segments(150, 4) == [(0, 150)]
+    parts = dl.segments(1000, 2)
+    assert len(parts) == 4 and parts[0] == (0, 250) and sum(n for _, n in parts) == 1000
+    assert [s for s, _ in parts] == [0, 250, 500, 750]
+    assert len(dl.segments(10_000, 4)) == 8  # twice the connections, each at least SEGMENT_SIZE
+
+
+def test_large_file_is_fetched_in_ranges_over_several_connections(tmp_path, server, monkeypatch):
+    from src.data_import import download as dl
+    monkeypatch.setattr(dl, "SEGMENT_SIZE", 100_000)
+    server.add("/big.mzML", MZML_B)
+    t = targets(tmp_path)
+    items = [{"id": "x", "name": "big.mzML", "path": "big.mzML", "kind": "file", "size": len(MZML_B),
+              "target": "mzML-files",
+              "files": [{"path": "big.mzML", "size": len(MZML_B), "url": server.url("/big.mzML"),
+                         "md5": hashlib.md5(MZML_B).hexdigest()}]}]
+    status = job.run_import(str(Path(tmp_path, "job")), items, t, guard=False, connections=4)
+    assert status["state"] == "done", status["errors"]
+    assert Path(t["mzML-files"]["dir"], "big.mzML").read_bytes() == MZML_B
+    ranges = [r for p, r in server.requests if p == "/big.mzML" and r and r != "bytes=0-0"]
+    assert len(ranges) == 8  # 1 MB in 8 ranges of 125 kB
+    assert not list(Path(tmp_path, "job").rglob("*.seg*"))
+
+
+def test_ranges_resume_and_retry_on_their_own(tmp_path, server, monkeypatch):
+    from src.data_import import download as dl
+    monkeypatch.setattr(dl, "SEGMENT_SIZE", 200_000)
+    server.add("/big.mzML", MZML_B)
+    dest = Path(tmp_path, "big.mzML")
+    dl.segment_path(dest, 0).write_bytes(MZML_B[:250_000])  # finished in an earlier run
+    server.cut_once["/big.mzML"] = 100_000  # the next range breaks once
+    seen = []
+    path, md5 = dl.download_parallel(plain(), server.url("/big.mzML"), dest, len(MZML_B),
+                                     connections=2, etag=server.etags["/big.mzML"],
+                                     on_progress=seen.append, sleep=lambda s: None)
+    assert path.read_bytes() == MZML_B and md5 == hashlib.md5(MZML_B).hexdigest()
+    assert not any(r and r.startswith("bytes=0-") and r != "bytes=0-0" for _, r in server.requests)
+    assert seen[-1] == len(MZML_B)
+
+
+def test_parallel_checksum_mismatch_is_an_error(tmp_path, server, monkeypatch):
+    from src.data_import import download as dl
+    monkeypatch.setattr(dl, "SEGMENT_SIZE", 100_000)
+    server.add("/big.mzML", MZML_B)
+    t = targets(tmp_path)
+    items = [{"id": "x", "name": "big.mzML", "path": "big.mzML", "kind": "file", "size": len(MZML_B),
+              "target": "mzML-files",
+              "files": [{"path": "big.mzML", "size": len(MZML_B), "url": server.url("/big.mzML"),
+                         "md5": "0" * 32}]}]
+    status = job.run_import(str(Path(tmp_path, "job")), items, t, guard=False)
+    assert status["state"] == "failed" and "checksum" in status["errors"][0]
+
+
+def test_server_without_ranges_gets_one_connection(tmp_path, server, monkeypatch):
+    from src.data_import import download as dl
+    monkeypatch.setattr(dl, "SEGMENT_SIZE", 100_000)
+    server.add("/big.mzML", MZML_B)
+    server.ranges = False
+    t = targets(tmp_path)
+    items = [{"id": "x", "name": "big.mzML", "path": "big.mzML", "kind": "file", "size": len(MZML_B),
+              "target": "mzML-files",
+              "files": [{"path": "big.mzML", "size": len(MZML_B), "url": server.url("/big.mzML")}]}]
+    status = job.run_import(str(Path(tmp_path, "job")), items, t, guard=False)
+    assert status["state"] == "done"
+    assert Path(t["mzML-files"]["dir"], "big.mzML").read_bytes() == MZML_B

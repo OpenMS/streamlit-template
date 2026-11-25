@@ -13,6 +13,7 @@ from pathlib import Path
 # Add utils to path
 sys.path.append(str(Path(__file__).parent.parent))
 
+from src.common.common import page_setup
 from utils.fasta import validate_fasta_input
 from utils.digest import perform_digest, get_digest_statistics, get_available_enzymes, filter_peptides_by_length, calculate_protein_coverage, generate_coverage_html
 
@@ -26,6 +27,7 @@ DEFAULT_MAX_PEPTIDE_LENGTH = 50
 
 def main():
     """Main function for the digest page."""
+    page_setup()
     st.title("✂️ In Silico Protein Digest")
     
     st.markdown("""

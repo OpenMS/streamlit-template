@@ -34,6 +34,18 @@ def pride_example() -> str:
     return str(settings().get("pride_example") or "PXD000001")
 
 
+def _targets_for_source(targets: dict[str, dict], source: str) -> dict[str, dict]:
+    """Keep explicit destinations while controlling automatic source routing."""
+    return {
+        key: {
+            **target,
+            "auto_route": target.get("auto_route", True)
+            and source not in target.get("manual_import_sources", ()),
+        }
+        for key, target in targets.items()
+    }
+
+
 def _online() -> bool:
     return st.session_state.get("location") == "online"
 
@@ -96,7 +108,8 @@ def _selection(listing: dict, targets: Dict[str, dict], job_dir: Path, settings_
     def goes_to(item):
         if item["kind"] == "archive":
             return UNPACK
-        return names.get(item["target"], SKIP)
+        # Recheck cached listings against the current source's defaults.
+        return names.get(job.target_for(item["name"], targets), SKIP)
 
     table = pd.DataFrame({
         "Import": [goes_to(i) != SKIP and i.get("preselect", True) for i in items],
@@ -146,6 +159,7 @@ def _selection(listing: dict, targets: Dict[str, dict], job_dir: Path, settings_
             job_dir, chosen, targets, guard=_online(),
             allowed_hosts=settings_.get("allowed_hosts") or None, max_bytes=limit,
             parallel=int(settings_.get("parallel_downloads", 4)),
+            connections=int(settings_.get("download_connections", job.CONNECTIONS)),
         )
         st.rerun()
 
@@ -203,7 +217,7 @@ def _result(status: dict) -> None:
             for error in errors:
                 st.markdown(f"- :red[{error}]")
             if skipped:
-                st.markdown("Not imported, because no upload here takes their file type:")
+                st.markdown("Files skipped during automatic import:")
                 for name in skipped[:200]:
                     st.markdown(f"- {name}")
 
@@ -218,7 +232,10 @@ def link_import_section(workflow_dir, targets: Dict[str, dict], source: str = LI
 
     ``targets`` maps an upload key to its display ``name``, ``file_types``,
     folder (``dir``) and the paths of its example (``fallback``) files.
+    ``manual_import_sources`` lists sources that require an explicit file
+    destination for that upload; archive sorting skips it automatically.
     """
+    targets = _targets_for_source(targets, source)
     if not targets:
         st.info("This page has no upload that files could be imported into.")
         return

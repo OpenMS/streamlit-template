@@ -109,7 +109,7 @@ jobs:
 
       - name: Install kubeconform
         run: |
-          curl -sSL https://github.com/yannh/kubeconform/releases/latest/download/kubeconform-linux-amd64.tar.gz | tar xz
+          curl -fsSL --retry 6 --retry-delay 10 --retry-all-errors https://github.com/yannh/kubeconform/releases/latest/download/kubeconform-linux-amd64.tar.gz | tar xz
           sudo mv kubeconform /usr/local/bin/
 
       - name: Install kubectl
@@ -124,7 +124,7 @@ jobs:
 
       - name: Set up Helm
         # kubectl kustomize --enable-helm shells out to `helm` to inflate the
-        # charts in k8s/storage/ (Manila CSI) and k8s/ci-storage/ (Ganesha).
+        # chart in k8s/ci-storage/ (Ganesha).
         #
         # PINNED TO THE 3.x LINE ON PURPOSE, and pinned identically at all four
         # `Set up Helm` steps in this file. The kustomize built into kubectl
@@ -164,19 +164,36 @@ jobs:
           kubeconform -summary -strict -kubernetes-version 1.28.0 -skip IngressRoute \
             < /tmp/prod-lint.yaml
 
-      - name: Render the Argo CD folder
-        # k8s/argocd/ is synced by Argo CD itself (argocd-application.yaml),
-        # so a file it cannot render stops every later deploy. Its kinds are
-        # Argo CD CRDs, which kubeconform has no schema for: render only.
-        # tests/test_argocd_autodeploy.py checks the contents.
-        if: hashFiles('k8s/argocd/kustomization.yaml') != ''
+      - name: Validate the overlay with the S3 storage component
+        # k8s/components/storage-s3/ is opt-in. Render prod with it (added
+        # unless the overlay already lists it) and check that it really
+        # switched the app: the Manila claim is gone, every workspace volume
+        # names the S3 claim, and the S3 settings reached the containers.
         run: |
-          kubectl kustomize k8s/argocd/ > /tmp/argocd-lint.yaml
-          if [ ! -s /tmp/argocd-lint.yaml ]; then
-            echo "::error::k8s/argocd/ rendered nothing"
+          tmp=$(mktemp -d)
+          cp -r k8s "$tmp/"
+          yq -i '(.components // []) as $c | .components = ($c + (["../../components/storage-s3"] - $c))' "$tmp/k8s/overlays/prod/kustomization.yaml"
+          kubectl kustomize "$tmp/k8s/overlays/prod/" > /tmp/prod-s3.yaml
+          if [ ! -s /tmp/prod-s3.yaml ]; then
+            echo "::error::prod + storage-s3 rendered nothing"
             exit 1
           fi
-          grep -E '^kind: ' /tmp/argocd-lint.yaml
+          kubeconform -summary -strict -kubernetes-version 1.28.0 -skip IngressRoute \
+            < /tmp/prod-s3.yaml
+          claims=$(yq '.. | select(has("claimName")) | .claimName' /tmp/prod-s3.yaml | grep -v '^---$' | sort -u)
+          if [ -z "$claims" ] || printf '%s\n' "$claims" | grep -vq 'workspaces-s3-pvc$'; then
+            echo "::error::workspace volumes do not all name the S3 claim: $claims"
+            exit 1
+          fi
+          if yq 'select(.kind == "PersistentVolumeClaim") | .metadata.name' /tmp/prod-s3.yaml | grep -q manila; then
+            echo "::error::the Manila claim is still rendered next to the S3 claim"
+            exit 1
+          fi
+          n=$(yq 'select(.kind == "Deployment") | .spec.template.spec.containers[0].env[] | select(.name == "WORKSPACES_S3_BUCKET") | .name' /tmp/prod-s3.yaml | grep -c . || true)
+          if [ "$n" -lt 3 ]; then
+            echo "::error::WORKSPACES_S3_BUCKET reached $n of the 3 deployments (streamlit, rq-worker, sync)"
+            exit 1
+          fi
 
       - name: Validate the CI overlay
         # k8s/overlays/ci/ is what the two kind jobs actually apply, so it is
@@ -235,8 +252,9 @@ jobs:
           echo "$CI_RES"
 
       - name: Validate the storage roots
-        # Both of them: k8s/storage/ (Manila, what production applies) and
-        # k8s/ci-storage/ (the Ganesha stand-in the kind jobs apply).
+        # Both: k8s/ci-storage/ (the Ganesha stand-in the kind jobs apply)
+        # and the optional S3 tier k8s/storage-s3/ (JuiceFS). The production
+        # Manila tier is cluster configuration, kept outside this repository.
         #
         # Rendered, not file-by-file: each root carries Helm values files,
         # which is not a Kubernetes manifest and would fail kubeconform on
@@ -253,7 +271,7 @@ jobs:
         # input, so a render that SUCCEEDS and emits zero documents would still
         # pass a pipefail-corrected pipe.
         run: |
-          for root in k8s/storage k8s/ci-storage; do
+          for root in k8s/ci-storage k8s/storage-s3; do
             kubectl kustomize --enable-helm "$root/" > /tmp/storage-rendered.yaml
             if [ ! -s /tmp/storage-rendered.yaml ]; then
               echo "::error::$root/ rendered nothing; its charts were never validated"
@@ -296,7 +314,7 @@ jobs:
 
       - name: Set up Helm
         # kubectl kustomize --enable-helm shells out to `helm` to inflate the
-        # charts in k8s/storage/ (Manila CSI) and k8s/ci-storage/ (Ganesha).
+        # chart in k8s/ci-storage/ (Ganesha).
         #
         # PINNED TO THE 3.x LINE ON PURPOSE, and pinned identically at all four
         # `Set up Helm` steps in this file. The kustomize built into kubectl
@@ -335,11 +353,11 @@ jobs:
           shellcheck -S error .github/scripts/ci-assertions.sh
 
       - name: Assert the storage class contract
-        # The workspace PVC, the Manila StorageClass in k8s/storage/ and the CI
+        # The workspace PVC, the production Manila StorageClass and the CI
         # stand-in in k8s/ci-storage/ must agree on the class name, Retain and
         # the mount options, or the kind jobs test a mount production never
         # gets. Runs before the pinning check because it is the step that
-        # renders both storage roots, and the pinning scan's exclusion of the
+        # renders the CI storage root, and the pinning scan's exclusion of the
         # vendored charts is the thing most likely to rot; having the render
         # happen first means the scan always runs against the state a real job
         # leaves behind.
@@ -775,6 +793,31 @@ jobs:
               print(f'ismount({p}) = True')
           "
 
+      - name: Convert a Thermo .raw file with the built-in reader (full variant)
+        if: matrix.variant == 'full'
+        run: |
+          # The way CommandExecutor.convert_to_mzml calls it: OpenMS's built-in
+          # reader on the image's .NET runtime, here with a read-only root and
+          # the host's UID. An OpenMS without that reader (before 3.6) has
+          # nothing to check.
+          apptainer exec instance://openms-test FileConverter -write_ini /workspaces-streamlit-template/FileConverter.ini >/dev/null
+          if ! grep -q 'name="reader".*inprocess' /tmp/host-workspaces/FileConverter.ini; then
+            echo "FileConverter has no built-in Thermo reader; nothing to check"
+            exit 0
+          fi
+          curl -fsSL --retry 5 --retry-all-errors -o /tmp/host-mounted-data/test.raw \
+            https://archive.openms.de/openms/testfiles/Angiotensin_AllScans.raw
+          echo "3a0236f719e7c91e3c958f57f4e66ae422803ec3e6a997b9af4d2af395332b9f  /tmp/host-mounted-data/test.raw" | sha256sum -c
+          apptainer exec instance://openms-test FileConverter -in /mounted-data/test.raw \
+            -out /workspaces-streamlit-template/test.mzML -RawToMzML:reader inprocess
+          apptainer exec instance://openms-test /root/miniforge3/envs/streamlit-env/bin/python -c "
+          import pyopenms
+          exp = pyopenms.MSExperiment()
+          pyopenms.MzMLFile().load('/workspaces-streamlit-template/test.mzML', exp)
+          print('converted', exp.getNrSpectra(), 'spectra')
+          assert exp.getNrSpectra() > 0
+          "
+
       - name: Dump entrypoint logs on failure
         if: failure()
         run: |
@@ -847,13 +890,14 @@ jobs:
       - name: Log in to GHCR for ORAS push
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
         run: |
           # apptainer reads its auth from ~/.apptainer/remote.yaml, NOT from
           # ~/.docker/config.json — so docker/login-action won't work here.
           # Login and push must both run as the runner user (no sudo) so they
           # share the same $HOME and therefore the same auth file.
           echo "$GHCR_TOKEN" | apptainer registry login \
-            --username "${{ github.actor }}" \
+            --username "$GHCR_USER" \
             --password-stdin \
             oras://ghcr.io
 
@@ -1052,7 +1096,7 @@ jobs:
 
       - name: Set up Helm
         # kubectl kustomize --enable-helm shells out to `helm` to inflate the
-        # charts in k8s/storage/ (Manila CSI) and k8s/ci-storage/ (Ganesha).
+        # chart in k8s/ci-storage/ (Ganesha).
         #
         # PINNED TO THE 3.x LINE ON PURPOSE, and pinned identically at all four
         # `Set up Helm` steps in this file. The kustomize built into kubectl
@@ -1129,7 +1173,7 @@ jobs:
         # Before the overlay, because the workspace PVC is ReadWriteMany on the
         # StorageClass `openms-manila-nfs`: with nothing publishing it the claim
         # never binds and every app pod stays Pending. Production gets that
-        # class from OpenStack Manila (k8s/storage/), which a runner cannot
+        # class from OpenStack Manila (cluster configuration), which a runner cannot
         # reach, so k8s/ci-storage/ publishes one of the same name and mount
         # options from an in-cluster Ganesha server. kind's `standard` class is
         # RWO local-path, so the whole NFS export genuinely runs here, and
@@ -1212,7 +1256,7 @@ jobs:
           # Filter out Traefik IngressRoute (kind cluster uses nginx) and force imagePullPolicy=Never
           # No storageClassName rewrite here: the workspace PVC claims
           # `openms-manila-nfs`, which k8s/ci-storage/ publishes in kind under
-          # the same name as k8s/storage/ does in production.
+          # the same name as the production Manila tier does.
           # The shared namespace is defined only in the template's own prod
           # overlay; an app's manifests leave it out, so create it here.
           kubectl create namespace openms --dry-run=client -o yaml | kubectl apply -f -
@@ -1316,7 +1360,7 @@ jobs:
               ;;
           esac
           echo "${OPTS}" | grep -qE '(^| )(nfs)?vers=3( |$)' || {
-            echo "::error::'${CLASS}' does not pin NFSv3, the version k8s/storage/storageclass.yaml mounts (some Manila backends serve no NFSv4)"
+            echo "::error::'${CLASS}' does not pin NFSv3, the version the production StorageClass mounts (some Manila backends serve no NFSv4)"
             exit 1
           }
           echo "${OPTS}" | grep -qE '(^| )nconnect=4( |$)' || {
@@ -1864,7 +1908,7 @@ jobs:
         # Before the overlay, because the workspace PVC is ReadWriteMany on the
         # StorageClass `openms-manila-nfs`: with nothing publishing it the claim
         # never binds and every app pod stays Pending. Production gets that
-        # class from OpenStack Manila (k8s/storage/), which a runner cannot
+        # class from OpenStack Manila (cluster configuration), which a runner cannot
         # reach, so k8s/ci-storage/ publishes one of the same name and mount
         # options from an in-cluster Ganesha server. kind's `standard` class is
         # RWO local-path, so the whole NFS export genuinely runs here, and
@@ -1941,7 +1985,7 @@ jobs:
           #
           # No storageClassName rewrite here: the workspace PVC claims
           # `openms-manila-nfs`, which k8s/ci-storage/ publishes in kind under
-          # the same name as k8s/storage/ does in production.
+          # the same name as the production Manila tier does.
           # The shared namespace is defined only in the template's own prod
           # overlay; an app's manifests leave it out, so create it here.
           kubectl create namespace openms --dry-run=client -o yaml | kubectl apply -f -
@@ -2059,7 +2103,7 @@ jobs:
               ;;
           esac
           echo "${OPTS}" | grep -qE '(^| )(nfs)?vers=3( |$)' || {
-            echo "::error::'${CLASS}' does not pin NFSv3, the version k8s/storage/storageclass.yaml mounts (some Manila backends serve no NFSv4)"
+            echo "::error::'${CLASS}' does not pin NFSv3, the version the production StorageClass mounts (some Manila backends serve no NFSv4)"
             exit 1
           }
           echo "${OPTS}" | grep -qE '(^| )nconnect=4( |$)' || {

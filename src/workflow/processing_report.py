@@ -262,6 +262,8 @@ def build_report(
             if isinstance((params or {}).get("_follow_up"), dict) else "",
             "follow_note": ((params or {}).get("_follow_up") or {}).get("note", "")
             if isinstance((params or {}).get("_follow_up"), dict) else "",
+            "reused": list(((params or {}).get("_follow_up") or {}).get("kept") or [])
+            if isinstance((params or {}).get("_follow_up"), dict) else [],
         },
         "generated": datetime.now().strftime("%Y-%m-%d %H:%M"),
         "started": _fmt_time(progress.get("started")),
@@ -310,15 +312,68 @@ def report_for(workflow_dir: Path, run_id: Optional[str] = None, settings: Optio
             settings = json.loads(Path("settings.json").read_text(encoding="utf-8"))
         except (OSError, ValueError):
             settings = {}
-    prefix = f"{workflow_dir.name}-param-"
+    # A report kept with a result (keep_report) names the workflow it came from
+    source = _kept_source(workflow_dir)
+    slug = source.get("workflow") or workflow_dir.name
+    prefix = f"{slug}-param-"
     return build_report(
         progress,
         app_name=settings.get("app-name", ""),
         app_version=str(settings.get("version", "")),
-        workflow=workflow or workflow_dir.name,
+        workflow=workflow or slug,
         run=run,
         params={k[len(prefix):] if k.startswith(prefix) else k: v for k, v in params.items()},
     )
+
+
+# ---- Reports kept with a result ----
+
+KEPT_SOURCE = "report-source.json"
+
+
+def _kept_source(folder: Path) -> dict:
+    try:
+        data = json.loads(Path(folder, KEPT_SOURCE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def keep_report(workflow_dir: Path, dest: Path) -> bool:
+    """Keep the report of the workflow's last start in ``dest``, for good.
+
+    A workflow without run folders writes every start's ``progress.json`` and
+    ``params.json`` over the last ones, so its report describes the newest
+    start only. Called at the end of ``execution()`` with a folder that belongs
+    to the start's results (a dataset of an app's cache, for example), this
+    copies what the report is built from: ``logs/progress.json``,
+    ``params.json``, ``last-follow-up.json`` and the ``.ini`` of every TOPP
+    tool the start ran (their defaults, for comparing the settings later).
+    ``report_for(dest)`` and ``report_buttons(dest)`` then show that start's
+    report, whatever ran after it. False when the start recorded nothing.
+    """
+    from .progress import progress_path, read_progress  # pylint: disable=import-outside-toplevel
+
+    workflow_dir, dest = Path(workflow_dir), Path(dest)
+    progress = read_progress(workflow_dir)
+    if not progress:
+        return False
+    progress_path(dest).parent.mkdir(parents=True, exist_ok=True)
+    progress_path(dest).write_text(json.dumps(progress), encoding="utf-8")
+    for name in ("params.json", "last-follow-up.json"):
+        try:
+            Path(dest, name).write_bytes(Path(workflow_dir, name).read_bytes())
+        except OSError:
+            pass
+    tools = {(step.get("provenance") or {}).get("program") for step in progress.get("steps") or []
+             if (step.get("provenance") or {}).get("kind") == "topp"}
+    for tool in sorted(t for t in tools if t):
+        ini = Path(workflow_dir, "ini", f"{tool}.ini")
+        if ini.is_file():
+            Path(dest, "ini").mkdir(exist_ok=True)
+            Path(dest, "ini", ini.name).write_bytes(ini.read_bytes())
+    Path(dest, KEPT_SOURCE).write_text(json.dumps({"workflow": workflow_dir.name}), encoding="utf-8")
+    return True
 
 
 # ---- Markdown ----
@@ -347,6 +402,8 @@ def _summary_lines(report: dict) -> List[List[str]]:
         rows.append(["Status", run["status"]])
     if run.get("follows"):
         rows.append(["Settings from", run["follows"] + (f" ({run['follow_note']})" if run.get("follow_note") else "")])
+    if run.get("reused"):
+        rows.append(["Results reused", f"{', '.join(run['reused'])}, from {run.get('follows') or 'the earlier run'}"])
     if report["started"]:
         rows.append(["Started", report["started"]])
     if run["finished"]:

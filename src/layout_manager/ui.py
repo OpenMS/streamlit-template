@@ -5,6 +5,7 @@ JavaScript with no build step), so arranging components never reruns the
 script. Python only hears from it when the user presses Save or Reset.
 """
 
+import copy
 import functools
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence
@@ -13,12 +14,25 @@ import streamlit as st
 import streamlit.components.v1 as st_components
 
 from src.layout_manager.layout import (
+    ANNOTATIONS_PREFIX,
     MAX_COLUMNS,
+    ZOOM_PREFIX,
     Layout,
     analysis_label,
+    apply_defaults,
     apply_preset,
+    capture_defaults,
+    has_own_defaults,
+    differs_from_defaults,
+    has_defaults,
     join_labels,
+    link_entries,
+    link_params,
+    link_url,
+    LINK_SHOW,
+    LINK_VIEW,
     missing_analyses,
+    read_link,
     clear_layout,
     load_layout,
     load_views,
@@ -27,6 +41,7 @@ from src.layout_manager.layout import (
     save_layout,
     save_views,
     select_view,
+    set_view_defaults,
     validate_layout,
     validate_views,
 )
@@ -346,16 +361,25 @@ def views_editor(
     if submitted and submitted.get("nonce") != st.session_state.get(handled_key):
         st.session_state[handled_key] = submitted.get("nonce")
         if submitted.get("action") == "save":
+            state = load_views(path, components, presets, default_layout)
+            by_name = {v["name"]: v for v in state["views"]}
+            for sent in submitted.get("views") or []:
+                # A view the assistant made is read-only like a ready-made one: its stored label and rows count
+                stored = by_name.get(sent.get("name")) if isinstance(sent, dict) else None
+                if stored and stored.get("by") == "assistant":
+                    sent.update(label=stored["label"], rows=stored["rows"])
             error = validate_views(submitted, components, presets, default_layout, max_experiments, max_columns)
             if not error:
-                state = load_views(path, components, presets, default_layout)
-                by_name = {v["name"]: v for v in state["views"]}
                 views = []
                 for sent in submitted["views"]:
                     view = dict(by_name.get(sent["name"], {}))
                     if not view.get("preset"):
                         view.update(name=sent["name"], label=str(sent["label"]).strip(),
                                     rows=sent["rows"], preset=False)
+                    source = by_name.get(sent.get("copy_of")) if sent["name"] not in by_name else None
+                    if source and source.get("defaults") and not view.get("defaults"):
+                        # A duplicate keeps the zoom and selection saved with the view it copies
+                        view["defaults"] = copy.deepcopy(source["defaults"])
                     view["in_bar"] = bool(sent.get("in_bar", True))
                     views.append(view)
                 save_views(path, {"views": views, "current": submitted["current"],
@@ -390,7 +414,8 @@ def views_editor(
         default_layout=default_layout,
         saved_layout=None,
         side_by_side=state["side_by_side"],
-        views=state["views"],
+        # The assistant's views are locked like ready-made ones (Duplicate to edit)
+        views=[dict(v, preset=True) if v.get("by") == "assistant" else v for v in state["views"]],
         current=state["current"],
         experiments=state["experiments"],
         fresh=fresh,
@@ -405,6 +430,20 @@ def views_editor(
         default=None,
     )
     return done
+
+
+def _refresh_stored_layout(path, state, components, default_layout) -> None:
+    """Store the current view's rows again when they changed since they were
+    stored: a page update that changes a ready-made view reaches the pages
+    that show it, not only those that switch views."""
+    if load_layout(path) is None:
+        return
+    current = next((v for v in state["views"] if v["name"] == state["current"]), None)
+    if current is None:
+        return
+    stored, _ = resolve_layout(path, components, default_layout)
+    if any(rows != current["rows"] for rows in stored):
+        save_views(path, state)
 
 
 def view_bar(
@@ -423,6 +462,10 @@ def view_bar(
     analyses: Optional[Dict[str, Any]] = None,
     unavailable_options: Optional[Callable[[List[str], Optional[Dict[str, Any]]], Sequence[Dict[str, Any]]]] = None,
     dataset_label: str = "run",
+    states: Optional[Callable[[int], Any]] = None,
+    datasets: Optional[Callable[[int], Optional[str]]] = None,
+    link: bool = False,
+    not_kept: Sequence[str] = (),
     **editor_args: Any,
 ) -> str:
     """The view bar: as many views as fit, the rest in More, and ✏️ Customize.
@@ -451,8 +494,20 @@ def view_bar(
     (the default is the first): a page that picks its default by what a
     dataset holds renders that view's rows itself until the user picks one.
     ``editor_args`` go to ``views_editor`` (``max_experiments``, ...).
+
+    **Zoom and selection.** ``states(index)`` returns the OpenMS-Insight
+    ``StateManager`` of experiment ``index`` (``experiment_state(...)`` with the
+    same arguments the renderers use), and ``datasets(index)`` the id of the
+    dataset it shows (optional). A view of the user's own can then keep the
+    zoom and selection shown as its defaults (📌), opening it applies them,
+    and ↺ brings them back after the user changed them. Components keep their
+    zoom in the state only when given ``zoom_identifier=zoom_identifier(name)``.
+    ``not_kept`` names selections neither 📌 nor a link stores: those a
+    component publishes itself whenever it is drawn (the fragments a sequence
+    view matched, say), which would only make a link long.
     Returns the name of the current view.
     """
+    states = _without(states, not_kept)
     open_key = f"{key}_dialog_open"
     new_key = f"{key}_dialog_new"
     handled_key = f"{key}_bar_handled"
@@ -467,9 +522,19 @@ def view_bar(
             st.session_state[new_key] = bool(submitted.get("new_view"))
         elif submitted.get("action") == "button":
             clicked = submitted.get("id")
+            if clicked == _SAVE_DEFAULTS:
+                st.session_state[f"{key}_defaults_dialog"] = True
+            elif clicked == _COPY_LINK:
+                st.session_state[f"{key}_link_dialog"] = True
         elif submitted.get("action") == "unavailable":
             view = submitted.get("view")
             request_analysis(key, [], view=view)
+
+    opened = _pending_link(key) if link else None
+    if opened is not None:
+        if opened["view"]:
+            select_view(path, opened["view"], components, presets, default_layout)
+        consume_link(key)
 
     state = _views(path, components, presets, default_layout, default_view)
     missing_of = {v["name"]: missing_analyses(v["rows"], components, available) for v in state["views"]}
@@ -480,6 +545,30 @@ def view_bar(
         if fallback is not None:
             state["current"] = fallback
             save_views(path, state)
+    _refresh_stored_layout(path, state, components, default_layout)
+
+    current_view = next((v for v in state["views"] if v["name"] == state["current"]), None)
+    experiments = int(state.get("experiments") or 1)
+    builtin: List[Dict[str, Any]] = []
+    if states is not None:
+        applied_key = f"{key}_defaults_applied"
+        # Opening a view (also the one shown when the session starts) applies its defaults
+        if opened is not None and opened["experiments"]:
+            # A link's zoom and selection win over the view's own
+            st.session_state[applied_key] = state["current"]
+            for index, entry in enumerate(opened["experiments"][:experiments]):
+                if entry:
+                    apply_defaults(states(index), entry, _dataset_of(datasets, index))
+        if st.session_state.get(applied_key) != state["current"]:
+            st.session_state[applied_key] = state["current"]
+            if has_defaults(current_view):
+                _apply_view_defaults(current_view, states, datasets, experiments)
+        if clicked == _RESTORE_DEFAULTS and has_defaults(current_view):
+            _apply_view_defaults(current_view, states, datasets, experiments)
+        builtin = _defaults_actions(current_view, states, datasets, experiments)
+    if link:
+        builtin.append({"id": _COPY_LINK, "icon": "🔗",
+                        "help": "Link to this view with what it shows now"})
 
     def _bar_view(v: Dict[str, Any]) -> Dict[str, Any]:
         out = {k: v[k] for k in ("name", "label", "rows", "preset", "in_bar", "help") if k in v}
@@ -494,7 +583,7 @@ def view_bar(
         details=details,
         label=label,
         customize_help="Customize views",
-        actions=[{k: a[k] for k in ("id", "icon", "label", "help") if k in a} for a in actions or []],
+        actions=builtin + [{k: a[k] for k in ("id", "icon", "label", "help") if k in a} for a in actions or []],
         key=f"{key}_bar",
         default=None,
     )
@@ -524,6 +613,11 @@ def view_bar(
 
     if st.session_state.get(open_key):
         _dialog()
+    elif states is not None and st.session_state.get(f"{key}_defaults_dialog") and current_view:
+        _defaults_dialog(key, path, current_view, components, presets, default_layout,
+                         states, datasets, experiments, dataset_label)
+    elif link and st.session_state.get(f"{key}_link_dialog") and current_view:
+        _link_dialog(key, current_view, states, datasets, experiments)
     request = st.session_state.get(f"{key}_missing")
     if request and not st.session_state.get(open_key):
         view = next((v for v in state["views"] if v["name"] == request.get("view")), None)
@@ -550,6 +644,182 @@ def view_bar(
     return state["current"]
 
 
+_SAVE_DEFAULTS = "_save_view_defaults"
+_RESTORE_DEFAULTS = "_restore_view_defaults"
+_COPY_LINK = "_copy_view_link"
+
+
+def _link_token() -> str:
+    return f"{st.query_params.get(LINK_VIEW, '')}|{st.query_params.get(LINK_SHOW, '')}"
+
+
+def _pending_link(key: str) -> Optional[Dict[str, Any]]:
+    """The link the page was opened with, while the bar ``key`` has not applied it."""
+    if st.session_state.get(f"{key}_link_seen") == _link_token():
+        return None
+    return read_link(st.query_params)
+
+
+def consume_link(key: str) -> None:
+    """Mark the link the page was opened with as applied for the bar ``key``.
+
+    What the page shows from here on is the user's: the link's parameters
+    leave the URL, so a rerun does not apply it again.
+    """
+    st.session_state[f"{key}_link_seen"] = _link_token()
+    for name in (LINK_VIEW, LINK_SHOW):
+        st.query_params.pop(name, None)
+
+
+def linked_datasets(key: str) -> List[Optional[str]]:
+    """The datasets a link asks the bar ``key`` to show, one per experiment.
+
+    Empty unless the page was opened with a link the bar has not applied yet,
+    so a page sets its dataset selectors from it (before ``view_bar``) only
+    once and the user's later picks stay.
+    """
+    opened = _pending_link(key)
+    return [e.get("dataset") for e in opened["experiments"]] if opened else []
+
+
+def _link_dialog(key: str, view: Dict[str, Any], states: Optional[Callable[[int], Any]],
+                 datasets: Optional[Callable[[int], Optional[str]]], experiments: int) -> None:
+    open_key = f"{key}_link_dialog"
+
+    def _closed() -> None:
+        st.session_state[open_key] = False
+
+    @st.dialog("Link to this view", on_dismiss=_closed)
+    def _dialog() -> None:
+        entries = []
+        for index in range(experiments):
+            dataset = _dataset_of(datasets, index)
+            entries.append(capture_defaults(_stored(states(index)), dataset) if states is not None
+                           else ({"dataset": dataset} if dataset is not None else {}))
+        base = link_url(getattr(st.context, "url", None) or "", st.query_params.to_dict())
+        params = link_params(view["name"], entries)
+        carried = (read_link(params) or {}).get("experiments", [])
+        state = any(e.get("selection") or e.get("zoom") or e.get("annotations") for e in carried)
+        st.markdown(f"Opens this page on **{view['label']}**"
+                    + (" with the same data, zoom and selection." if state
+                       else " with the same data." if carried else "."))
+        st.code(link_url(base, params), language=None, wrap_lines=True)
+        if carried != link_entries(entries):
+            st.caption("What is shown is too much for a link: it leaves out part of the selection, "
+                       "zoom and annotations." if carried
+                       else "What is shown is too much for a link: it opens the view only.")
+        st.caption("Copy it with the button at its right. It opens this workspace, so only "
+                   "people who can open the workspace see the data.")
+
+    _dialog()
+
+
+def _keeps_defaults(view: Optional[Dict[str, Any]]) -> bool:
+    """Whether the user can store a zoom and selection on ``view``: on every view.
+
+    A ready-made view and one the AI assistant made stay read-only in the
+    editor, but keep the zoom and selection the user pins on them.
+    """
+    return bool(view)
+
+
+def _dataset_of(datasets: Optional[Callable[[int], Optional[str]]], index: int) -> Optional[str]:
+    return datasets(index) if datasets is not None else None
+
+
+def _apply_view_defaults(view: Dict[str, Any], states: Callable[[int], Any],
+                         datasets: Optional[Callable[[int], Optional[str]]], experiments: int) -> None:
+    for index, entry in enumerate((view.get("defaults") or [])[:experiments]):
+        if entry:
+            apply_defaults(states(index), entry, _dataset_of(datasets, index))
+
+
+def _defaults_actions(view: Optional[Dict[str, Any]], states: Callable[[int], Any],
+                      datasets: Optional[Callable[[int], Optional[str]]], experiments: int) -> List[Dict[str, Any]]:
+    """The bar's 📌 and ↺ for the current view."""
+    actions: List[Dict[str, Any]] = []
+    if has_defaults(view):
+        changed = any(
+            entry and differs_from_defaults(_stored(states(i)), entry, _dataset_of(datasets, i))
+            for i, entry in enumerate((view.get("defaults") or [])[:experiments]))
+        actions.append({
+            "id": _RESTORE_DEFAULTS, "icon": "↺",
+            "help": ("Back to the zoom and selection saved with this view" if changed
+                     else "The zoom and selection saved with this view are shown"),
+        })
+    if _keeps_defaults(view):
+        actions.append({
+            "id": _SAVE_DEFAULTS, "icon": "📌",
+            "help": ("Replace the zoom and selection saved with this view" if has_defaults(view)
+                     else "Save the zoom and selection shown now with this view"),
+        })
+    return actions
+
+
+def _describe(entry: Dict[str, Any], labels: Dict[str, str]) -> List[str]:
+    """Lines saying what one experiment's defaults hold."""
+    def short(value: Any) -> str:
+        text = ", ".join(map(str, value)) if isinstance(value, list) else str(value)
+        return text if len(text) <= 40 else text[:39] + "…"
+
+    def number(x: float) -> str:
+        return f"{x:.4g}"
+
+    lines = []
+    for identifier, value in (entry.get("selection") or {}).items():
+        name, _, owner = identifier.partition("@")
+        where = f" ({labels.get(owner, owner)})" if owner else ""
+        lines.append(f"Selected {name.replace('_', ' ')}{where}: `{short(value)}`")
+    for component, zoom in (entry.get("zoom") or {}).items():
+        axes = ", ".join(f"{axis} {number(r[0])} to {number(r[1])}" for axis, r in zoom.items())
+        lines.append(f"Zoom of {labels.get(component, component)}: {axes}")
+    for component, points in (entry.get("annotations") or {}).items():
+        lines.append(f"{len(points)} annotated points in {labels.get(component, component)}")
+    return lines
+
+
+def _defaults_dialog(key: str, path: Path, view: Dict[str, Any], components, presets, default_layout,
+                     states: Callable[[int], Any], datasets: Optional[Callable[[int], Optional[str]]],
+                     experiments: int, dataset_label: str) -> None:
+    open_key = f"{key}_defaults_dialog"
+
+    def _closed() -> None:
+        st.session_state[open_key] = False
+
+    @st.dialog("Zoom and selection of this view", on_dismiss=_closed)
+    def _dialog() -> None:
+        labels = {c["name"]: c["label"] for c in components}
+        captured = [capture_defaults(_stored(states(i)), _dataset_of(datasets, i))
+                    for i in range(experiments)]
+        st.markdown(f"Opening **{view['label']}** will show this again; ↺ in the bar brings it back "
+                    "after you change it.")
+        anything = False
+        for index, entry in enumerate(captured):
+            lines = _describe(entry, labels)
+            anything = anything or bool(lines)
+            if experiments > 1:
+                st.markdown(f"**{dataset_label.capitalize()} {index + 1}**")
+            st.markdown("\n".join(f"- {line}" for line in lines) if lines
+                        else "Nothing selected or zoomed.")
+        save_col, remove_col = st.columns(2)
+        if save_col.button("Save with this view", type="primary", disabled=not anything,
+                           key=f"{key}_defaults_save", width="stretch"):
+            set_view_defaults(path, view["name"], captured, components, presets, default_layout)
+            # Shown as saved: opening it again need not apply anything now
+            st.session_state[f"{key}_defaults_applied"] = view["name"]
+            _closed()
+            st.rerun()
+        fallback = view.get("preset") or view.get("by") == "assistant"
+        if has_own_defaults(view) and remove_col.button(
+                "Back to the view's own" if fallback else "Remove the saved ones",
+                key=f"{key}_defaults_remove", width="stretch"):
+            set_view_defaults(path, view["name"], None, components, presets, default_layout)
+            _closed()
+            st.rerun()
+
+    _dialog()
+
+
 def _selection_key(key: str, index: int) -> str:
     return f"{key}_experiment_{index}"
 
@@ -557,6 +827,18 @@ def _selection_key(key: str, index: int) -> str:
 def selected_datasets(key: str, count: int) -> List[Optional[str]]:
     """The dataset ids picked in the selectors of ``render_experiments``."""
     return [st.session_state.get(_selection_key(key, i)) for i in range(count)]
+
+
+def _picked(key: str, index: int, datasets: Mapping[str, str]) -> Optional[str]:
+    """The dataset experiment ``index`` shows: the one picked, else the
+    ``index``-th (the first when there are fewer), kept by id."""
+    ids = list(datasets)
+    state = _selection_key(key, index)
+    picked = st.session_state.get(state)
+    if picked not in datasets:
+        picked = ids[index] if index < len(ids) else (ids[0] if ids else None)
+        st.session_state[state] = picked
+    return picked
 
 
 def _selector(
@@ -571,10 +853,7 @@ def _selector(
     state = _selection_key(key, index)
     widget = f"{state}_select"
     # Keep the pick by id, so a renamed or added dataset does not move it.
-    picked = st.session_state.get(state)
-    if picked not in datasets:
-        picked = ids[index] if index < len(ids) else (ids[0] if ids else None)
-        st.session_state[state] = picked
+    picked = _picked(key, index, datasets)
     if st.session_state.get(widget) != picked:
         st.session_state[widget] = picked
 
@@ -591,6 +870,35 @@ def _selector(
     return st.session_state.get(state)
 
 
+def experiment_selector(
+    datasets: Mapping[str, str],
+    key: str,
+    index: int = 0,
+    label: str = "Experiment",
+    buttons: Optional[Callable[[int], Any]] = None,
+    pick: Optional[str] = None,
+) -> Optional[str]:
+    """The dataset selector of experiment ``index`` with ``buttons(index)`` to
+    its right, drawn where the page calls it; returns the picked id.
+
+    ``pick`` selects that dataset before the selector is drawn, for a page
+    opened with a link to it (``linked_datasets``); an id not in
+    ``datasets`` is ignored.
+
+    A Viewer draws the first experiment's selector above its ``view_bar``,
+    with the buttons that act on what it shows (edit, history, add, export),
+    so a page reads top to bottom as: what is shown, how it is shown, the
+    components. ``render_experiments(..., first_selector=False)`` then draws
+    the experiments without drawing that selector again. Nothing is drawn
+    without datasets.
+    """
+    if not datasets:
+        return None
+    if pick in datasets:
+        st.session_state[_selection_key(key, index)] = pick
+    return _selector(key, index, datasets, label, buttons)
+
+
 def render_experiments(
     layout: Layout,
     side_by_side: bool,
@@ -605,6 +913,7 @@ def render_experiments(
     analyses: Optional[Dict[str, Any]] = None,
     on_missing: Optional[Callable[[List[str], str, str, int], Any]] = None,
     dataset_label: str = "run",
+    first_selector: bool = True,
 ) -> List[Optional[str]]:
     """Render every experiment of ``layout``, each below its own dataset selector.
 
@@ -631,6 +940,9 @@ def render_experiments(
             returning the analyses a dataset has, components that need another
             draw a note (see ``render_layout``); its button calls
             ``on_missing(missing, component, dataset_id, index)``.
+        first_selector: False when the page drew the first experiment's
+            selector itself (``experiment_selector``, above the view bar):
+            the first experiment then shows the dataset picked there.
 
     Returns:
         The dataset id picked in each experiment (None without datasets).
@@ -639,7 +951,10 @@ def render_experiments(
         return [None] * len(layout)
 
     def one(index: int, rows: List[List[str]]) -> Optional[str]:
-        dataset = _selector(key, index, datasets, experiment_label, buttons)
+        if index == 0 and not first_selector:
+            dataset = _picked(key, index, datasets)
+        else:
+            dataset = _selector(key, index, datasets, experiment_label, buttons)
         if dataset is not None:
             has = available(dataset) if available is not None else None
             missing_cb = None
@@ -697,6 +1012,33 @@ def experiment_state(
     return _private_state(StateManager)(name, {i: f"{i}@{owner}" for i in private})
 
 
+def _stored(state: Any) -> Dict[str, Any]:
+    """All of an experiment's selections, those a component keeps apart (``row@table``) too."""
+    stored = getattr(state, "stored_selections", None)
+    return stored() if callable(stored) else state.get_all_selections()
+
+
+class _NotKept:
+    """An experiment's state whose selections named in ``not_kept`` are not stored."""
+
+    def __init__(self, state: Any, not_kept: Sequence[str]):
+        self._state = state
+        self._not_kept = set(not_kept)
+
+    def stored_selections(self) -> Dict[str, Any]:
+        return {k: v for k, v in (_stored(self._state) or {}).items() if k not in self._not_kept}
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._state, name)
+
+
+def _without(states: Optional[Callable[[int], Any]], not_kept: Sequence[str]) -> Optional[Callable[[int], Any]]:
+    """``states`` whose states leave out the selections in ``not_kept`` when stored."""
+    if states is None or not not_kept:
+        return states
+    return lambda index: (lambda state: None if state is None else _NotKept(state, not_kept))(states(index))
+
+
 def _private_state(base: type) -> type:
     """A ``StateManager`` that keeps some identifiers apart under other names."""
 
@@ -711,7 +1053,9 @@ def _private_state(base: type) -> type:
 
         def _from_store(self, values: Dict[str, Any]) -> Dict[str, Any]:
             # The shared names this component keeps apart are hidden, its own shown under them
-            out = {k: v for k, v in values.items() if k not in self._renamed and "@" not in k}
+            # (a zoom or a view's annotations, ``zoom@`` / ``annotations@<component>``, are shared)
+            out = {k: v for k, v in values.items()
+                   if k not in self._renamed and ("@" not in k or k.startswith((ZOOM_PREFIX, ANNOTATIONS_PREFIX)))}
             out.update({self._back[k]: v for k, v in values.items() if k in self._back})
             return out
 
@@ -726,6 +1070,10 @@ def _private_state(base: type) -> type:
 
         def get_all_selections(self) -> Dict[str, Any]:
             return self._from_store(super().get_all_selections())
+
+        def stored_selections(self) -> Dict[str, Any]:
+            """Every identifier as stored, those kept apart for a component too."""
+            return super().get_all_selections()
 
         def get_state_for_vue(self) -> Dict[str, Any]:
             return self._from_store(super().get_state_for_vue())

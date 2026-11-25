@@ -1,0 +1,25 @@
+# Helm values for juicefs-csi-driver 0.32.4.
+
+# The StorageClass is storageclass.yaml in this root, not chart values: the
+# chart would otherwise create a Secret from plain-text values here.
+storageClasses: []
+
+# JuiceFS Community Edition client used by the mount pods. Pinned so a chart
+# default bump cannot change the client under running volumes.
+defaultMountImage:
+  ce: juicedata/mount:ce-v1.4.1
+
+controller:
+  # Needed for the claim-label directory names (pathPattern in
+  # storageclass.yaml).
+  provisioner: true
+
+# No web UI and no admission webhook (the webhook needs cert-manager and is
+# only for sidecar/serverless mount modes).
+dashboard:
+  enabled: false
+webhook:
+  certManager:
+    enabled: false
+validatingWebhook:
+  enabled: false

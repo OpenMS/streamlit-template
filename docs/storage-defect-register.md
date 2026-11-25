@@ -1,4 +1,4 @@
-> **Superseded.** Production storage is now OpenStack Manila (`k8s/storage/`,
+> **Superseded.** Production storage is now OpenStack Manila (cluster configuration,
 > see `docs/kubernetes-deployment.md` section 3b). The per-app Ganesha tier this
 > document describes survives only as CI's in-cluster stand-in in
 > `k8s/ci-storage/`. Kept for the reasoning, which still explains the client

@@ -39,6 +39,9 @@
   .btn:hover { border-color: var(--primary); color: var(--primary); }
   .icon { width: 38px; padding: 0; font-size: 16px; display: grid; place-items: center; }
   .more { position: relative; flex: none; display: flex; }
+  /* Last resort when one view and the buttons are still too wide: the view's name is cut */
+  .row.tight .v:not(.add) { min-width: 0; justify-items: stretch; }
+  .row.tight .v:not(.add) > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; text-align: center; }
   .menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 5; min-width: 260px; max-width: 90vw; background: var(--bg); border: 1px solid var(--border);
           border-radius: 10px; box-shadow: 0 6px 20px rgba(0,0,0,.15); padding: 6px; display: grid; gap: 1px; }
   .menu .grp { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); padding: 6px 8px 2px; }
@@ -57,10 +60,29 @@
   function send(type, data) { window.parent.postMessage(Object.assign({ isStreamlitMessage: true, type: type }, data), '*'); }
   function setValue(value) { send('streamlit:setComponentValue', { value: Object.assign({ nonce: Date.now() + Math.random() }, value), dataType: 'json' }); }
   var lastHeight = -1;
+  // The page's iframe element, when the component is served from the app's own
+  // origin (it is): the More menu then lies over the components below instead
+  // of making the frame taller and pushing them down.
+  var frame = null;
+  try { frame = window.frameElement; } catch (e) { frame = null; }
+  function overlay(extra) {
+    if (!frame) return false;
+    var box = frame.parentElement, on = extra > 0;
+    // Streamlit keeps the frame as tall as the bar; the menu hangs below it
+    frame.style.height = on ? (lastHeight + extra) + 'px' : '';
+    frame.style.marginBottom = on ? (-extra) + 'px' : '';
+    frame.style.position = on ? 'relative' : '';
+    frame.style.zIndex = on ? '1000' : '';
+    if (box) { box.style.position = on ? 'relative' : ''; box.style.zIndex = on ? '1000' : ''; box.style.overflow = on ? 'visible' : ''; }
+    return true;
+  }
   function syncHeight() {
     var menu = app.querySelector('.menu');
-    var h = Math.ceil(app.getBoundingClientRect().height + 2 + (menu ? menu.getBoundingClientRect().height + 6 : 0));
+    var bar = Math.ceil(app.getBoundingClientRect().height + 2);
+    var extra = menu ? Math.ceil(menu.getBoundingClientRect().height + 16) : 0;  // room for its shadow
+    var h = frame ? bar : bar + extra;
     if (h !== lastHeight) { lastHeight = h; send('streamlit:setFrameHeight', { height: h }); }
+    overlay(extra);
   }
   function h(tag, attrs, children) {
     var el = document.createElement(tag);
@@ -99,7 +121,7 @@
     return b;
   }
 
-  function build(list, detail, hidden) {
+  function build(list, detail, hidden, compact) {
     function seg(views, name, add) {
       var kids = views.map(function (v) { return segment(v, detail); });
       if (add) kids.push(h('button', { class: 'v add', title: 'New view, starting from this one', 'aria-label': 'New view', onclick: function () { setValue({ action: 'edit', new_view: true }); } }, ['+']));
@@ -114,8 +136,10 @@
     var row = h('div', { class: 'row' }, kids.concat([more,
       h('button', { class: 'btn icon', title: cfg.customize_help || 'Customize views', 'aria-label': cfg.customize_help || 'Customize views', onclick: function () { setValue({ action: 'edit' }); } }, ['✏️'])
     ]).concat((cfg.actions || []).map(function (a) {
-      return h('button', { class: 'btn' + (a.icon && !a.label ? ' icon' : ''), title: a.help || a.label || '', 'aria-label': a.help || a.label || a.id,
-                           onclick: function () { setValue({ action: 'button', id: a.id }); } }, [a.icon && !a.label ? a.icon : (a.icon ? a.icon + ' ' : '') + (a.label || '')]);
+      // compact: an action with an icon shows only the icon
+      var label = a.icon && (compact || !a.label) ? null : a.label;
+      return h('button', { class: 'btn' + (label ? '' : ' icon'), title: a.help || a.label || '', 'aria-label': a.help || a.label || a.id,
+                           onclick: function () { setValue({ action: 'button', id: a.id }); } }, [label ? (a.icon ? a.icon + ' ' : '') + label : a.icon]);
     })));
     return { row: row, segs: segs, more: more };
   }
@@ -148,6 +172,10 @@
         if (fits(parts)) break;
       }
       if (!parts) { parts = build(shown, false, hidden.concat(onlyMore)); app.replaceChildren(parts.row); }
+      // One view left and still too wide: actions as icons, then the view's name cut,
+      // so that + and More never overlap
+      if (!fits(parts)) { parts = build(shown, false, hidden.concat(onlyMore), true); app.replaceChildren(parts.row); }
+      if (!fits(parts)) parts.row.classList.add('tight');
     }
     var inMore = hidden.concat(onlyMore);
     if (menuOpen) {
@@ -172,6 +200,17 @@
 
   document.addEventListener('click', function (ev) { if (menuOpen && !ev.target.closest('.more')) { menuOpen = false; render(); } });
   document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape' && menuOpen) { menuOpen = false; render(); } });
+  // A click on the page around the frame closes the menu too
+  if (frame) {
+    try {
+      frame.ownerDocument.addEventListener('mousedown', function (ev) {
+        if (menuOpen && ev.target !== frame) { menuOpen = false; render(); }
+      }, true);
+    } catch (e) { /* not reachable: clicks inside the frame still close it */ }
+  }
+  // A click into another component's frame (an Insight plot below the bar)
+  // takes the focus from this frame: close the menu so it does not cover it
+  window.addEventListener('blur', function () { if (menuOpen) { menuOpen = false; render(); } });
 
   window.addEventListener('message', function (ev) {
     var data = ev.data;

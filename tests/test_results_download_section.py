@@ -91,7 +91,7 @@ def test_local_exports_every_listed_file_to_the_chosen_folder(tmp_path):
 
     exported = export_dir / "my-workflow-results"
     assert sorted(
-        str(p.relative_to(exported)) for p in exported.rglob("*") if p.is_file()
+        p.relative_to(exported).as_posix() for p in exported.rglob("*") if p.is_file()
     ) == ["ids/run1.idXML", "quant/nested/peptides.csv", "quant/proteins.csv", "summary.txt"]
     assert "Exported 4 files" in at.success[0].value
 

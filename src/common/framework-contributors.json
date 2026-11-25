@@ -7,7 +7,8 @@
         "claude"
       ],
       "extra": [
-        "jonasscheid"
+        "jonasscheid",
+        "PhilippKaulich"
       ],
       "people": [
         "t0mdavid-m",
@@ -31,7 +32,8 @@
         "JKVISION1101",
         "JeeH-K",
         "ketan1406",
-        "jonasscheid"
+        "jonasscheid",
+        "PhilippKaulich"
       ]
     }
   ],
@@ -54,6 +56,7 @@
     "JKVISION1101": "Jaekwan Kim",
     "JeeH-K": "Jihyung Kim",
     "ketan1406": "Ketan Saini",
-    "jonasscheid": "Jonas Scheid"
+    "jonasscheid": "Jonas Scheid",
+    "PhilippKaulich": "Philipp T. Kaulich"
   }
 }

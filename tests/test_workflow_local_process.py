@@ -173,3 +173,24 @@ def test_stop_ends_the_workflow_process(tmp_path, workflow_module):
         assert "WORKFLOW CANCELLED" in log.read_text(encoding="utf-8")
     finally:
         _kill_leftovers(wf.executor.pid_dir)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="kills the process with POSIX signals")
+def test_a_killed_run_does_not_stay_running(tmp_path, workflow_module):
+    """The app force-closed: the workflow process is gone, its pid file is not."""
+    wf = _make(workflow_module.SleepWorkflow, tmp_path / "killed-workflow")
+    log = wf.workflow_dir / "logs" / "minimal.log"
+    try:
+        wf._start_workflow_local()
+        pids = [int(f.name) for f in wf.executor.pid_dir.iterdir()]
+        assert _wait_for(lambda: log.exists() and "sleeping" in log.read_text(encoding="utf-8"), 60)
+
+        os.kill(pids[0], signal.SIGKILL)  # no cleanup can run
+        os.waitpid(pids[0], 0)
+        assert (wf.executor.pid_dir / str(pids[0])).exists()
+
+        assert wf.get_workflow_status()["running"] is False
+        assert not wf.executor.pid_dir.exists()
+        assert "interrupted" in log.read_text(encoding="utf-8")
+    finally:
+        _kill_leftovers(wf.executor.pid_dir)

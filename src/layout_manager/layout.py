@@ -33,9 +33,12 @@ A page can also offer preset views, ready-made layouts for one purpose::
 ``match_preset`` tells which preset the current layout is, if any.
 """
 
+import base64
 import json
+import math
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 MAX_EXPERIMENTS = 5
 MAX_COLUMNS = 3
@@ -198,6 +201,9 @@ def apply_preset(path: Path, rows: List[List[str]]) -> None:
 # call resolve_layout render it unchanged.
 
 CUSTOM_PREFIX = "custom-"
+# Keys of a view of the user's own that are kept as they are: views made by
+# the AI assistant carry them ("by": "assistant", the runs shown, ...)
+VIEW_EXTRAS = ("by", "runs", "explanation", "question", "created", "original_defaults")
 
 
 def _presets_or_default(presets: Sequence[Dict[str, Any]], default_layout) -> List[Dict[str, Any]]:
@@ -222,11 +228,18 @@ def load_views(
     known = {c["name"] for c in components}
     by_name = {p["name"]: p for p in presets}
 
-    def preset_view(p: Dict[str, Any], in_bar: bool = True) -> Dict[str, Any]:
+    def preset_view(p: Dict[str, Any], in_bar: bool = True,
+                    stored: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         view = {"name": p["name"], "label": p.get("label", p["name"]),
                 "rows": _known_rows(p["layout"], known), "preset": True, "in_bar": in_bar}
         if p.get("help"):
             view["help"] = p["help"]
+        own = clean_defaults((stored or {}).get("defaults"))
+        defaults = own or clean_defaults(p.get("defaults"))
+        if defaults:  # zoom and selection the user pinned, else those the page ships with the view
+            view["defaults"] = defaults
+        if own:
+            view["own_defaults"] = True
         return view
 
     try:
@@ -248,13 +261,18 @@ def load_views(
             continue
         in_bar = bool(entry.get("in_bar", True))
         if name in by_name:
-            views.append(preset_view(by_name[name], in_bar))
+            views.append(preset_view(by_name[name], in_bar, entry))
         elif name.startswith(CUSTOM_PREFIX) and isinstance(entry.get("rows"), list):
             rows = _known_rows([r for r in entry["rows"] if isinstance(r, list)], known)
             if not rows:
                 continue
-            views.append({"name": name, "label": str(entry.get("label") or name), "rows": rows,
-                          "preset": False, "in_bar": in_bar})
+            view = {"name": name, "label": str(entry.get("label") or name), "rows": rows,
+                    "preset": False, "in_bar": in_bar}
+            view.update({k: entry[k] for k in VIEW_EXTRAS if k in entry})
+            defaults = clean_defaults(entry.get("defaults"))
+            if defaults:
+                view["defaults"] = defaults
+            views.append(view)
         else:
             continue
         seen.add(name)
@@ -291,6 +309,12 @@ def save_views(path: Path, state: Dict[str, Any]) -> None:
         if not v.get("preset"):
             entry["label"] = v["label"]
             entry["rows"] = v["rows"]
+            entry.update({k: v[k] for k in VIEW_EXTRAS if k in v})
+            if v.get("defaults"):
+                entry["defaults"] = v["defaults"]
+        elif v.get("own_defaults") and v.get("defaults"):
+            # Zoom and selection the user pinned on a ready-made view
+            entry["defaults"] = v["defaults"]
         stored.append(entry)
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -427,3 +451,363 @@ def join_labels(labels: Sequence[str]) -> str:
     if len(labels) < 2:
         return "".join(labels)
     return ", ".join(labels[:-1]) + " and " + labels[-1]
+
+
+# ---- A view's zoom and selection ----
+#
+# A view of the user's own may keep a zoom and selection as its defaults: the
+# page applies them when the view is opened, and the view bar's ↺ brings them
+# back. One entry per experiment (index 0 is the first one shown)::
+#
+#     {"name": "custom-3", "label": "Ribosome", "rows": [...],
+#      "defaults": [{"dataset": "run-1",                         # optional
+#                    "selection": {"protein": "P12345", "scan@psm_table": 12},
+#                    "zoom": {"spectrum": {"x": [400.0, 900.0]},
+#                             "peak_map": {"x": [10.0, 20.0], "y": [400.0, 900.0]}}}]}
+#
+# ``selection`` holds the identifiers of the experiment's OpenMS-Insight
+# ``StateManager`` (a private one as ``<identifier>@<component>``, see
+# ``experiment_state``); pagination is never kept. ``zoom`` is keyed by
+# component name; in the ``StateManager`` it lives under
+# ``zoom_identifier(<component>)``, which the component is given as its
+# ``zoom_identifier``. An axis left out shows its full extent. With
+# ``dataset``, the selection is applied only while that dataset is shown (the
+# zoom always is). Plain JSON, so a view can be written without a browser.
+
+ZOOM_PREFIX = "zoom@"
+
+
+ANNOTATIONS_PREFIX = "annotations@"
+
+
+def annotations_identifier(component: str) -> str:
+    """The ``StateManager`` identifier a view's point annotations for ``component`` are kept under.
+
+    The value is ``{point_id: {"highlight": bool, "annotation": str}}``, the
+    point ids being the component's own; pass it to the component's
+    ``set_dynamic_annotations``.
+    """
+    return ANNOTATIONS_PREFIX + component
+
+
+def _annotations(value: Any) -> Optional[Dict[str, Dict[str, Any]]]:
+    """``value`` as point annotations (a dict of dicts with JSON values), or None."""
+    if not isinstance(value, dict):
+        return None
+    out = {str(k): v for k, v in value.items() if isinstance(v, dict) and _plain(v)}
+    return out or None
+
+
+def zoom_identifier(component: str) -> str:
+    """The ``StateManager`` identifier a component keeps its zoom under.
+
+    Pass it as the OpenMS-Insight component's ``zoom_identifier``, so a view
+    can keep and restore the component's zoom.
+    """
+    return ZOOM_PREFIX + component
+
+
+def _range(value: Any) -> Optional[List[float]]:
+    if not isinstance(value, (list, tuple)) or len(value) != 2:
+        return None
+    try:
+        low, high = float(value[0]), float(value[1])
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if not (math.isfinite(low) and math.isfinite(high)) or low == high or (low == -1 and high == -1):
+        return None
+    return [min(low, high), max(low, high)]
+
+
+def normalize_zoom(value: Any) -> Optional[Dict[str, List[float]]]:
+    """A zoom as ``{"x": [lo, hi], "y": [lo, hi]}`` (axes optional), or None for the full view.
+
+    Reads the heatmap's ``{"xRange", "yRange"}`` too, with ``[-1, -1]`` for no zoom.
+    """
+    if not isinstance(value, dict):
+        return None
+    zoom = {}
+    for axis in ("x", "y"):
+        r = _range(value.get(axis, value.get(axis + "Range")))
+        if r is not None:
+            zoom[axis] = r
+    return zoom or None
+
+
+def _is_pagination(identifier: str) -> bool:
+    # Also a table's page kept apart for it (``table_page@<component>``)
+    return identifier.split("@", 1)[0].endswith("_page")
+
+
+def _plain(value: Any) -> bool:
+    """Whether ``value`` survives a JSON round trip unchanged."""
+    try:
+        return json.loads(json.dumps(value)) == value
+    except (TypeError, ValueError):
+        return False
+
+
+def capture_defaults(selections: Dict[str, Any], dataset: Optional[str] = None) -> Dict[str, Any]:
+    """The defaults entry of one experiment, from its ``StateManager.get_all_selections()``."""
+    selection: Dict[str, Any] = {}
+    zoom: Dict[str, Any] = {}
+    annotations: Dict[str, Any] = {}
+    for identifier, value in (selections or {}).items():
+        if not isinstance(identifier, str) or _is_pagination(identifier) or value is None:
+            continue
+        if identifier.startswith(ZOOM_PREFIX):
+            normalized = normalize_zoom(value)
+            if normalized:
+                zoom[identifier[len(ZOOM_PREFIX):]] = normalized
+        elif identifier.startswith(ANNOTATIONS_PREFIX):
+            points = _annotations(value)
+            if points:
+                annotations[identifier[len(ANNOTATIONS_PREFIX):]] = points
+        elif _plain(value):
+            selection[identifier] = value
+    entry: Dict[str, Any] = {}
+    if dataset is not None:
+        entry["dataset"] = dataset
+    if selection:
+        entry["selection"] = selection
+    if zoom:
+        entry["zoom"] = zoom
+    if annotations:
+        entry["annotations"] = annotations
+    return entry
+
+
+def has_defaults(view: Optional[Dict[str, Any]]) -> bool:
+    """Whether ``view`` keeps a zoom or selection."""
+    return any(_holds(e) for e in (view or {}).get("defaults") or [])
+
+
+def _holds(entry: Dict[str, Any]) -> bool:
+    return bool(entry.get("selection") or entry.get("zoom") or entry.get("annotations"))
+
+
+def clean_defaults(defaults: Any) -> List[Dict[str, Any]]:
+    """``defaults`` as stored, without what cannot be applied; [] if nothing is left."""
+    if not isinstance(defaults, list):
+        return []
+    out: List[Dict[str, Any]] = []
+    for entry in defaults[:MAX_EXPERIMENTS]:
+        if not isinstance(entry, dict):
+            out.append({})
+            continue
+        selection = entry.get("selection") if isinstance(entry.get("selection"), dict) else {}
+        selection = {k: v for k, v in selection.items()
+                     if isinstance(k, str) and not _is_pagination(k)
+                     and not k.startswith((ZOOM_PREFIX, ANNOTATIONS_PREFIX))
+                     and v is not None and _plain(v)}
+        zoom = entry.get("zoom") if isinstance(entry.get("zoom"), dict) else {}
+        zoom = {k: z for k, z in ((k, normalize_zoom(v)) for k, v in zoom.items()) if isinstance(k, str) and z}
+        annotations = entry.get("annotations") if isinstance(entry.get("annotations"), dict) else {}
+        annotations = {k: a for k, a in ((k, _annotations(v)) for k, v in annotations.items())
+                       if isinstance(k, str) and a}
+        clean: Dict[str, Any] = {}
+        if isinstance(entry.get("dataset"), str):
+            clean["dataset"] = entry["dataset"]
+        if selection:
+            clean["selection"] = selection
+        if zoom:
+            clean["zoom"] = zoom
+        if annotations:
+            clean["annotations"] = annotations
+        out.append(clean)
+    while out and not _holds(out[-1]):
+        out.pop()
+    return out
+
+
+def selections_to_apply(entry: Dict[str, Any], dataset: Optional[str] = None) -> Dict[str, Any]:
+    """What applying one experiment's defaults sets: identifier -> value.
+
+    Every zoom the experiment's state holds and the entry does not name is
+    reset (None) by the caller; see ``apply_defaults``. The selection is left
+    out while another dataset than the entry's is shown.
+    """
+    values: Dict[str, Any] = {}
+    same = entry.get("dataset") is None or dataset is None or entry.get("dataset") == dataset
+    if same:
+        values.update(entry.get("selection") or {})
+        for component, points in (entry.get("annotations") or {}).items():
+            values[annotations_identifier(component)] = points
+    for component, zoom in (entry.get("zoom") or {}).items():
+        # The Heatmap reads xRange/yRange on the server (to pick its resolution), the other plots x/y
+        values[zoom_identifier(component)] = {
+            **zoom, **{axis + "Range": zoom.get(axis, [-1, -1]) for axis in ("x", "y")}}
+    return values
+
+
+def apply_defaults(state: Any, entry: Dict[str, Any], dataset: Optional[str] = None) -> bool:
+    """Set one experiment's defaults on its ``StateManager``; True if anything changed.
+
+    The saved selection, zoom and point annotations are set; a zoom or the
+    annotations of a component the entry does not name are removed (full
+    view, no annotations). Other identifiers stay as they are.
+    """
+    values = selections_to_apply(entry, dataset)
+    changed = False
+    for identifier in list(state.get_all_selections()):
+        if identifier.startswith((ZOOM_PREFIX, ANNOTATIONS_PREFIX)) and identifier not in values:
+            changed = state.clear_selection(identifier) or changed
+    for identifier, value in values.items():
+        current = state.get_selection(identifier)
+        if identifier.startswith(ZOOM_PREFIX) and normalize_zoom(current) == value:
+            continue
+        changed = state.set_selection(identifier, value) or changed
+    return changed
+
+
+def differs_from_defaults(selections: Dict[str, Any], entry: Dict[str, Any],
+                          dataset: Optional[str] = None) -> bool:
+    """Whether the state shown is not (any more) the experiment's defaults."""
+    for identifier, value in selections_to_apply(entry, dataset).items():
+        current = selections.get(identifier)
+        if identifier.startswith(ZOOM_PREFIX):
+            if normalize_zoom(current) != normalize_zoom(value):
+                return True
+        elif current != value:
+            return True
+    values = selections_to_apply(entry, dataset)
+    return any((k.startswith(ZOOM_PREFIX) and normalize_zoom(v) or k.startswith(ANNOTATIONS_PREFIX) and v)
+               and k not in values for k, v in selections.items())
+
+
+def set_view_defaults(
+    path: Path,
+    name: str,
+    defaults: Optional[List[Dict[str, Any]]],
+    components: Sequence[Dict[str, Any]],
+    presets: Sequence[Dict[str, Any]],
+    default_layout: List[List[str]],
+) -> bool:
+    """Store ``defaults`` (None or [] removes them) on the view ``name``; False if there is none.
+
+    Every view keeps them, read-only ones too. On a ready-made view they replace
+    the zoom and selection the page ships with it, which come back when they
+    are removed; on a view the assistant made, the assistant's come back.
+    """
+    state = load_views(path, components, presets, default_layout)
+    view = next((v for v in state["views"] if v["name"] == name), None)
+    if view is None:
+        return False
+    cleaned = clean_defaults(defaults)
+    if view.get("preset"):
+        if cleaned:
+            view.update(defaults=cleaned, own_defaults=True)
+        else:
+            shipped = next((p for p in _presets_or_default(presets, default_layout) if p["name"] == name), {})
+            view.pop("own_defaults", None)
+            view.pop("defaults", None)
+            if clean_defaults(shipped.get("defaults")):
+                view["defaults"] = clean_defaults(shipped.get("defaults"))
+    elif cleaned:
+        if view.get("by") == "assistant" and "original_defaults" not in view:
+            # The assistant's own come back when the user's are removed
+            view["original_defaults"] = view.get("defaults") or []
+        view["defaults"] = cleaned
+    else:
+        original = clean_defaults(view.pop("original_defaults", None))
+        if original:
+            view["defaults"] = original
+        else:
+            view.pop("defaults", None)
+    save_views(path, state)
+    return True
+
+
+def has_own_defaults(view: Optional[Dict[str, Any]]) -> bool:
+    """Whether ``view`` holds a zoom and selection the user pinned (📌), which can be removed."""
+    view = view or {}
+    if view.get("preset"):
+        return bool(view.get("own_defaults"))
+    if view.get("by") == "assistant":
+        return "original_defaults" in view
+    return has_defaults(view)
+
+
+# Links that open a page on a view with its datasets, zoom and selection
+LINK_VIEW = "view"
+LINK_SHOW = "show"
+MAX_LINK_LENGTH = 8000
+
+
+def _link_entry(entry: Any) -> Dict[str, Any]:
+    """One experiment of a link: like ``clean_defaults``, the dataset kept on its own too."""
+    cleaned = clean_defaults([entry])
+    out = cleaned[0] if cleaned else {}
+    if isinstance(entry, dict) and isinstance(entry.get("dataset"), str):
+        out["dataset"] = entry["dataset"]
+    return out
+
+
+def link_entries(entries: Any) -> List[Dict[str, Any]]:
+    """``entries`` as a link carries them when nothing has to be left out."""
+    if not isinstance(entries, list):
+        return []
+    out = [_link_entry(e) for e in entries[:MAX_EXPERIMENTS]]
+    while out and not out[-1]:
+        out.pop()
+    return out
+
+
+def link_params(view: str, entries: Optional[Sequence[Dict[str, Any]]] = None) -> Dict[str, str]:
+    """The query parameters of a link to ``view`` showing ``entries``.
+
+    ``entries`` holds one ``capture_defaults`` entry per experiment: the dataset
+    it shows, its selection, zoom and annotations. They travel as compact JSON
+    in URL-safe base64, so the link stays one opaque parameter. What would make
+    it longer than ``read_link`` accepts is left out (annotations first, then
+    selection and zoom), so the link always opens the view and its datasets.
+    """
+    params = {LINK_VIEW: str(view)}
+    cleaned = link_entries(list(entries or []))
+    # State too long for a link is left out step by step: the annotations, then
+    # selection and zoom; the datasets stay
+    for keep in (None, ("dataset", "selection", "zoom"), ("dataset",)):
+        trimmed = link_entries([{k: v for k, v in e.items() if keep is None or k in keep} for e in cleaned])
+        if not trimmed:
+            break
+        raw = json.dumps(trimmed, separators=(",", ":"), sort_keys=True).encode()
+        show = base64.urlsafe_b64encode(raw).decode().rstrip("=")
+        if len(show) <= MAX_LINK_LENGTH:
+            params[LINK_SHOW] = show
+            break
+    return params
+
+
+def read_link(params: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
+    """What a link's query parameters ask for: ``{"view", "experiments"}``, or None.
+
+    ``params`` is ``st.query_params`` or any mapping. Anything that does not
+    decode, or is too long, is left out rather than raising.
+    """
+    def first(name: str) -> Optional[str]:
+        value = params.get(name)
+        if isinstance(value, (list, tuple)):
+            value = value[0] if value else None
+        return value if isinstance(value, str) and value else None
+
+    view, show = first(LINK_VIEW), first(LINK_SHOW)
+    if view is None and show is None:
+        return None
+    experiments: List[Dict[str, Any]] = []
+    if show is not None and len(show) <= MAX_LINK_LENGTH:
+        try:
+            raw = base64.urlsafe_b64decode(show + "=" * (-len(show) % 4))
+            experiments = link_entries(json.loads(raw.decode()))
+        except (ValueError, UnicodeDecodeError, RecursionError):
+            experiments = []
+    if view is None and not experiments:
+        return None
+    return {"view": view, "experiments": experiments}
+
+
+def link_url(url: str, params: Mapping[str, str]) -> str:
+    """``url`` with ``params`` set in its query; the other parameters (the workspace) stay."""
+    parts = urlsplit(url)
+    query = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True) if k not in params]
+    query += list(params.items())
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), ""))

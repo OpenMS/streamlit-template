@@ -4,6 +4,21 @@ from src import fileupload
 import json
 from pathlib import Path
 import shutil
+from streamlit.testing.v1.element_tree import ButtonGroup
+
+
+# AppTest reads a button group's value as a list; a single-select segmented
+# control (the analysis choices of Describe experiment) holds one value
+def _indices(self):
+    value = self.value
+    if value is None:
+        return []
+    if not isinstance(value, (list, tuple)):
+        value = [value]
+    return [self.options.index(self.format_func(v)) for v in value]
+
+
+ButtonGroup.indices = property(_indices)
 
 
 @pytest.fixture
@@ -24,7 +39,6 @@ def launch(request):
     (
         # "content/quickstart.py", # NOTE: this page does not work due to streamlit.errors.StreamlitPageNotFoundError error
         "content/documentation.py",
-        "content/topp_workflow_file_upload.py",
         "content/topp_workflow_parameter.py",
         "content/topp_workflow_execution.py",
         "content/topp_workflow_results.py",
@@ -55,7 +69,7 @@ def test_launch(launch):
             "content/documentation.py",
             "Developers Guide: How to build app based on this template",
         ),
-        ("content/documentation.py", "Developers Guide: TOPP Workflow Framework"),
+        ("content/documentation.py", "Developers Guide: OpenMS Workflow Framework"),
         ("content/documentation.py", "Developer Guide: Windows Executables"),
         ("content/documentation.py", "Developers Guide: From Notebook to Web App"),
         ("content/documentation.py", "Developers Guide: Deployment"),
@@ -148,6 +162,8 @@ def test_run_workflow(launch, example):
 def test_parameter_page_has_no_advanced_toggle(launch):
     """Advanced parameters are reached by search (TOPP) or an expander (python
     tools), not by a page-wide toggle."""
+    # The custom step (and its tab) is there once the analysis includes it
+    launch.session_state["topp-workflow-param-run-python-script"] = True
     launch.run(timeout=30)
     assert not launch.exception
     assert not [t for t in launch.toggle if t.label == "Show advanced parameters"]
@@ -155,3 +171,68 @@ def test_parameter_page_has_no_advanced_toggle(launch):
     # (an expander with an icon is listed as a status block by AppTest)
     blocks = list(launch.expander) + list(launch.status)
     assert [e for e in blocks if e.label == "1 advanced parameter"]
+
+
+@pytest.mark.parametrize("launch", ["content/topp_workflow_parameter.py"], indirect=True)
+def test_an_analysis_added_to_a_run_locks_its_files_and_kept_tools(launch):
+    """Add the custom Python tool to a run: Configure shows the run's files
+    locked and the feature steps as reused, in place of their settings."""
+    launch.run(timeout=30)
+    assert not launch.exception
+    workflow_dir = Path(launch.session_state["workspace"], "topp-workflow")
+    params_file = Path(workflow_dir, "params.json")
+    params = json.loads(params_file.read_text()) if params_file.exists() else {}
+    files = [str(f) for f in Path("example-data", "mzML").glob("*.mzML")][:1]
+    params["_follow_up"] = {
+        "run": "r1", "name": "Features", "note": "with the custom Python tool switched on",
+        "same_files": "mzML-files", "files": files,
+        "kept": ["FeatureFinderMetabo", "FeatureLinkerUnlabeledKD"], "reuses": ["r1"],
+    }
+    params["mzML-files"] = files
+    params_file.write_text(json.dumps(params))
+    try:
+        launch.run(timeout=30)
+        assert not launch.exception
+        locked = [m for m in launch.multiselect if m.disabled and m.value == [Path(files[0]).name]]
+        assert locked, [m.label for m in launch.multiselect]
+        notes = " ".join(i.value for i in launch.info)
+        assert "FeatureFinderMetabo** is not run again" in notes
+        assert "FeatureLinkerUnlabeledKD** is not run again" in notes
+        # The page's own run button starts it, saying what the start does,
+        # and the note offers a new experiment instead
+        assert any("Adds to Features" in c.value for c in launch.caption)
+        assert [b for b in launch.button if b.label == "Start a new experiment instead"]
+        assert not [b for b in launch.button if b.label == "Start analysis"]
+    finally:
+        params.pop("_follow_up", None)
+        params_file.write_text(json.dumps(params))
+
+
+@pytest.mark.parametrize("launch", ["content/topp_workflow_parameter.py"], indirect=True)
+def test_a_new_experiment_instead_drops_the_earlier_run(launch):
+    """Settings that add files to an experiment: the note's "Start a new
+    experiment instead" keeps the settings and forgets the earlier run."""
+    launch.run(timeout=30)
+    assert not launch.exception
+    workflow_dir = Path(launch.session_state["workspace"], "topp-workflow")
+    params_file = Path(workflow_dir, "params.json")
+    params = json.loads(params_file.read_text()) if params_file.exists() else {}
+    files = [str(f) for f in Path("example-data", "mzML").glob("*.mzML")][:1]
+    params["_follow_up"] = {"run": "r1", "name": "Features", "note": "to add more files",
+                            "adds_to": "r1", "files_key": "mzML-files", "files": files}
+    params["mzML-files"] = []
+    params_file.write_text(json.dumps(params))
+    try:
+        launch.run(timeout=30)
+        assert not launch.exception
+        assert any("Adds the files picked above to Features" in c.value for c in launch.caption)
+        [button] = [b for b in launch.button if b.label == "Start a new experiment instead"]
+        button.click().run(timeout=30)
+        assert not launch.exception
+        assert "_follow_up" not in json.loads(params_file.read_text())
+        launch.run(timeout=30)
+        assert not [b for b in launch.button if b.label == "Start a new experiment instead"]
+    finally:
+        params = json.loads(params_file.read_text())
+        params.pop("_follow_up", None)
+        params_file.write_text(json.dumps(params))

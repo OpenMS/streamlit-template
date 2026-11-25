@@ -3,15 +3,13 @@ kind: Kustomization
 
 resources:
   - ../../base
-  # The shared `openms` namespace. Every app on the cluster deploys into it,
-  # so exactly one Argo CD Application may manage it: this one, the
-  # template's own deployment. Apps generated from the template delete this
-  # line and namespace.yaml (see docs/kubernetes-deployment.md); if two apps
-  # carried it, each sync would take the namespace over from the other.
-  - namespace.yaml
 
 components:
   - ../../components/memory-tier-low
+  # Workspaces on S3 object storage (JuiceFS, k8s/storage-s3/) instead of
+  # the Manila share. The size patch below still targets the Manila name;
+  # the component renames the claim after it applies.
+  - ../../components/storage-s3
 
 namePrefix: template-app-
 
@@ -21,9 +19,8 @@ commonLabels:
 images:
   - name: openms-streamlit
     newName: ghcr.io/openms/streamlit-template
-    # A release image, not the deployed one: under Argo CD the ImageUpdater
-    # (k8s/argocd/image-updater.yaml) sets the latest release on the
-    # Application. This tag is only where a new Application starts and the
+    # A release image, not the deployed one: under Argo CD the cluster's
+    # ImageUpdater sets the latest release on the Application. This tag is only where a new Application starts and the
     # name CI loads its test image under, so it need not follow releases.
     newTag: v2.1.0-full
 

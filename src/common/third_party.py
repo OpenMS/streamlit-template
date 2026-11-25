@@ -4,8 +4,9 @@ Read by the About dialog (src/common/about.py): the app's own license, the
 third-party programs that come with OpenMS (the THIRDPARTY folders the desktop
 apps and the full Docker image put on PATH), and the installed Python packages
 with their license texts. Thermo's RawFileReader (in the ThermoRawFileParser
-folder FileConverter runs for .raw files) requires its copyright notice in the
-About box, so ``thermo_notice()`` says whether to show it.
+folder FileConverter runs for .raw files, or in OpenMS's built-in Thermo reader
+that macOS and Linux use) requires its copyright notice in the About box, so
+``thermo_notice()`` says whether to show it.
 
 Streamlit-free, so it can be tested on its own.
 """
@@ -13,13 +14,21 @@ Streamlit-free, so it can be tested on its own.
 from __future__ import annotations
 
 import os
+import platform
+import plistlib
 import re
+import sys
+import sysconfig
 from dataclasses import dataclass, field
 from functools import lru_cache
 from importlib import metadata
 from pathlib import Path
 
 THERMO_FOLDER = "ThermoRawFileParser"
+# OpenMS's built-in Thermo reader, which FileConverter starts on .NET in its own
+# process (macOS, Linux): <OPENMS_DATA_PATH>/openms_thermo_bridge/managed holds
+# RawFileReader's assemblies, <OPENMS_DATA_PATH>/LICENSES its license terms.
+THERMO_BRIDGE = Path("openms_thermo_bridge", "managed")
 THERMO_NOTICE = (
     "RawFileReader reading tool. Copyright © 2016 by Thermo Fisher Scientific, Inc. "
     "All rights reserved."
@@ -73,12 +82,33 @@ def tool_folders(env: dict | None = None) -> list[Path]:
     return sorted(found.values(), key=lambda p: p.name.lower())
 
 
+def thermo_reader(env: dict | None = None) -> Component | None:
+    """RawFileReader as OpenMS's built-in Thermo reader ships it, or None.
+
+    The license terms OpenMS installs for it (``LICENSES/ThermoRawFileReader*``)
+    are listed when they are text; the Word document some packages carry is not.
+    """
+    env = os.environ if env is None else env
+    data_path = env.get("OPENMS_DATA_PATH")
+    if not data_path or not Path(data_path, THERMO_BRIDGE).is_dir():
+        return None
+    folder = Path(data_path, THERMO_BRIDGE)
+    files = [p for p in sorted(folder.iterdir()) if _is_license_file(p)]
+    licenses = Path(data_path, "LICENSES")
+    if licenses.is_dir():
+        files += [p for p in sorted(licenses.glob("ThermoRawFileReader*")) if p.suffix.lower() in _LICENSE_EXT and p.is_file()]
+    return Component(name="Thermo RawFileReader", license="Thermo RawFileReader license", files=files)
+
+
 def third_party_programs(env: dict | None = None) -> list[Component]:
     """The third-party programs and the license files in their folders."""
     programs = []
     for folder in tool_folders(env):
         files = [p for p in sorted(folder.iterdir()) if _is_license_file(p)]
         programs.append(Component(name=folder.name, files=files))
+    reader = thermo_reader(env)
+    if reader:
+        programs.append(reader)
     return programs
 
 
@@ -99,9 +129,145 @@ def fonts(root: Path | str = ".") -> list[Component]:
     return found
 
 
-def thermo_notice(env: dict | None = None) -> str:
-    """Thermo's notice when the app ships RawFileReader, else ""."""
-    shipped = any(p.name == THERMO_FOLDER for p in tool_folders(env))
+LICENSES_DIR = Path(__file__).resolve().parents[2] / "static" / "licenses"
+
+# Qt's core library as OpenMS ships it: in the desktop payload (openms/bin on
+# Windows, openms/lib elsewhere, a dylib or framework on macOS), bundled into
+# the pyOpenMS wheel, or from the system's packages in the full Docker image.
+_QT_CORE = ("Qt6Core*.dll", "Qt5Core*.dll", "libQt6Core.so*", "libQt5Core.so*",
+            "libQt6Core-*.so*", "libQt5Core-*.so*", "libQt6Core*.dylib",
+            "libQt5Core*.dylib", "QtCore.framework")
+_QT_MAJOR = re.compile(r"Qt([56])Core")
+
+
+def _system_qt_dirs() -> list[Path]:
+    """Where pyOpenMS and the system keep Qt: the wheel's own folders, the
+    environment's lib/ and the system's library folder."""
+    dirs: list[Path] = []
+    try:
+        package = Path(metadata.distribution("pyopenms").locate_file("pyopenms"))
+        dirs += [package, package.parent / "pyopenms.libs", package / ".dylibs"]
+    except metadata.PackageNotFoundError:
+        pass
+    multiarch = sysconfig.get_config_var("MULTIARCH") or ""
+    return dirs + [Path(sys.prefix, "lib"), Path("/usr/lib", multiarch)]
+
+
+def _qt_dirs(env: dict) -> list[Path]:
+    """Folders next to the OpenMS installation that OPENMS_DATA_PATH names:
+    an OpenMS install (bin, lib, Frameworks) or the desktop payload, which
+    keeps share/OpenMS beside openms/bin and openms/lib."""
+    dirs: list[Path] = []
+    data_path = env.get("OPENMS_DATA_PATH")
+    if data_path:
+        root = Path(data_path).parent.parent
+        dirs += [root / "bin", root / "lib", root / "Frameworks"]
+        dirs += [root / "openms" / "bin", root / "openms" / "lib"]
+    return dirs + _system_qt_dirs()
+
+
+def _framework_major(framework: Path) -> str:
+    """The Qt major of a QtCore.framework, from its Info.plist or Versions/<n>."""
+    for plist in (framework / "Resources" / "Info.plist",
+                  *sorted(framework.glob("Versions/*/Resources/Info.plist"))):
+        try:
+            with plist.open("rb") as handle:
+                info = plistlib.load(handle)
+        except (OSError, plistlib.InvalidFileException, ValueError):
+            continue
+        for key in ("CFBundleShortVersionString", "CFBundleVersion"):
+            major = str(info.get(key, "")).split(".")[0]
+            if major in ("5", "6"):
+                return major
+    for version in sorted(framework.glob("Versions/[56]")):
+        return version.name
+    return ""
+
+
+def _qt_major(hit: Path) -> str | None:
+    """The Qt major of a core library match; None when it is no Qt library
+    (a framework folder without its QtCore binary)."""
+    if hit.name == "QtCore.framework":
+        binaries = [hit / "QtCore", *hit.glob("Versions/*/QtCore")]
+        if not any(p.exists() for p in binaries):
+            return None
+        return _framework_major(hit)
+    match = _QT_MAJOR.search(hit.name)
+    return match.group(1) if match else ""
+
+
+def qt_libraries(env: dict | None = None) -> list[Component]:
+    """Qt, which OpenMS and pyOpenMS link as a shared library, once per Qt
+    major found (an OpenMS install and a pyOpenMS wheel may bring different
+    ones), in search order."""
+    env = os.environ if env is None else env
+    majors: list[str] = []
+    for folder in _qt_dirs(env):
+        if not folder.is_dir():
+            continue
+        for pattern in _QT_CORE:
+            for hit in sorted(folder.glob(pattern)):
+                major = _qt_major(hit)
+                if major is not None and major not in majors:
+                    majors.append(major)
+    # An unknown major says no more than a known one.
+    if len(majors) > 1:
+        majors = [m for m in majors if m]
+    files = [LICENSES_DIR / name for name in ("LGPL-3.0.txt", "GPL-3.0.txt")]
+    files = [f for f in files if f.is_file()]
+    return [Component(name="Qt", version=f"{m}.x" if m else "", license="LGPL-3.0-only",
+                      files=list(files)) for m in majors]
+
+
+def qt_library(env: dict | None = None) -> Component | None:
+    """The first Qt that ``qt_libraries`` finds, or None."""
+    found = qt_libraries(env)
+    return found[0] if found else None
+
+
+def python_interpreter() -> Component:
+    """The Python interpreter the app runs on, with the PSF license it ships."""
+    candidates = [Path(sysconfig.get_paths()["stdlib"], "LICENSE.txt"), Path(sys.base_prefix, "LICENSE.txt")]
+    files = [p for p in candidates if p.is_file()][:1]
+    return Component(name="Python", version=platform.python_version(), license="PSF-2.0", files=files)
+
+
+def dotnet_runtime(env: dict | None = None) -> Component | None:
+    """The .NET runtime the desktop app ships for the built-in Thermo reader
+    (``DOTNET_ROOT``, set by the app on macOS and Linux), or None."""
+    env = os.environ if env is None else env
+    root = env.get("DOTNET_ROOT")
+    shared = Path(root, "shared", "Microsoft.NETCore.App") if root else None
+    if not shared or not shared.is_dir():
+        return None
+    versions = sorted((p.name for p in shared.iterdir() if p.is_dir()), key=_version_key)
+    files = [p for p in sorted(Path(root).iterdir()) if _is_license_file(p)]
+    return Component(name=".NET runtime", version=versions[-1] if versions else "", license="MIT", files=files)
+
+
+def _version_key(version: str) -> tuple:
+    return tuple(int(part) if part.isdigit() else 0 for part in re.split(r"[.-]", version))
+
+
+def libraries(env: dict | None = None) -> list[Component]:
+    """The runtime the app is built on: Python, with OpenMS Qt, and the .NET
+    runtime when the app ships one."""
+    found = [python_interpreter()] + qt_libraries(env)
+    dotnet = dotnet_runtime(env)
+    return found + [dotnet] if dotnet else found
+
+
+def thermo_notice(env: dict | None = None, hosted: bool = False) -> str:
+    """Thermo's notice when the app ships RawFileReader, else "".
+
+    A hosted app (``online_deployment``) gives its users no copy of
+    RawFileReader, so they get no notice: it is for those who install the app
+    or run the image, who see it in the installer, the image's NOTICE.txt and
+    the container's console output.
+    """
+    if hosted:
+        return ""
+    shipped = any(p.name == THERMO_FOLDER for p in tool_folders(env)) or thermo_reader(env) is not None
     return THERMO_NOTICE if shipped else ""
 
 

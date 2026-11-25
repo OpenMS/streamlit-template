@@ -68,12 +68,58 @@ test("appEnvironment puts openms/bin on PATH when present", () => {
   assert.deepEqual(entries.slice(0, 2), [dir, path.join(dir, "openms", "bin")]);
 });
 
+test("appEnvironment points DOTNET_ROOT at the bundled .NET runtime", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "payload-"));
+  const saved = process.env.DOTNET_ROOT;
+  process.env.DOTNET_ROOT = "/somewhere/else";
+  try {
+    assert.equal(payload.appEnvironment(dir).DOTNET_ROOT, "/somewhere/else");
+    fs.mkdirSync(path.join(dir, "dotnet"));
+    assert.equal(payload.appEnvironment(dir).DOTNET_ROOT, path.join(dir, "dotnet"));
+  } finally {
+    if (saved === undefined) delete process.env.DOTNET_ROOT;
+    else process.env.DOTNET_ROOT = saved;
+  }
+});
+
 test("pythonExecutable prefers the embedded interpreter", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "payload-"));
   const exe = process.platform === "win32" ? "python.exe" : path.join("bin", "python3");
   fs.mkdirSync(path.dirname(path.join(dir, "python-3.11.0", exe)), { recursive: true });
   fs.writeFileSync(path.join(dir, "python-3.11.0", exe), "");
   assert.equal(payload.pythonExecutable(dir), path.join(dir, "python-3.11.0", exe));
+});
+
+test("AppImage desktop entry points at the AppImage and the copied icon", () => {
+  const { integrateAppImage } = require("../src/linux-desktop");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-"));
+  const old = process.env.XDG_DATA_HOME;
+  process.env.XDG_DATA_HOME = dir;
+  try {
+    assert.equal(integrateAppImage({ desktopName: "app.desktop" }), null);
+    const icon = path.join(dir, "src.png");
+    fs.writeFileSync(icon, "png");
+    const file = integrateAppImage({
+      appImage: '/home/u/My Apps/100%A"p\\p.AppImage',
+      desktopName: "app.desktop",
+      name: "App",
+      iconSource: icon,
+      iconDir: path.join(dir, "cfg"),
+    });
+    const entry = fs.readFileSync(file, "utf8");
+    // " is quoted as \" and that backslash escaped again (\\"), % doubled,
+    // a literal backslash written as four.
+    assert.ok(entry.split("\n").includes('Exec="/home/u/My Apps/100%%A\\\\"p\\\\\\\\p.AppImage" %U'), entry);
+    // The icon path's backslashes (Windows) are escaped like any string value.
+    const iconLine = `Icon=${path.join(dir, "cfg", "app.png").replace(/\\/g, "\\\\")}`;
+    assert.ok(entry.split("\n").includes(iconLine), entry);
+    assert.deepEqual(fs.readdirSync(path.join(dir, "cfg")), ["app.png"]);
+    assert.match(entry, /^StartupWMClass=app$/m);
+    assert.equal(fs.readFileSync(path.join(dir, "cfg", "app.png"), "utf8"), "png");
+  } finally {
+    if (old === undefined) delete process.env.XDG_DATA_HOME;
+    else process.env.XDG_DATA_HOME = old;
+  }
 });
 
 const license = require("../src/license");
@@ -102,6 +148,17 @@ test("the agreement names RawFileReader only when the payload ships it", () => {
   assert.match(withThermo[1].text, /THERMO_LICENSE/);
 });
 
+test("the agreement names RawFileReader shipped with OpenMS's built-in reader", () => {
+  const dir = fakePayload();
+  fs.mkdirSync(path.join(dir, "share", "OpenMS", "openms_thermo_bridge", "managed"), { recursive: true });
+  fs.mkdirSync(path.join(dir, "share", "OpenMS", "LICENSES"), { recursive: true });
+  fs.writeFileSync(path.join(dir, "share", "OpenMS", "LICENSES", "ThermoRawFileReader-License.doc"), "terms");
+  const sections = license.agreementSections(dir, "MyApp");
+  assert.deepEqual(sections.map((s) => s.title), ["MyApp license", "Thermo RawFileReader", "Other components"]);
+  assert.match(sections[1].text, /\(share\/OpenMS\/LICENSES\/ThermoRawFileReader-License\.doc in the app's folder\)/);
+  assert.ok(!sections[1].text.includes(dir), "the agreement text does not depend on where the app is mounted");
+});
+
 test("acceptance is remembered per agreement text", () => {
   const userData = fs.mkdtempSync(path.join(os.tmpdir(), "userdata-"));
   const a = license.agreementSections(fakePayload({ licenseText: "A" }), "MyApp");
@@ -118,4 +175,11 @@ test("the agreement page escapes its text and links both answers", () => {
   assert.ok(html.includes("&lt;x&gt;") && html.includes("a &amp; b") && html.includes("A&lt;b&gt;"));
   assert.ok(html.includes(`href="${license.ANSWER_URL}accept"`));
   assert.ok(html.includes(`href="${license.ANSWER_URL}decline"`));
+});
+
+test("Streamlit starts through the launcher that preloads polars", () => {
+  const args = payload.streamlitArgs(8765);
+  assert.deepEqual(args.slice(0, 5), ["-m", "src.streamlit_launcher", "run", "app.py", "local"]);
+  assert.equal(args[args.indexOf("--server.port") + 1], "8765");
+  assert.equal(args[args.indexOf("--server.address") + 1], "127.0.0.1");
 });

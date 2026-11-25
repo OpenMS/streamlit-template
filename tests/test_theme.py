@@ -16,7 +16,7 @@ def _theme_css(css, dark):
 
 
 def test_every_font_face_is_shipped():
-    config = tomllib.loads((ROOT / ".streamlit/config.toml").read_text())
+    config = tomllib.loads((ROOT / ".streamlit/config.toml").read_text(encoding="utf-8"))
     assert config["server"]["enableStaticServing"] is True
     faces = config["theme"]["fontFaces"]
     families = {f["family"] for f in faces}
@@ -27,7 +27,7 @@ def test_every_font_face_is_shipped():
 
 
 def test_theme_defines_light_and_dark_without_base():
-    config = tomllib.loads((ROOT / ".streamlit/config.toml").read_text())
+    config = tomllib.loads((ROOT / ".streamlit/config.toml").read_text(encoding="utf-8"))
     assert "base" not in config["theme"]
     for scheme in ("light", "dark"):
         assert config["theme"][scheme]["primaryColor"].startswith("#")
@@ -42,7 +42,7 @@ def test_dark_blocks_are_kept_for_dark_and_dropped_for_light():
 
 
 def test_shipped_style_sheet_resolves_cleanly():
-    css = (ROOT / "src/common/theme.css").read_text()
+    css = (ROOT / "src/common/theme.css").read_text(encoding="utf-8")
     for dark in (False, True):
         out = _theme_css(css, dark)
         assert "prefers-color-scheme" not in out
@@ -63,3 +63,33 @@ def test_fonts_listed_with_their_licenses():
     fonts = third_party.fonts()
     assert [f.name for f in fonts] == ["Raleway", "Montserrat Alternates", "JetBrains Mono"]
     assert all(f.license == "OFL-1.1" and "SIL OPEN FONT LICENSE" in third_party.license_text(f).upper() for f in fonts)
+
+
+def test_style_sheet_also_kept_in_the_document_head(monkeypatch):
+    # Opening another page removes the old page's elements before the new one
+    # has drawn its own; a copy in the head keeps the theme in that moment.
+    import json
+    from unittest import mock
+
+    from src.common import common
+
+    calls = []
+    monkeypatch.setattr(common.st, "html", lambda body, **kw: calls.append((body, kw)))
+    with mock.patch.object(common, "THEME_CSS", mock.Mock(read_text=lambda **_: "a::after { content: '</x>'; }")):
+        common.apply_theme_css()
+    (body, kw), = calls
+    assert kw.get("unsafe_allow_javascript") is True
+    assert body.startswith("<style>a::after")
+    assert json.dumps(common.THEME_STYLE_ID) in body and "document" in body and "d.head.appendChild" in body
+    script = body[body.index("<script>"):]
+    assert script.count("</") == 1  # only the closing </script>
+
+
+def test_every_menu_page_sets_up_the_theme():
+    # A page that skips page_setup() shows Streamlit's own look.
+    import re
+
+    app = (ROOT / "app.py").read_text(encoding="utf-8")
+    for page in re.findall(r'Path\("content", "([^"]+\.py)"\)', app):
+        source = (ROOT / "content" / page).read_text(encoding="utf-8")
+        assert "page_setup(" in source, page

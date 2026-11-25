@@ -1,0 +1,40 @@
+# The StorageClass an app's workspace claim names when the overlay enables
+# k8s/components/storage-s3/.
+#
+# One JuiceFS file system for all apps; each app's claim becomes the top-level
+# directory named after its `app` label (the overlay's commonLabels.app, i.e.
+# the slug). The S3 gateway serves that directory as the bucket of the same
+# name, which is how src/common/storage.py maps a workspace path to s3://.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: openms-juicefs-s3
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false
+  labels:
+    app.kubernetes.io/part-of: openms-streamlit
+provisioner: csi.juicefs.com
+# Deleting a claim by mistake must not delete an app's workspaces.
+reclaimPolicy: Retain
+allowVolumeExpansion: true
+volumeBindingMode: Immediate
+parameters:
+  # Name of the directory (and gateway bucket) for each claim. Every app
+  # overlay sets commonLabels.app, so every claim carries the label.
+  pathPattern: "${.pvc.labels.app}"
+  # The file system: name, metaurl, storage, bucket, access-key, secret-key.
+  # Created by hand, never committed: docs/kubernetes-deployment.md.
+  csi.storage.k8s.io/provisioner-secret-name: juicefs-s3-credentials
+  csi.storage.k8s.io/provisioner-secret-namespace: openms-storage
+  csi.storage.k8s.io/node-publish-secret-name: juicefs-s3-credentials
+  csi.storage.k8s.io/node-publish-secret-namespace: openms-storage
+  csi.storage.k8s.io/controller-expand-secret-name: juicefs-s3-credentials
+  csi.storage.k8s.io/controller-expand-secret-namespace: openms-storage
+# Passed to `juicefs mount`.
+#
+#   cache-size   local chunk cache per mount pod, in MiB; the analysis tools
+#                read the same mzML repeatedly
+#   writeback    off on purpose: a write is in the bucket before close()
+#                returns, so a worker on another node sees finished results
+mountOptions:
+  - cache-size=20480

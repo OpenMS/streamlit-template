@@ -214,9 +214,34 @@ spec:
             timeoutSeconds: 20
             failureThreshold: 5
             successThreshold: 1
+          # Restart only on a dead workspace mount ("Transport endpoint is not
+          # connected": a FUSE mount whose process died, which never clears in
+          # a running container). Everything the readiness probe tolerates
+          # (a slow or blocked NFS server) passes: the stat gives up after 5s
+          # and counts as alive. A job on a dead mount has already failed.
+          livenessProbe:
+            exec:
+              command:
+                - /bin/bash
+                - -c
+                - |
+                  timeout -k 3 15 /root/miniforge3/envs/streamlit-env/bin/python -m src.workflow.health --mount-alive
+                  # Only exit 1 is a dead mount. An image older than these
+                  # manifests does not know --mount-alive and exits 2: alive.
+                  [ "$?" -ne 1 ]
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 20
+            failureThreshold: 3
           volumeMounts:
             - name: workspaces
               mountPath: /workspaces-streamlit-template
+              # A FUSE volume (JuiceFS, components/storage-s3) whose mount
+              # process restarted is mounted again on the node; HostToContainer
+              # lets that new mount reach this running container instead of
+              # leaving it on the dead one ("Transport endpoint is not
+              # connected"). Harmless on NFS.
+              mountPropagation: HostToContainer
             - name: config
               mountPath: /app/settings-overrides.json
               subPath: settings-overrides.json
