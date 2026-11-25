@@ -80,6 +80,7 @@ from src.workflow.parameter_names import display_name as _display_name
 from src.workflow.setup_file import (
     apply_setup, export_setup, input_files, is_setup_file, read_setup, still_missing,
 )
+from src.workflow.describe_ui import DescribeMixin
 
 
 def _txt(value) -> str:
@@ -233,7 +234,7 @@ def latest_results_key(workflow_dir) -> str:
     return f"{Path(workflow_dir).name}-show-latest-results"
 
 
-class StreamlitUI:
+class StreamlitUI(DescribeMixin):
     """
     Provides an interface for Streamlit applications to handle file uploads,
     input selection, and parameter management for analysis workflows. It includes

@@ -51,6 +51,12 @@ spec:
               volumeMounts:
                 - name: workspaces
                   mountPath: /workspaces-streamlit-template
+                  # A FUSE volume (JuiceFS, components/storage-s3) whose mount
+                  # process restarted is mounted again on the node; HostToContainer
+                  # lets that new mount reach this running container instead of
+                  # leaving it on the dead one ("Transport endpoint is not
+                  # connected"). Harmless on NFS.
+                  mountPropagation: HostToContainer
               resources:
                 requests:
                   memory: "256Mi"

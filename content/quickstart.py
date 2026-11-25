@@ -42,7 +42,7 @@ NOTEBOOK_TO_WEBAPP_PROMPT = (
     "notebook, what to call the app, and how each page should look as you build it."
 )
 
-page_setup(page="main")
+page_setup(page="main", captcha=False)
 
 st.markdown("# 👋 Quick Start")
 st.markdown("## Mass spectrometry analysis, as web apps anyone can open")
@@ -117,15 +117,15 @@ This app serves both as documentation and showcase what's possible with OpenMS w
             
 In general there are two options for building workflows.
             
-### 1. 🚀 **TOPP Workflow Framework**
+### 1. 🚀 **OpenMS Workflow Framework**
             
 Use this option if you want a standardized framework for building your workflow.
 
-- **Pre-defined user interface** all in one streamlit page with all steps on different pages:
-    - **File Upload**: upload, download and delete input files
-    - **Configure**: Automatically display input widgets for all paramters in TOPP tools and custom Python scripts
-    - **Run**: Start and stop workflow execution, includes continous log
-    - **Results**: Interactive result dashboard
+- **The same four steps in every OpenMS web app**, each on its own page:
+    - **Describe experiment**: pick and add the input files, say what to do with them, and adjust each step's TOPP tool and Python script parameters
+    - **Run analysis**: follow the run's progress and log, stop it, read its processing report
+    - **Explore results**: interactive views of a run's results
+    - **Export results**: every run's files, settings and report
 - **Write less code**: everything from file upload, input widget generation and execution of tools is handled via convenient functions
 - **Fast and performant workflows**: Automatic parallel execution of TOPP tools ensures great speed, comparable with workflows written in bash
 - **Ideal for longer workflows**: Close the app and come back to the still running or finish workflow the next day, by entering your workspace again.
@@ -137,7 +137,7 @@ st.page_link(
     icon="➡️",
 )
 st.page_link(
-    "content/topp_workflow_file_upload.py",
+    "content/topp_workflow_parameter.py",
     label="Play around with the example workflow.",
     icon="➡️",
 )

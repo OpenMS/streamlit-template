@@ -39,6 +39,12 @@ spec:
           volumeMounts:
             - name: workspaces
               mountPath: /workspaces-streamlit-template
+              # A FUSE volume (JuiceFS, components/storage-s3) whose mount
+              # process restarted is mounted again on the node; HostToContainer
+              # lets that new mount reach this running container instead of
+              # leaving it on the dead one ("Transport endpoint is not
+              # connected"). Harmless on NFS.
+              mountPropagation: HostToContainer
       containers:
         - name: streamlit
           image: openms-streamlit
@@ -60,6 +66,12 @@ spec:
           volumeMounts:
             - name: workspaces
               mountPath: /workspaces-streamlit-template
+              # A FUSE volume (JuiceFS, components/storage-s3) whose mount
+              # process restarted is mounted again on the node; HostToContainer
+              # lets that new mount reach this running container instead of
+              # leaving it on the dead one ("Transport endpoint is not
+              # connected"). Harmless on NFS.
+              mountPropagation: HostToContainer
             - name: config
               mountPath: /app/settings-overrides.json
               subPath: settings-overrides.json
@@ -73,12 +85,26 @@ spec:
               port: 8501
             initialDelaySeconds: 10
             periodSeconds: 10
+          # The HTTP check as before, plus a restart when the workspace mount
+          # is dead (ENOTCONN, a FUSE mount whose process died). Slow or
+          # blocked NFS does not fail it: `--mount-alive` gives up on a stat
+          # that does not answer within 5s and leaves that to readiness.
           livenessProbe:
-            httpGet:
-              path: /_stcore/health
-              port: 8501
+            exec:
+              command:
+                - /bin/bash
+                - -c
+                - |
+                  set -u
+                  curl -fsS -m 5 -o /dev/null http://localhost:8501/_stcore/health || exit 1
+                  timeout -k 3 15 /root/miniforge3/envs/streamlit-env/bin/python -m src.workflow.health --mount-alive
+                  # Only exit 1 is a dead mount. An image older than these
+                  # manifests does not know --mount-alive and exits 2: alive.
+                  [ "$?" -ne 1 ]
             initialDelaySeconds: 30
             periodSeconds: 30
+            timeoutSeconds: 20
+            failureThreshold: 3
       volumes:
         - name: workspaces
           persistentVolumeClaim:
