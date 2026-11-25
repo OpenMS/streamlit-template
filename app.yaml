@@ -60,6 +60,16 @@ deploy:
     worker_tier: low
   docker_compose: true
   desktop: [windows]
+  # The desktop app's values (build-desktop-app.yaml reads them; every key
+  # optional, the workflow's own defaults otherwise):
+  # desktop_app:
+  #   name: MyApp                 # installer and install-folder name, no spaces
+  #   installer_version: true     # installers named <name>-<version>-Setup.exe ...
+  #   topp_tools: [FeatureFinderMetabo, FileConverter]  # every tool execution() runs
+  #   openms: "3.6.0"             # a release, or "[owner/repo@]ref" to build
+  #   synopsis: One line for the Linux AppImage.
+  #   e2e_scenarios: [tests/e2e/my-workflow.js]  # run by electron/scripts/e2e.js
+  #   stage_script: scripts/desktop-stage.sh     # bash <script> <python> <payload dir>
   online_deployment: false
 
 # Optional CI checks, all on by default. An app with few CI minutes turns off

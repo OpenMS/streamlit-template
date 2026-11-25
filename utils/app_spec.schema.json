@@ -186,6 +186,20 @@
           "items": {"enum": ["windows", "macos", "linux"]},
           "uniqueItems": true
         },
+        "desktop_app": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "What build-desktop-app.yaml builds for this app, so every app runs that workflow unchanged. Every key is optional and leaves the workflow's default.",
+          "properties": {
+            "name": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$", "description": "App and installer name (install folder, menu entry, data folder). Default: the workflow's APP_NAME."},
+            "installer_version": {"type": "boolean", "description": "Installer files carry the version from settings.json: <name>-<version>-Setup.exe. Default: false."},
+            "topp_tools": {"type": "array", "items": {"type": "string", "pattern": "^[A-Za-z0-9_]+$"}, "minItems": 1, "uniqueItems": true, "description": "TOPP tools bundled in the installers. Default: the workflow's TOPP_TOOLS."},
+            "openms": {"type": "string", "pattern": "^\\S+$", "description": "OpenMS the installers bundle: a release such as 3.6.0, or [owner/repo@]ref to build from source. Default: the workflow's, which follows each OpenMS release; set it only for a branch."},
+            "synopsis": {"type": "string", "description": "One line describing the app on the Linux AppImage."},
+            "e2e_scenarios": {"type": "array", "items": {"type": "string", "pattern": "^\\S+$"}, "uniqueItems": true, "description": "Scenario modules electron/scripts/e2e.js runs in the installed app, as paths in the repository."},
+            "stage_script": {"type": "string", "pattern": "^\\S+$", "description": "App-owned script run once the app's Python is staged, as `bash <script> <payload python> <payload dir>` on every platform."}
+          }
+        },
         "online_deployment": {
           "type": "boolean",
           "description": "Must equal online_deployment in settings.json."

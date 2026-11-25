@@ -237,6 +237,15 @@ def consistency_errors(spec: dict, root: Path | str = ".") -> list[str]:
         if not (root / page).is_file():
             errors.append(f"pages lists {page}, which does not exist")
 
+    # build-desktop-app.yaml runs these from the repository.
+    desktop_app = spec.get("deploy", {}).get("desktop_app", {})
+    for path in desktop_app.get("e2e_scenarios", []):
+        if not (root / path).is_file():
+            errors.append(f"deploy.desktop_app.e2e_scenarios lists {path}, which does not exist")
+    script = desktop_app.get("stage_script")
+    if script and not (root / script).is_file():
+        errors.append(f"deploy.desktop_app.stage_script is {script}, which does not exist")
+
     return errors
 
 
