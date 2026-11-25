@@ -668,7 +668,10 @@ class SleepingWorkflow:
         import subprocess
         tool = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
         self.executor.pid_dir.mkdir(parents=True, exist_ok=True)
-        Path(self.executor.pid_dir, str(tool.pid)).touch()
+        # As run_command() records it: with the tool's start time, which is
+        # what lets the timeout end exactly this process and no reused pid.
+        from src.workflow.process_state import register_process_marker
+        register_process_marker(Path(self.executor.pid_dir, str(tool.pid)), tool.pid)
         SleepingWorkflow.tool = tool
         time.sleep(30)
         return True

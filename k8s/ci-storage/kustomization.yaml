@@ -1,7 +1,8 @@
 # CI stand-in for the production storage tier. Applied by the kind jobs in
 # .github/workflows/build-and-test.yml only - never on a real cluster.
 #
-# Production gets ReadWriteMany from OpenStack Manila (k8s/storage/), which a
+# Production gets ReadWriteMany from OpenStack Manila (cluster configuration,
+# docs/kubernetes-deployment.md section 3b), which a
 # kind cluster on a GitHub runner cannot reach. This root gives the kind
 # cluster the same contract the app relies on - a StorageClass called
 # `openms-manila-nfs` that hands out NFSv3 ReadWriteMany volumes, mounted

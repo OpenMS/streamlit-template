@@ -15,9 +15,17 @@ It is when **any** of these holds:
 
 - it touches a template-owned file (anything not in `sync.app_owned` of the
   app's `app.yaml`): `src/workflow/`, `src/common/`, `src/data_import/`,
-  `docker/`, `k8s/base`, `k8s/storage`, `k8s/ci-storage`, CI, `electron/`, `.claude/`;
+  `docker/`, `k8s/base`, `k8s/ci-storage`, CI, `electron/`, `.claude/`;
 - a second app would want it;
 - it fixes a bug the template also has.
+
+Decide the layer first (*Four layers* in `CLAUDE.md`): a generic plot or a
+component option goes to OpenMS-Insight, a panel two apps draw the same way
+goes to the template's visualization library (`src/viz/`), the organisation of
+results (runs, views, state) to the rest of the template. Moving a panel down:
+the panel and its column contract go to the template; the app keeps a *panel
+source* that maps its files onto those columns, and its own identifiers onto the
+shared ones.
 
 It is not when it is the app's science (its workflow, python-tools, result
 pages) or its identity (names, hosts, presets).

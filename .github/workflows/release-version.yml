@@ -1,0 +1,145 @@
+# Check that a release says the version its tag names, and fix the version
+# when it does not.
+#
+# Runs in the template and in every app made from it, when a release tag is
+# pushed (creating a release on GitHub with a new tag pushes it). The tag's version (`v2.4.0`, `v-1.1`,
+# `OpenDDA-1.3.0`, `2.0.0-alpha.15`; .github/scripts/release_version.py) is
+# compared with `version` in settings.json at the tagged commit:
+#
+#   the same              nothing happens
+#   different             this check fails with the two versions, and, unless
+#                         the default branch already says that version or a
+#                         later one, branch `release-version` gets one commit
+#                         setting it and one PR is opened or updated
+#
+# The images and installers built from the tag carry the tag's version either
+# way (build-image.yml and build-desktop-app.yaml write it into settings.json
+# before building), so the app shows the version it was released as. The PR
+# keeps the default branch from going on with the old number, and the failed
+# check says the release was made before the version bump: bump `version` in a
+# PR and merge it before tagging (skill `release-app`).
+#
+# Token: TEMPLATE_SYNC_TOKEN if set, else the default GITHUB_TOKEN (only
+# settings.json changes; the organization must allow GitHub Actions to create
+# pull requests, and that PR's CI does not start by itself).
+name: Release version
+
+on:
+  push:
+    tags: ['v*', '[0-9]*', '*-[0-9]*', '*-v[0-9]*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to check, e.g. v2.4.0'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: release-version
+  cancel-in-progress: false
+
+env:
+  BRANCH: release-version
+  BOT_NAME: github-actions[bot]
+  BOT_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.TEMPLATE_SYNC_TOKEN || github.token }}
+      DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+      TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ inputs.tag || github.ref_name }}
+          fetch-depth: 0
+          token: ${{ secrets.TEMPLATE_SYNC_TOKEN || github.token }}
+
+      - name: Compare the tag with settings.json
+        id: compare
+        run: |
+          set -uo pipefail
+          VERSION=$(python3 .github/scripts/release_version.py version "$TAG") || exit 1
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if python3 .github/scripts/release_version.py check "$TAG" settings.json; then
+            echo "matches=true" >> "$GITHUB_OUTPUT"
+            echo "Release \`$TAG\`: settings.json says $VERSION, as it should." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "matches=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "Release \`$TAG\` is version **$VERSION**, but settings.json at the tagged commit says"
+              echo "**$(jq -r .version settings.json)**. The images and installers of this release carry $VERSION;"
+              echo "the default branch gets a PR setting it. Next time, merge the version bump before the release."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Open a PR setting the version on the default branch
+        if: steps.compare.outputs.matches == 'false'
+        env:
+          VERSION: ${{ steps.compare.outputs.version }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "$DEFAULT_BRANCH"
+          git checkout -B "$BRANCH" "origin/$DEFAULT_BRANCH"
+          CURRENT=$(jq -r .version settings.json)
+          # The default branch may have moved on already (bumped for the next
+          # release): then it is left alone.
+          if python3 - "$CURRENT" "$VERSION" <<'EOF'
+          import sys
+          sys.path.insert(0, ".github/scripts")
+          from release_version import version_key
+          sys.exit(0 if version_key(sys.argv[1]) >= version_key(sys.argv[2]) else 1)
+          EOF
+          then
+            echo "$DEFAULT_BRANCH already says $CURRENT, so no PR is needed." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          # A pending PR may already set a later version (a newer release
+          # checked first): then it is left as it is.
+          if git fetch --no-tags origin "$BRANCH" 2>/dev/null; then
+            PENDING=$(git show FETCH_HEAD:settings.json | jq -r .version)
+            if python3 - "$PENDING" "$VERSION" <<'EOF'
+          import sys
+          sys.path.insert(0, ".github/scripts")
+          from release_version import version_key
+          sys.exit(0 if version_key(sys.argv[1]) >= version_key(sys.argv[2]) else 1)
+          EOF
+            then
+              echo "\`$BRANCH\` already sets $PENDING, so it is left as it is." >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+          fi
+          python3 .github/scripts/release_version.py set "$TAG" settings.json
+          git config user.name  "$BOT_NAME"
+          git config user.email "$BOT_EMAIL"
+          git commit -am "Set the version to $VERSION, as released in $TAG"
+          git push --force origin "$BRANCH"
+          {
+            echo "Release \`$TAG\` was created while settings.json said \`$CURRENT\`, so the app on"
+            echo "\`$DEFAULT_BRANCH\` would go on showing the old version. This sets it to \`$VERSION\`."
+            echo
+            echo "The release's own images and installers already carry $VERSION. To avoid this PR,"
+            echo "merge the version bump before creating the release."
+            echo
+            echo "_Opened by \`.github/workflows/release-version.yml\`._"
+          } > /tmp/body.md
+          PR=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
+          if [ -n "$PR" ]; then
+            gh pr edit "$PR" --title "Set the version to $VERSION" --body-file /tmp/body.md
+          else
+            gh pr create --base "$DEFAULT_BRANCH" --head "$BRANCH" \
+              --title "Set the version to $VERSION" --body-file /tmp/body.md
+          fi
+          echo "PR for \`$BRANCH\` opened or updated." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fail the check for a release made before its version bump
+        if: steps.compare.outputs.matches == 'false'
+        run: |
+          echo "::error file=settings.json::Release $TAG was created while settings.json said $(git show "refs/tags/$TAG:settings.json" | jq -r .version)."
+          exit 1

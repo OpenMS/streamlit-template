@@ -53,7 +53,14 @@ def reap(pid_dir: Path) -> tuple[bool, int]:
     Returns whether a process still runs, and how many files were removed. The
     folder itself goes when no file is left, so an empty folder from a run
     that was stopped halfway does not block the next start either.
+
+    Each pid file is judged by `process_state.prune_exited_marker`, the same
+    check the Run page and the Stop button use: a marker with a recorded
+    process start time must match it exactly, a legacy empty marker must not
+    be older than its process.
     """
+    from src.workflow.process_state import prune_exited_marker
+
     pid_dir = Path(pid_dir)
     try:
         files = list(pid_dir.iterdir())
@@ -62,16 +69,12 @@ def reap(pid_dir: Path) -> tuple[bool, int]:
     running = False
     removed = 0
     for pid_file in files:
-        try:
-            pid = int(pid_file.name)
-            since = pid_file.stat().st_mtime
-        except (ValueError, OSError):
+        if not (pid_file.name.isdecimal() and pid_file.is_file()):
             running = True  # not a pid file: leave the folder as it is
             continue
-        if is_alive(pid, since):
+        if prune_exited_marker(pid_file):
             running = True
-        else:
-            pid_file.unlink(missing_ok=True)
+        elif not pid_file.exists():
             removed += 1
     if not running:
         try:

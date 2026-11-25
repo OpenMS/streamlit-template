@@ -219,9 +219,11 @@ if [[ -d "$thirdparty" ]]; then
       SageAdapter) keep+=" Sage " ;;
       SpectraSTSearchAdapter) keep+=" SpectraST " ;;
       XTandemAdapter) keep+=" XTandem " ;;
-      # Thermo .raw input (CommandExecutor.convert_to_mzml) on Windows; macOS
-      # and Linux use the built-in reader and the .NET runtime of stage-dotnet.sh.
-      FileConverter) keep+=" ThermoRawFileParser " ;;
+      # Thermo .raw input (CommandExecutor.convert_to_mzml) is read with the
+      # built-in reader and the .NET runtime of stage-dotnet.sh; only an
+      # OpenMS without it falls back to ThermoRawFileParser.
+      FileConverter)
+        [[ -d "$out/share/OpenMS/openms_thermo_bridge/managed" ]] || keep+=" ThermoRawFileParser " ;;
     esac
   done
   for d in "$thirdparty"/*/; do
@@ -233,7 +235,7 @@ if [[ -d "$thirdparty" ]]; then
   done
   echo "THIRDPARTY: $(ls "$thirdparty" | tr '\n' ' ')"
 fi
-# FileConverter's built-in Thermo reader (macOS, Linux) is the only user of
+# FileConverter's built-in Thermo reader is the only user of
 # openms_thermo_bridge; without the tool, stage-dotnet.sh then stages no .NET.
 if [[ " ${tools[*]} " != *" FileConverter "* && -d "$out/share/OpenMS/openms_thermo_bridge" ]]; then
   echo "Leaving out openms_thermo_bridge (no FileConverter)"

@@ -44,7 +44,7 @@ def about_dialog() -> None:
     name = settings.get("app-name", "")
     st.markdown(f"**{name}** · version {settings.get('version', '')}")
 
-    thermo = third_party.thermo_notice()
+    thermo = third_party.thermo_notice(hosted=settings.get("online_deployment", False))
     if thermo:
         st.info(
             f"{name} reads Thermo .raw files with RawFileReader, which it includes under a "
