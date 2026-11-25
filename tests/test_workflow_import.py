@@ -10,6 +10,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+from _example_app import skip_without_example
+
+skip_without_example()
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
