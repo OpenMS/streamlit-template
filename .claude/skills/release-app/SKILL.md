@@ -22,7 +22,12 @@ cluster is updated by changing the image tag the prod overlay pulls.
    ```bash
    git log --first-parent --format='%s' $(git describe --tags --abbrev=0)..HEAD   # merge, squash and rebase merges alike
    ```
-3. **PR, merge** to the default branch.
+3. **PR, merge** to the default branch. The bump is merged **before** the
+   release exists: never create a tag, and never hand anyone a release link
+   (a prefilled `releases/new?tag=...` URL), while `version` in
+   `settings.json` on the target commit is not the tag's version. Check it
+   with `python .github/scripts/release_version.py check <tag>` on that
+   commit.
 4. **Tag and release** on the merge commit: `v<version>`, or
    `<AppName>-<version>` (e.g. `OpenDDA-1.3`) for an app that names its tags
    that way; `build-and-test.yml` builds both forms. Creating the GitHub
@@ -30,6 +35,12 @@ cluster is updated by changing the image tag the prod overlay pulls.
    (`release: created`) and attaches the installers; the tag push triggers
    `build-and-test.yml`, which publishes `<tag>-full`, `<tag>-simple` and the
    multi-arch manifests to GHCR, plus the SIF.
+   `release-version.yml` compares the tag with `settings.json` on every
+   release tag. A release made before its bump fails that check and gets a
+   PR setting the version on the default branch (merge it); the images and
+   installers built from the tag carry the tag's version anyway, because
+   `build-image.yml` and `build-desktop-app.yaml` write it into
+   `settings.json` before building.
 5. **Wait for both workflows** to finish green before announcing. A release
    without its installer asset is not done.
 6. **Deploy**: nothing to do. With the app's Argo CD Image Updater (cluster
@@ -46,7 +57,9 @@ back cleanly; do them only when the user asked for the release.
 ## Checklist
 
 - [ ] Version chosen by the change type and bumped in settings.json
+- [ ] Bump merged before the tag or a release link exists (`release_version.py check <tag>` passes)
 - [ ] User-facing notes written
 - [ ] GitHub release `<tag>` (`v<version>` or `<AppName>-<version>`) created on the merge commit
-- [ ] Images, SIF and installers published; both workflows green
+- [ ] Images, SIF and installers published; build workflows and `Release version` green
+- [ ] If `Release version` failed (the tag came before its bump): merge its `release-version` PR. The release stays as it is, since its images and installers already carry the tag's version; the failed check stays red on that tag as the record
 - [ ] On a cluster without the ImageUpdater, the overlay pins the new tag

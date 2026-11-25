@@ -155,10 +155,14 @@ jobs:
       env:
         RELEASE_TAG: ${{ github.event.release.tag_name }}
       run: |
-        # Only release builds carry a tag; other builds keep settings.json's version.
-        jq --arg v "$RELEASE_TAG" \
-          '.online_deployment = false | if $v != "" then .version = $v else . end' \
-          settings.json > settings.tmp && mv settings.tmp settings.json
+        # Only release builds carry a tag; other builds keep settings.json's
+        # version. The tag's version without its prefix (`OpenDDA-1.3.0` is
+        # 1.3.0), as release-version.yml compares it.
+        jq '.online_deployment = false' settings.json > settings.tmp && mv settings.tmp settings.json
+        if [ -n "$RELEASE_TAG" ]; then
+          # The runner's Python; Windows runners have no `python3`.
+          "$(command -v python3 || command -v python)" .github/scripts/release_version.py set "$RELEASE_TAG" settings.json
+        fi
 
     - name: Download the OpenMS build
       if: needs.openms.outputs.source == 'build'
