@@ -60,6 +60,8 @@ _ENTRIES = [
      'Every spectrum matched to the picked proteoform with its fragments, score and q-values. A click picks the PrSM and its spectrum.'),
     ('prsm_mass_table', 'identification', 'PrSM mass table', 'settings',
      "Every deconvolved mass of the picked PrSM's spectrum and the fragment ion it explains, with its mass errors; a toggle shows matched masses only. A row picks its mass."),
+    ('identification_steps', 'identification', 'Identification steps', 'settings',
+     'The MS2 spectra of a run left after each step from acquisition to the identifications kept, with their share and, where a step loses more than usual, its likely cause.'),
     ('tag_table', 'identification', 'Tag table', 'settings',
      'The tags of the selected spectrum with their position in the protein, sequence, score and flanking masses, sorted by score. Picking a residue lists the tags covering it; a click picks the tag.'),
     ('tag_spectrum', 'identification', 'Tag spectrum', 'settings',
