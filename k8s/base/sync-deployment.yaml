@@ -28,6 +28,16 @@ spec:
         - name: sync
           image: openms-streamlit
           imagePullPolicy: Always
+          securityContext:
+            # Root in the image (TOPP tools, conda env), but without the extra
+            # rights a container gets by default. The file capabilities keep
+            # access to workspace files of other owners on the shared volume.
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
+            capabilities:
+              drop: ["ALL"]
+              add: ["CHOWN", "DAC_OVERRIDE", "FOWNER"]
           command: ["/bin/bash", "-c"]
           args:
             - |

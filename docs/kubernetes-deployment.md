@@ -113,6 +113,8 @@ Both Traefik and nginx attach a per-host `stroute` sticky cookie to bind a user 
 ### Namespace
 All resources deploy into the shared `openms` namespace (`namespace: openms` in `k8s/base/kustomization.yaml`). The Namespace object itself is cluster configuration, like the storage tier: no app's deployment carries it, so no app's Argo CD project needs to allow a cluster-scoped kind, and no two apps can take it over from each other. On the OpenMS cluster it is kept with the rest of the cluster configuration, with the Pod Security labels `warn` and `audit` at `baseline` (never `enforce`, since every app shares it). On a cluster of your own, create it once before the first app with `kubectl create namespace openms`.
 
+Every container in `k8s/base` sets a `securityContext`: no privilege escalation, the runtime's default seccomp profile, and all Linux capabilities dropped except those it needs by name (`CHOWN`, `DAC_OVERRIDE` and `FOWNER` for the app containers, which work on workspace files of any owner on the shared volume; `CHOWN`, `SETGID` and `SETUID` for Redis, whose entrypoint switches to the redis user). A container added in an overlay or an app should do the same; `tests/test_k8s_security_context.py` checks the base.
+
 ### `configmap.yaml`
 `streamlit-config` ConfigMap holding `settings-overrides.json`, merged into the app's `settings.json` at pod startup. Currently sets `online_deployment: true`.
 
