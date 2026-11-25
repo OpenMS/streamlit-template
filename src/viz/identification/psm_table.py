@@ -8,6 +8,12 @@ Insight component: ``Table``. Columns: ``id_idx`` (the PSM), ``file_index``,
 ``scan_id``, ``sequence``, ``charge``, ``mz``, ``rt``, ``score``, ``decoy``,
 ``protein_accession``, ``contaminant``, ``proforma``, ``filename``; with the
 menu also ``q_value`` and ``not_contaminant``.
+
+``all_files_settings()`` is the same table over the PSMs of several files at
+once: the rows of each file's table put together, with ``file_name`` (shown
+first, searchable) and a row id of their own, ``psm_row``, which a click picks
+under ``psm_all``. The app keeps ``source`` (the file a row comes from) to map
+a picked row back to that file's ``id_idx``, ``file_index`` and ``scan_id``.
 """
 
 from __future__ import annotations
@@ -86,3 +92,32 @@ def menu(fields: list[str], q_suggestions: list | None = None, search_fields: tu
         search_placeholder=placeholder,
         numeric_filters={Q_FIELD: {"op": "<=", "suggestions": list(q_suggestions or [])}},
     )
+
+
+# The table of several files: its own row id, picked under ALL_FILES_SELECTION
+ROW_FIELD = "psm_row"
+FILE_FIELD = "file_name"
+ALL_FILES_SELECTION = "psm_all"
+
+
+def all_files_columns(column_definitions: list[dict], file_title: str = "File") -> list[dict]:
+    """The columns of one file's table, rounded for display, with the file first."""
+    shown = [
+        {**c, **_money(ROUNDING[c["field"]])} if c.get("field") in ROUNDING and "formatter" not in c else c
+        for c in column_definitions
+    ]
+    return [{"field": FILE_FIELD, "title": file_title, "headerTooltip": "The input file of this PSM"}] + shown
+
+
+def all_files_settings(column_definitions: list[dict], fields, search_fields: tuple = SEARCH_FIELDS,
+                       selection: str = ALL_FILES_SELECTION, **overrides) -> dict:
+    """Constructor arguments of the PSM table over several files. ``column_definitions``
+    are one file's columns, ``fields`` the columns of the merged rows."""
+    return dict(
+        interactivity={selection: ROW_FIELD},
+        column_definitions=all_files_columns(column_definitions),
+        index_field=ROW_FIELD,
+        toggle_filters=[{"label": "Hide contaminants", "column": CLEAN_FIELD, "default": False}],
+        search=[c for c in (FILE_FIELD, *search_fields) if c in fields],
+        search_placeholder="File, peptide or protein",
+    ) | overrides
