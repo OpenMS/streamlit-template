@@ -20,12 +20,13 @@ import os
 import re
 import tempfile
 import zipfile
+import zlib
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
 
-from src.workflow.ExperimentalDesign import DESIGN_FILE, read_design
-from src.workflow.InputFolders import FOLDERS_FILE
+from src.workflow.ExperimentalDesign import DESIGN_FILE, read_design, remember_rows
+from src.workflow.InputFolders import FOLDERS_FILE, save_folders
 from src.workflow.RunManager import FOLLOW_UP_KEY
 
 MANIFEST = "setup.json"
@@ -198,6 +199,8 @@ def read_setup(data: bytes) -> dict:
                 parts[member] = archive.read(member).decode("utf-8")
             except UnicodeDecodeError as error:
                 raise ValueError(f"{member} in the setup file is not text.") from error
+            except (zipfile.BadZipFile, zlib.error, EOFError, OSError) as error:
+                raise ValueError(f"{member} in the setup file is damaged.") from error
     try:
         manifest = json.loads(parts[MANIFEST])
         params = json.loads(parts[PARAMS])
@@ -262,20 +265,11 @@ def apply_setup(workflow_dir: PathLike, setup: dict) -> Tuple[dict, Dict[str, Li
 
     if setup.get("design") is not None:
         _write(workflow_dir / DESIGN_FILE, setup["design"])
+        remember_rows(workflow_dir, read_design(setup["design"].encode("utf-8")))
     if setup.get("folders"):
-        path = workflow_dir / FOLDERS_FILE
-        current = {}
-        if path.is_file():
-            try:
-                current = json.loads(path.read_text(encoding="utf-8"))
-            except json.JSONDecodeError:
-                current = {}
-        if not isinstance(current, dict):
-            current = {}
         for key, labels in setup["folders"].items():
             if isinstance(labels, dict):
-                merged = dict(current.get(key) or {})
-                merged.update({str(k): str(v) for k, v in labels.items()})
-                current[key] = merged
-        _write(path, json.dumps(current, indent=2))
+                save_folders(
+                    workflow_dir, key, {str(k): str(v) for k, v in labels.items()}, merge=True
+                )
     return params, missing

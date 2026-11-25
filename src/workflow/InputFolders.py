@@ -68,8 +68,14 @@ def load_folders(workflow_dir: Union[str, Path], key: str) -> Dict[str, str]:
     return {str(f): str(d).strip() for f, d in folders.items() if str(d).strip()}
 
 
-def save_folders(workflow_dir: Union[str, Path], key: str, folders: Dict[str, str]) -> None:
-    """Store the folders of upload ``key``; an empty folder name takes the file out."""
+def save_folders(
+    workflow_dir: Union[str, Path], key: str, folders: Dict[str, str], merge: bool = False
+) -> None:
+    """Store the folders of upload ``key``; an empty folder name takes the file out.
+
+    With ``merge``, the stored folders of files not named in ``folders`` stay,
+    read and written under the same lock.
+    """
     clean = {
         _name(f): str(d).strip()
         for f, d in folders.items()
@@ -78,6 +84,9 @@ def save_folders(workflow_dir: Union[str, Path], key: str, folders: Dict[str, st
     path = folders_path(workflow_dir)
     with _LOCK:
         data = _load_all(workflow_dir)
+        if merge:
+            stored = data.get(key)
+            clean = {**(stored if isinstance(stored, dict) else {}), **clean}
         if clean:
             data[key] = dict(sorted(clean.items()))
         else:

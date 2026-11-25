@@ -19,6 +19,9 @@ from typing import List, Union
 import pandas as pd
 
 DESIGN_FILE = "experimental-design.tsv"
+# Every file's row ever saved, so a file that is not selected now keeps its row
+# (design.tsv holds the selected files only, as the TOPP tools need it).
+ROWS_FILE = ".design-rows.tsv"
 COLUMNS = ["file", "condition", "replicate", "fraction"]
 
 _FILE_SECTION = ["Fraction_Group", "Fraction", "Spectra_Filepath", "Label", "Sample"]
@@ -236,20 +239,61 @@ def design_path(workflow_dir: Union[str, Path]) -> Path:
     return Path(workflow_dir, DESIGN_FILE)
 
 
+def _rows_path(workflow_dir: Union[str, Path]) -> Path:
+    return Path(workflow_dir, ROWS_FILE)
+
+
+def _remembered(workflow_dir: Union[str, Path]) -> pd.DataFrame:
+    path = _rows_path(workflow_dir)
+    try:
+        rows = pd.read_csv(path, sep="\t", dtype=str, keep_default_na=False)
+    except (OSError, ValueError, pd.errors.ParserError):
+        return pd.DataFrame(columns=COLUMNS)
+    if not set(COLUMNS) <= set(rows.columns):
+        return pd.DataFrame(columns=COLUMNS)
+    return _normalize(rows)
+
+
+def remember_rows(workflow_dir: Union[str, Path], design: pd.DataFrame) -> None:
+    """Keep the rows of ``design`` for later, replacing earlier rows of the same files.
+
+    ``load_design`` gives a file the design does not list its remembered row,
+    so a file left out of the selection, or not uploaded yet when a design
+    naming it was imported, gets its row back once it is selected.
+    """
+    design = _normalize(design).drop_duplicates("file", keep="first")
+    design = design[design["file"] != ""]
+    earlier = _remembered(workflow_dir)
+    rows = pd.concat([design, earlier[~earlier["file"].isin(design["file"])]])
+    path = _rows_path(workflow_dir)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(rows[COLUMNS].to_csv(sep="\t", index=False, lineterminator="\n"), encoding="utf-8")
+
+
 def save_design(workflow_dir: Union[str, Path], design: pd.DataFrame, paths: Union[List[str], None] = None) -> Path:
-    """Write the design to the workflow directory as an OpenMS design.tsv and return its path."""
+    """Write the design to the workflow directory as an OpenMS design.tsv and return its path.
+
+    Its rows are also remembered (``remember_rows``), so saving the design of
+    some files does not lose the rows of the others.
+    """
     path = design_path(workflow_dir)
     path.write_text(to_openms_design(design, paths), encoding="utf-8")
+    remember_rows(workflow_dir, design)
     return path
 
 
 def load_design(workflow_dir: Union[str, Path], files: Union[List[str], None] = None) -> pd.DataFrame:
     """The workflow's stored design, aligned to ``files`` when given.
 
-    Returns the default design for ``files`` (or an empty table) when none is stored.
+    A file the stored design does not list takes its remembered row (see
+    ``remember_rows``), else the default. Returns the default design for
+    ``files`` (or an empty table) when none is stored.
     """
     path = design_path(workflow_dir)
     design = read_design(path) if path.is_file() else pd.DataFrame(columns=COLUMNS)
     if files is None:
         return _normalize(design)
+    design = _normalize(design)
+    earlier = _remembered(workflow_dir)
+    design = pd.concat([design, earlier[~earlier["file"].isin(design["file"])]])
     return align_design(design, files)

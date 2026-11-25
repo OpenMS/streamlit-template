@@ -192,3 +192,53 @@ def test_a_setup_import_draws_the_design_editor_again(tmp_path, monkeypatch):
     ui._restart_design_editors()
     assert state[f"_design-{wf.name}-mzML-files"] == 3
     assert state[f"_design-{wf.name}-mzML-files-refill"] is False
+
+
+def test_the_imported_row_of_a_file_not_uploaded_yet_survives_saving_the_others(tmp_path):
+    from src.workflow.ExperimentalDesign import load_design, save_design
+
+    target = _workflow(tmp_path / "theirs", files=("Control.mzML",))
+    apply_setup(target, read_setup(_setup_of(tmp_path)))
+    # The design editor saves the selected file's row only
+    control = [str(target / "input-files" / "mzML-files" / "Control.mzML")]
+    save_design(target, load_design(target, control), control)
+    assert "Treated" not in (target / "experimental-design.tsv").read_text()
+
+    (target / "input-files" / "mzML-files" / "Treated.mzML").write_text("x")
+    both = control + [str(target / "input-files" / "mzML-files" / "Treated.mzML")]
+    assert list(load_design(target, both)["condition"]) == ["control", "treated"]
+
+
+def test_importing_folders_keeps_the_other_labels(tmp_path):
+    target = _workflow(tmp_path / "theirs")
+    (target / "input-folders.json").write_text(
+        json.dumps({"mzML-files": {"Blank.mzML": "Blanks"}, "fasta": {"human.fasta": "DB"}})
+    )
+    apply_setup(target, read_setup(_setup_of(tmp_path)))
+    assert json.loads((target / "input-folders.json").read_text()) == {
+        "mzML-files": {"Blank.mzML": "Blanks", "Control.mzML": "Day 1"},
+        "fasta": {"human.fasta": "DB"},
+    }
+
+
+def test_a_setup_with_a_damaged_member_is_refused(tmp_path):
+    data = bytearray(_setup_of(tmp_path))
+    # Corrupt the compressed bytes of params.json, leaving the directory intact
+    with zipfile.ZipFile(io.BytesIO(bytes(data))) as archive:
+        info = archive.getinfo("params.json")
+    start = info.header_offset + 30 + len(info.filename.encode()) + len(info.extra)
+    for i in range(start, start + info.compress_size):
+        data[i] ^= 0xFF
+    with pytest.raises(ValueError):
+        read_setup(bytes(data))
+
+
+def _setup_of(root: Path) -> bytes:
+    source = _workflow(root / "mine")
+    mzml = source / "input-files" / "mzML-files"
+    (source / "params.json").write_text(json.dumps({
+        "mzML-files": [str(mzml / "Control.mzML"), str(mzml / "Treated.mzML")],
+    }))
+    (source / "experimental-design.tsv").write_text(DESIGN)
+    (source / "input-folders.json").write_text(json.dumps({"mzML-files": {"Control.mzML": "Day 1"}}))
+    return export_setup(source, app="App", version="1.0")
