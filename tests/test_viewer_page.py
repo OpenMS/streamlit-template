@@ -61,7 +61,7 @@ RUN = DatasetKind(
 )
 COMPARISON = DatasetKind(
     name="comparison", components=COMPONENTS[:1], presets=PRESETS[:1], default_layout=[["plot"]],
-    views_path=ROOT / "comparisons.json", states=None, max_experiments=1,
+    views_path=ROOT / "comparisons.json", states=None, max_experiments=1, link=False,
     render=lambda ctx, rows: st.markdown(f"comparison grid {{ctx.dataset}} {{rows}}"),
 )
 if st.session_state.pop("_show", None):
