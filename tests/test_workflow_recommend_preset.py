@@ -29,3 +29,17 @@ def test_many_files_fast():
 def test_every_offered_preset_exists():
     presets = json.loads(Path("presets.json").read_text())["topp-workflow"]
     assert set(Workflow.DETECTION_PRESETS) <= set(presets)
+
+
+def test_display_stale_only_when_preset_changed(monkeypatch):
+    import streamlit as st
+
+    wf = _wf()
+    monkeypatch.setattr(Workflow, "current_preset", lambda self: None)
+    st.session_state.pop(Workflow.SHOWN_PRESET_KEY, None)
+    assert not wf.preset_display_stale()  # box not drawn yet
+    st.session_state[Workflow.SHOWN_PRESET_KEY] = None
+    assert not wf.preset_display_stale()  # an unrelated edit
+    st.session_state[Workflow.SHOWN_PRESET_KEY] = "Metabolomics Default"
+    assert wf.preset_display_stale()  # the edit changed a preset value
+    st.session_state.pop(Workflow.SHOWN_PRESET_KEY, None)

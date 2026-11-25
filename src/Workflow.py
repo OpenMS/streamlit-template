@@ -114,6 +114,8 @@ class Workflow(WorkflowManager):
             # Ready-made settings for the kind of data, read back from the
             # settings (the preset they hold), never stored themselves
             current = self.current_preset()
+            # What the box shows, so configure() can tell when it went stale
+            st.session_state[self.SHOWN_PRESET_KEY] = current
             self.ui.preset_choice(
                 "feature-preset", "Detection", list(self.DETECTION_PRESETS), current,
                 labels=self.DETECTION_PRESETS,
@@ -139,6 +141,15 @@ class Workflow(WorkflowManager):
     }
     # From this many files on, the recommendation is the fast settings
     MANY_FILES = 10
+
+    # Session key of the preset the Detection box showed on the last full rerun
+    SHOWN_PRESET_KEY = "topp-workflow-shown-preset"
+
+    def preset_display_stale(self) -> bool:
+        """True when the settings hold another preset than the box shows."""
+        if self.SHOWN_PRESET_KEY not in st.session_state:
+            return False
+        return st.session_state[self.SHOWN_PRESET_KEY] != self.current_preset()
 
     def current_preset(self):
         """The detection preset the settings hold, None when they are the user's own."""
@@ -199,12 +210,15 @@ class Workflow(WorkflowManager):
             self.ui.experimental_design("mzML-files", suggest=True)
         with tabs["Feature detection"]:
             # Parameters for FeatureFinderMetabo TOPP tool.
+            # reactive: an edit reruns configure(), which refreshes the
+            # Detection box above only when the edit changed its preset
             self.ui.input_TOPP(
                 "FeatureFinderMetabo",
                 custom_defaults={"algorithm:common:noise_threshold_int": 1000.0},
+                reactive=True,
             )
         with tabs["Feature linking"]:
-            self.ui.input_TOPP("FeatureLinkerUnlabeledKD")
+            self.ui.input_TOPP("FeatureLinkerUnlabeledKD", reactive=True)
             # A setting of the workflow's own (no TOPP tool has it), stored
             # with the run's parameters and read in execution()
             self.ui.input_widget(
@@ -217,6 +231,10 @@ class Workflow(WorkflowManager):
                 # Generate input widgets for a custom Python tool, located at src/python-tools.
                 # Parameters are specified within the file in the DEFAULTS dictionary.
                 self.ui.input_python("example")
+        # A parameter edit can make the Detection box (outside this fragment)
+        # name a preset the settings no longer hold: rerun the page then
+        if self.preset_display_stale():
+            st.rerun(scope="app")
 
     def execution(self) -> bool:
         # Return True only if every step succeeded. The caller
