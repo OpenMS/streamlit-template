@@ -3,11 +3,7 @@ from types import SimpleNamespace
 
 import pandas as pd
 
-from _example_app import skip_without_example
-
-skip_without_example()
-
-from src.Workflow import Workflow  # noqa: E402
+from src.Workflow import Workflow
 
 
 def _table(path):

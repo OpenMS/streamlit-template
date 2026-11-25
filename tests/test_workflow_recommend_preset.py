@@ -2,11 +2,7 @@
 import json
 from pathlib import Path
 
-from _example_app import skip_without_example
-
-skip_without_example()
-
-from src.Workflow import Workflow  # noqa: E402
+from src.Workflow import Workflow
 
 
 def _wf():

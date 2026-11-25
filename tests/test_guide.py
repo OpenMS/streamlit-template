@@ -6,8 +6,6 @@ import pytest
 from src.workflow import guide
 from src.workflow.describe_ui import numbered
 
-from _example_app import needs_example
-
 
 @pytest.fixture
 def session(monkeypatch):
@@ -46,7 +44,6 @@ def test_workflow_pages_reads_class_attributes():
                                         "export": "content/d.py"}
 
 
-@needs_example()
 def test_example_workflow_names_its_four_pages():
     from src.Workflow import Workflow
     assert list(guide.workflow_pages(Workflow)) == list(guide.ORDER)
@@ -56,7 +53,6 @@ def test_component_groups_in_order():
     assert guide.COMPONENT_GROUPS == ("MS data", "Features and masses", "Identification", "Quantification")
 
 
-@needs_example()
 def test_example_components_use_the_groups():
     from src.Workflow import Workflow
     assert {c["group"] for c in Workflow.COMPONENTS} <= set(guide.COMPONENT_GROUPS)
