@@ -3,11 +3,12 @@
 // TOPP tools) when the window closes.
 const fs = require("fs");
 const path = require("path");
-const { app, BrowserWindow, Menu, dialog, shell } = require("electron");
+const { app, BrowserWindow, Menu, dialog, nativeTheme, shell } = require("electron");
 const payload = require("./payload");
 const { checkForUpdate, noticeScript } = require("./update-check");
 const { integrateAppImage } = require("./linux-desktop");
 const license = require("./license");
+const loading = require("./loading");
 
 // Set by the CI smoke test: exit 0 once the app page has loaded, 1 on failure.
 const SMOKE_TEST = process.env.OPENMS_APP_SMOKE_TEST === "1";
@@ -33,12 +34,6 @@ if (!app.requestSingleInstanceLock()) {
   });
   app.whenReady().then(start);
 }
-
-const LOADING_PAGE =
-  "data:text/html;charset=utf-8," +
-  encodeURIComponent(`<!doctype html><html><body style="margin:0;height:100vh;display:flex;
-align-items:center;justify-content:center;font-family:sans-serif;color:#29379b">
-<div>Starting&hellip;</div></body></html>`);
 
 async function start() {
   const payloadDir = payload.payloadDir(process.resourcesPath, app.isPackaged);
@@ -71,6 +66,7 @@ async function start() {
     height: 900,
     autoHideMenuBar: true,
     icon: iconFile,
+    backgroundColor: loading.backgroundColor(nativeTheme.shouldUseDarkColors),
     webPreferences: { contextIsolation: true, sandbox: true },
   });
   mainWindow.on("page-title-updated", (e) => e.preventDefault());
@@ -84,7 +80,13 @@ async function start() {
     quit(0);
     return;
   }
-  await mainWindow.loadURL(LOADING_PAGE);
+  await mainWindow.loadURL(
+    loading.loadingPageUrl({
+      title,
+      version: settings.version,
+      fontDir: path.join(payloadDir, "static", "fonts"),
+    })
+  );
 
   try {
     const port = await payload.freePort();
@@ -94,6 +96,7 @@ async function start() {
     await payload.waitForServer(server, port);
     const appUrl = `http://127.0.0.1:${port}/`;
     keepLinksInsideApp(mainWindow, appUrl);
+    await finishLoadingAnimation(mainWindow);
     await mainWindow.loadURL(appUrl);
     if (SMOKE_TEST) smokeTestPassesOnceWorkspaceExists(workspacesDir, logFile);
     // Streamlit exiting later (crash, killed) leaves a dead page; say so.
@@ -106,6 +109,13 @@ async function start() {
   }
 
   if (!SMOKE_TEST && process.env.OPENMS_APP_NO_UPDATE_CHECK !== "1") notifyAboutUpdate(settings);
+}
+
+// Lets the loading screen put its bars back into the logo and fade out; never
+// holds up the app for more than a second.
+function finishLoadingAnimation(win) {
+  const finished = win.webContents.executeJavaScript(loading.FINISH_SCRIPT, true).catch(() => {});
+  return Promise.race([finished, new Promise((resolve) => setTimeout(resolve, 1000))]);
 }
 
 // The license agreement is shown in the app window on the first start, and
