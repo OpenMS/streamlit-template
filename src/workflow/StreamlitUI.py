@@ -1260,7 +1260,10 @@ class StreamlitUI(DescribeMixin):
                 widget_type=widget_type,
                 options=options,
                 display_file_path=display_file_path,
-                reactive=reactive,
+                # Drawn in this call's own context: with reactive=False that is
+                # select_input_file's fragment, so a change reruns the file
+                # checks below the widget too, not only the widget.
+                reactive=True,
             )
             return
         c1, c2 = st.columns([5, 1], vertical_alignment="bottom")
@@ -1272,7 +1275,7 @@ class StreamlitUI(DescribeMixin):
                     widget_type=widget_type,
                     options=options,
                     display_file_path=display_file_path,
-                    reactive=reactive,
+                    reactive=True,
                 )
             else:
                 st.markdown(name)
