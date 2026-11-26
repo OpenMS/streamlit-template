@@ -17,7 +17,7 @@ class Plain:
 
 
 class Browsed:
-    def __init__(self, cache_id=None, level=None, show_position=False, narrowed_labels=None):
+    def __init__(self, cache_id=None, level=None, narrowed_labels=None):
         pass
 
 
@@ -35,8 +35,8 @@ def test_no_marker_without_an_mz_or_on_an_older_insight():
 
 
 def test_the_tables_know_their_level_and_what_narrows_them():
-    assert protein_table.display(Browsed) == {"level": 0, "show_position": True}
+    assert protein_table.display(Browsed) == {"level": 0}
     assert protein_peptides.display(Browsed) == {
-        "level": 1, "show_position": True, "narrowed_labels": {"protein": "Protein"}}
+        "level": 1, "narrowed_labels": {"protein": "Protein"}}
     assert protein_psms.display(Browsed, protein="prot")["narrowed_labels"] == {"prot": "Protein", "peptide": "Peptide"}
     assert protein_psms.display(Plain) == {}

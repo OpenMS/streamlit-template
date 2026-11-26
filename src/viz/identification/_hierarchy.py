@@ -49,13 +49,13 @@ def shift_filter(filters: dict, all_rows=None, mass_shift: str = "mass_shift") -
 def level(cls, depth: int, narrowed: dict | None = None) -> dict:
     """Display options of the ``depth``-th of tables browsed top down (0 the
     first): Enter or a double click goes one table down, Backspace one up,
-    each table says where its picked row is ("3 of 132") and, by the labels
-    of ``narrowed`` ({identifier: label}), what the tables above narrow it to.
+    and each table says, by the labels of ``narrowed`` ({identifier: label}),
+    what the tables above narrow it to.
 
     Render-time options, passed where the table is drawn, not with its data;
     an Insight ``cls`` without them gets none.
     """
-    options = dict(level=depth, show_position=True)
+    options = dict(level=depth)
     if narrowed:
         options["narrowed_labels"] = dict(narrowed)
     return only_accepted(cls, **options)
