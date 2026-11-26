@@ -253,3 +253,38 @@ test("loading content is centred in the visible window, not the oversized view",
   new Function("document", loading.windowSizeScript([1400.4, 899.6]))(doc);
   assert.deepEqual(props, { "--window-width": "1400px", "--window-height": "900px" });
 });
+
+const MARK = `<svg viewBox="0 0 120 120"><title>Mark</title><g stroke="#000">` +
+  `<line x1="60" y1="40" x2="60" y2="10"/><line x1="80" y1="60" x2="110" y2="60"/></g>` +
+  `<circle cx="60" cy="4" r="3"/><path d="M0 0"/></svg>`;
+
+test("an app logo replaces the OpenMS logo, with pulsing rays and riding dots", () => {
+  const html = loading.loadingPage({ title: "A", version: "1", fontDir: null, logo: { light: MARK, dark: MARK } });
+  assert.doesNotMatch(html, /class="bar /);
+  assert.doesNotMatch(html, /<title>Mark/);
+  // Both themes, two rays and one dot each.
+  assert.equal((html.match(/class="ray"/g) || []).length, 4);
+  assert.equal((html.match(/class="tip"/g) || []).length, 2);
+  // The dot rides on the vertical ray: offset from that ray's inner end.
+  assert.match(html, /class="tip" style="--i:0;[^"]*--dx:0\.00;--dy:-36\.00"/);
+  assert.match(html, /transform-origin:60px 40px/);
+  assert.match(html, /@property --s/);
+  // Nothing snaps the rays back while the overlay fades out.
+  assert.doesNotMatch(html, /body\.done \.ray/);
+});
+
+test("the app logo is read from loading_logo in settings.json", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "logo-"));
+  fs.mkdirSync(path.join(dir, "assets"));
+  fs.writeFileSync(path.join(dir, "assets", "light.svg"), MARK);
+  assert.deepEqual(loading.readLogo(dir, { loading_logo: { light: "assets/light.svg", dark: "assets/none.svg" } }), {
+    light: MARK,
+    dark: null,
+  });
+  assert.equal(loading.readLogo(dir, { loading_logo: { light: "assets/none.svg" } }), null);
+  assert.equal(loading.readLogo(dir, {}), null);
+  assert.equal(loading.readLogo(dir, { loading_logo: "assets/light.svg" }), null);
+  // One file serves both themes.
+  const html = loading.loadingPage({ title: "A", version: "", fontDir: null, logo: { light: MARK, dark: null } });
+  assert.equal((html.match(/class="ray"/g) || []).length, 4);
+});
