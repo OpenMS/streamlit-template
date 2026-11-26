@@ -35,6 +35,6 @@ def precursor_marker(cls, mz, charge=None) -> dict:
         return {}
     try:
         label = f"precursor {int(charge)}+" if int(charge) > 0 else "precursor"
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         label = "precursor"
     return {"x_markers": [{"x": mz, "label": label}]}

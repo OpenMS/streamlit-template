@@ -25,6 +25,8 @@ def test_the_precursor_is_marked_with_its_charge():
     assert annotated_spectrum.precursor_marker(Marked, 512.27, 2) == {
         "x_markers": [{"x": 512.27, "label": "precursor 2+"}]}
     assert annotated_spectrum.precursor_marker(Marked, "512.27", None)["x_markers"][0]["label"] == "precursor"
+    for charge in (math.inf, -math.inf, math.nan, 0):
+        assert annotated_spectrum.precursor_marker(Marked, 512.27, charge)["x_markers"][0]["label"] == "precursor"
     assert predicted_spectrum.precursor_marker is annotated_spectrum.precursor_marker
 
 
