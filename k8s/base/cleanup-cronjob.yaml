@@ -38,10 +38,13 @@ spec:
               image: openms-streamlit
               imagePullPolicy: IfNotPresent
               securityContext:
-                # Root in the image, but without the extra rights a container
+                # Root, but without the extra rights a container
                 # gets by default: it deletes workspaces of any owner and hands
                 # files still owned by root (written by a pod of an earlier
-                # release during an update) to the app's user, uid 1000.
+                # release during an update) to the app's user, uid 1000. The
+                # image itself runs as that user, so root is named here.
+                runAsUser: 0
+                runAsGroup: 0
                 allowPrivilegeEscalation: false
                 seccompProfile:
                   type: RuntimeDefault

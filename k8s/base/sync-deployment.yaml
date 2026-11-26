@@ -38,6 +38,9 @@ spec:
           image: openms-streamlit
           imagePullPolicy: Always
           securityContext:
+            # Root, while the image itself runs as the app's user.
+            runAsUser: 0
+            runAsGroup: 0
             allowPrivilegeEscalation: false
             seccompProfile:
               type: RuntimeDefault

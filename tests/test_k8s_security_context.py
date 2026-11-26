@@ -73,6 +73,8 @@ APP_CONTAINERS = [
 def test_app_container_user(name, container):
     context = container["securityContext"]
     if name in ROOT_CONTAINERS:
+        # The image runs as the app's user, so root must be named.
+        assert context.get("runAsUser") == 0, name
         return
     assert context.get("runAsNonRoot") is True, name
     assert context.get("runAsUser") == APP_USER, name
