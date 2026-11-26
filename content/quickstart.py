@@ -25,7 +25,7 @@ from src.common.common import page_setup, v_space
 from src.common.contributors import render_contributors
 from src.common.installers import (
     render_installer_buttons,
-    render_tool_installer_buttons,
+    render_tool_installer_line,
 )
 from src.common.other_apps import render_other_apps
 
@@ -86,11 +86,7 @@ c1.markdown(
 v_space(1, c2)
 c2.image("assets/openms_transparent_bg_logo.svg", width=300)
 render_installer_buttons("### Download the desktop app")
-render_tool_installer_buttons(
-    "### Download the command line tools",
-    "The OpenMS command line tools the desktop app runs, for use from a "
-    "terminal or a script.",
-)
+render_tool_installer_line()
 
 st.markdown("## 📖 Documentation")
 st.markdown(

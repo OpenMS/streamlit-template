@@ -8,6 +8,7 @@ called. The buttons link to the release assets instead of serving files from
 the image, so a deployment does not carry several hundred MB of installers.
 """
 
+from html import escape
 import threading
 import time
 from pathlib import Path
@@ -165,31 +166,29 @@ def render_installer_buttons(heading: str = "", app_name: str = "") -> bool:
     return True
 
 
-def render_tool_installer_buttons(heading: str = "", text: str = "") -> bool:
-    """One download button per platform whose OpenMS command line tools are
-    attached to the latest release, below `heading` and `text` (markdown);
-    renders nothing and returns False when the release has none.
+def render_tool_installer_line(
+    lead: str = "Prefer scripting? Get the OpenMS command line tools the desktop app runs for",
+) -> bool:
+    """A small line below the desktop installers linking the OpenMS command
+    line tools of the latest release, one link per platform ("<lead> Windows
+    · macOS · Linux."); renders nothing and returns False when the release
+    has none.
 
     Only shown in online deployments, like render_installer_buttons().
     """
     if st.session_state.get("location") != "online":
         return False
     found = find_tool_installers()
-    available = [p for p in TOOL_PLATFORMS if p[0] in found]
-    if not available:
+    links = [
+        f'<a href="{escape(found[key])}" title="{escape(help_text)}">{escape(label)}</a>'
+        for key, label, _, help_text in TOOL_PLATFORMS
+        if key in found
+    ]
+    if not links:
         return False
-    if heading:
-        st.markdown(heading)
-    if text:
-        st.markdown(text)
-    cols = st.columns(len(available))
-    for col, (key, label, _, help_text) in zip(cols, available):
-        with col:
-            st.link_button(
-                f"🧰 {label}",
-                found[key],
-                help=help_text,
-                type="secondary",
-                use_container_width=True,
-            )
+    st.markdown(
+        '<div style="opacity: 0.75; font-size: 0.9rem; margin-top: 0.25rem;">'
+        f"{escape(lead)} {' · '.join(links)}.</div>",
+        unsafe_allow_html=True,
+    )
     return True
