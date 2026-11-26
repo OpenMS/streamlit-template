@@ -3,7 +3,7 @@
 // TOPP tools) when the window closes.
 const fs = require("fs");
 const path = require("path");
-const { app, BrowserWindow, Menu, WebContentsView, dialog, nativeTheme, shell } = require("electron");
+const { app, BrowserWindow, Menu, WebContentsView, dialog, nativeTheme, screen, shell } = require("electron");
 const payload = require("./payload");
 const { checkForUpdate, noticeScript } = require("./update-check");
 const { integrateAppImage } = require("./linux-desktop");
@@ -114,24 +114,33 @@ async function start() {
 }
 
 // The loading screen, drawn in a view over the whole window, so the app page
-// can load and render underneath it.
+// can load and render underneath it. The view is made at least as large as the
+// largest display: the window clips it, so no edge of the page shows while the
+// window is resized, maximized or moved to a larger screen, whose size the
+// window reports a moment late on some platforms.
+const WINDOW_EVENTS = ["resize", "resized", "maximize", "unmaximize", "enter-full-screen", "leave-full-screen", "show"];
+
 async function showLoadingOverlay(win, options) {
   const view = new WebContentsView({ webPreferences: { contextIsolation: true, sandbox: true } });
   view.setBackgroundColor(loading.backgroundColor(nativeTheme.shouldUseDarkColors));
   const fit = () => {
     const [width, height] = win.getContentSize();
-    view.setBounds({ x: 0, y: 0, width, height });
+    view.setBounds(loading.overlayBounds([width, height], screen.getAllDisplays().map((d) => d.size)));
+    view.webContents.executeJavaScript(loading.windowSizeScript([width, height]), true).catch(() => {});
   };
   fit();
-  win.on("resize", fit);
+  for (const event of WINDOW_EVENTS) win.on(event, fit);
+  screen.on("display-metrics-changed", fit);
   view.fit = fit;
   win.contentView.addChildView(view);
   await view.webContents.loadURL(loading.loadingPageUrl(options));
+  fit();
   return view;
 }
 
 function removeOverlay(win, view) {
-  win.off("resize", view.fit);
+  for (const event of WINDOW_EVENTS) win.off(event, view.fit);
+  screen.off("display-metrics-changed", view.fit);
   win.contentView.removeChildView(view);
   view.webContents.close();
 }
