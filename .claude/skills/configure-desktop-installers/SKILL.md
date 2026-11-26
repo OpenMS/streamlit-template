@@ -49,6 +49,12 @@ PY
 `settings.json` is switched to offline mode by the workflow itself (`Set to
 offline deployment` step); do not commit `online_deployment: false` for that.
 
+The loading screen shown while the app starts draws the OpenMS logo. An app
+shows its own mark instead with `loading_logo` in `settings.json`, SVG files
+relative to the app folder (one file serves both themes):
+`"loading_logo": {"light": "assets/<app>-mark-light.svg", "dark": "assets/<app>-mark-dark.svg"}`.
+Its `<line>` rays pulse outward and the dots at their tips ride along.
+
 ## Verify
 
 The full build runs on a PR that changes packaging (or carries the label

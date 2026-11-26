@@ -84,6 +84,7 @@ async function start() {
     title,
     version: settings.version,
     fontDir: path.join(payloadDir, "static", "fonts"),
+    logo: loading.readLogo(payloadDir, settings),
   });
 
   try {
