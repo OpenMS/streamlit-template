@@ -43,7 +43,7 @@ def rows(hits: list[dict], reference: str = "", track: str = ""):
         records.append({
             "match_id": index, "reference": reference, "track": hit.get("track", track),
             "start": int(hit["start"]), "end": int(hit["end"]), "sequence": str(hit.get("sequence", "")),
-            "count": int(hit.get("count") or 1),
+            "count": int(hit["count"]) if hit.get("count") is not None else 1,
             "mod_positions": [int(m["position"]) for m in mods],
             "mod_labels": [str(m.get("token", m.get("label", ""))) for m in mods],
         })

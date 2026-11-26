@@ -45,10 +45,12 @@ def test_fragment_table_component(tmp_path):
 def test_sequence_coverage_rows_and_component(tmp_path):
     hits = [{"sequence": "AUG", "start": 1, "end": 3, "count": 2,
              "modifications": [{"position": 2, "token": "m1A"}]},
-            {"sequence": "GCU", "start": 3, "end": 5}]
+            {"sequence": "GCU", "start": 3, "end": 5},
+            {"sequence": "UGG", "start": 2, "end": 4, "count": 0}]
     rows = sequence_coverage.rows(hits, reference="tRNA1", track="ctrl")
-    assert rows["count"].to_list() == [2, 1]
-    assert rows["mod_labels"].to_list() == [["m1A"], []]
+    # A missing count is one match; an explicit zero stays zero.
+    assert rows["count"].to_list() == [2, 1, 0]
+    assert rows["mod_labels"].to_list() == [["m1A"], [], []]
     coverage = _build("SequenceCoverage", rows,
                       sequence_coverage.settings("AUGGCUACGU", reference_name="tRNA1"), tmp_path, "cov")
     model = coverage.build_model({"reference": "tRNA1"})
