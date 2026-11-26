@@ -115,6 +115,47 @@ def folder_counts(folders: Dict[str, str], files: Sequence[str]) -> Dict[str, in
     return dict(sorted(counts.items(), key=lambda kv: natural_key(kv[0])))
 
 
+@dataclass
+class UploadPlacement:
+    """Where one file of an uploaded folder goes."""
+
+    path: str  # below the upload's folder: a file name, or <x.d>/<path in it>
+    item: str  # the input it belongs to: the file, or its Bruker .d folder
+    folder: str  # the input folder (label) of that item
+
+
+def place_folder_upload(
+    relative_path: str, file_types: Sequence[str]
+) -> Optional[UploadPlacement]:
+    """Where a file of a folder picked in the browser goes, or None to leave it out.
+
+    The browser names each file by its path in the picked folder
+    (``study/ctrl/a.mzML``). The file lands flat in the upload's folder,
+    as every other upload does, and its subfolder below the picked folder
+    becomes its input folder (``ctrl``); a file directly in the picked
+    folder takes the picked folder's name. With ``"d"`` among the file
+    types, a file inside a Bruker ``.d`` folder keeps its place in that
+    folder (``x.d/analysis.tdf``), and the ``.d`` folder is the input.
+    Paths that climb out (``..``) and files of other types are left out.
+    """
+    parts = [p for p in re.split(r"[\\/]", str(relative_path)) if p not in ("", ".")]
+    if not parts or ".." in parts:
+        return None
+    types = [str(t).lower() for t in file_types]
+
+    def label(dirs: List[str]) -> str:
+        return "/".join(dirs[1:]) if len(dirs) > 1 else (dirs[0] if dirs else "")
+
+    if "d" in types:
+        for i, part in enumerate(parts[:-1]):
+            if part.lower().endswith(".d") and len(part) > 2:
+                return UploadPlacement("/".join(parts[i:]), part, label(parts[:i]))
+    name = parts[-1]
+    if not any(name.lower().endswith(f".{t}") for t in types if t != "d"):
+        return None
+    return UploadPlacement(name, name, label(parts[:-1]))
+
+
 def natural_key(text: str):
     return [int(t) if t.isdigit() else t.lower() for t in re.split(r"(\d+)", str(text))]
 
