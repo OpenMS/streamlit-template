@@ -42,9 +42,12 @@ longer change:
 - **docker compose** hands them over by itself: the one-off `own-workspaces`
   service runs before the app, changes the owner of every file not owned by
   uid 1000 and then of the top folder, and on later starts only checks that
-  folder.
+  folder. A compose file of your own that starts the app without this service
+  (one that runs several apps, for example) needs it added, or the command
+  below run once for each app's volume.
 - **docker run** with a named volume: hand it over once before starting the
-  new image, with the volume's name in place of `workspaces`:
+  new image, with the volume's name in place of `workspaces` and your app's
+  image in place of `openms_streamlit_template`:
 
   ```
   docker run --rm -u 0 -v workspaces:/workspaces-streamlit-template \

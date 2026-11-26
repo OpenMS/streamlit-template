@@ -52,7 +52,8 @@ def test_entrypoint_needs_no_root():
     assert "/var/run/redis.pid" not in ENTRYPOINT
     assert 'NGINX_CONF_DIR="/etc/nginx"' not in ENTRYPOINT
     # nginx: no write to /var/log/nginx or /var/lib/nginx.
-    assert "nginx -e stderr" in ENTRYPOINT
+    assert 'NGINX_EARLY_LOG="-e stderr"' in ENTRYPOINT
+    assert "access_log off;" in ENTRYPOINT
     for temp in ("client_body", "proxy", "fastcgi", "uwsgi", "scgi"):
         assert f"{temp}_temp_path $NGINX_CONF_DIR/" in ENTRYPOINT
     assert "python clean-up-workspaces.py" in ENTRYPOINT

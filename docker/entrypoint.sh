@@ -212,7 +212,9 @@ error_log stderr;
 
 http {
     client_max_body_size 0;
-    access_log /dev/stdout;
+    # Off: the standard output cannot always be opened by path by an unprivileged user, and
+    # Streamlit logs the requests that matter.
+    access_log off;
     # Writable by the container's user, not nginx's default /var/lib/nginx.
     client_body_temp_path $NGINX_CONF_DIR/client_body;
     proxy_temp_path $NGINX_CONF_DIR/proxy;
@@ -274,9 +276,15 @@ NGINX_EOF
 
     sleep 2
     echo "Starting nginx load balancer on port 8501..."
-    # -e: the log nginx writes before it reads the configuration, which by
-    # default is /var/log/nginx/error.log, not writable without root.
-    exec /usr/sbin/nginx -e stderr -c "$NGINX_CONF_FILE" -g "daemon off;"
+    # -e (nginx 1.19.5 and later): the log nginx writes before it reads the
+    # configuration, by default /var/log/nginx/error.log, which needs root.
+    # Older nginx only warns that it cannot open that file, then goes on.
+    NGINX_EARLY_LOG=""
+    if /usr/sbin/nginx -h 2>&1 | grep -q -- "-e filename"; then
+        NGINX_EARLY_LOG="-e stderr"
+    fi
+    # shellcheck disable=SC2086
+    exec /usr/sbin/nginx $NGINX_EARLY_LOG -c "$NGINX_CONF_FILE" -g "daemon off;"
 else
     echo "Starting Streamlit app (cwd=$(pwd), uid=$(id -u))..."
     exec streamlit run app.py --server.address 0.0.0.0
