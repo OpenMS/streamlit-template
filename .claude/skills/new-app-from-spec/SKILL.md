@@ -99,7 +99,7 @@ Then the template's tests of the example app. They import `src.Workflow`'s
 `tests/test_workflow_import.py`, `tests/test_guide.py`,
 `tests/test_workflow_min_files.py`, `tests/test_workflow_recommend_preset.py`,
 the example-page cases of `tests/test_captcha_pages.py`, and the page tests of
-`test_gui.py`. Find the rest with `grep -ln "src.Workflow\|content/" tests/`.
+`test_gui.py`. Find the rest with `grep -rln "src.Workflow\|content/" tests/`.
 Rewrite a test for the app's own workflow when it checks something the app
 also does (a minimum of input files, a recommended preset); delete it
 otherwise. Add each deleted test to `sync.app_owned` in `app.yaml`, so a

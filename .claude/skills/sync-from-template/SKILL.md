@@ -76,6 +76,14 @@ Recurring hot spots:
 | `tests/*` testing the example app (imports `src.Workflow`'s `Workflow`, opens an example page) | an app that replaced the example deleted these when it was set up (`new-app-from-spec` step 6): delete the new or changed one too and add it to `sync.app_owned`, or rewrite it for the app's workflow |
 | `.claude/skills/*` | always the template's; an app-specific skill gets its own directory name |
 
+A sync without any conflict can still bring a new test of the example app,
+since a file new to the app merges cleanly. So after every sync, an app that
+replaced the example lists the tests the sync added or changed,
+`git diff --name-only --diff-filter=AM HEAD^1 HEAD -- tests/ test_gui.py`,
+greps them for `src.Workflow` and `content/`, and deletes each one that tests
+the example (adding it to `sync.app_owned`) or rewrites it for the app's
+workflow, in the sync's PR.
+
 **New template features** the app should adopt (a new storage tier, a new
 settings block) are part of the sync, not a follow-up: list them in the PR
 body with what the app has to set.
