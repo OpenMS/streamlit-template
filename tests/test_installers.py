@@ -102,3 +102,9 @@ def test_no_tool_line_without_tools_or_offline(release, monkeypatch):
     fake = _fake_st(monkeypatch, "online")
     assert not installers.render_tool_installer_line()
     assert fake.html == []
+
+
+def test_no_download_box_offline(release, monkeypatch):
+    fake = _fake_st(monkeypatch, "local")
+    assert not installers.render_download_box()
+    assert fake.html == []

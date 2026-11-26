@@ -192,3 +192,88 @@ def render_tool_installer_line(
         unsafe_allow_html=True,
     )
     return True
+
+
+def _accent() -> tuple[str, str]:
+    """The theme's primary colour for the active light or dark theme, and a
+    text colour that reads on it."""
+    try:
+        dark = st.context.theme.type == "dark"
+    except Exception:
+        dark = False
+    try:
+        colour = st.get_option(f"theme.{'dark' if dark else 'light'}.primaryColor")
+    except Exception:
+        colour = None
+    colour = colour or st.get_option("theme.primaryColor") or ("#7891f1" if dark else "#1436b8")
+    # The dark theme's primary colour is light: white on it is hard to read.
+    return colour, ("#0e1117" if dark else "#ffffff")
+
+
+def render_download_box(
+    title: str = "",
+    text: str = "Run the app on your own computer: the same analysis and results, "
+    "on files that stay on your disk, with no upload.",
+    key: str = "openms_downloads",
+) -> bool:
+    """A framed download box: a title, one line on what the desktop app is,
+    a button per platform (render_installer_buttons()) and the line of the
+    command line tools (render_tool_installer_line()), in the theme's
+    primary colour. Renders nothing and returns False when there is nothing
+    to download (offline, or a release without installers).
+    """
+    if not installers_available():
+        return False
+    name = st.session_state.get("settings", {}).get("app-name", "the app")
+    title = title or f"⬇️ Download {name}"
+    accent, on_accent = _accent()
+    with st.container(key=key):
+        st.markdown(
+            f'<div class="openms-downloads-title">{escape(title)}</div>'
+            f'<div class="openms-downloads-text">{escape(text)}</div>',
+            unsafe_allow_html=True,
+        )
+        render_installer_buttons()
+        render_tool_installer_line()
+    buttons = (
+        f'.st-key-{key} [data-testid^="stBaseLinkButton"], '
+        f'.st-key-{key} [data-testid^="stBaseButton"]'
+    )
+    labels = (
+        f'.st-key-{key} [data-testid^="stBaseLinkButton"] p, '
+        f'.st-key-{key} [data-testid^="stBaseButton"] p'
+    )
+    st.markdown(
+        f"""
+        <style>
+        .st-key-{key} {{
+            border: 2px solid {accent} !important;
+            border-radius: 12px !important;
+            padding: 1.25rem 1.5rem !important;
+            margin: 0 0 1.5rem 0 !important;
+            background: linear-gradient(135deg, rgba(128, 128, 128, 0.04) 0%,
+                                        rgba(128, 128, 128, 0.10) 100%) !important;
+            text-align: center !important;
+        }}
+        .st-key-{key} [data-testid="stMarkdownContainer"],
+        .st-key-{key} [data-testid="stCaptionContainer"] {{ text-align: center; }}
+        .openms-downloads-title {{
+            color: {accent};
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 0.25rem;
+        }}
+        .openms-downloads-text {{ opacity: 0.85; margin-bottom: 0.75rem; }}
+        {buttons} {{
+            background: {accent} !important;
+            border-color: {accent} !important;
+            color: {on_accent} !important;
+            font-weight: 600 !important;
+            min-height: 3rem !important;
+        }}
+        {labels} {{ color: {on_accent} !important; font-size: 1.05rem !important; }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    return True
