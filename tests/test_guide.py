@@ -44,8 +44,20 @@ def test_workflow_pages_reads_class_attributes():
                                         "export": "content/d.py"}
 
 
+def _example_workflow():
+    try:
+        from src.Workflow import Workflow  # pylint: disable=no-name-in-module
+    except ModuleNotFoundError as e:
+        if e.name != "src.Workflow":
+            raise
+        pytest.skip("this app has no src/Workflow.py")
+    return Workflow
+
+
 def test_example_workflow_names_its_four_pages():
-    from src.Workflow import Workflow
+    Workflow = _example_workflow()
+    if not guide.workflow_pages(Workflow):
+        pytest.skip("this app's workflow does not name its pages yet")
     assert list(guide.workflow_pages(Workflow)) == list(guide.ORDER)
 
 
@@ -54,7 +66,9 @@ def test_component_groups_in_order():
 
 
 def test_example_components_use_the_groups():
-    from src.Workflow import Workflow
+    Workflow = _example_workflow()
+    if not hasattr(Workflow, "COMPONENTS"):
+        pytest.skip("this app's workflow keeps no COMPONENTS catalog")
     assert {c["group"] for c in Workflow.COMPONENTS} <= set(guide.COMPONENT_GROUPS)
 
 

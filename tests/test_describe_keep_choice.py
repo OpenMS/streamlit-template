@@ -7,6 +7,10 @@ from unittest.mock import MagicMock
 def test_keep_choice_restores_last_value(monkeypatch):
     st = MagicMock()
     st.session_state = {}
+    # Modules other code already holds (src.Workflow, an earlier AppTest's
+    # src.workflow) must stay the ones in sys.modules afterwards; dropping
+    # them all made a later test patch a ParameterManager the app no longer used.
+    before = {m: sys.modules[m] for m in sys.modules if m.startswith("src.workflow")}
     monkeypatch.setitem(sys.modules, "streamlit", st)
     sys.modules.pop("src.workflow.describe_ui", None)
     import importlib
@@ -24,6 +28,7 @@ def test_keep_choice_restores_last_value(monkeypatch):
         describe_ui._keep_choice("w")
         assert st.session_state["w"] == "b"
     finally:
-        sys.modules.pop("src.workflow.describe_ui", None)
         for name in [m for m in sys.modules if m.startswith("src.workflow")]:
-            sys.modules.pop(name, None)
+            if name not in before:
+                del sys.modules[name]
+        sys.modules.update(before)

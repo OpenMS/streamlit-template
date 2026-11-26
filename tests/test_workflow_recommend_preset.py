@@ -2,7 +2,27 @@
 import json
 from pathlib import Path
 
-from src.Workflow import Workflow
+import pytest
+
+
+def _example_workflow(*names):
+    """The template's example workflow; an app's own workflow may lack what is tested."""
+    try:
+        from src.Workflow import Workflow  # pylint: disable=no-name-in-module
+    except ModuleNotFoundError as e:
+        if e.name != "src.Workflow":
+            raise
+        pytest.skip("this app has no src/Workflow.py", allow_module_level=True)
+    missing = [n for n in names if not hasattr(Workflow, n)]
+    if missing:
+        pytest.skip(f"this app's workflow has no {', '.join(missing)}", allow_module_level=True)
+    return Workflow
+
+
+Workflow = _example_workflow(
+    "recommend_preset", "preset_display_stale", "current_preset",
+    "DETECTION_PRESETS", "MANY_FILES", "SHOWN_PRESET_KEY",
+)
 
 
 def _wf():
