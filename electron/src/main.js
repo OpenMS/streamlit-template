@@ -92,6 +92,10 @@ async function start() {
     const env = payload.appEnvironment(payloadDir, workspacesDir);
     server = payload.startStreamlit({ payload: payloadDir, port, env, logStream });
     await payload.waitForServer(server, port);
+    // Streamlit exiting from here on (crash, killed), also while the first page draws, leaves a dead page; say so.
+    server.once("exit", (code) => {
+      if (!quitting) failed(`The app stopped unexpectedly (exit code ${code}).`, logFile);
+    });
     const appUrl = `http://127.0.0.1:${port}/`;
     keepLinksInsideApp(mainWindow, appUrl);
     // The app loads behind the animation, which stays until the page has
@@ -101,10 +105,6 @@ async function start() {
     await finishLoadingAnimation(overlay);
     removeOverlay(mainWindow, overlay);
     if (SMOKE_TEST) smokeTestPassesOnceWorkspaceExists(workspacesDir, logFile);
-    // Streamlit exiting later (crash, killed) leaves a dead page; say so.
-    server.once("exit", (code) => {
-      if (!quitting) failed(`The app stopped unexpectedly (exit code ${code}).`, logFile);
-    });
   } catch (err) {
     failed(err.message, logFile);
     return;
