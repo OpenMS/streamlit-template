@@ -195,6 +195,7 @@
             "installer_version": {"type": "boolean", "description": "Installer files carry the version from settings.json: <name>-<version>-Setup.exe. Default: false."},
             "topp_tools": {"type": "array", "items": {"type": "string", "pattern": "^[A-Za-z0-9_]+$"}, "minItems": 1, "uniqueItems": true, "description": "TOPP tools bundled in the installers. Default: the workflow's TOPP_TOOLS."},
             "openms": {"type": "string", "pattern": "^\\S+$", "description": "OpenMS the installers bundle: a release such as 3.6.0, or [owner/repo@]ref to build from source. Default: the workflow's, which follows each OpenMS release; set it only for a branch."},
+            "same_openms_as_images": {"type": "boolean", "description": "False when the desktop app deliberately bundles another OpenMS than the full Docker images build (a nightly commit, say), so the check that they match is skipped. Default true."},
             "synopsis": {"type": "string", "description": "One line describing the app on the Linux AppImage."},
             "e2e_scenarios": {"type": "array", "items": {"type": "string", "pattern": "^\\S+$"}, "uniqueItems": true, "description": "Scenario modules electron/scripts/e2e.js runs in the installed app, as paths in the repository."},
             "stage_script": {"type": "string", "pattern": "^\\S+$", "description": "App-owned script run once the app's Python is staged, as `bash <script> <payload python> <payload dir>` on every platform."}

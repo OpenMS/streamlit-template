@@ -263,3 +263,12 @@ def test_desktop_and_full_image_build_the_same_openms(tmp_path):
     )
     s["deploy"] = {"desktop_app": {"openms": "t0mdavid-m/OpenMS@FDmerge"}}
     assert app_spec.openms_mismatches(s, root) == []
+
+
+def test_desktop_openms_may_differ_from_images_when_declared(tmp_path):
+    (tmp_path / "Dockerfile").write_text("ARG OPENMS_BRANCH=v3.6.0\n", encoding="utf-8")
+    s = {"deploy": {"desktop_app": {"openms": "OpenMS/OpenMS@01540e6"}}}
+    assert app_spec.openms_mismatches(s, tmp_path)
+    s["deploy"]["desktop_app"]["same_openms_as_images"] = False
+    assert app_spec.openms_mismatches(s, tmp_path) == []
+    assert not any("desktop_app" in e for e in app_spec.schema_errors(s))

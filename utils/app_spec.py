@@ -174,7 +174,8 @@ def openms_mismatches(spec: dict, root: Path | str = ".") -> list[str]:
     The desktop build (and the installers of its command line tools) bundles
     ``deploy.desktop_app.openms``; the full Docker images build their
     Dockerfile's ``OPENMS_REPO``/``OPENMS_BRANCH``. Both must name the same
-    source, a release counting the same as its tag (3.6.0 = v3.6.0).
+    source, a release counting the same as its tag (3.6.0 = v3.6.0), unless
+    ``deploy.desktop_app.same_openms_as_images`` is false.
     """
     root = Path(root)
     images = spec.get("deploy", {}).get("images")
@@ -182,6 +183,8 @@ def openms_mismatches(spec: dict, root: Path | str = ".") -> list[str]:
         return []
     desktop = _desktop_openms(spec, root)
     if not desktop or spec.get("deploy", {}).get("desktop") == []:
+        return []
+    if spec.get("deploy", {}).get("desktop_app", {}).get("same_openms_as_images") is False:
         return []
     repo, _, ref = desktop.rpartition("@")
     want = _openms_source(repo or "OpenMS/OpenMS", ref)
