@@ -211,3 +211,19 @@ test("loading page URL is a data URL the window can load", () => {
   assert.ok(url.startsWith("data:text/html;charset=utf-8,"));
   assert.match(decodeURIComponent(url), /<h1>A<\/h1>/);
 });
+
+test("app counts as ready only once Streamlit has drawn the page", () => {
+  const ready = (doc) => new Function("document", `return ${loading.APP_READY_SCRIPT};`)(doc);
+  const doc = (state, content) => ({
+    querySelector: (sel) => {
+      if (sel === '[data-testid="stApp"]') {
+        return state === null ? null : { getAttribute: () => state };
+      }
+      return content ? {} : null;
+    },
+  });
+  assert.equal(ready(doc(null, false)), false);
+  assert.equal(ready(doc("running", true)), false);
+  assert.equal(ready(doc("notRunning", false)), false);
+  assert.equal(ready(doc("notRunning", true)), true);
+});

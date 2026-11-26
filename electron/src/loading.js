@@ -1,7 +1,9 @@
 // The screen shown while the bundled Streamlit server starts: the OpenMS logo
 // assembling itself, its spectrum bars rising from the baseline and then
-// moving like a live acquisition until the app is ready. finishScript() plays
-// the bars back into the logo and fades out before the app page replaces it.
+// moving like a live acquisition until the app is ready. The screen is an
+// overlay over the window: the app page loads beneath it, and only once
+// APP_READY_SCRIPT says Streamlit has drawn the page does FINISH_SCRIPT play
+// the bars back into the logo and fade the overlay out.
 const fs = require("fs");
 const path = require("path");
 
@@ -113,6 +115,8 @@ ${fonts}
 html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);overflow:hidden;
   font-family:Raleway,system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-user-select:none;user-select:none;cursor:default}
 body{display:flex;align-items:center;justify-content:center}
+html,body{transition:background-color .45s ease .2s}
+html.done,body.done{background-color:transparent}
 main{display:flex;flex-direction:column;align-items:center;width:min(640px,72vw);transition:opacity .45s ease,transform .45s ease}
 svg{width:100%;height:auto;overflow:visible}
 .glyph{fill:var(--fg);opacity:0;animation:glyph-in .7s cubic-bezier(.2,.8,.2,1) both;animation-delay:calc(.45s + var(--g) * 70ms)}
@@ -193,8 +197,9 @@ function update() {
 update();
 setInterval(update, 500);
 window.__finishLoading = () => new Promise((resolve) => {
+  document.documentElement.classList.add("done");
   document.body.classList.add("done");
-  setTimeout(resolve, 650);
+  setTimeout(resolve, 700);
 });
 </script>
 </body></html>`;
@@ -204,13 +209,21 @@ function loadingPageUrl(options) {
   return "data:text/html;charset=utf-8," + encodeURIComponent(loadingPage(options));
 }
 
-// Run in the loading page before the app replaces it; resolves once the bars
-// are back in the logo and the page has faded out.
+// Run in the loading screen once the app page is ready behind it; resolves
+// once the bars are back in the logo and the screen has faded out.
 const FINISH_SCRIPT = "window.__finishLoading ? window.__finishLoading() : null";
+
+// Run in the app page: true once Streamlit has finished running the page
+// script and the main area holds at least one element.
+const APP_READY_SCRIPT = `(() => {
+  const root = document.querySelector('[data-testid="stApp"]');
+  if (!root || root.getAttribute("data-test-script-state") !== "notRunning") return false;
+  return !!document.querySelector('[data-testid="stMain"] [data-testid="stElementContainer"]');
+})()`;
 
 // The window's own background, so no white frame flashes between the pages.
 function backgroundColor(dark) {
   return dark ? "#1a1718" : "#eef1fd";
 }
 
-module.exports = { loadingPage, loadingPageUrl, FINISH_SCRIPT, backgroundColor, BARS, GLYPHS };
+module.exports = { loadingPage, loadingPageUrl, FINISH_SCRIPT, APP_READY_SCRIPT, backgroundColor, BARS, GLYPHS };
