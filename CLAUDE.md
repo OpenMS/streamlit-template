@@ -111,7 +111,7 @@ CI uses **Python 3.11** for all Linux test/lint jobs, the same as the Docker ima
 
 - `test.py` — unittest, downloads an mzML from GitHub with **no skip guard** (fails offline).
 - `test_gui.py` — `streamlit.testing.v1.AppTest` smoke tests launching every page. `content/quickstart.py` is deliberately excluded (raises `StreamlitPageNotFoundError`).
-- `tests/*.py` — unit tests. A test of the example app (`src/Workflow.py`'s `Workflow`, its pages) calls `skip_without_example()` or `@needs_example(...)` / `@needs_pages(...)` from `tests/_example_app.py`, or skips when `src.Workflow` lacks the attributes it tests, so it runs in the template and is skipped in an app that replaced the example, which gets the test through the sync. Redis is never required: queue tests use `pytest.importorskip("fakeredis")` at module level and inject `FakeStrictRedis`. TOPP binaries are never required either — `run_topp` tests mock `run_command` and assert on the *built command list*.
+- `tests/*.py` — unit tests. Redis is never required: queue tests use `pytest.importorskip("fakeredis")` at module level and inject `FakeStrictRedis`. TOPP binaries are never required either — `run_topp` tests mock `run_command` and assert on the *built command list*.
 - Several tests swap `sys.modules['streamlit']` for a `MagicMock`, import the module under test, then purge `src.workflow.*` from `sys.modules` so `AppTest` still gets the real package. **Test ordering is load-bearing** — adding `pytest-xdist` or random ordering will break this.
 
 ## Architecture
