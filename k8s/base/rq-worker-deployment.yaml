@@ -118,7 +118,9 @@ spec:
         # owner says the hand-over is done and later starts only stat it; a
         # stat that does not answer (storage outage) skips the step rather
         # than holding the pod in Init. Only this container keeps root, with
-        # the capabilities to change owners and nothing else.
+        # the capabilities to change owners and nothing else. Both init
+        # containers set requests == limits, so the rq-worker pod keeps
+        # Guaranteed QoS.
         - name: own-workspaces
           image: openms-streamlit
           imagePullPolicy: Always
@@ -129,13 +131,23 @@ spec:
             capabilities:
               drop: ["ALL"]
               add: ["CHOWN", "DAC_OVERRIDE", "FOWNER"]
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "100m"
+              memory: "256Mi"
           command: ["/bin/sh", "-c"]
           args:
             - |
               root=/workspaces-streamlit-template
               owner=$(timeout 20 stat -c %u "$root") || exit 0
               [ "$owner" = 1000 ] && exit 0
-              find "$root" -mindepth 1 ! -uid 1000 -exec chown -h 1000:1000 {} +
+              # A walk that fails or stalls exits non-zero with the top folder
+              # still root's, so the container restarts and goes on with what
+              # is left; the old pods keep serving meanwhile.
+              timeout -k 10 1800 find "$root" -mindepth 1 ! -uid 1000 -exec chown -h 1000:1000 {} + || exit 1
               chown 1000:1000 "$root"
           volumeMounts:
             - name: workspaces
@@ -156,6 +168,13 @@ spec:
               type: RuntimeDefault
             capabilities:
               drop: ["ALL"]
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "100m"
+              memory: "256Mi"
           command: ["/bin/sh", "-c"]
           args:
             - jq -s '.[0] * .[1]' /app/settings.json /app/settings-overrides.json > /settings/settings.json

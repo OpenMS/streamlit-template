@@ -105,3 +105,23 @@ def test_settings_need_no_write_access_to_app(name, pod):
         assert mounts["/app/settings.json"]["name"] == "settings", name
     volumes = {v["name"]: v for v in pod["volumes"]}
     assert "emptyDir" in volumes["settings"], name
+
+
+@pytest.mark.parametrize("name,pod", list(_pods()), ids=[n for n, _ in _pods()])
+def test_init_containers_keep_guaranteed_qos(name, pod):
+    """Guaranteed QoS needs requests == limits on init containers too."""
+    for container in pod.get("initContainers", []):
+        if container["name"] not in ("own-workspaces", "settings"):
+            continue
+        resources = container.get("resources", {})
+        assert resources.get("requests"), (name, container["name"])
+        assert resources["requests"] == resources.get("limits"), (name, container["name"])
+
+
+def test_hand_over_marks_done_only_after_the_walk():
+    for path in sorted(BASE.glob("*-deployment.yaml")):
+        script = path.read_text(encoding="utf-8")
+        walk = script.index("! -uid 1000 -exec chown")
+        line = script[walk:script.index("\n", walk)]
+        assert line.rstrip().endswith("|| exit 1"), path.name
+        assert script.index('chown 1000:1000 "$root"') > walk, path.name
