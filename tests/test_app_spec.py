@@ -238,3 +238,28 @@ def test_desktop_app_values(spec, tmp_path):
         (root / path).parent.mkdir(parents=True, exist_ok=True)
         (root / path).write_text("")
     assert not any("desktop_app" in e for e in app_spec.consistency_errors(s, root))
+
+
+def test_desktop_and_full_image_build_the_same_openms(tmp_path):
+    root = _app_tree(tmp_path)
+    dockerfile = root / "Dockerfile"
+    dockerfile.write_text(
+        "ARG OPENMS_REPO=https://github.com/OpenMS/OpenMS.git\nARG OPENMS_BRANCH=v3.6.0\n"
+    )
+    s = _spec()
+    for openms in ("3.6.0", "OpenMS/OpenMS@release/3.6.0", "v3.6.0"):
+        s["deploy"] = {"desktop_app": {"openms": openms}}
+        assert app_spec.openms_mismatches(s, root) == [], openms
+    s["deploy"] = {"desktop_app": {"openms": "t0mdavid-m/OpenMS@FDmerge"}}
+    assert any("Dockerfile builds OpenMS/OpenMS@v3.6.0" in e
+               for e in app_spec.consistency_errors(s, root))
+    # An app without full images or without a desktop build is not asked.
+    s["deploy"]["images"] = ["simple"]
+    assert app_spec.openms_mismatches(s, root) == []
+    s["deploy"] = {"desktop": [], "desktop_app": {"openms": "t0mdavid-m/OpenMS@FDmerge"}}
+    assert app_spec.openms_mismatches(s, root) == []
+    dockerfile.write_text(
+        "ARG OPENMS_REPO=https://github.com/t0mdavid-m/OpenMS.git\nARG OPENMS_BRANCH=FDmerge\n"
+    )
+    s["deploy"] = {"desktop_app": {"openms": "t0mdavid-m/OpenMS@FDmerge"}}
+    assert app_spec.openms_mismatches(s, root) == []
