@@ -27,7 +27,7 @@ optional and falls back to the workflow's default:
 | `name` | installer and install-folder name, no spaces; also `appId de.openms.<name>`. Changing it on a released app gives users a second install. |
 | `installer_version` | `true` names the installers `<name>-<version>-Setup.exe` and so on, version from `settings.json` |
 | `topp_tools` | every TOPP tool the app's `execution()` calls, plus `FileConverter` if `raw` input is accepted. A tool missing here works in Docker and fails only on the desktop. |
-| `openms` | the OpenMS to bundle: a release (`"3.6.0"`) or `owner/repo@ref`; see `upgrade-openms` |
+| `openms` | the OpenMS to bundle: a release (`"3.6.0"`) or `owner/repo@ref`; see `upgrade-openms`. It must name what the full Dockerfiles build (`OPENMS_REPO`/`OPENMS_BRANCH`), so the desktop app, its command line tools and the image run one OpenMS; `python -m utils.app_spec` checks it |
 | `synopsis` | one line for the Linux AppImage |
 | `e2e_scenarios` | the app's scenario files for `e2e.js --scenario` (repository paths) |
 | `stage_script` | a bash script run as `bash <script> <python> electron/payload` once the app's requirements are installed in the embedded Python: extra wheels, import checks, package swaps. It runs on all three platforms (Git Bash on Windows); tell them apart with `uname -s` |
@@ -49,6 +49,12 @@ PY
 `settings.json` is switched to offline mode by the workflow itself (`Set to
 offline deployment` step); do not commit `online_deployment: false` for that.
 
+The loading screen shown while the app starts draws the OpenMS logo. An app
+shows its own mark instead with `loading_logo` in `settings.json`, SVG files
+relative to the app folder (one file serves both themes):
+`"loading_logo": {"light": "assets/<app>-mark-light.svg", "dark": "assets/<app>-mark-dark.svg"}`.
+Its `<line>` rays pulse outward and the dots at their tips ride along.
+
 ## Verify
 
 The full build runs on a PR that changes packaging (or carries the label
@@ -58,6 +64,14 @@ and the end-to-end test with the app's scenarios, and uploads screenshots as an
 artifact; a failure prints the app's and the workflow's logs. A failing smoke
 test names the tool; check `topp_tools` first. On a published release the
 installers are attached, then the release's container images are built.
+
+The same run packages the OpenMS it bundled as installers of the command line
+tools alone (job `tools`, `electron/scripts/package-tools.sh`), named
+`<APP_NAME>-command-line-tools-<platform>.exe|.pkg|.deb`; `tools-test`
+installs each and runs every `TOPP_TOOLS` entry. A release gets them beside
+the app's installers, and `installers.find_tool_installers()` offers them on a
+Quick Start page. The macOS `.pkg` of a branch build carries only an ad-hoc
+signature, so Gatekeeper asks before opening it.
 
 ## Checklist
 

@@ -65,7 +65,8 @@ their zoom there; check the signature before passing it. A preset may ship
 ``defaults`` of its own, which come back when the user removes theirs.
 
 ``view_bar(link=True)`` adds 🔗: a link that opens the page on the current
-view with each experiment's dataset, zoom and selection. A page with dataset
+view with each experiment's dataset, zoom and selection; the local app (the
+desktop app among them) is not hosted and leaves it out. A page with dataset
 selectors of its own sets them from ``linked_datasets(key)`` before the bar.
 
 ``layout_presets`` is the earlier, simpler selector of presets.

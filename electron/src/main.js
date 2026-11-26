@@ -3,11 +3,12 @@
 // TOPP tools) when the window closes.
 const fs = require("fs");
 const path = require("path");
-const { app, BrowserWindow, Menu, dialog, shell } = require("electron");
+const { app, BrowserWindow, Menu, WebContentsView, dialog, nativeTheme, screen, shell } = require("electron");
 const payload = require("./payload");
 const { checkForUpdate, noticeScript } = require("./update-check");
 const { integrateAppImage } = require("./linux-desktop");
 const license = require("./license");
+const loading = require("./loading");
 
 // Set by the CI smoke test: exit 0 once the app page has loaded, 1 on failure.
 const SMOKE_TEST = process.env.OPENMS_APP_SMOKE_TEST === "1";
@@ -33,12 +34,6 @@ if (!app.requestSingleInstanceLock()) {
   });
   app.whenReady().then(start);
 }
-
-const LOADING_PAGE =
-  "data:text/html;charset=utf-8," +
-  encodeURIComponent(`<!doctype html><html><body style="margin:0;height:100vh;display:flex;
-align-items:center;justify-content:center;font-family:sans-serif;color:#29379b">
-<div>Starting&hellip;</div></body></html>`);
 
 async function start() {
   const payloadDir = payload.payloadDir(process.resourcesPath, app.isPackaged);
@@ -71,6 +66,7 @@ async function start() {
     height: 900,
     autoHideMenuBar: true,
     icon: iconFile,
+    backgroundColor: loading.backgroundColor(nativeTheme.shouldUseDarkColors),
     webPreferences: { contextIsolation: true, sandbox: true },
   });
   mainWindow.on("page-title-updated", (e) => e.preventDefault());
@@ -84,7 +80,12 @@ async function start() {
     quit(0);
     return;
   }
-  await mainWindow.loadURL(LOADING_PAGE);
+  const overlay = await showLoadingOverlay(mainWindow, {
+    title,
+    version: settings.version,
+    fontDir: path.join(payloadDir, "static", "fonts"),
+    logo: loading.readLogo(payloadDir, settings),
+  });
 
   try {
     const port = await payload.freePort();
@@ -92,20 +93,83 @@ async function start() {
     const env = payload.appEnvironment(payloadDir, workspacesDir);
     server = payload.startStreamlit({ payload: payloadDir, port, env, logStream });
     await payload.waitForServer(server, port);
-    const appUrl = `http://127.0.0.1:${port}/`;
-    keepLinksInsideApp(mainWindow, appUrl);
-    await mainWindow.loadURL(appUrl);
-    if (SMOKE_TEST) smokeTestPassesOnceWorkspaceExists(workspacesDir, logFile);
-    // Streamlit exiting later (crash, killed) leaves a dead page; say so.
+    // Streamlit exiting from here on (crash, killed), also while the first page draws, leaves a dead page; say so.
     server.once("exit", (code) => {
       if (!quitting) failed(`The app stopped unexpectedly (exit code ${code}).`, logFile);
     });
+    const appUrl = `http://127.0.0.1:${port}/`;
+    keepLinksInsideApp(mainWindow, appUrl);
+    // The app loads behind the animation, which stays until the page has
+    // drawn its content, so the logo never gives way to a blank page.
+    await mainWindow.loadURL(appUrl);
+    await waitForAppPage(mainWindow);
+    await finishLoadingAnimation(overlay);
+    removeOverlay(mainWindow, overlay);
+    if (SMOKE_TEST) smokeTestPassesOnceWorkspaceExists(workspacesDir, logFile);
   } catch (err) {
     failed(err.message, logFile);
     return;
   }
 
   if (!SMOKE_TEST && process.env.OPENMS_APP_NO_UPDATE_CHECK !== "1") notifyAboutUpdate(settings);
+}
+
+// The loading screen, drawn in a view over the whole window, so the app page
+// can load and render underneath it. The view is made at least as large as the
+// largest display: the window clips it, so no edge of the page shows while the
+// window is resized, maximized or moved to a larger screen, whose size the
+// window reports a moment late on some platforms.
+const WINDOW_EVENTS = ["resize", "resized", "maximize", "unmaximize", "enter-full-screen", "leave-full-screen", "show"];
+
+async function showLoadingOverlay(win, options) {
+  const view = new WebContentsView({ webPreferences: { contextIsolation: true, sandbox: true } });
+  view.setBackgroundColor(loading.backgroundColor(nativeTheme.shouldUseDarkColors));
+  const fit = () => {
+    const [width, height] = win.getContentSize();
+    view.setBounds(loading.overlayBounds([width, height], screen.getAllDisplays().map((d) => d.size)));
+    view.webContents.executeJavaScript(loading.windowSizeScript([width, height]), true).catch(() => {});
+  };
+  fit();
+  for (const event of WINDOW_EVENTS) win.on(event, fit);
+  screen.on("display-metrics-changed", fit);
+  view.fit = fit;
+  win.contentView.addChildView(view);
+  await view.webContents.loadURL(loading.loadingPageUrl(options));
+  fit();
+  return view;
+}
+
+function removeOverlay(win, view) {
+  for (const event of WINDOW_EVENTS) win.off(event, view.fit);
+  screen.off("display-metrics-changed", view.fit);
+  win.contentView.removeChildView(view);
+  view.webContents.close();
+}
+
+// Waits until Streamlit has run the page script and drawn something, and
+// stayed that way for a moment. Gives up after two minutes, so a page that
+// never settles (a fragment that keeps rerunning) is shown anyway.
+async function waitForAppPage(win, { timeout = 120000, quiet = 400 } = {}) {
+  const started = Date.now();
+  let readySince = null;
+  while (Date.now() - started < timeout) {
+    const ready = await win.webContents.executeJavaScript(loading.APP_READY_SCRIPT, true).catch(() => false);
+    if (ready) {
+      readySince = readySince || Date.now();
+      if (Date.now() - readySince >= quiet) return;
+    } else {
+      readySince = null;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 150));
+  }
+}
+
+// Lets the loading screen put its bars back into the logo and fade out,
+// revealing the page beneath it; never holds up the app for more than a second.
+function finishLoadingAnimation(view) {
+  view.setBackgroundColor("#00000000");
+  const finished = view.webContents.executeJavaScript(loading.FINISH_SCRIPT, true).catch(() => {});
+  return Promise.race([finished, new Promise((resolve) => setTimeout(resolve, 1000))]);
 }
 
 // The license agreement is shown in the app window on the first start, and

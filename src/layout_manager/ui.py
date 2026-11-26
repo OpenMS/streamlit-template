@@ -566,7 +566,7 @@ def view_bar(
         if clicked == _RESTORE_DEFAULTS and has_defaults(current_view):
             _apply_view_defaults(current_view, states, datasets, experiments)
         builtin = _defaults_actions(current_view, states, datasets, experiments)
-    if link:
+    if link and _hosted():
         builtin.append({"id": _COPY_LINK, "icon": "🔗",
                         "help": "Link to this view with what it shows now"})
 
@@ -616,7 +616,7 @@ def view_bar(
     elif states is not None and st.session_state.get(f"{key}_defaults_dialog") and current_view:
         _defaults_dialog(key, path, current_view, components, presets, default_layout,
                          states, datasets, experiments, dataset_label)
-    elif link and st.session_state.get(f"{key}_link_dialog") and current_view:
+    elif link and _hosted() and st.session_state.get(f"{key}_link_dialog") and current_view:
         _link_dialog(key, current_view, states, datasets, experiments)
     request = st.session_state.get(f"{key}_missing")
     if request and not st.session_state.get(open_key):
@@ -680,6 +680,17 @@ def linked_datasets(key: str) -> List[Optional[str]]:
     """
     opened = _pending_link(key)
     return [e.get("dataset") for e in opened["experiments"]] if opened else []
+
+
+def _hosted() -> bool:
+    """Whether the app is served to others, so a link to a view can be opened elsewhere.
+
+    The local app (``online_deployment: false``, the desktop app among them)
+    runs on the user's own computer: a link to it opens nowhere else, so
+    ``view_bar`` leaves out 🔗 there. A page drawn without ``page_setup()``
+    (no ``location``) keeps it.
+    """
+    return st.session_state.get("location") != "local"
 
 
 def _link_dialog(key: str, view: Dict[str, Any], states: Optional[Callable[[int], Any]],
