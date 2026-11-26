@@ -1171,6 +1171,26 @@ def test_view_bar_opens_and_gives_links(tmp_path):
         {"dataset": "run3", "selection": {"protein": "P9"}}]}
 
 
+def test_view_bar_has_no_link_in_the_local_app(tmp_path):
+    """The local (desktop) app is not hosted, so a link to its view opens nowhere else: no 🔗."""
+    at = AppTest.from_string(_LINK_APP.format(
+        tests=str(Path(__file__).parent), components=COMPONENTS, presets=VIEWS, default=DEFAULT))
+    at.session_state["path"] = str(tmp_path / "viewer.json")
+    at.session_state["location"] = "local"
+    at.run()
+    assert not at.exception
+    bar = json.dumps([e.proto.json_args for e in at.get("component_instance")], ensure_ascii=False)
+    assert "_copy_view_link" not in bar
+    at.session_state["vb_bar"] = {"action": "button", "id": "_copy_view_link", "nonce": 1}
+    at.run()
+    assert not at.exception and not at.code
+
+    at.session_state["location"] = "online"
+    at.run()
+    bar = json.dumps([e.proto.json_args for e in at.get("component_instance")], ensure_ascii=False)
+    assert "_copy_view_link" in bar
+
+
 def test_link_params_leaves_out_what_does_not_fit():
     from src.layout_manager.layout import MAX_LINK_LENGTH, link_params, read_link
 
