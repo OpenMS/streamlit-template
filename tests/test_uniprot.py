@@ -199,7 +199,9 @@ def test_requests_are_spaced(monkeypatch):
     monkeypatch.setattr(uniprot, "_sleep", waits.append)
     uniprot._last_request[0] = uniprot.time.monotonic()
     uniprot._wait_turn()
-    assert waits and 0 < waits[0] <= 0.2
+    # The wait is MIN_INTERVAL minus the time since the last request; on a
+    # coarse clock (Windows) that difference can be 0.2 plus rounding error
+    assert waits and 0 < waits[0] <= 0.2 + 1e-6
 
 
 def test_errors_leave_no_file(server, tmp_path, monkeypatch):
