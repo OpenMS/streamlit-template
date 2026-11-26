@@ -227,3 +227,29 @@ test("app counts as ready only once Streamlit has drawn the page", () => {
   assert.equal(ready(doc("notRunning", false)), false);
   assert.equal(ready(doc("notRunning", true)), true);
 });
+
+test("loading overlay is at least as large as the largest display", () => {
+  assert.deepEqual(loading.overlayBounds([1400, 900], [{ width: 1920, height: 1080 }, { width: 2560, height: 1440 }]), {
+    x: 0,
+    y: 0,
+    width: 2560,
+    height: 1440,
+  });
+  assert.deepEqual(loading.overlayBounds([3000, 900], [{ width: 2560, height: 1440 }]), {
+    x: 0,
+    y: 0,
+    width: 3000,
+    height: 1440,
+  });
+  assert.deepEqual(loading.overlayBounds([1400, 900]), { x: 0, y: 0, width: 1400, height: 900 });
+});
+
+test("loading content is centred in the visible window, not the oversized view", () => {
+  const html = loading.loadingPage({ title: "A", version: "1", fontDir: null });
+  assert.match(html, /var\(--window-width,100vw\)/);
+  assert.match(html, /var\(--window-height,100vh\)/);
+  const props = {};
+  const doc = { documentElement: { style: { setProperty: (k, v) => (props[k] = v) } } };
+  new Function("document", loading.windowSizeScript([1400.4, 899.6]))(doc);
+  assert.deepEqual(props, { "--window-width": "1400px", "--window-height": "900px" });
+});

@@ -112,9 +112,11 @@ function loadingPage({ title, version, fontDir }) {
 ${fonts}
 :root{color-scheme:light dark;--bg:#eef1fd;--fg:#231f20;--muted:#5d5759;--track:#d3dbf7}
 @media (prefers-color-scheme:dark){:root{--bg:#1a1718;--fg:#f9f8f9;--muted:#a8a0a2;--track:#3a3335}}
-html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);overflow:hidden;
+html,body{margin:0;background:var(--bg);color:var(--fg);overflow:hidden;
   font-family:Raleway,system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-user-select:none;user-select:none;cursor:default}
-body{display:flex;align-items:center;justify-content:center}
+html{height:100%}
+body{position:relative;width:var(--window-width,100vw);height:var(--window-height,100vh);
+  display:flex;align-items:center;justify-content:center}
 html,body{transition:background-color .45s ease .2s}
 html.done,body.done{background-color:transparent}
 main{display:flex;flex-direction:column;align-items:center;width:min(640px,72vw);transition:opacity .45s ease,transform .45s ease}
@@ -144,7 +146,7 @@ h1{margin:26px 0 0;font:600 26px/1.2 "Montserrat Alternates",Raleway,system-ui,s
 .progress::before{content:"";display:block;height:100%;width:40%;border-radius:3px;
   background:linear-gradient(90deg,#ffb401,#ff7501,#ff03cb,#b503ff,#3157e9);animation:slide 1.6s cubic-bezier(.6,0,.4,1) infinite}
 @keyframes slide{from{transform:translateX(-100%)}to{transform:translateX(250%)}}
-.version{position:fixed;bottom:18px;left:0;right:0;text-align:center;font-size:12px;color:var(--muted);
+.version{position:absolute;bottom:18px;left:0;right:0;text-align:center;font-size:12px;color:var(--muted);
   opacity:0;animation:fade-in .6s ease 1.5s forwards}
 @keyframes fade-in{to{opacity:1}}
 body.done .bar{animation:none;transform:scaleY(1);transition:transform .35s cubic-bezier(.25,1.4,.45,1)}
@@ -221,9 +223,42 @@ const APP_READY_SCRIPT = `(() => {
   return !!document.querySelector('[data-testid="stMain"] [data-testid="stElementContainer"]');
 })()`;
 
+// Where the loading view goes: at the window's top left corner, and at least
+// as large as the window and every display, so no edge of the app page shows
+// while the window grows faster than its size is reported. The window clips
+// the rest. Sizes are [width, height].
+function overlayBounds(windowSize, displaySizes = []) {
+  const [width, height] = windowSize;
+  return {
+    x: 0,
+    y: 0,
+    width: Math.max(width, ...displaySizes.map((d) => d.width)),
+    height: Math.max(height, ...displaySizes.map((d) => d.height)),
+  };
+}
+
+// Run in the loading screen: centres the logo in the part of the view the
+// window shows.
+function windowSizeScript([width, height]) {
+  const w = Math.max(0, Math.round(width));
+  const h = Math.max(0, Math.round(height));
+  return `(() => { const s = document.documentElement.style;
+    s.setProperty("--window-width", "${w}px"); s.setProperty("--window-height", "${h}px"); })()`;
+}
+
 // The window's own background, so no white frame flashes between the pages.
 function backgroundColor(dark) {
   return dark ? "#1a1718" : "#eef1fd";
 }
 
-module.exports = { loadingPage, loadingPageUrl, FINISH_SCRIPT, APP_READY_SCRIPT, backgroundColor, BARS, GLYPHS };
+module.exports = {
+  loadingPage,
+  loadingPageUrl,
+  overlayBounds,
+  windowSizeScript,
+  FINISH_SCRIPT,
+  APP_READY_SCRIPT,
+  backgroundColor,
+  BARS,
+  GLYPHS,
+};
