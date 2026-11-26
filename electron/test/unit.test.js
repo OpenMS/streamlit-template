@@ -183,3 +183,73 @@ test("Streamlit starts through the launcher that preloads polars", () => {
   assert.equal(args[args.indexOf("--server.port") + 1], "8765");
   assert.equal(args[args.indexOf("--server.address") + 1], "127.0.0.1");
 });
+
+const loading = require("../src/loading");
+
+test("loading page shows the app name, version and every logo bar", () => {
+  const html = loading.loadingPage({ title: "Test <App>", version: "1.2.3", fontDir: null });
+  assert.match(html, /Test &#60;App&#62;/);
+  assert.doesNotMatch(html, /Test <App>/);
+  assert.match(html, /Version 1\.2\.3/);
+  // Each bar is drawn twice: in the logo gradient and in the moving sheen.
+  assert.equal((html.match(/class="bar /g) || []).length, 2 * loading.BARS.length);
+  assert.equal((html.match(/class="glyph"/g) || []).length, 6);
+  assert.match(html, /window\.__finishLoading/);
+});
+
+test("loading page inlines the theme fonts when they exist", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fonts-"));
+  fs.writeFileSync(path.join(dir, "montserrat-alternates-latin-600-normal.woff2"), "x");
+  const html = loading.loadingPage({ title: "A", version: "", fontDir: dir });
+  assert.match(html, /font-family:"Montserrat Alternates"/);
+  assert.doesNotMatch(html, /font-family:"Raleway";/);
+  assert.doesNotMatch(html, /Version /);
+});
+
+test("loading page URL is a data URL the window can load", () => {
+  const url = loading.loadingPageUrl({ title: "A", version: "1", fontDir: null });
+  assert.ok(url.startsWith("data:text/html;charset=utf-8,"));
+  assert.match(decodeURIComponent(url), /<h1>A<\/h1>/);
+});
+
+test("app counts as ready only once Streamlit has drawn the page", () => {
+  const ready = (doc) => new Function("document", `return ${loading.APP_READY_SCRIPT};`)(doc);
+  const doc = (state, content) => ({
+    querySelector: (sel) => {
+      if (sel === '[data-testid="stApp"]') {
+        return state === null ? null : { getAttribute: () => state };
+      }
+      return content ? {} : null;
+    },
+  });
+  assert.equal(ready(doc(null, false)), false);
+  assert.equal(ready(doc("running", true)), false);
+  assert.equal(ready(doc("notRunning", false)), false);
+  assert.equal(ready(doc("notRunning", true)), true);
+});
+
+test("loading overlay is at least as large as the largest display", () => {
+  assert.deepEqual(loading.overlayBounds([1400, 900], [{ width: 1920, height: 1080 }, { width: 2560, height: 1440 }]), {
+    x: 0,
+    y: 0,
+    width: 2560,
+    height: 1440,
+  });
+  assert.deepEqual(loading.overlayBounds([3000, 900], [{ width: 2560, height: 1440 }]), {
+    x: 0,
+    y: 0,
+    width: 3000,
+    height: 1440,
+  });
+  assert.deepEqual(loading.overlayBounds([1400, 900]), { x: 0, y: 0, width: 1400, height: 900 });
+});
+
+test("loading content is centred in the visible window, not the oversized view", () => {
+  const html = loading.loadingPage({ title: "A", version: "1", fontDir: null });
+  assert.match(html, /var\(--window-width,100vw\)/);
+  assert.match(html, /var\(--window-height,100vh\)/);
+  const props = {};
+  const doc = { documentElement: { style: { setProperty: (k, v) => (props[k] = v) } } };
+  new Function("document", loading.windowSizeScript([1400.4, 899.6]))(doc);
+  assert.deepEqual(props, { "--window-width": "1400px", "--window-height": "900px" });
+});

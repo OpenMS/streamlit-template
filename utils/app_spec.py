@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import fnmatch
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -130,6 +131,75 @@ def owned_template_files(spec: dict) -> list[str]:
     return [f for f in TEMPLATE_INFRA if is_app_owned(spec, f)]
 
 
+_RELEASE = re.compile(r"^(?:v|release/|Release)?(\d+\.\d+(?:\.\d+)?)$")
+
+
+def _openms_source(repo: str, ref: str) -> tuple[str, str]:
+    """(repository, ref) of an OpenMS source, a release as ("OpenMS/OpenMS", "3.6.0")."""
+    repo = repo.lower()
+    m = _RELEASE.match(ref)
+    if m and repo == "openms/openms":
+        return repo, m.group(1)
+    return repo, ref
+
+
+def _desktop_openms(spec: dict, root: Path) -> str | None:
+    """The OpenMS the desktop build bundles: the spec's, else the workflow's default."""
+    value = spec.get("deploy", {}).get("desktop_app", {}).get("openms")
+    if value:
+        return str(value)
+    workflow = root / ".github" / "workflows" / "build-desktop-app.yaml"
+    if workflow.is_file():
+        m = re.search(r"needs\.scope\.outputs\.openms \|\| '([^']+)'",
+                      workflow.read_text(encoding="utf-8"))
+        if m:
+            return m.group(1)
+    return None
+
+
+def _dockerfile_openms(path: Path) -> tuple[str, str] | None:
+    """(repository, branch) the full Dockerfile builds by default, from its ARGs."""
+    args = dict(re.findall(r"^ARG (OPENMS_REPO|OPENMS_BRANCH)=(\S+)",
+                           path.read_text(encoding="utf-8"), re.M))
+    if "OPENMS_BRANCH" not in args:
+        return None
+    url = args.get("OPENMS_REPO", "https://github.com/OpenMS/OpenMS.git")
+    repo = re.sub(r"^.*github\.com[/:]|\.git$", "", url)
+    return repo, args["OPENMS_BRANCH"]
+
+
+def openms_mismatches(spec: dict, root: Path | str = ".") -> list[str]:
+    """The desktop app, its command line tools and the full image share one OpenMS.
+
+    The desktop build (and the installers of its command line tools) bundles
+    ``deploy.desktop_app.openms``; the full Docker images build their
+    Dockerfile's ``OPENMS_REPO``/``OPENMS_BRANCH``. Both must name the same
+    source, a release counting the same as its tag (3.6.0 = v3.6.0).
+    """
+    root = Path(root)
+    images = spec.get("deploy", {}).get("images")
+    if images is not None and not any(str(i).startswith("full") for i in images):
+        return []
+    desktop = _desktop_openms(spec, root)
+    if not desktop or spec.get("deploy", {}).get("desktop") == []:
+        return []
+    repo, _, ref = desktop.rpartition("@")
+    want = _openms_source(repo or "OpenMS/OpenMS", ref)
+    errors = []
+    for name in ("Dockerfile", "Dockerfile.arm"):
+        path = root / name
+        if not path.is_file():
+            continue
+        found = _dockerfile_openms(path)
+        if found and _openms_source(*found) != want:
+            errors.append(
+                f"the desktop app and its command line tools bundle OpenMS {desktop!r} "
+                f"(deploy.desktop_app.openms), but {name} builds "
+                f"{found[0]}@{found[1]} (OPENMS_REPO/OPENMS_BRANCH)"
+            )
+    return errors
+
+
 def consistency_errors(spec: dict, root: Path | str = ".") -> list[str]:
     """Check the spec against the files it is the source for.
 
@@ -236,6 +306,16 @@ def consistency_errors(spec: dict, root: Path | str = ".") -> list[str]:
     for page in spec.get("pages", []):
         if not (root / page).is_file():
             errors.append(f"pages lists {page}, which does not exist")
+
+    # build-desktop-app.yaml runs these from the repository.
+    desktop_app = spec.get("deploy", {}).get("desktop_app", {})
+    for path in desktop_app.get("e2e_scenarios", []):
+        if not (root / path).is_file():
+            errors.append(f"deploy.desktop_app.e2e_scenarios lists {path}, which does not exist")
+    script = desktop_app.get("stage_script")
+    if script and not (root / script).is_file():
+        errors.append(f"deploy.desktop_app.stage_script is {script}, which does not exist")
+    errors += openms_mismatches(spec, root)
 
     return errors
 

@@ -56,6 +56,8 @@ no Streamlit:
   keys exist to make visible.
 """
 
+import errno
+import fcntl
 import os
 import re
 import shutil
@@ -68,6 +70,7 @@ from pathlib import Path
 from unittest import mock
 
 import pytest
+import yaml
 
 fakeredis = pytest.importorskip("fakeredis")
 import redis as redis_module  # noqa: E402  (fakeredis guarantees this import)
@@ -793,13 +796,240 @@ def test_worker_gets_its_node_name_from_the_downward_api():
     )
 
 
-def test_worker_has_no_liveness_probe():
-    manifest = RQ_WORKER_DEPLOYMENT.read_text(encoding="utf-8")
+def _liveness_probe_block(manifest: str) -> str:
+    match = re.search(r"(?ms)^( +)livenessProbe:\n(.*?)(?=^\1\S)", manifest)
+    assert match, "no livenessProbe in the manifest"
+    return match.group(2)
 
-    assert "livenessProbe" not in manifest, (
-        "never a liveness probe on rq-worker: it would kill in-flight TOPP jobs, "
-        "and restarting cannot fix NFS"
+
+def test_worker_liveness_probe_only_restarts_on_a_dead_mount():
+    """
+    A liveness failure SIGKILLs the worker mid-job, so its probe may fail for
+    one reason only: a dead workspace mount (ENOTCONN), which never clears in a
+    running container and on which every job fails anyway. A slow or blocked
+    NFS mount, which recovers by itself, must not fail it: that is the
+    readiness probe's job.
+    """
+    probe = _liveness_probe_block(RQ_WORKER_DEPLOYMENT.read_text(encoding="utf-8"))
+    assert "--mount-alive" in probe, probe
+    assert "--probe" not in probe, (
+        "the liveness probe must not write to the share: a blocked NFS write "
+        "would restart the worker during an ordinary NFS server restart"
     )
+
+
+@pytest.mark.parametrize(
+    "manifest", ["streamlit-deployment.yaml", "rq-worker-deployment.yaml", "sync-deployment.yaml"]
+)
+def test_workspace_mounts_follow_a_remount(manifest):
+    """
+    A FUSE volume mounted again on the node reaches a running container only
+    with HostToContainer propagation; without it the container keeps the dead
+    mount ("Transport endpoint is not connected") until it is restarted.
+    """
+    path = REPO_ROOT / "k8s" / "base" / manifest
+    (deployment,) = [
+        d
+        for d in yaml.safe_load_all(path.read_text(encoding="utf-8"))
+        if d and d.get("kind") == "Deployment"
+    ]
+    pod = deployment["spec"]["template"]["spec"]
+    containers = pod.get("initContainers", []) + pod["containers"]
+    mounts = [
+        m
+        for c in containers
+        for m in c.get("volumeMounts", [])
+        if m["mountPath"] == "/workspaces-streamlit-template"
+    ]
+    assert mounts, f"{manifest} mounts no workspaces"
+    for mount in mounts:
+        assert mount.get("mountPropagation") == "HostToContainer", (
+            f"a workspace mount in {manifest} does not follow a remount: {mount}"
+        )
+    for container in pod["containers"]:
+        command = container["livenessProbe"]["exec"]["command"]
+        if len(command) == 3 and os.path.basename(command[0]) in ("bash", "sh") and command[1] == "-c":
+            # Drop comments so a flag that is only mentioned there does not count.
+            script = "\n".join(line.split("#", 1)[0] for line in command[2].splitlines())
+            assert "src.workflow.health --mount-alive" in script, (
+                f"{manifest}: {container['name']} does not restart on a dead workspace mount"
+            )
+        else:
+            assert command[-3:] == ["-m", "src.workflow.health", "--mount-alive"], (
+                f"{manifest}: {container['name']} does not restart on a dead workspace mount"
+            )
+
+
+def _liveness_scripts():
+    for manifest in ("streamlit-deployment.yaml", "rq-worker-deployment.yaml", "sync-deployment.yaml"):
+        path = REPO_ROOT / "k8s" / "base" / manifest
+        for d in yaml.safe_load_all(path.read_text(encoding="utf-8")):
+            if not d or d.get("kind") != "Deployment":
+                continue
+            for c in d["spec"]["template"]["spec"]["containers"]:
+                command = c["livenessProbe"]["exec"]["command"]
+                assert os.path.basename(command[0]) == "bash" and command[1] == "-c", (
+                    f"{manifest}: {c['name']} liveness probe is not a bash script"
+                )
+                yield pytest.param(command[2], id=f"{manifest}:{c['name']}")
+
+
+@pytest.mark.skipif(shutil.which("bash") is None or os.name == "nt", reason="needs bash")
+@pytest.mark.parametrize("script", list(_liveness_scripts()))
+@pytest.mark.parametrize("code, alive", [(0, True), (1, False), (2, True)])
+def test_liveness_probe_fails_only_on_a_dead_mount(tmp_path, script, code, alive):
+    """
+    Argo CD applies these manifests from main while the pods may still run the
+    last release, whose health module does not know --mount-alive (argparse
+    exits 2). Only exit 1, a dead mount, may fail the probe; a usage error
+    restarting every pod in a loop is how the template site went down.
+    """
+    python = tmp_path / "python"
+    python.write_text(f"#!/bin/sh\nexit {code}\n")
+    python.chmod(0o755)
+    script = script.replace("/root/miniforge3/envs/streamlit-env/bin/python", str(python))
+    script = script.replace("curl ", "true ")
+    result = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=30)
+    assert (result.returncode == 0) is alive, (code, result.returncode, result.stderr)
+
+
+def _run_mount_child(error):
+    """Run the stat child in-process with os.stat raising `error`."""
+    with mock.patch.object(os, "stat", side_effect=error), mock.patch.object(
+        sys, "argv", ["-c", "/workspaces"]
+    ):
+        with pytest.raises(SystemExit) as exit_info:
+            exec(health._MOUNT_STAT_CHILD, {})  # noqa: S102 - our own constant
+    return exit_info.value.code
+
+
+def test_mount_child_reports_enotconn_and_nothing_else():
+    assert _run_mount_child(OSError(errno.ENOTCONN, "Transport endpoint is not connected")) == errno.ENOTCONN
+    assert _run_mount_child(OSError(errno.ENOENT, "No such file or directory")) == 2
+    assert _run_mount_child(OSError(errno.EIO, "Input/output error")) == 2
+
+
+def test_mount_is_disconnected_on_a_healthy_directory(tmp_path):
+    assert health.mount_is_disconnected(str(tmp_path)) is False
+
+
+def test_mount_is_disconnected_when_the_child_says_enotconn(tmp_path, monkeypatch):
+    monkeypatch.setattr(health, "_MOUNT_STAT_CHILD", "import sys; sys.exit(107)")
+    assert health.mount_is_disconnected(str(tmp_path)) is True
+
+
+def test_a_stat_that_hangs_counts_as_alive_and_returns_in_time(tmp_path, monkeypatch):
+    """A blocked NFS stat must not fail liveness, nor hold the probe past its deadline."""
+    monkeypatch.setattr(health, "_MOUNT_STAT_CHILD", "import time; time.sleep(30)")
+    started = time.monotonic()
+    assert health.mount_is_disconnected(str(tmp_path), deadline=0.5) is False
+    assert time.monotonic() - started < 5
+
+
+def test_a_blocked_mount_leaves_one_stat_child_not_one_per_probe(tmp_path, monkeypatch):
+    """
+    A stat that timed out keeps running after the probe exits. Later probes of
+    the same directory must wait for it, not start another, or a long blocked
+    mount piles up one stuck process per probe period.
+    """
+    monkeypatch.setattr(health, "_MOUNT_STAT_CHILD", "import time; time.sleep(30)")
+    started = []
+    real_popen = subprocess.Popen
+
+    def counting_popen(*args, **kwargs):
+        child = real_popen(*args, **kwargs)
+        started.append(child)
+        return child
+
+    monkeypatch.setattr(health.subprocess, "Popen", counting_popen)
+    try:
+        for _ in range(3):
+            assert health.mount_is_disconnected(str(tmp_path), deadline=0.2) is False
+        assert len(started) == 1, f"{len(started)} stat children for one blocked mount"
+    finally:
+        for child in started:
+            child.kill()
+            child.wait()
+    # Once it has finished, the next probe checks the mount again.
+    monkeypatch.setattr(health, "_MOUNT_STAT_CHILD", "import sys; sys.exit(107)")
+    assert health.mount_is_disconnected(str(tmp_path)) is True
+    assert len(started) == 2
+
+
+def test_a_lock_file_left_behind_does_not_stop_the_check(tmp_path, monkeypatch):
+    """The file outlives every check; only a held lock means a stat is outstanding."""
+    Path(health._mount_check_lock_file(str(tmp_path))).write_text("", encoding="utf-8")
+    monkeypatch.setattr(health, "_MOUNT_STAT_CHILD", "import sys; sys.exit(107)")
+    assert health.mount_is_disconnected(str(tmp_path)) is True
+    assert health.mount_is_disconnected(str(tmp_path)) is True
+
+
+def test_a_check_running_at_the_same_time_starts_no_second_child(tmp_path, monkeypatch):
+    """Two probes at once must not both start a stat child."""
+    held = os.open(health._mount_check_lock_file(str(tmp_path)), os.O_RDWR | os.O_CREAT)
+    popen = mock.Mock(side_effect=AssertionError("a second stat child was started"))
+    monkeypatch.setattr(health.subprocess, "Popen", popen)
+    try:
+        fcntl.flock(held, fcntl.LOCK_EX)
+        assert health.mount_is_disconnected(str(tmp_path)) is False
+    finally:
+        os.close(held)
+    popen.assert_not_called()
+
+
+def test_no_stat_child_starts_when_it_cannot_be_tracked(tmp_path, monkeypatch):
+    """An untracked child that blocked would let every later probe start another."""
+    monkeypatch.setattr(
+        health, "_mount_check_lock_file", lambda _d: str(tmp_path / "missing" / "check.lock")
+    )
+    popen = mock.Mock(side_effect=AssertionError("a stat child was started"))
+    monkeypatch.setattr(health.subprocess, "Popen", popen)
+    assert health.mount_is_disconnected(str(tmp_path)) is False
+    popen.assert_not_called()
+
+
+def _stat_children(marker, directory):
+    found = []
+    for proc in Path("/proc").iterdir():
+        try:
+            cmdline = (proc / "cmdline").read_bytes()
+            state = (proc / "stat").read_text().rsplit(")", 1)[1].split()[0]
+        except (OSError, IndexError):
+            continue
+        if state != "Z" and marker.encode() in cmdline and directory.encode() in cmdline:
+            found.append(int(proc.name))
+    return found
+
+
+def test_a_blocked_stat_child_outlives_the_probe_and_is_still_tracked(tmp_path):
+    """
+    The probe runs as its own process and exits; the next probes, other
+    processes, must still see the blocked child it left behind.
+    """
+    blocked = "import time; time.sleep(30)"
+    probe = textwrap.dedent(
+        f"""
+        import sys
+        from src.workflow import health
+        health._MOUNT_STAT_CHILD = {blocked!r}
+        sys.exit(1 if health.mount_is_disconnected({str(tmp_path)!r}, deadline=0.3) else 0)
+        """
+    )
+    try:
+        for _ in range(3):
+            subprocess.run([sys.executable, "-c", probe], cwd=REPO_ROOT, check=True, timeout=30)
+        stuck = _stat_children(blocked, str(tmp_path))
+        assert len(stuck) == 1, f"stat children left by three probes: {stuck}"
+    finally:
+        for pid in _stat_children(blocked, str(tmp_path)):
+            os.kill(pid, 9)
+
+
+def test_mount_alive_cli_exit_codes(tmp_path, monkeypatch):
+    monkeypatch.setenv("WORKSPACES_DIR", str(tmp_path))
+    assert health._cli(["--mount-alive"]) == 0
+    monkeypatch.setattr(health, "_MOUNT_STAT_CHILD", "import sys; sys.exit(107)")
+    assert health._cli(["--mount-alive"]) == 1
 
 
 def test_probe_timing_outlasts_the_nfs_grace_period():

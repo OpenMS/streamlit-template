@@ -1,6 +1,6 @@
 ---
 name: create-workflow
-description: Use when creating a TOPP Workflow Framework workflow that chains OpenMS TOPP tools through upload, configure, execute and results pages.
+description: Use when creating a TOPP Workflow Framework workflow that chains OpenMS TOPP tools through the Describe experiment, Run analysis, Explore results and Export results pages.
 ---
 
 # Create a TOPP Workflow
@@ -27,22 +27,30 @@ from src.workflow.WorkflowManager import WorkflowManager
 from pathlib import Path
 
 class MyWorkflow(WorkflowManager):
+    # The four pages of the workflow, named once (menu, links, Run button)
+    configure_page = Path("content", "my_workflow_parameter.py")
+    run_page = Path("content", "my_workflow_execution.py")
+    results_page = Path("content", "my_workflow_results.py")
+    export_page = Path("content", "my_workflow_download.py")
+
     def __init__(self) -> None:
         super().__init__("My Workflow", st.session_state["workspace"])
 
-    def upload(self) -> None:
-        t = st.tabs(["MS data"])
-        with t[0]:
-            self.ui.upload_widget(
-                key="mzML-files",
-                name="MS data",
-                file_types="mzML",
-                fallback=[str(f) for f in Path("example-data", "mzML").glob("*.mzML")],
+    def analysis_section(self) -> None:
+        # "Your analysis": the input files (Browse dialog uploads new ones),
+        # what to do with them, and one sentence on what a start does
+        with self.ui.analysis_box():
+            self.ui.select_input_file(
+                "mzML-files", multiple=True,
+                upload=dict(
+                    name="MS data", file_types="mzML",
+                    fallback=[str(f) for f in Path("example-data", "mzML").glob("*.mzML")],
+                ),
             )
+            self.ui.analysis_summary("Detects features in each file and links them.")
 
     @st.fragment
     def configure(self) -> None:
-        self.ui.select_input_file("mzML-files", multiple=True)
         t = st.tabs(["**Step 1**", "**Step 2**"])
         with t[0]:
             self.ui.input_TOPP("ToolName1")
@@ -77,7 +85,7 @@ class MyWorkflow(WorkflowManager):
 
     @st.fragment
     def results(self) -> None:
-        result_file = Path(self.workflow_dir, "results", "step2", "result.tsv")
+        result_file = Path(self.results_dir, "step2", "result.tsv")
         if result_file.exists():
             import pandas as pd
             df = pd.read_csv(result_file, sep="\t")
@@ -86,31 +94,39 @@ class MyWorkflow(WorkflowManager):
             st.warning("No results found. Please run the workflow first.")
 ```
 
-3. **Create 4 content pages** in `content/`. Each follows this minimal pattern:
+3. **Create 4 content pages** in `content/`, the paths named by the class attributes above. Each opens with `page_setup()` and the workflow object:
 
 ```python
-# content/<workflow_name>_file_upload.py
+# content/my_workflow_parameter.py  (Describe experiment)
 from src.common.common import page_setup
 from src.<WorkflowName> import MyWorkflow
+from src.workflow import guide
 params = page_setup()
 wf = MyWorkflow()
-wf.show_file_upload_section()
+guide.page_intro("Pick the MS data and say what to do with it.")
+wf.analysis_section()
+wf.show_parameter_section()
+wf.show_run_button(summary="...")
 ```
 
 The 4 pages call these methods respectively:
-- `wf.show_file_upload_section()` — upload page
-- `wf.show_parameter_section()` — configure page, then `wf.show_run_button("content/<run page>.py", summary=...)` as its last call (a bar fixed to the bottom of the window; opens the Run page and starts the run there)
-- `wf.show_execution_section(results_page="content/<results page>.py")` — run page; a finished run links to the results page
-- `wf.show_results_section()` — results page
+- Describe experiment: `wf.analysis_section()`, `wf.show_parameter_section()`, then `wf.show_run_button(summary=...)` as its last call (a bar fixed to the bottom of the window; opens the Run page and starts the run there)
+- Run analysis: `wf.show_execution_section()`; a finished run links to `results_page`
+- Explore results: `wf.show_results_section()`
+- Export results: `wf.show_results_download_section(exclude=[...])`
 
-4. **Register all 4 pages** as a group in `app.py`:
+End each page with `guide.next_steps(wf, (guide.RUN, "why"), ...)`. `upload()` and `wf.show_file_upload_section()` remain only for an app that keeps a separate upload page.
+
+4. **Register all 4 pages** as a group in `app.py`; `step_page` takes the title and icon of each step:
 
 ```python
+from src.workflow.guide import DESCRIBE, RUN, EXPLORE, EXPORT, step_page
+
 "My Workflow": [
-    st.Page(Path("content", "my_workflow_file_upload.py"), title="File Upload", icon="📁"),
-    st.Page(Path("content", "my_workflow_parameter.py"), title="Configure", icon="⚙️"),
-    st.Page(Path("content", "my_workflow_execution.py"), title="Run", icon="🚀"),
-    st.Page(Path("content", "my_workflow_results.py"), title="Results", icon="📊"),
+    step_page(MyWorkflow.configure_page, DESCRIBE),
+    step_page(MyWorkflow.run_page, RUN),
+    step_page(MyWorkflow.results_page, EXPLORE),
+    step_page(MyWorkflow.export_page, EXPORT),
 ],
 ```
 
@@ -172,7 +188,8 @@ def configure(self) -> None:
 - Example workflow: `src/Workflow.py`
 - Workflow base class: `src/workflow/WorkflowManager.py`
 - UI widget library: `src/workflow/StreamlitUI.py`
-- Example pages: `content/topp_workflow_file_upload.py`, `content/topp_workflow_parameter.py`, `content/topp_workflow_execution.py`, `content/topp_workflow_results.py`
+- Example pages (Describe experiment, Run analysis, Explore results, Export results): `content/topp_workflow_parameter.py`, `content/topp_workflow_execution.py`, `content/topp_workflow_results.py`, `content/topp_workflow_download.py`
+- Page furniture and step names: `src/workflow/guide.py`; Describe experiment helpers: `src/workflow/describe_ui.py`
 - Command executor: `src/workflow/CommandExecutor.py`
 - File manager: `src/workflow/FileManager.py`
 
@@ -186,7 +203,8 @@ def configure(self) -> None:
 - [ ] Workflow class in `src/` subclassing `WorkflowManager`
 - [ ] `__init__` calls `super().__init__("Name", st.session_state["workspace"])`
 - [ ] `execution()` uses no attribute set in your own `__init__`: the workflow process builds the object without calling it, so use a class attribute instead
-- [ ] `upload()`, `configure()`, `execution()`, `results()` implemented
+- [ ] `analysis_section()`, `configure()`, `execution()`, `results()` implemented (`upload()` only with a separate upload page)
+- [ ] `configure_page`, `run_page`, `results_page`, `export_page` set as class attributes
 - [ ] `execution()` annotated `-> bool`, returning `True` on success and `False` on any failure
 - [ ] `@st.fragment` on `configure()` and `results()`
 - [ ] `reactive=True` on any widget whose value controls other widgets' visibility

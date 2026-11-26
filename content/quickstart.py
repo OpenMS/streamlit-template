@@ -5,7 +5,8 @@ This module sets up and displays the Streamlit app for the OpenMS Template App.
 It includes:
 - Setting the app title.
 - Displaying a description.
-- Providing download buttons for the desktop app on Windows, macOS and Linux.
+- Providing download buttons for the desktop app and the OpenMS command line
+  tools on Windows, macOS and Linux.
 
 Usage:
 Run this script to launch the OpenMS Template App.
@@ -22,7 +23,7 @@ import streamlit as st
 
 from src.common.common import page_setup, v_space
 from src.common.contributors import render_contributors
-from src.common.installers import render_installer_buttons
+from src.common.installers import render_download_box
 from src.common.other_apps import render_other_apps
 
 # Spell the skill out by file path rather than by name. Skills are registered
@@ -42,7 +43,7 @@ NOTEBOOK_TO_WEBAPP_PROMPT = (
     "notebook, what to call the app, and how each page should look as you build it."
 )
 
-page_setup(page="main")
+page_setup(page="main", captcha=False)
 
 st.markdown("# 👋 Quick Start")
 st.markdown("## Mass spectrometry analysis, as web apps anyone can open")
@@ -81,7 +82,7 @@ c1.markdown(
 )
 v_space(1, c2)
 c2.image("assets/openms_transparent_bg_logo.svg", width=300)
-render_installer_buttons("### Download the desktop app")
+render_download_box()
 
 st.markdown("## 📖 Documentation")
 st.markdown(
@@ -117,15 +118,15 @@ This app serves both as documentation and showcase what's possible with OpenMS w
             
 In general there are two options for building workflows.
             
-### 1. 🚀 **TOPP Workflow Framework**
+### 1. 🚀 **OpenMS Workflow Framework**
             
 Use this option if you want a standardized framework for building your workflow.
 
-- **Pre-defined user interface** all in one streamlit page with all steps on different pages:
-    - **File Upload**: upload, download and delete input files
-    - **Configure**: Automatically display input widgets for all paramters in TOPP tools and custom Python scripts
-    - **Run**: Start and stop workflow execution, includes continous log
-    - **Results**: Interactive result dashboard
+- **The same four steps in every OpenMS web app**, each on its own page:
+    - **Describe experiment**: pick and add the input files, say what to do with them, and adjust each step's TOPP tool and Python script parameters
+    - **Run analysis**: follow the run's progress and log, stop it, read its processing report
+    - **Explore results**: interactive views of a run's results
+    - **Export results**: every run's files, settings and report
 - **Write less code**: everything from file upload, input widget generation and execution of tools is handled via convenient functions
 - **Fast and performant workflows**: Automatic parallel execution of TOPP tools ensures great speed, comparable with workflows written in bash
 - **Ideal for longer workflows**: Close the app and come back to the still running or finish workflow the next day, by entering your workspace again.
@@ -137,7 +138,7 @@ st.page_link(
     icon="➡️",
 )
 st.page_link(
-    "content/topp_workflow_file_upload.py",
+    "content/topp_workflow_parameter.py",
     label="Play around with the example workflow.",
     icon="➡️",
 )

@@ -20,6 +20,7 @@ Edits, each only where the old release is written:
   Dockerfile*                     ARG OPENMS_BRANCH=<old ref>  ->  <new ref>
   requirements.txt                pyopenms==<old>              ->  <new>, if on PyPI
                                   and any pin below what that pyOpenMS requires
+  app.yaml                        deploy.desktop_app.openms: <old>  ->  <new>
   .github/workflows/build-desktop-app.yaml
                                   the default `openms` release ('3.5.0')
   Dockerfile*                     conda python=<x.y> / ARG PYTHON_VERSION below
@@ -204,6 +205,17 @@ def main() -> int:
             else:
                 notes.append(f"requirements.txt: pyopenms {fmt(newest)} is not on PyPI yet, pin left at {pin.group(1)}")
 
+    # app.yaml may pin the desktop app's OpenMS (deploy.desktop_app.openms),
+    # which utils/app_spec.py keeps equal to the release the Dockerfiles build.
+    spec = root / "app.yaml"
+    if spec.is_file():
+        text = spec.read_text()
+        pinned = re.compile(r"""^(\s+openms:\s*["']?v?)""" + re.escape(fmt(old)) + r"""(["']?\s*(?:#.*)?)$""", re.M)
+        new_text = pinned.sub(lambda mm: mm.group(1) + fmt(newest) + mm.group(2), text)
+        if new_text != text:
+            spec.write_text(new_text)
+            notes.append(f"app.yaml: desktop OpenMS {fmt(old)} -> {fmt(newest)}")
+
     # Python of the conda env in the Dockerfiles: python=X.Y in the simple
     # images, ARG PYTHON_VERSION=X.Y in the full ones.
     if min_python:
@@ -224,7 +236,10 @@ def main() -> int:
         desktop = wf / "build-desktop-app.yaml"
         if desktop.is_file():
             text = desktop.read_text()
-            new_text = text.replace(f"inputs.openms || '{fmt(old)}'", f"inputs.openms || '{fmt(newest)}'")
+            # `inputs.openms || needs.scope.outputs.openms || '3.6.0'`: the
+            # default after the dispatch input and app.yaml's desktop_app.openms.
+            new_text = re.sub(r"(inputs\.openms \|\|[^'\n]*)'" + re.escape(fmt(old)) + "'",
+                              lambda mm: mm.group(1) + f"'{fmt(newest)}'", text)
             if new_text != text:
                 desktop.write_text(new_text)
                 notes.append(f"build-desktop-app.yaml: desktop OpenMS {fmt(old)} -> {fmt(newest)}")

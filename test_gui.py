@@ -4,6 +4,21 @@ from src import fileupload
 import json
 from pathlib import Path
 import shutil
+from streamlit.testing.v1.element_tree import ButtonGroup
+
+
+# AppTest reads a button group's value as a list; a single-select segmented
+# control (the analysis choices of Describe experiment) holds one value
+def _indices(self):
+    value = self.value
+    if value is None:
+        return []
+    if not isinstance(value, (list, tuple)):
+        value = [value]
+    return [self.options.index(self.format_func(v)) for v in value]
+
+
+ButtonGroup.indices = property(_indices)
 
 
 @pytest.fixture
@@ -24,7 +39,6 @@ def launch(request):
     (
         # "content/quickstart.py", # NOTE: this page does not work due to streamlit.errors.StreamlitPageNotFoundError error
         "content/documentation.py",
-        "content/topp_workflow_file_upload.py",
         "content/topp_workflow_parameter.py",
         "content/topp_workflow_execution.py",
         "content/topp_workflow_results.py",
@@ -55,7 +69,7 @@ def test_launch(launch):
             "content/documentation.py",
             "Developers Guide: How to build app based on this template",
         ),
-        ("content/documentation.py", "Developers Guide: TOPP Workflow Framework"),
+        ("content/documentation.py", "Developers Guide: OpenMS Workflow Framework"),
         ("content/documentation.py", "Developer Guide: Windows Executables"),
         ("content/documentation.py", "Developers Guide: From Notebook to Web App"),
         ("content/documentation.py", "Developers Guide: Deployment"),
@@ -148,6 +162,8 @@ def test_run_workflow(launch, example):
 def test_parameter_page_has_no_advanced_toggle(launch):
     """Advanced parameters are reached by search (TOPP) or an expander (python
     tools), not by a page-wide toggle."""
+    # The custom step (and its tab) is there once the analysis includes it
+    launch.session_state["topp-workflow-param-run-python-script"] = True
     launch.run(timeout=30)
     assert not launch.exception
     assert not [t for t in launch.toggle if t.label == "Show advanced parameters"]
