@@ -12,6 +12,8 @@ from scripts. It talks to the UniProt REST API
   query has;
 - ``download_fasta(query, dest)`` streams ``/uniprotkb/stream`` into a file,
   through a ``.part`` file so a cut-off download never looks finished.
+- ``entry_fasta(accession)`` fetches the FASTA record of one UniProtKB
+  entry (an isoform such as ``P0ACF0-2`` too) from ``/uniprotkb/<accession>.fasta``.
 
 Requests are throttled: one process sends at most one every ``MIN_INTERVAL``
 seconds, and a 429 or server error is retried (``MAX_TRIES``) after UniProt's
@@ -230,6 +232,28 @@ def count_proteins(query: str) -> Optional[int]:
     response = _get("/uniprotkb/search", {"query": query, "format": "json", "size": 1})
     total = response.headers.get("x-total-results")
     return int(total) if total and total.isdigit() else None
+
+
+#: A UniProtKB accession, optionally with an isoform number (P0ACF0, A0A023GPI8, P0ACF0-2)
+ACCESSION = re.compile(
+    r"(?:[OPQ][0-9][A-Z0-9]{3}[0-9]|[A-NR-Z][0-9](?:[A-Z][A-Z0-9]{2}[0-9]){1,2})(?:-\d+)?"
+)
+
+
+def entry_fasta(accession: str) -> str:
+    """The FASTA record (header line and sequence) of one UniProtKB entry.
+
+    ``accession`` is an accession such as ``P0ACF0``, or an isoform such as
+    ``P0ACF0-2``. Raises ``ValueError`` for anything else and ``UniProtError``
+    when UniProt has no such entry or cannot be reached.
+    """
+    accession = (accession or "").strip()
+    if not ACCESSION.fullmatch(accession):
+        raise ValueError(f"'{accession}' is not a UniProt accession (e.g. P0ACF0 or P0ACF0-2)")
+    text = _get(f"/uniprotkb/{accession}.fasta", {}).text
+    if not text.startswith(">"):
+        raise UniProtError(f"UniProt has no entry {accession}")
+    return text
 
 
 def fasta_filename(proteome: Proteome, reviewed_only: bool, isoforms: bool) -> str:

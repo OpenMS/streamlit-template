@@ -78,6 +78,8 @@ def server(monkeypatch):
                 n = FASTA[reviewed].count(">")
                 self._send(json.dumps({"results": []}), "application/json",
                            {"x-total-results": str(n)})
+            elif url.path == "/uniprotkb/P0A7V8.fasta":
+                self._send(FASTA[True].split(">sp|P0A7W1")[0], "text/plain")
             elif url.path == "/uniprotkb/stream":
                 self._send(FASTA[reviewed], "text/plain")
             elif url.path == "/busy" and sum(p == "/busy" for p, _ in seen) < 3:
@@ -165,6 +167,21 @@ def test_download(server, tmp_path):
     assert calls[-1] == 2
     assert not list(tmp_path.glob(".*.part"))
     assert server.seen[-1][1]["includeIsoform"] == "true"
+
+
+def test_entry_fasta(server):
+    record = uniprot.entry_fasta("P0A7V8")
+    assert record.startswith(">sp|P0A7V8|RS4_ECOLI")
+    assert record.splitlines()[1] == "MARYLGPKLK"
+    # An unknown entry is UniProt's 400/404, not a record
+    with pytest.raises(uniprot.UniProtError):
+        uniprot.entry_fasta("Q99999")
+    # Not an accession: refused before any request
+    asked = len(server.seen)
+    for text in ("", "P0A7V", "sp|P0A7V8|RS4_ECOLI", "P0A7V8/../x"):
+        with pytest.raises(ValueError):
+            uniprot.entry_fasta(text)
+    assert len(server.seen) == asked
 
 
 def test_busy_server_is_retried(server, monkeypatch):
