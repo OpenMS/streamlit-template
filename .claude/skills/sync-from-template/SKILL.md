@@ -73,6 +73,7 @@ Recurring hot spots:
 | `.github/workflows/build-windows-executable-app.yaml` | take the template's, then restore the app's `APP_NAME` and `TOPP_TOOLS` |
 | `Dockerfile*` | take the template's; they are template-owned. The installer repository comes from `settings.json`, conda-forge tools go in the app's `conda-requirements.txt`. An app that still owns its Dockerfiles moves its extra steps there and drops them from `sync.app_owned` |
 | `k8s/ci-storage/*` | take the template's; it carries no app names. The production storage tier and the `openms` namespace are cluster configuration, not in any app; a modify/delete conflict on `k8s/storage/*` or `k8s/overlays/prod/namespace.yaml` resolves by deleting them |
+| `tests/*` testing the example app (imports `src.Workflow`'s `Workflow`, opens an example page) | an app that replaced the example deleted these when it was set up (`new-app-from-spec` step 6): delete the new or changed one too and add it to `sync.app_owned`, or rewrite it for the app's workflow |
 | `.claude/skills/*` | always the template's; an app-specific skill gets its own directory name |
 
 **New template features** the app should adopt (a new storage tier, a new
