@@ -17,7 +17,7 @@ In the OpenMS web application, workspaces are designed to keep your analysis org
 
 
 ### File Uploads
-- **Online Mode**: You can upload only one file at a time. This helps manage server load and optimizes performance.
+- **Online Mode**: Upload many files at once, or switch to **Folder** to add a whole folder: each subfolder becomes an input folder, which the experimental design takes as a condition.
 
 - **Local Mode**: Multiple file uploads are supported, giving you flexibility when working with large datasets. Additionally, the file size upload limit can be adjusted in the following ways:
   1. **Using `.streamlit/config.toml`**:

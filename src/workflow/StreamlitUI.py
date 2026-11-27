@@ -50,6 +50,7 @@ from src.workflow.InputFolders import (
     folder_counts,
     load_folders,
     natural_key,
+    place_folder_upload,
     rename_folder,
     save_folders,
     suggest_groups,
@@ -255,6 +256,123 @@ class StreamlitUI(DescribeMixin):
         self.parameter_manager = parameter_manager
         self.params = self.parameter_manager.get_parameters_from_json()
 
+    def _browser_upload(self, key: str, name: str, file_types: List[str], files_dir: Path) -> None:
+        """Upload from the browser: many files at once, or a whole folder.
+
+        A folder keeps its structure as input folders: each file's subfolder
+        becomes its folder (``InputFolders.place_folder_upload``), so a study
+        sorted into ``ctrl/`` and ``drug/`` arrives sorted, and
+        ``experimental_design()`` takes the folders as conditions.
+        """
+        mode = st.segmented_control(
+            "Upload",
+            ["Files", "Folder"],
+            default="Files",
+            key=f"{key}-upload-mode",
+            label_visibility="collapsed",
+            help="**Folder** adds every file of the right type in a folder "
+            "and its subfolders, and sorts them into input folders by subfolder.",
+        ) or "Files"
+        folder_mode = mode == "Folder"
+        # What the last add did, kept over the rerun that lists the new files
+        for kind, text in st.session_state.pop(f"_{key}-upload-notes", []):
+            getattr(st, kind)(text)
+        with st.form(f"{key}-upload", clear_on_submit=True):
+            # Streamlit file uploader accepts file types as a list or None.
+            # A .d folder cannot be uploaded as a file, only a zip of it; in a
+            # folder upload its files arrive one by one, of any type.
+            if folder_mode:
+                uploader_types = None if "d" in file_types else file_types
+            else:
+                uploader_types = (
+                    file_types + ["zip"] if "d" in file_types else file_types
+                ) if file_types else None
+            files = st.file_uploader(
+                f"{name}",
+                accept_multiple_files="directory" if folder_mode else True,
+                type=uploader_types,
+                label_visibility="collapsed",
+            )
+            if not st.form_submit_button(
+                f"Add **{name}**", use_container_width=True, type="primary"
+            ):
+                return
+        if not files:
+            st.error(
+                "Nothing to add, please pick a folder."
+                if folder_mode
+                else "Nothing to add, please upload file."
+            )
+            return
+        existing = {f.name for f in files_dir.iterdir()}
+        added, clashes, failed = [], [], False
+        new_folders: Dict[str, str] = {}
+        for f in files:
+            if folder_mode:
+                placed = place_folder_upload(f.name, file_types)
+                if placed is None:
+                    continue
+                if placed.item in new_folders:
+                    # A further file of a .d folder, or one name in two subfolders
+                    if new_folders[placed.item] != placed.folder:
+                        clashes.append(f"{placed.folder}/{placed.item}")
+                        continue
+                elif placed.item in existing:
+                    clashes.append(placed.item)
+                    continue
+                target = Path(files_dir, placed.path)
+                if files_dir.resolve() not in target.resolve().parents:
+                    continue
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with open(target, "wb") as fh:
+                    fh.write(f.getbuffer())
+                if placed.item not in new_folders:
+                    added.append(placed.item)
+                    new_folders[placed.item] = placed.folder
+            elif "d" in file_types and f.name.lower().endswith(".zip"):
+                try:
+                    unpacked = extract_bruker_zip(f, files_dir)
+                except zipfile.BadZipFile:
+                    unpacked = []
+                if not unpacked:
+                    st.error(f"**{f.name}** holds no Bruker .d folder.")
+                    failed = True
+                added += unpacked
+            elif f.name not in existing and has_type(f.name, file_types):
+                with open(Path(files_dir, f.name), "wb") as fh:
+                    fh.write(f.getbuffer())
+                existing.add(f.name)
+                added.append(f.name)
+        labels = {item: d for item, d in new_folders.items() if d}
+        if labels:
+            save_folders(
+                self.workflow_dir, key, {**load_folders(self.workflow_dir, key), **labels}
+            )
+        notes = []
+        if clashes:
+            notes.append((
+                "warning",
+                f"Left out {len(clashes)} file(s) whose name another file has already: "
+                + ", ".join(f"**{c}**" for c in clashes[:5])
+                + (" ..." if len(clashes) > 5 else ""),
+            ))
+        if folder_mode and not added and not clashes:
+            st.error(f"No **{', '.join(file_types)}** files in this folder.")
+            return
+        if added and not failed:
+            text = f"Added {len(added)} file(s)"
+            if labels:
+                text += f" in {len(set(labels.values()))} folder(s)"
+            notes.append(("success", text + "."))
+        if not added:
+            for kind, text in notes:
+                getattr(st, kind)(text)
+            return
+        # Rerun the enclosing fragment (the Browse dialog, when drawn there),
+        # so the file list above shows the new files at once
+        st.session_state[f"_{key}-upload-notes"] = notes
+        st.rerun(scope="fragment")
+
     @st.fragment
     def upload_widget(
         self,
@@ -352,46 +470,8 @@ class StreamlitUI(DescribeMixin):
             use_copy = True
 
         if not native_picker:
-            with c1.form(f"{key}-upload", clear_on_submit=True):
-                # Streamlit file uploader accepts file types as a list or None.
-                # A .d folder cannot be uploaded from a browser, only a zip of it.
-                file_type_for_uploader = (
-                    file_types + ["zip"] if "d" in file_types else file_types
-                ) if file_types else None
-
-                files = st.file_uploader(
-                    f"{name}",
-                    accept_multiple_files=False,
-                    type=file_type_for_uploader,
-                    label_visibility="collapsed",
-                )
-                if st.form_submit_button(
-                    f"Add **{name}**", use_container_width=True, type="primary"
-                ):
-                    if files:
-                        # in case of online mode a single file is returned -> put in list
-                        if not isinstance(files, list):
-                            files = [files]
-                        failed = False
-                        for f in files:
-                            if "d" in file_types and f.name.lower().endswith(".zip"):
-                                try:
-                                    added = extract_bruker_zip(f, files_dir)
-                                except zipfile.BadZipFile:
-                                    added = []
-                                if not added:
-                                    st.error(f"**{f.name}** holds no Bruker .d folder.")
-                                    failed = True
-                            # Check if file type is in the list of accepted file types
-                            elif f.name not in [
-                                f.name for f in files_dir.iterdir()
-                            ] and has_type(f.name, file_types):
-                                with open(Path(files_dir, f.name), "wb") as fh:
-                                    fh.write(f.getbuffer())
-                        if not failed:
-                            st.success("Successfully added uploaded files!")
-                    else:
-                        st.error("Nothing to add, please upload file.")
+            with c1:
+                self._browser_upload(key, name, file_types, files_dir)
         else:
             c1.write("\n")
             with c1.container(border=True):
