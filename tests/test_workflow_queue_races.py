@@ -239,3 +239,22 @@ ui._show_queue_status({'status':st.session_state.state,'job_id':'existing-job','
     assert not app.exception
     assert any("Wait for confirmation" in warning.value for warning in app.warning)
     assert not app.success
+
+
+@pytest.mark.parametrize("developer", [False, True])
+def test_job_details_are_shown_in_developer_mode_only(developer):
+    script = """
+import streamlit as st
+from src.workflow.StreamlitUI import StreamlitUI
+ui=object.__new__(StreamlitUI)
+ui._show_queue_status({'status':'started','job_id':'job-1234','current_step':'Running'})
+"""
+    app = AppTest.from_string(script)
+    app.session_state.settings = {"online_deployment": True}
+    app.session_state["developer-mode"] = developer
+    app.run(timeout=30)
+    assert not app.exception
+    assert any("Running" in info.value for info in app.info)
+    labels = [expander.label for expander in app.expander]
+    assert ("Job Details" in labels) is developer
+    assert any("job-1234" in code.value for code in app.code) is developer

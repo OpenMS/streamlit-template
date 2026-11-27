@@ -61,6 +61,10 @@
         "local": "auto",
         "online": "auto"
     },
+    "preload": [
+        "pandas",
+        "pyopenms"
+    ],
     "data_import": {
         "enabled": true,
         "max_download_gb_online": 50,

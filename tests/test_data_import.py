@@ -806,6 +806,54 @@ def test_pride_example_comes_from_settings(monkeypatch):
     assert ui.pride_example() == "PXD078120"
 
 
+def test_pride_tab_opens_with_the_example_accession_filled_in(tmp_path):
+    from streamlit.testing.v1 import AppTest
+
+    def page(workflow_dir):
+        import streamlit as st
+        from src.data_import import ui
+        st.session_state["settings"] = {"data_import": {"enabled": True,
+                                                         "pride_example": "PXD078120"}}
+        ui.link_import_section(workflow_dir, {"ms": {"name": "MS data", "file_types": ["mzML"],
+                                                     "dir": workflow_dir, "fallback": []}},
+                               source=ui.PRIDE)
+
+    at = AppTest.from_function(page, args=(str(tmp_path),)).run()
+    assert not at.exception
+    assert at.text_input[0].value == "PXD078120"
+
+
+def _items(*specs):
+    return [{"id": str(n), "name": name, "path": name, "kind": kind, "size": 1, "files": []}
+            for n, (name, kind) in enumerate(specs)]
+
+
+def test_ticked_files_go_to_their_listed_upload(monkeypatch):
+    from src.data_import import ui
+    items = _items(("a.mzML", "file"), ("db.fasta", "file"), ("x.zip", "archive"), ("y.txt", "file"))
+    goes = ["MS data", "Database", ui.UNPACK, ui.SKIP]
+    names = {"ms": "MS data", "db": "Database"}
+    monkeypatch.setattr(ui.st, "selectbox", lambda *a, **k: "As listed")
+    chosen = ui._destination_override(items, [0, 1, 2, 3], goes, names,
+                                      {v: k for k, v in names.items()}, "p", "l")
+    assert [(c["name"], c["target"]) for c in chosen] == [
+        ("a.mzML", "ms"), ("db.fasta", "db"), ("x.zip", "*")]
+
+
+def test_ticked_files_can_all_go_to_another_upload(monkeypatch):
+    from src.data_import import ui
+    items = _items(("a.mzML", "file"), ("x.zip", "archive"))
+    names = {"ms": "MS data", "db": "Database"}
+    monkeypatch.setattr(ui.st, "selectbox", lambda *a, **k: "Database")
+    chosen = ui._destination_override(items, [0, 1], ["MS data", ui.UNPACK], names,
+                                      {v: k for k, v in names.items()}, "p", "l")
+    assert [c["target"] for c in chosen] == ["db", "db"]
+    monkeypatch.setattr(ui.st, "selectbox", lambda *a, **k: ui.UNPACK)
+    chosen = ui._destination_override(items, [0, 1], ["MS data", ui.UNPACK], names,
+                                      {v: k for k, v in names.items()}, "p", "l")
+    assert [c["target"] for c in chosen] == ["ms", "*"]
+
+
 # ---------------------------------------------------------------------------
 # Large files over several connections
 # ---------------------------------------------------------------------------

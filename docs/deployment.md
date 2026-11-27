@@ -26,6 +26,40 @@ registries or offer it (or an image built from it) for download elsewhere.
 
 Multiple streamlit apps based on the [OpenMS streamlit template](https://github.com/OpenMS/streamlit-template/) can be deployed together using docker compose.
 
+### Running as a non-root user
+
+The image runs as an unprivileged user, uid and gid 1000 (`openms`), not as
+root: Streamlit, the RQ workers, Redis, nginx and the sync service, in Docker,
+docker compose and Kubernetes alike. Apptainer runs it as your own user, as
+before. What the container writes besides the workspaces (the Redis data, the
+nginx configuration, pid files) goes to `/var/lib/openms`; the nightly
+workspace cleanup runs inside the container at 03:00.
+
+A new workspace volume belongs to uid 1000 from the start. A volume made by an
+earlier image, which ran as root, holds files owned by root that the app can no
+longer change:
+
+- **docker compose** hands them over by itself: the one-off `own-workspaces`
+  service runs before the app, changes the owner of every file not owned by
+  uid 1000 and then of the top folder, and on later starts only checks that
+  folder. A compose file of your own that starts the app without this service
+  (one that runs several apps, for example) needs it added, or the command
+  below run once for each app's volume.
+- **docker run** with a named volume: hand it over once before starting the
+  new image, with the volume's name in place of `workspaces` and your app's
+  image in place of `openms_streamlit_template`:
+
+  ```
+  docker run --rm -u 0 -v workspaces:/workspaces-streamlit-template \
+    --entrypoint chown openms_streamlit_template -R -h 1000:1000 /workspaces-streamlit-template
+  ```
+
+- **A host folder** mounted as the workspaces or as `/mounted-data`: give uid
+  1000 write access to the workspaces folder (`sudo chown -R 1000:1000 <folder>`)
+  and read access to the data folder.
+- **Kubernetes** hands the workspace share over in an init container; see the
+  Kubernetes deployment page.
+
 ## Features
 
 - deploy all OpenMS apps at once

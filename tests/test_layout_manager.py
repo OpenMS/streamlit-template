@@ -1153,7 +1153,8 @@ def test_view_bar_opens_and_gives_links(tmp_path):
     assert not at.exception
     assert at.markdown[-1].value.startswith("plots run2 [('protein', 'P4'), ('zoom@plot', {'x': [3.0, 4.0]")
     # Applied once: the link's parameters are gone, the workspace stays, the user's picks hold
-    assert "view" not in at.query_params and at.query_params["workspace"] == ["abc"]
+    # AppTest returns a list before Streamlit 1.55 and the value itself from then on
+    assert "view" not in at.query_params and at.query_params["workspace"] in ("abc", ["abc"])
     at.session_state["exp_state_0"] = {"selections": {"protein": "P9"}}
     at.session_state["dataset"] = "run3"
     at.run()

@@ -6,6 +6,7 @@ import re
 import shutil
 import sqlite3
 import string
+import time
 from contextlib import contextmanager
 from io import BytesIO
 from pathlib import Path
@@ -19,6 +20,12 @@ _TABLES = ("stored_data", "stored_files")
 _INTERNAL_COLUMNS = ("id", "display_name")
 # A result name becomes a column name. Kept to these characters so it can be
 # quoted safely; FLASHApp's names ("deconv_dfs", "anno_annotated", ...) fit.
+# How long a store trusts the column list it read from the index. Each lookup
+# asks for the columns of a table first (a FLASHApp view asks hundreds of
+# times per click), and on a workspace on network storage every ask is a
+# round trip. A result another process adds within that time is seen when it
+# runs out; this store's own writes refresh the list at once.
+COLUMN_CACHE_SECONDS = 2.0
 _NAME_TAG = re.compile(r"^[A-Za-z0-9_\-\.]+$")
 
 
@@ -124,6 +131,7 @@ class FileManager:
         )
         self._connection = None
         self._cursor = None
+        self._columns = {}
 
     # ------------------------------------------------------------------
     # SQLite index, opened on first use
@@ -169,11 +177,13 @@ class FileManager:
         state = self.__dict__.copy()
         state["_connection"] = None
         state["_cursor"] = None
+        state["_columns"] = {}
         return state
 
     def __setstate__(self, state):
         state.setdefault("_connection", None)
         state.setdefault("_cursor", None)
+        state["_columns"] = {}
         self.__dict__.update(state)
 
     # Callables ``(cache_path, dataset_id) -> Path | None`` naming folders an
@@ -353,16 +363,26 @@ class FileManager:
     # Result store
     # ------------------------------------------------------------------
 
-    def _get_column_list(self, table_name: str) -> List[str]:
-        """The columns of an index table (``id``, ``display_name``, results)."""
+    def _get_column_list(self, table_name: str, fresh: bool = False) -> List[str]:
+        """
+        The columns of an index table (``id``, ``display_name``, results).
+        The list read is kept for ``COLUMN_CACHE_SECONDS``; ``fresh`` reads
+        it again (writes do, so they see every column another process added).
+        """
         if table_name not in _TABLES:
             raise ValueError(f"Unknown table {table_name!r}")
+        cached = self._columns.get(table_name)
+        now = time.monotonic()
+        if not fresh and cached is not None and now - cached[0] < COLUMN_CACHE_SECONDS:
+            return list(cached[1])
         self.cache_cursor.execute(f"PRAGMA table_info({table_name});")
-        return [col[1] for col in self.cache_cursor.fetchall()]
+        columns = [col[1] for col in self.cache_cursor.fetchall()]
+        self._columns[table_name] = (now, columns)
+        return list(columns)
 
     def _add_column(self, table_name: str, column_name: str) -> None:
         """Adds a result column to an index table unless it is there."""
-        if column_name in self._get_column_list(table_name):
+        if column_name in self._get_column_list(table_name, fresh=True):
             return
         try:
             self._cursor.execute(
@@ -370,8 +390,9 @@ class FileManager:
             )
         except sqlite3.OperationalError:
             # Another store sharing this cache may have added it meanwhile
-            if column_name not in self._get_column_list(table_name):
+            if column_name not in self._get_column_list(table_name, fresh=True):
                 raise
+        self._columns.pop(table_name, None)
 
     def _add_entry(
         self, table_name: str, dataset_id: str, column_name: str, path
@@ -387,7 +408,9 @@ class FileManager:
         # One name is one result: storing a file under the name of a stored
         # object (or the other way round) replaces it.
         for other in _TABLES:
-            if other == table_name or column_name not in self._get_column_list(other):
+            if other == table_name or column_name not in self._get_column_list(
+                other, fresh=True
+            ):
                 continue
             row = self._row(other, dataset_id, [column_name])
             if row and row[0] and row[0] != str(path):
@@ -400,7 +423,10 @@ class FileManager:
         """Refuses to write ``path`` when another result of the dataset is stored there."""
         rel = str(self._relative(path))
         for other in _TABLES:
-            columns = [c for c in self._get_column_list(other) if c not in _INTERNAL_COLUMNS]
+            columns = [
+                c for c in self._get_column_list(other, fresh=True)
+                if c not in _INTERNAL_COLUMNS
+            ]
             if not columns:
                 continue
             row = self._row(other, dataset_id, columns)
@@ -579,7 +605,9 @@ class FileManager:
             Path(file).unlink()
         self._add_entry("stored_files", dataset_id, name_tag, self._relative(target_path))
 
-    def get_results_list(self, name_tags: List[str], partial: bool = False) -> List[str]:
+    def get_results_list(
+        self, name_tags: List[str], partial: bool = False, _retry: bool = True
+    ) -> List[str]:
         """
         The datasets that hold all (``partial`` False) or any of the results
         named, sorted by id. Names no dataset holds are left out.
@@ -604,24 +632,46 @@ class FileManager:
             return "(" + " OR ".join(parts) + ")"
 
         where = (" OR " if partial else " AND ").join(has(n) for n in name_tags)
-        self.cache_cursor.execute(
-            f"""
-            SELECT ids.id FROM (
-                SELECT id FROM stored_data UNION SELECT id FROM stored_files
-            ) ids
-            LEFT JOIN stored_data sd ON sd.id = ids.id
-            LEFT JOIN stored_files sf ON sf.id = ids.id
-            WHERE {where}
-            ORDER BY ids.id
-            """
-        )
+        try:
+            self.cache_cursor.execute(
+                f"""
+                SELECT ids.id FROM (
+                    SELECT id FROM stored_data UNION SELECT id FROM stored_files
+                ) ids
+                LEFT JOIN stored_data sd ON sd.id = ids.id
+                LEFT JOIN stored_files sf ON sf.id = ids.id
+                WHERE {where}
+                ORDER BY ids.id
+                """
+            )
+        except sqlite3.OperationalError:
+            # A kept column is gone (another process cleared the store)
+            if not _retry:
+                raise
+            self._columns = {}
+            return self.get_results_list(name_tags, partial, _retry=False)
         return [row[0] for row in self.cache_cursor.fetchall()]
 
     def _row(self, table: str, dataset_id: str, columns: List[str]):
-        self.cache_cursor.execute(
-            f"SELECT {', '.join(_quote(c) for c in columns)} FROM {table} WHERE id = ?",
-            (str(dataset_id),),
-        )
+        query = f"SELECT {', '.join(_quote(c) for c in columns)} FROM {table} WHERE id = ?"
+        try:
+            self.cache_cursor.execute(query, (str(dataset_id),))
+        except sqlite3.OperationalError:
+            # A column from a kept list is gone: another process cleared the
+            # store. Read the columns again and ask only for those left.
+            current = set(self._get_column_list(table, fresh=True))
+            kept = [c for c in columns if c in current]
+            if not kept:
+                return None
+            self.cache_cursor.execute(
+                f"SELECT {', '.join(_quote(c) for c in kept)} FROM {table} WHERE id = ?",
+                (str(dataset_id),),
+            )
+            row = self.cache_cursor.fetchone()
+            if row is None:
+                return None
+            values = dict(zip(kept, row))
+            return tuple(values.get(c) for c in columns)
         return self.cache_cursor.fetchone()
 
     def get_results(
@@ -735,6 +785,7 @@ class FileManager:
             shutil.rmtree(path, ignore_errors=True)
         for table in _TABLES:
             self.cache_cursor.execute(f"DROP TABLE IF EXISTS {table};")
+        self._columns = {}
         self._create_tables()
 
     def get_display_name(self, dataset_id: str) -> str:
