@@ -212,6 +212,11 @@ def test_full_images_ship_thermo_notice():
     flat = " ".join(notice.split())
     assert "as part of this image" in flat
     assert "taken out of this image" not in flat
+    # Both places RawFileReader is in: the built-in reader's assemblies and
+    # ThermoRawFileParser, each with the license terms that come with it.
+    assert "/openms/share/openms_thermo_bridge/managed" in flat
+    assert "/openms/share/LICENSES/ThermoRawFileReader-License.doc" in flat
+    assert "/thirdparty/ThermoRawFileParser" in flat
     for dockerfile in ("Dockerfile", "Dockerfile.arm"):
         text = (root / dockerfile).read_text(encoding="utf-8")
         assert "COPY docker/THERMO-NOTICE.txt /thirdparty/ThermoRawFileParser/NOTICE.txt" in text
