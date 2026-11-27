@@ -1,8 +1,9 @@
 #!/bin/bash
 # Container entrypoint for the OpenMS streamlit template.
 #
-# Works with both Docker (writable root FS, runs as root) and
-# Apptainer/Singularity (read-only root FS, runs as the host user's UID).
+# Works with both Docker (writable root FS, runs as the image's user, uid
+# 1000) and Apptainer/Singularity (read-only root FS, runs as the host user's
+# UID). Neither needs root.
 # On HPC clusters apptainer is the dominant runtime; this script makes the
 # image usable there without --writable-tmpfs.
 set -e
@@ -30,21 +31,24 @@ echo "entrypoint: conda env activated, streamlit=$(command -v streamlit || echo 
 # Apptainer / read-only root filesystem detection
 # -----------------------------------------------------------------------------
 # Apptainer sets APPTAINER_NAME (and SINGULARITY_NAME for backwards compat).
-# As a fallback we probe /var/run for writability: docker = writable, apptainer
-# default = read-only. Either signal flips us into "read-only mode".
+# As a fallback we probe the image's state directory, which belongs to the
+# image's user: writable under docker, read-only under apptainer and for a
+# container started as another user (`docker run -u`). Either signal flips us
+# into "read-only mode".
+STATE_DIR=/var/lib/openms
 if [ -n "${APPTAINER_NAME:-}" ] || [ -n "${SINGULARITY_NAME:-}" ] \
         || [ -n "${APPTAINER_CONTAINER:-}" ] || [ -n "${SINGULARITY_CONTAINER:-}" ] \
-        || ! ( : > /var/run/.openms-rw-probe ) 2>/dev/null; then
+        || ! ( : > "$STATE_DIR/.openms-rw-probe" ) 2>/dev/null; then
     READONLY_ROOT=1
-    echo "Detected read-only root filesystem (apptainer/singularity mode)"
+    echo "$STATE_DIR is not writable (apptainer/singularity, or another user): runtime state goes to /tmp"
 else
     READONLY_ROOT=0
-    rm -f /var/run/.openms-rw-probe 2>/dev/null || true
+    rm -f "$STATE_DIR/.openms-rw-probe" 2>/dev/null || true
 fi
 
 # Pick state paths. In read-only mode we must use /tmp (always tmpfs in
-# apptainer); in docker mode we keep the conventional /var paths so existing
-# docker-compose / k8s deployments are unaffected.
+# apptainer); in docker mode the image's state directory, and Redis listens
+# on localhost:6379 as before, which the docker-compose sync service reaches.
 if [ "$READONLY_ROOT" -eq 1 ]; then
     RUNTIME_DIR="${OPENMS_RUNTIME_DIR:-/tmp/openms-runtime-$$}"
     mkdir -p "$RUNTIME_DIR"
@@ -70,25 +74,34 @@ if [ "$READONLY_ROOT" -eq 1 ]; then
     # exec invocations, so write the resolved URL to a stable path.
     echo "$REDIS_URL" > /tmp/openms-redis-url 2>/dev/null || true
 else
-    RUNTIME_DIR="/var/run"
-    REDIS_DATA_DIR="/var/lib/redis"
-    REDIS_PID_FILE="/var/run/redis.pid"
+    RUNTIME_DIR="$STATE_DIR"
+    REDIS_DATA_DIR="$STATE_DIR/redis"
+    REDIS_PID_FILE="$STATE_DIR/redis.pid"
     REDIS_SOCKET=""
-    NGINX_CONF_DIR="/etc/nginx"
-    NGINX_PID_FILE="/run/nginx.pid"
+    NGINX_CONF_DIR="$STATE_DIR/nginx"
+    NGINX_PID_FILE="$STATE_DIR/nginx.pid"
+    mkdir -p "$REDIS_DATA_DIR" "$NGINX_CONF_DIR"
 fi
 
 # -----------------------------------------------------------------------------
-# Workspace cleanup cron (best-effort)
+# Workspace cleanup (best-effort)
 # -----------------------------------------------------------------------------
-# `service cron start` writes /var/run/crond.pid; it cannot work on a read-only
-# root. The cleanup job is optional — workspaces just accumulate until the
-# container is rebuilt, which is acceptable for HPC use cases where users
-# manage their own workspace volumes.
+# Every night at 03:00 the container deletes workspaces older than 7 days. A
+# loop of its own rather than cron, which needs root. Skipped in read-only
+# mode: on HPC users manage their own workspace volumes, and they can run
+# clean-up-workspaces.py themselves.
 if [ "$READONLY_ROOT" -eq 0 ]; then
-    service cron start || echo "WARN: cron failed to start; workspace cleanup disabled"
+    (
+        while true; do
+            now=$(date +%s)
+            next=$(date -d '03:00' +%s)
+            [ "$next" -gt "$now" ] || next=$(date -d 'tomorrow 03:00' +%s)
+            sleep $((next - now))
+            python clean-up-workspaces.py || echo "WARN: workspace cleanup failed"
+        done
+    ) &
 else
-    echo "Skipping cron (read-only root); run clean-up-workspaces.py manually if needed"
+    echo "Skipping the nightly workspace cleanup (read-only mode); run clean-up-workspaces.py manually if needed"
 fi
 
 # -----------------------------------------------------------------------------
@@ -195,8 +208,19 @@ events {
     worker_connections 1024;
 }
 
+error_log stderr;
+
 http {
     client_max_body_size 0;
+    # Off: the standard output cannot always be opened by path by an unprivileged user, and
+    # Streamlit logs the requests that matter.
+    access_log off;
+    # Writable by the container's user, not nginx's default /var/lib/nginx.
+    client_body_temp_path $NGINX_CONF_DIR/client_body;
+    proxy_temp_path $NGINX_CONF_DIR/proxy;
+    fastcgi_temp_path $NGINX_CONF_DIR/fastcgi;
+    uwsgi_temp_path $NGINX_CONF_DIR/uwsgi;
+    scgi_temp_path $NGINX_CONF_DIR/scgi;
 
     map \$cookie_stroute \$route_key {
         ""      \$request_id;
@@ -252,7 +276,15 @@ NGINX_EOF
 
     sleep 2
     echo "Starting nginx load balancer on port 8501..."
-    exec /usr/sbin/nginx -c "$NGINX_CONF_FILE" -g "daemon off;"
+    # -e (nginx 1.19.5 and later): the log nginx writes before it reads the
+    # configuration, by default /var/log/nginx/error.log, which needs root.
+    # Older nginx only warns that it cannot open that file, then goes on.
+    NGINX_EARLY_LOG=""
+    if /usr/sbin/nginx -h 2>&1 | grep -q -- "-e filename"; then
+        NGINX_EARLY_LOG="-e stderr"
+    fi
+    # shellcheck disable=SC2086
+    exec /usr/sbin/nginx $NGINX_EARLY_LOG -c "$NGINX_CONF_FILE" -g "daemon off;"
 else
     echo "Starting Streamlit app (cwd=$(pwd), uid=$(id -u))..."
     exec streamlit run app.py --server.address 0.0.0.0

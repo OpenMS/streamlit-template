@@ -136,6 +136,12 @@ This repository contains two Dockerfiles.
    and falls back to the standard upload UI. To use a different container
    path, change `local_data_dir` in `settings.json` before building.
 
+   The container runs as an unprivileged user, uid 1000, not as root. A
+   mounted data folder must be readable by that user, and a workspace volume
+   kept from an image that ran as root is handed to it once (see "Running
+   as a non-root user" on the Deployment page; docker compose does it by
+   itself).
+
 ## 🛰️ Run with Apptainer / Singularity (HPC)
 
 Apptainer (formerly Singularity) is the dominant container runtime on HPC

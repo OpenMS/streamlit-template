@@ -11,6 +11,9 @@ services:
     image: openms_streamlit_template
     container_name: openms-streamlit-template
     restart: always
+    depends_on:
+      own-workspaces:
+        condition: service_completed_successfully
     ports:
       - 8501:8501
       # The sync service below shares this container's network, so its port
@@ -46,11 +49,35 @@ services:
     container_name: openms-streamlit-template-sync
     restart: always
     depends_on:
-      - openms-streamlit-template
+      openms-streamlit-template:
+        condition: service_started
+      own-workspaces:
+        condition: service_completed_successfully
     entrypoint: ["/bin/bash", "-c", "source /root/miniforge3/bin/activate streamlit-env && exec python -m src.sync.server --port 8502"]
     network_mode: "service:openms-streamlit-template"
     environment:
       - REDIS_URL=redis://localhost:6379/0
+    volumes:
+      - workspaces-streamlit-template:/workspaces-streamlit-template
+  # The image runs as an unprivileged user, uid 1000. A volume made by an
+  # earlier image, which ran as root, holds files owned by root; this one-off
+  # container hands them to uid 1000 before the app starts, and once the top
+  # folder is uid 1000's, every later start only checks it. The only container
+  # that runs as root, with no rights but changing owners.
+  own-workspaces:
+    image: openms_streamlit_template
+    user: "0:0"
+    restart: "no"
+    cap_drop: ["ALL"]
+    cap_add: ["CHOWN", "DAC_OVERRIDE", "FOWNER"]
+    security_opt: ["no-new-privileges:true"]
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        root=/workspaces-streamlit-template
+        [ "$$(stat -c %u "$$root")" = 1000 ] && exit 0
+        find "$$root" -mindepth 1 ! -uid 1000 -exec chown -h 1000:1000 {} + || exit 1
+        chown 1000:1000 "$$root"
     volumes:
       - workspaces-streamlit-template:/workspaces-streamlit-template
 secrets:

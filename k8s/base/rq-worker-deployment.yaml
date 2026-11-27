@@ -111,32 +111,113 @@ spec:
           labelSelector:
             matchLabels:
               component: rq-worker
-      containers:
-        - name: rq-worker
+      initContainers:
+        # Hands the workspace volume to the app's user (uid 1000), once. The
+        # app containers run as that user, and files written while they ran
+        # as root are still root's. The top folder is chowned last, so its
+        # owner says the hand-over is done and later starts only stat it; a
+        # stat that does not answer (storage outage) skips the step rather
+        # than holding the pod in Init. Only this container keeps root, with
+        # the capabilities to change owners and nothing else. Both init
+        # containers set requests == limits, so the rq-worker pod keeps
+        # Guaranteed QoS.
+        - name: own-workspaces
           image: openms-streamlit
           imagePullPolicy: Always
           securityContext:
-            # Root in the image (TOPP tools, conda env), but without the extra
-            # rights a container gets by default. The file capabilities keep
-            # access to workspace files of other owners on the shared volume.
+            # Root, while the image itself runs as the app's user.
+            runAsUser: 0
+            runAsGroup: 0
             allowPrivilegeEscalation: false
             seccompProfile:
               type: RuntimeDefault
             capabilities:
               drop: ["ALL"]
               add: ["CHOWN", "DAC_OVERRIDE", "FOWNER"]
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "100m"
+              memory: "256Mi"
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              root=/workspaces-streamlit-template
+              owner=$(timeout 20 stat -c %u "$root") || exit 0
+              [ "$owner" = 1000 ] && exit 0
+              # A walk that fails or stalls exits non-zero with the top folder
+              # still root's, so the container restarts and goes on with what
+              # is left; the old pods keep serving meanwhile.
+              timeout -k 10 1800 find "$root" -mindepth 1 ! -uid 1000 -exec chown -h 1000:1000 {} + || exit 1
+              chown 1000:1000 "$root"
+          volumeMounts:
+            - name: workspaces
+              mountPath: /workspaces-streamlit-template
+              mountPropagation: HostToContainer
+        # settings.json of the image with the deployment's overrides, written
+        # to a volume the app container mounts over /app/settings.json, so the
+        # app's user needs no write access to /app.
+        - name: settings
+          image: openms-streamlit
+          imagePullPolicy: Always
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "100m"
+              memory: "256Mi"
+          command: ["/bin/sh", "-c"]
+          args:
+            - jq -s '.[0] * .[1]' /app/settings.json /app/settings-overrides.json > /settings/settings.json
+          volumeMounts:
+            - name: config
+              mountPath: /app/settings-overrides.json
+              subPath: settings-overrides.json
+              readOnly: true
+            - name: settings
+              mountPath: /settings
+      containers:
+        - name: rq-worker
+          image: openms-streamlit
+          imagePullPolicy: Always
+          securityContext:
+            # The app's user, not root: the image's TOPP tools and conda env
+            # are readable by any user, and the workspace volume is handed to
+            # uid 1000 by the own-workspaces init container.
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
+            capabilities:
+              drop: ["ALL"]
           command: ["/bin/bash", "-c"]
           args:
             - |
               set -euo pipefail
               source /root/miniforge3/bin/activate streamlit-env
-              jq -s '.[0] * .[1]' /app/settings.json /app/settings-overrides.json > /tmp/settings-merged.json && mv /tmp/settings-merged.json /app/settings.json
               exec rq worker openms-workflows --url $REDIS_URL
           env:
             - name: REDIS_URL
               value: "redis://redis:6379/0"
             - name: WORKSPACES_DIR
               value: "/workspaces-streamlit-template"
+            # Caches and config the tools write to their home folder.
+            - name: HOME
+              value: "/tmp"
             # Downward API. The storage heartbeat is keyed per node
             # (storage:ok:<node>) and the node registration alongside it
             # (storage:node:<node>) is what makes a *missing* heartbeat
@@ -256,7 +337,13 @@ spec:
               mountPath: /app/settings-overrides.json
               subPath: settings-overrides.json
               readOnly: true
+            - name: settings
+              mountPath: /app/settings.json
+              subPath: settings.json
+              readOnly: true
       volumes:
+        - name: settings
+          emptyDir: {}
         - name: workspaces
           persistentVolumeClaim:
             claimName: workspaces-manila-pvc

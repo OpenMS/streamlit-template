@@ -118,8 +118,6 @@ COPY .streamlit/ /app/.streamlit/
 
 COPY clean-up-workspaces.py /app/clean-up-workspaces.py
 
-# add cron job to the crontab
-RUN echo "0 3 * * * /root/miniforge3/envs/streamlit-env/bin/python /app/clean-up-workspaces.py >> /app/clean-up-workspaces.log 2>&1" | crontab -
 
 # Number of Streamlit server instances for load balancing (default: 1 = no load balancer)
 # Set to >1 to enable nginx load balancer with multiple Streamlit instances
@@ -163,6 +161,19 @@ RUN --mount=type=secret,id=github_token \
 
 # make sure that mamba environment is used
 SHELL ["mamba", "run", "-n", "streamlit-env", "/bin/bash", "-c"]
+
+# Run as an unprivileged user, uid 1000, the user the Kubernetes manifests
+# name too. What the entrypoint writes (Redis data, the nginx configuration,
+# pid files) goes to /var/lib/openms, and a new volume on
+# /workspaces-streamlit-template starts out owned by this user. A volume
+# made for an image that ran as root is handed over once
+# (docs/deployment.md, "Running as a non-root user").
+RUN userdel -r ubuntu 2>/dev/null || true \
+    && groupadd -g 1000 openms \
+    && useradd -u 1000 -g 1000 -m -s /bin/bash openms \
+    && mkdir -p /var/lib/openms \
+    && chown 1000:1000 /var/lib/openms /workspaces-streamlit-template
+USER 1000:1000
 
 EXPOSE $PORT
 ENTRYPOINT ["/app/entrypoint.sh"]
