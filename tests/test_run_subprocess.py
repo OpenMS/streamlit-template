@@ -1,12 +1,16 @@
 import pytest
 import time
+from pathlib import Path
+
 from streamlit.testing.v1 import AppTest
+
+ROOT = Path(__file__).resolve().parents[1]  # AppTest resolves relative paths against the caller from Streamlit 1.55 on
 
 @pytest.fixture
 def launch():
     """Launch the Run Subprocess Streamlit page for testing."""
 
-    app = AppTest.from_file("content/run_subprocess.py")
+    app = AppTest.from_file(str(ROOT / "content" / "run_subprocess.py"))
     app.run(timeout=10)  
     return app
 
