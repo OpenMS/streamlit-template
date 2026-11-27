@@ -13,7 +13,12 @@ import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
-DOCKERFILES = ["Dockerfile", "Dockerfile.arm", "Dockerfile_simple", "Dockerfile_simple.arm"]
+# An app may ship only some of the four (FLASHApp has no simple image).
+DOCKERFILES = [
+    name
+    for name in ("Dockerfile", "Dockerfile.arm", "Dockerfile_simple", "Dockerfile_simple.arm")
+    if (ROOT / name).exists()
+]
 ENTRYPOINT = (ROOT / "docker" / "entrypoint.sh").read_text(encoding="utf-8")
 
 
@@ -44,6 +49,10 @@ def test_state_and_workspaces_belong_to_the_user(name):
     assert "chown 1000:1000 /var/lib/openms /workspaces-streamlit-template" in text, name
     # cron needs root; the entrypoint runs the cleanup itself.
     assert "crontab" not in text, name
+
+
+def test_some_dockerfile_is_checked():
+    assert DOCKERFILES
 
 
 def test_entrypoint_needs_no_root():
