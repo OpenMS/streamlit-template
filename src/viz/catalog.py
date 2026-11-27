@@ -108,6 +108,8 @@ _ENTRIES = [
      'What every two runs of a comparison share (Jaccard index of the entities each detected), clustered so that runs alike sit together.'),
     ('identifications_across_runs', 'identification', 'Identifications across runs', 'settings',
      'Every entity any run of a comparison found, how many runs detected or found it and how each run found it. A click picks the entity.'),
+    ('charge_cleavage', 'identification', 'Charge states and missed cleavages', 'table_settings',
+     'Per file and over all files, the share of target PSMs with each precursor charge and of identified peptides with 0, 1 and 2 or more missed cleavages, as a table and two bar plots.'),
     ('reporter_table', 'quantification', 'Reporter ions', 'settings',
      'The spectra of an isobarically labelled run with their retention time, precursor mass and how many labels carry a reporter ion, and, for an identified run, the protein each was identified as. A click picks the spectrum.'),
     ('reporter_ions', 'quantification', 'Reporter ion plot', 'settings',
