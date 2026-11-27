@@ -600,6 +600,12 @@ class WorkflowManager:
         Returns:
             True if a stop action was taken (queue cancel or local kill).
         """
+        # A stopped run sends no "run ended" e-mail (run_email).
+        from .run_email import forget as forget_email
+        try:
+            forget_email(self.workflow_dir)
+        except OSError as error:
+            self.logger.log(f"Could not remove the e-mail request: {error}")
         acquired = False
         try:
             with file_lock(self.workflow_dir / ".locks" / "execution.lock", blocking=False):

@@ -25,7 +25,7 @@ from src.common.common import (
     tk_file_dialog,
 )
 from src.workflow._log_status import classify_log_outcome
-from src.workflow import run_notice
+from src.workflow import run_notice, run_email
 from src.workflow.report_ui import methods_section, report_buttons, run_methods
 from src.workflow.input_check import clash_message, name_clashes
 from src.workflow.RunManager import FOLLOW_UP_KEY
@@ -3076,6 +3076,46 @@ class StreamlitUI(DescribeMixin):
             return False
         return True
 
+    def _email_request(self) -> None:
+        """While a queued run is going: send me one e-mail when it ends.
+
+        Online only, and only where the deployment set up a mail server
+        (``run_email.enabled()``). The address is kept until the e-mail is
+        sent and then deleted.
+        """
+        if st.session_state.get("location") != "online" or not run_email.enabled():
+            return
+        address = run_email.requested(self.workflow_dir)
+        label = f"✉️ E-mail to {address} when it ends" if address else "✉️ E-mail me when it ends"
+        with st.popover(label):
+            if address:
+                st.caption(f"One e-mail goes to **{address}** when this run ends. "
+                           "The address is deleted once it is sent.")
+                if st.button("Don't send it", key=f"{self.workflow_dir.name}-email-forget"):
+                    run_email.forget(self.workflow_dir)
+                    st.rerun()
+                return
+            with st.form(f"{self.workflow_dir.name}-email-form", border=False):
+                value = st.text_input(
+                    "E-mail address", placeholder="name@example.org",
+                    help="You get one e-mail with a link to this workspace when the run "
+                         "finishes or fails. The address is used for nothing else and is "
+                         "deleted once the e-mail is sent.",
+                )
+                if st.form_submit_button("Send me an e-mail"):
+                    if run_email.valid_address(value):
+                        try:
+                            from urllib.parse import urlencode
+                            link = st.context.url.split("?")[0]
+                            query = urlencode(st.query_params.to_dict())
+                            link = f"{link}?{query}" if query else link
+                        except Exception:  # pylint: disable=broad-except
+                            link = ""
+                        run_email.request(self.workflow_dir, value, link)
+                        st.rerun()
+                    else:
+                        st.error("This is not an e-mail address.")
+
     def execution_section(
         self,
         start_workflow_function,
@@ -3178,6 +3218,7 @@ class StreamlitUI(DescribeMixin):
             if is_running:
                 st.session_state[watched_key] = True
                 st.html(run_notice.ask_html(), unsafe_allow_javascript=True)
+                self._email_request()
                 # Real-time display during execution
                 spinner_text = "**Workflow running...**"
                 if job_status == "queued":

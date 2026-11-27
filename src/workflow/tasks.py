@@ -213,6 +213,7 @@ def execute_workflow(
         logger.log("WORKFLOW FINISHED")
         if runs is not None:
             runs.finish(run_id, "finished")
+        _send_email(workflow_path, "finished")
 
         _update_progress(job, 1.0, "Workflow completed")
 
@@ -261,6 +262,8 @@ def execute_workflow(
         except Exception:
             pass
 
+        _send_email(workflow_path, "error")
+
         # Clean up pid directory
         try:
             pid_dir = workflow_path / "pids"
@@ -272,6 +275,15 @@ def execute_workflow(
         # {"success": False} dict here looked like a normal return to RQ, which
         # recorded every crashed workflow as finished successfully.
         raise
+
+
+def _send_email(workflow_path: Path, outcome: str) -> None:
+    """The e-mail a user asked for on the Run page (run_email); never raises."""
+    try:
+        from src.workflow import run_email
+        run_email.notify(workflow_path, outcome)
+    except Exception:
+        pass
 
 
 def _is_timeout(e: BaseException) -> bool:

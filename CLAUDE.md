@@ -230,6 +230,8 @@ The workflow directory is `<workspace>/<workflow-name-lowercased-hyphenated>/`, 
 
 **A queued run's time limit grows with its input files** (`src/workflow/job_timeout.py`): `queue_settings.default_timeout` + `timeout_per_input` per selected input file, at most `max_timeout` (defaults 2 h, 30 min, 7 days); `WorkflowManager.job_timeout()` computes it, a subclass may override it, and the sync service uses the same rule. The run's log names the limit, and a run that reaches it says so and SIGTERMs the tools listed in `pids/`, which would otherwise outlive the job.
 
+**E-mail when a run ends** (`src/workflow/run_email.py`, Streamlit-free): online, while a run is going, the Run page offers **✉️ E-mail me when it ends** (`StreamlitUI._email_request`, beside the browser-notification button). The address and a link back to the workspace go to `<workflow_dir>/notify-email.json` (not `logs/`, which a start clears); `tasks.execute_workflow` sends one message for a finished or failed run (`run_email.notify`), a stopped run sends none (`stop_workflow` calls `forget`), and the file is deleted either way. It is shown only where the deployment configures a mail server through the environment: `SMTP_HOST` and `SMTP_FROM`, optionally `SMTP_PORT`, `SMTP_TLS` (`starttls`, `ssl`, `none`), `SMTP_USER` and `SMTP_PASSWORD` (from a Kubernetes secret, never the repository). The worker pods need the same variables as the web pods.
+
 The off-switches are `online_deployment` and unsetting `REDIS_URL`. `docs/REDIS_QUEUE_IMPLEMENTATION_PLAN.md` is a pre-implementation design doc written in future tense — the work shipped, its line references are stale, and the `queue_settings.enabled` flag it describes is read nowhere. Read the code.
 
 ### Parameters — two independent systems
