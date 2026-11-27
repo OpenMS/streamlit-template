@@ -503,6 +503,9 @@ jobs:
         case "$PLATFORM" in
           Windows-x86_64)
             exe=$(ls tools/*-command-line-tools-Windows-x86_64.exe)
+            # Git Bash turns an argument such as /S into a path (C:/Program
+            # Files/Git/S); the installer then opens its pages and waits.
+            export MSYS_NO_PATHCONV=1
             "$exe" /S
             dir="$LOCALAPPDATA\\Programs\\$APP_NAME-command-line-tools"
             path=$(powershell -NoProfile -Command "[Environment]::GetEnvironmentVariable('Path','User')")
