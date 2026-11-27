@@ -61,6 +61,7 @@
         "local": "auto",
         "online": "auto"
     },
+    "preload": [],
     "data_import": {
         "enabled": true,
         "max_download_gb_online": 50,
