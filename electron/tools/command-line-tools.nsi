@@ -41,10 +41,11 @@ InstallDirRegKey HKCU "${UNINST_KEY}" "InstallLocation"
 ; Adds or removes $INSTDIR\bin in the user's PATH. .NET's SetEnvironmentVariable
 ; also tells running programs (Explorer) that the environment changed. The folder
 ; reaches PowerShell as an environment variable, so a quote in it cannot break
-; the command.
+; the command. -InputFormat None stops PowerShell from reading the stdin that
+; nsExec leaves open: without it a silent install (/S) never finishes.
 !macro EditUserPath ACTION
   System::Call 'Kernel32::SetEnvironmentVariable(t "OPENMS_TOOLS_BIN", t "$INSTDIR\bin")'
-  nsExec::ExecToLog `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "$$d=$$env:OPENMS_TOOLS_BIN; $$p=[Environment]::GetEnvironmentVariable('Path','User'); if ($$p -eq $$null) { $$p='' }; $$parts=@($$p.Split(';') | Where-Object { $$_ -ne '' -and $$_ -ne $$d }); if ('${ACTION}' -eq 'add') { $$parts += $$d }; [Environment]::SetEnvironmentVariable('Path', ($$parts -join ';'), 'User')"`
+  nsExec::ExecToLog `powershell.exe -NoProfile -NonInteractive -InputFormat None -ExecutionPolicy Bypass -Command "$$d=$$env:OPENMS_TOOLS_BIN; $$p=[Environment]::GetEnvironmentVariable('Path','User'); if ($$p -eq $$null) { $$p='' }; $$parts=@($$p.Split(';') | Where-Object { $$_ -ne '' -and $$_ -ne $$d }); if ('${ACTION}' -eq 'add') { $$parts += $$d }; [Environment]::SetEnvironmentVariable('Path', ($$parts -join ';'), 'User')"`
   Pop $0
 !macroend
 
