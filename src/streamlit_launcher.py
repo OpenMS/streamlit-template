@@ -10,10 +10,10 @@ first visitor after a restart waits for it: the daily first-load check measured
 pandas at 4 to 10 s and pyopenms at 4 to 12 s on a cold disk, most of it reading
 the files. The launcher imports them before the server starts, so a pod
 becomes ready a few seconds later and the first page is drawn without that
-wait. ``DEFAULT_PRELOAD`` holds what nearly every app imports; an app adds its
-own in ``settings.json`` as ``"preload": ["module", ...]``. A module that is
-not installed, or fails to import, is skipped: the page that needs it imports
-it as before.
+wait. What is preloaded is the list ``"preload": ["module", ...]`` in
+``settings.json``, nothing else; the template lists pandas and pyopenms, and an
+app lists its own. A module that is not installed, or fails to import, is
+skipped: the page that needs it imports it as before.
 
 polars first, on the main thread. Streamlit runs ``app.py`` in a script thread
 that ends after each rerun, so the first ``import polars`` of a plain
@@ -21,8 +21,10 @@ that ends after each rerun, so the first ``import polars`` of a plain
 bundled allocator (mimalloc before 3.4.1) can then read the exited thread's
 allocator state, and a later polars call on another thread dies with an access
 violation (polars issues #29883 and #30362). Importing polars here, on the main
-thread, which lives as long as the server, avoids that. Every module is
-imported on the main thread for the same reason.
+thread, which lives as long as the server, avoids that, so an app that uses
+polars lists it in ``"preload"`` (a test checks this against requirements.txt)
+and the launcher imports it before the other modules. Every module is imported
+on the main thread for the same reason.
 """
 
 from __future__ import annotations
@@ -33,8 +35,8 @@ import sys
 import time
 from pathlib import Path
 
-# Imported before Streamlit starts, in this order; polars stays first.
-DEFAULT_PRELOAD = ("polars", "pandas", "pyopenms", "openms_insight")
+# Imported before every other preloaded module (see the module docstring).
+FIRST = ("polars",)
 
 
 def settings_preload(path: Path | str = "settings.json") -> list:
@@ -49,8 +51,9 @@ def settings_preload(path: Path | str = "settings.json") -> list:
 
 
 def preload_modules(path: Path | str = "settings.json") -> tuple:
-    """``DEFAULT_PRELOAD`` followed by the app's own, each once."""
-    return tuple(dict.fromkeys([*DEFAULT_PRELOAD, *settings_preload(path)]))
+    """The modules of ``settings.json``'s ``"preload"``, each once, polars first."""
+    modules = list(dict.fromkeys(settings_preload(path)))
+    return tuple(sorted(modules, key=lambda m: m not in FIRST))
 
 
 def preload(modules=None, log=None) -> list:

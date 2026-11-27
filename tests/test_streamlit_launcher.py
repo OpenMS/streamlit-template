@@ -1,6 +1,7 @@
 """The Streamlit launcher preloads heavy libraries on the main thread."""
 
 import importlib.util
+import re
 import sys
 import threading
 import types
@@ -58,14 +59,12 @@ def test_settings_preload_ignores_a_bad_file(tmp_path):
     assert streamlit_launcher.settings_preload(path) == []
 
 
-def test_preload_modules_keeps_polars_first_and_each_once(tmp_path):
+def test_preload_modules_come_only_from_settings(tmp_path):
     path = tmp_path / "settings.json"
-    path.write_text('{"preload": ["pandas", "scipy.stats", "scipy.stats"]}')
-    modules = streamlit_launcher.preload_modules(path)
-    assert modules[0] == "polars"
-    assert modules[: len(streamlit_launcher.DEFAULT_PRELOAD)] == streamlit_launcher.DEFAULT_PRELOAD
-    assert modules.count("pandas") == 1
-    assert modules[-1] == "scipy.stats" and modules.count("scipy.stats") == 1
+    path.write_text('{"preload": ["pandas", "scipy.stats", "polars", "scipy.stats"]}')
+    assert streamlit_launcher.preload_modules(path) == ("polars", "pandas", "scipy.stats")
+    path.write_text("{}")
+    assert streamlit_launcher.preload_modules(path) == ()
 
 
 def test_preload_skips_a_module_that_fails_to_import(monkeypatch):
@@ -87,6 +86,15 @@ def test_every_preload_in_settings_is_installed():
     """A module named in settings.json must be importable, or it is a typo."""
     for name in streamlit_launcher.settings_preload("settings.json"):
         assert importlib.util.find_spec(name) is not None, name
+
+
+def test_polars_is_preloaded_when_the_app_depends_on_it():
+    """polars imported first in a page's script thread can crash on Windows."""
+    names = {re.split(r"[<>=!~\[; ]", line.strip(), maxsplit=1)[0].lower()
+             for line in Path("requirements.txt").read_text(encoding="utf-8").splitlines()
+             if line.strip() and not line.lstrip().startswith(("#", "-"))}
+    if "polars" in names or "polars-lts-cpu" in names:
+        assert "polars" in streamlit_launcher.settings_preload("settings.json")
 
 
 def test_containers_start_streamlit_through_the_launcher():
