@@ -6,7 +6,7 @@ from .ParameterManager import InvalidParameterFileError, ParameterManager
 from .CommandExecutor import CommandExecutor
 from .StreamlitUI import StreamlitUI
 from .FileManager import FileManager, cache_path_for
-from .input_check import clash_message, selection_clashes
+from .input_check import clash_message, selection_checks, selection_clashes, unusable_message
 from ._log_status import classify_log_outcome
 from .RunManager import RunManager, FINISHED, FAILED, CANCELLED, RUNNING, FOLLOW_UP_KEY, FOLLOW_UP_FILE, RUN_NAME_KEY, RUN_NAME_FILE, MAX_NAME_LENGTH, apply_settings, same_files_info
 from .pid_files import reap
@@ -152,14 +152,17 @@ class WorkflowManager:
     def input_problems(self) -> str:
         """Why the selected input files cannot be run as they are ("" when they can).
 
-        Two selected files whose names differ only in folder, extension or
-        case would write to the same result files (outputs are named after
-        the inputs), so one would replace the other's results. A subclass may
-        add checks of its own.
+        A selected mzML or FASTA file a tool cannot use (not one, cut off,
+        no spectra or proteins; ``input_check.check_file``) would fail the run
+        part-way. Two selected files whose names differ only in folder,
+        extension or case would write to the same result files (outputs are
+        named after the inputs), so one would replace the other's results. A
+        subclass may add checks of its own.
         """
         params = self.parameter_manager.get_parameters_from_json()
+        unusable = [unusable_message(checks) for checks in selection_checks(self.workflow_dir, params).values()]
         found = selection_clashes(self.workflow_dir, params)
-        return " ".join(clash_message(groups) for groups in found.values())
+        return " ".join([m for m in unusable if m] + [clash_message(groups) for groups in found.values()])
 
     def _settle_follow_up(self) -> None:
         """Without run folders: the start keeps which result it follows (for the
