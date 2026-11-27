@@ -4,6 +4,7 @@ their height and the mass shift filter."""
 from __future__ import annotations
 
 from src.viz.columns import BROWSE, hide_fields
+from src.viz.plumbing import only_accepted
 
 # Without a decoy search there are no q-values; their columns are hidden
 QVALUE_FIELDS = ("best_qvalue", "qvalue", "best_protein_qvalue", "protein_qvalue")
@@ -43,3 +44,18 @@ def shift_filter(filters: dict, all_rows=None, mass_shift: str = "mass_shift") -
         return dict(filters=filters) if filters else {}
     return dict(filters={**filters, mass_shift: "shift_ids"},
                 filter_defaults={mass_shift: all_rows})
+
+
+def level(cls, depth: int, narrowed: dict | None = None) -> dict:
+    """Display options of the ``depth``-th of tables browsed top down (0 the
+    first): Enter or a double click goes one table down, Backspace one up,
+    and each table says, by the labels of ``narrowed`` ({identifier: label}),
+    what the tables above narrow it to.
+
+    Render-time options, passed where the table is drawn, not with its data;
+    an Insight ``cls`` without them gets none.
+    """
+    options = dict(level=depth)
+    if narrowed:
+        options["narrowed_labels"] = dict(narrowed)
+    return only_accepted(cls, **options)
