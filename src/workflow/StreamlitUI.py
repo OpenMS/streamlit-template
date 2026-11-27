@@ -79,6 +79,10 @@ from src.workflow.ParameterManager import (
 from src.workflow.parameter_names import display_name as _display_name
 from src.workflow.describe_ui import DescribeMixin
 
+# The key of the file selector whose Browse dialog is open, so it stays open
+# over page reruns until Done or ✕.
+BROWSE_OPEN_KEY = "_browse-open"
+
 
 def _txt(value) -> str:
     """Text from pyOpenMS: bytes up to pyOpenMS 3.5, str from 3.6 (nanobind)."""
@@ -766,7 +770,12 @@ class StreamlitUI(DescribeMixin):
         folder, which of them are used, and the ways to add more."""
         plain_name = name.replace("*", "")
 
-        @st.dialog(f"📂 {plain_name}", width="large", on_dismiss="rerun")
+        def dismissed():
+            # Closed with ✕ or a click outside: it stays closed.
+            st.session_state.pop(BROWSE_OPEN_KEY, None)
+            st.session_state.pop(data_import_ui.ACTIVE_TAB_KEY, None)
+
+        @st.dialog(f"📂 {plain_name}", width="large", on_dismiss=dismissed)
         def browse():
             # The same ways to add files as the upload page's tabs.
             importing = data_import_ui.enabled()
@@ -785,7 +794,15 @@ class StreamlitUI(DescribeMixin):
                 labels.append("☁️ Cloud data")
             if pride:
                 labels.append("🧬 Import from PRIDE")
-            tabs = dict(zip(labels, st.tabs(labels)))
+            # An import started here keeps its tab in front while the dialog
+            # opens again (each page rerun does), so its progress and result show.
+            import_tab = {
+                data_import_ui.LINK: "☁️ Cloud data",
+                data_import_ui.PRIDE: "🧬 Import from PRIDE",
+            }.get(st.session_state.get(data_import_ui.ACTIVE_TAB_KEY))
+            tabs = dict(zip(labels, st.tabs(
+                labels, default=import_tab if import_tab in labels else None
+            )))
             tab_list = list(tabs.values())
             with tab_list[0]:
                 # Takes the example files out once files of the user's own are in.
@@ -819,6 +836,7 @@ class StreamlitUI(DescribeMixin):
                     "Done", type="primary", key=f"_browse-{key}-done",
                     use_container_width=True,
                 ):
+                    dismissed()
                     st.rerun()
                 if options and c2.button(
                     "🗑️ Remove all files", key=f"_browse-{key}-clear",
@@ -1272,6 +1290,12 @@ class StreamlitUI(DescribeMixin):
             help="Your files by folder: choose which to use, sort them into "
             "folders and add new ones.",
         ):
+            st.session_state[BROWSE_OPEN_KEY] = key
+            st.session_state.pop(data_import_ui.ACTIVE_TAB_KEY, None)
+            self._browse_input_files(key, name, multiple, upload)
+        elif st.session_state.get(BROWSE_OPEN_KEY) == key:
+            # Open until Done or ✕: a page rerun (an import finishing, files
+            # added) would otherwise close it.
             self._browse_input_files(key, name, multiple, upload)
 
     def _follow_up_info(self) -> dict:

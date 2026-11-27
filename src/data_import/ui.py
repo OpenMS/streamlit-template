@@ -19,6 +19,8 @@ UNPACK = "Unpack and sort by type"
 SKIP = "Skip"
 LINK, PRIDE = "link", "pride"
 TAB_NAMES = {LINK: "Cloud data", PRIDE: "Import from PRIDE"}
+# The source whose import was started in a dialog, so the dialog opens on its tab
+ACTIVE_TAB_KEY = "data-import-active-tab"
 
 
 def settings() -> dict:
@@ -111,15 +113,156 @@ def _selection(listing: dict, targets: Dict[str, dict], job_dir: Path, settings_
         # Recheck cached listings against the current source's defaults.
         return names.get(job.target_for(item["name"], targets), SKIP)
 
-    table = pd.DataFrame({
-        "Import": [goes_to(i) != SKIP and i.get("preselect", True) for i in items],
+    listing_id = job._item_id(listing["url"])
+    destinations = [goes_to(i) for i in items]
+    preselected = [d != SKIP and i.get("preselect", True) for i, d in zip(items, destinations)]
+    picked = _insight_picker(items, destinations, preselected, job_dir, prefix, listing_id)
+    if picked is None:
+        chosen = _editor_picker(items, destinations, preselected, names, by_name, prefix, listing_id)
+    else:
+        chosen = _destination_override(items, picked, destinations, names, by_name, prefix, listing_id)
+
+    total = sum(int(i["size"] or 0) for i in chosen)
+    needed = sum(int(i["size"] or 0) * (2 if i["kind"] == "archive" else 1) for i in chosen)
+    limit = _limit_bytes()
+    label = f"Import {len(chosen)} file(s), {_format_size(total)}" if chosen else "Import"
+    problem = ""
+    if limit is not None and total > limit:
+        problem = (f"The selection is {_format_size(total)}; this server imports at most "
+                   f"{_format_size(limit)} at a time.")
+    elif needed > shutil.disk_usage(job_dir.parent).free:
+        problem = f"There is not enough free disk space for {_format_size(needed)}."
+    if problem:
+        st.error(problem)
+    if st.button(label, type="primary", use_container_width=True, disabled=not chosen or bool(problem),
+                 key=f"{prefix}-start"):
+        _set_source(job_dir, source)
+        st.session_state[ACTIVE_TAB_KEY] = source
+        job.start_import(
+            job_dir, chosen, targets, guard=_online(),
+            allowed_hosts=settings_.get("allowed_hosts") or None, max_bytes=limit,
+            parallel=int(settings_.get("parallel_downloads", 4)),
+            connections=int(settings_.get("download_connections", job.CONNECTIONS)),
+        )
+        _rerun_here()
+
+
+def _rerun_here() -> None:
+    """Rerun only the surrounding fragment (the Browse dialog stays open and shows
+    the progress at once), or the page when the section is not in one."""
+    try:
+        st.rerun(scope="fragment")
+    except st.errors.StreamlitAPIException:
+        st.rerun()
+
+
+def _insight_table():
+    """openms-insight's Table and StateManager when installed with row ticks
+    (``multi_select``), else None: it is a dependency of the apps, not the template."""
+    try:
+        from openms_insight import StateManager, Table
+    except Exception:
+        return None
+    from src.viz.plumbing import accepts
+    return (Table, StateManager) if accepts(Table, "multi_select") else None
+
+
+def _insight_picker(items, destinations, preselected, job_dir: Path, prefix: str,
+                    listing_id: str):
+    """Tick the files to import in an openms-insight table. Ticking a row does not
+    redraw the page, only this section. Returns the ticked row numbers, or None
+    when openms-insight is not available."""
+    insight = _insight_table()
+    if insight is None:
+        return None
+    Table, StateManager = insight
+    import polars as pl
+
+    frame = pl.DataFrame({
+        "row": list(range(len(items))),
         "File": [i["path"] for i in items],
         "Size": [_format_size(i["size"]) for i in items],
-        "Goes to": [goes_to(i) for i in items],
+        "Goes to": destinations,
+    })
+    state = StateManager(session_key=f"{prefix}-state-{listing_id}")
+    identifier = "import_rows"
+    first = f"{prefix}-picked-{listing_id}"
+    if not st.session_state.get(first):
+        st.session_state[first] = True
+        ticked = sorted(r for r, on in enumerate(preselected) if on)
+        state.set_selection(identifier, ticked or None)
+    many = len(items) > 15
+    # Tick boxes visible from the start (an option of newer openms-insight).
+    from src.viz.plumbing import accepts
+    shown = {"multi_select_shown": True} if accepts(Table, "multi_select_shown") else {}
+    table = Table(
+        cache_id=f"import-{listing_id}-{fingerprint_items(items, destinations)}",
+        data=frame.lazy(), cache_path=str(Path(job_dir, "tables")),
+        index_field="row", multi_select={identifier: "row"}, default_row=-1,
+        pagination=len(items) > 100, page_size=100, search=many,
+        column_definitions=[
+            {"field": "File", "title": "File", "hozAlign": "left", "widthGrow": 4},
+            {"field": "Size", "title": "Size", "hozAlign": "right", "width": 100},
+            {"field": "Goes to", "title": "Goes to", "hozAlign": "left",
+             "widthGrow": 2},
+        ],
+        **shown,
+    )
+    table(key=f"{prefix}-table-{listing_id}", state_manager=state,
+          height=min(120 + 36 * len(items) + (48 if many else 0), 440))
+    picked = state.get_selection(identifier) or []
+    return [int(r) for r in picked if 0 <= int(r) < len(items)]
+
+
+def fingerprint_items(items, destinations) -> str:
+    """A short id of a file list and where each file goes, for the table's cache."""
+    return job._item_id(*[f"{i['path']}|{i['size']}|{d}" for i, d in zip(items, destinations)])
+
+
+def _destination_override(items, picked, destinations, names, by_name, prefix: str,
+                          listing_id: str) -> list:
+    """The ticked files with their upload; one choice below the table sends all of
+    them elsewhere (the table only ticks, so a pick never redraws it)."""
+    options = ["As listed"] + list(names.values())
+    if any(items[r]["kind"] == "archive" for r in picked):
+        options.append(UNPACK)
+    where = "As listed"
+    if picked and len(names) > 1:
+        where = st.selectbox(
+            "Where the ticked files go", options, key=f"{prefix}-where-{listing_id}",
+            help="The upload the ticked files are added to. As listed uses the "
+                 "Goes to column. Archives are downloaded whole, unpacked, and "
+                 "their files sorted by type.")
+    chosen = []
+    for r in picked:
+        item = items[r]
+        goes = destinations[r] if where == "As listed" else where
+        if goes == SKIP:
+            continue
+        if goes == UNPACK:
+            if item["kind"] != "archive":
+                goes = destinations[r]
+                if goes in (SKIP, UNPACK):
+                    continue
+            else:
+                chosen.append({**item, "target": "*"})
+                continue
+        chosen.append({**item, "target": by_name[goes]})
+    return chosen
+
+
+def _editor_picker(items, destinations, preselected, names, by_name, prefix: str,
+                   listing_id: str) -> list:
+    """The ticked files in an editable table (when openms-insight is not installed)."""
+    table = pd.DataFrame({
+        "Import": preselected,
+        "File": [i["path"] for i in items],
+        "Size": [_format_size(i["size"]) for i in items],
+        "Goes to": destinations,
     })
     edited = st.data_editor(
         table, hide_index=True, use_container_width=True, disabled=["File", "Size"],
-        key=f"{prefix}-editor-{job._item_id(listing['url'])}",
+        key=f"{prefix}-editor-{listing_id}",
         column_config={
             "Import": st.column_config.CheckboxColumn(width="small"),
             "Goes to": st.column_config.SelectboxColumn(
@@ -139,29 +282,7 @@ def _selection(listing: dict, targets: Dict[str, dict], job_dir: Path, settings_
         else:
             target = by_name[row["Goes to"]]
         chosen.append({**item, "target": target})
-
-    total = sum(int(i["size"] or 0) for i in chosen)
-    needed = sum(int(i["size"] or 0) * (2 if i["kind"] == "archive" else 1) for i in chosen)
-    limit = _limit_bytes()
-    label = f"Import {len(chosen)} file(s), {_format_size(total)}" if chosen else "Import"
-    problem = ""
-    if limit is not None and total > limit:
-        problem = (f"The selection is {_format_size(total)}; this server imports at most "
-                   f"{_format_size(limit)} at a time.")
-    elif needed > shutil.disk_usage(job_dir.parent).free:
-        problem = f"There is not enough free disk space for {_format_size(needed)}."
-    if problem:
-        st.error(problem)
-    if st.button(label, type="primary", use_container_width=True, disabled=not chosen or bool(problem),
-                 key=f"{prefix}-start"):
-        _set_source(job_dir, source)
-        job.start_import(
-            job_dir, chosen, targets, guard=_online(),
-            allowed_hosts=settings_.get("allowed_hosts") or None, max_bytes=limit,
-            parallel=int(settings_.get("parallel_downloads", 4)),
-            connections=int(settings_.get("download_connections", job.CONNECTIONS)),
-        )
-        st.rerun()
+    return chosen
 
 
 def _source_path(job_dir: Path) -> Path:
@@ -274,8 +395,9 @@ def link_import_section(workflow_dir, targets: Dict[str, dict], source: str = LI
     with st.form(f"{prefix}-form", border=False):
         c1, c2 = st.columns([4, 1])
         if source == PRIDE:
-            link = c1.text_input("PRIDE accession", placeholder=pride_example(),
-                                 label_visibility="collapsed")
+            # Filled in, so Look up and Import work without typing anything
+            link = c1.text_input("PRIDE accession", value=pride_example(),
+                                 placeholder=pride_example(), label_visibility="collapsed")
         else:
             link = c1.text_input("Link", placeholder="https://a3s.fi/swift/v1/<bucket>/data.tar",
                                  label_visibility="collapsed")
