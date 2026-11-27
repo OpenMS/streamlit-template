@@ -314,6 +314,14 @@ jobs:
         NOTARIZED: ${{ secrets.APPLE_API_KEY != '' || secrets.APPLE_ID != '' }}
       run: electron/scripts/install-app.sh "$INSTALLER"
 
+    - name: Put another OpenMS's shared data where a source build installs it
+      # As on a computer with an older OpenMS in /usr/local: the bundled tools
+      # must read their own share/OpenMS, not this one, which has no tool registry.
+      if: runner.os == 'Linux'
+      run: |
+        sudo mkdir -p /usr/local/share/OpenMS/CHEMISTRY /usr/local/share/OpenMS/TOOLS
+        echo '<unimod/>' | sudo tee /usr/local/share/OpenMS/CHEMISTRY/unimod.xml >/dev/null
+
     - name: Smoke test the installed payload
       # pyOpenMS, every TOPP tool and the Streamlit server, with the shell's environment.
       run: node electron/scripts/smoke-payload.js "$APP_PAYLOAD" $TOPP_TOOLS
