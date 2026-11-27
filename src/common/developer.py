@@ -76,7 +76,8 @@ def _password_hash() -> str:
         env = os.environ.get(var, "").strip()
         if env:
             return "" if env.lower() == "none" else env
-    config = st.session_state.settings.get("developer_mode") or {}
+    settings = st.session_state.get("settings") or {}  # none yet: no developer mode
+    config = settings.get("developer_mode") or {}
     return config.get("password_hash") or config.get("password_sha256", "")
 
 
