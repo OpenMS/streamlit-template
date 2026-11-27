@@ -68,9 +68,25 @@ def test_entrypoint_needs_no_root():
     assert "python clean-up-workspaces.py" in ENTRYPOINT
 
 
+def _template_images(services):
+    """Images the compose file builds from one of the template's Dockerfiles."""
+    return {
+        service.get("image")
+        for service in services.values()
+        if isinstance(service.get("build"), dict)
+        and Path(service["build"].get("dockerfile", "Dockerfile")).name in DOCKERFILES
+    }
+
+
 def test_compose_hands_over_old_volumes():
     compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
     services = compose["services"]
+    images = _template_images(services)
+    if not images:
+        # The app's compose file (app-owned) runs an image of its own, not one
+        # of the template's uid-1000 images, so there is nothing to hand over.
+        assert "own-workspaces" not in services
+        return
     own = services["own-workspaces"]
     assert own["user"] == "0:0"
     assert own["cap_drop"] == ["ALL"]
@@ -80,8 +96,18 @@ def test_compose_hands_over_old_volumes():
     assert script.rstrip().splitlines()[-1].strip() == 'chown 1000:1000 "$$root"'
     assert "|| exit 1" in script
     for name, service in services.items():
-        if name == "own-workspaces":
+        if name == "own-workspaces" or service.get("image") not in images:
             continue
         assert "user" not in service, name
         needs = service["depends_on"]["own-workspaces"]
         assert needs["condition"] == "service_completed_successfully", name
+
+
+def test_only_services_of_template_images_need_the_hand_over():
+    services = {
+        "app": {"build": {"context": ".", "dockerfile": "docker/Dockerfile.app"}, "image": "app:local"},
+    }
+    assert _template_images(services) == set()
+    services["web"] = {"build": {"context": ".", "dockerfile": DOCKERFILES[0]}, "image": "web"}
+    services["sync"] = {"image": "web"}
+    assert _template_images(services) == {"web"}

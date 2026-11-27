@@ -190,12 +190,42 @@ else
       [[ $name =~ $glibc ]] && continue
       [[ $(realpath -m "$path") == "$libdir/"* ]] || echo "$name => $path"
     done)
+
+  # libOpenMS has the install prefix of the machine it was built for compiled in
+  # (<prefix>/share/OpenMS, e.g. /usr/local/share/OpenMS) and looks there for its
+  # shared data before anywhere else, OPENMS_DATA_PATH last. On a computer with
+  # another OpenMS in that prefix the bundled tools then read that installation's
+  # data and tool registry ("The TOPP tool registry at
+  # '/usr/local/share/OpenMS/TOOLS' is empty"). Blank those compiled-in data paths
+  # the way relocatable (conda) packages rewrite them, NUL-padded, which OpenMS
+  # reads at run time; the tools then find the bundle's share/OpenMS through the
+  # OPENMS_DATA_PATH the app sets (electron/src/payload.js).
+  python3 - "$out/openms/lib" <<'EOF'
+import pathlib, re, sys
+pattern = re.compile(rb"(?<=\0)/[A-Za-z0-9_.+/-]*/share/OpenMS(?=\0)")
+for lib in sorted(pathlib.Path(sys.argv[1]).glob("libOpenMS*.so*")):
+    if lib.is_symlink():
+        continue
+    data = lib.read_bytes()
+    found = sorted({m.group().decode() for m in pattern.finditer(data)})
+    if found:
+        lib.write_bytes(pattern.sub(lambda m: b"\0" * len(m.group()), data))
+        print(f"{lib.name}: blanked compiled-in data path(s) {', '.join(found)}")
+EOF
 fi
 
 if [[ -n "${bad:-}" ]]; then
   echo "::error::libraries resolved outside the bundle:"
   echo "$bad"
   exit 1
+fi
+
+# OpenMS since 3.6 looks its tools up in share/OpenMS/TOOLS/*.tsv; a tool
+# that finds no registry there refuses to start.
+if grep -aq "TOPP tool registry" "$out"/openms/lib/libOpenMS* 2>/dev/null ||
+   grep -aq "TOPP tool registry" "$out"/openms/bin/* 2>/dev/null; then
+  ls "$out"/share/OpenMS/TOOLS/*.tsv >/dev/null 2>&1 ||
+    { echo "::error::share/OpenMS/TOOLS has no tool registry (*.tsv)"; exit 1; }
 fi
 
 # share/OpenMS/examples holds OpenMS's own tutorial data, which no TOPP tool

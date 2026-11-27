@@ -31,6 +31,7 @@ optional and falls back to the workflow's default:
 | `synopsis` | one line for the Linux AppImage |
 | `e2e_scenarios` | the app's scenario files for `e2e.js --scenario` (repository paths) |
 | `stage_script` | a bash script run as `bash <script> <python> electron/payload` once the app's requirements are installed in the embedded Python: extra wheels, import checks, package swaps. It runs on all three platforms (Git Bash on Windows); tell them apart with `uname -s` |
+| `icon` | a square PNG of at least 256 px (`assets/<app>-icon.png`): the window, dock or taskbar and installer icon, made into `electron/build/icon.png` and `icon.ico` at build time. Without it the app shows the OpenMS icon of `electron/build`, which an app never replaces in its own repository (template-owned) |
 
 `python -m utils.app_spec` checks the keys and that the named files exist.
 Derive `topp_tools` from the spec instead of by hand:

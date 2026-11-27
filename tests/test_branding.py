@@ -63,7 +63,7 @@ sys.modules.update(_MOCKED_MODULES)
 # version. Save whatever was cached first so we can restore it afterwards.
 _saved_common = sys.modules.pop("src.common.common", None)
 
-from src.common.common import get_branding, DEFAULT_LOGO  # noqa: E402
+from src.common.common import get_branding, DEFAULT_LOGO, DEFAULT_LOGOS  # noqa: E402
 
 # Restore the real modules (or remove ones that weren't present) so that other
 # test modules get the genuine packages.
@@ -98,9 +98,9 @@ def test_openms_logo_without_branding():
     for theme in ("light", "dark"):
         assert get_branding(theme) == {
             "page_icon": DEFAULT_LOGO,
-            "logo": DEFAULT_LOGO,
-            "logo_icon": DEFAULT_LOGO,
-            "app_icon": DEFAULT_LOGO,
+            "logo": DEFAULT_LOGOS[theme],
+            "logo_icon": DEFAULT_LOGOS[theme],
+            "app_icon": DEFAULT_LOGOS[theme],
             "logo_size": "medium",
         }
 
@@ -160,4 +160,14 @@ def test_empty_values_fall_back_to_openms():
     _settings({"page_icon": "", "logo": {"light": "", "dark": None}})
     branding = get_branding("dark")
     assert branding["page_icon"] == DEFAULT_LOGO
-    assert branding["logo"] == DEFAULT_LOGO
+    assert branding["logo"] == DEFAULT_LOGOS["dark"]
+
+
+def test_default_logos_exist_for_both_themes():
+    """The OpenMS logo has a light-theme and a dark-theme file, both present."""
+    from pathlib import Path
+
+    assert DEFAULT_LOGO == DEFAULT_LOGOS["light"]
+    assert DEFAULT_LOGOS["light"] != DEFAULT_LOGOS["dark"]
+    for path in DEFAULT_LOGOS.values():
+        assert Path(path).is_file(), path
