@@ -154,7 +154,7 @@ spec:
             - |
               set -euo pipefail
               source /root/miniforge3/bin/activate streamlit-env
-              exec streamlit run app.py --server.address 0.0.0.0
+              exec python -m src.streamlit_launcher run app.py --server.address 0.0.0.0
           ports:
             - containerPort: 8501
           env:

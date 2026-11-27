@@ -271,7 +271,7 @@ NGINX_EOF
     for i in $(seq 0 $((SERVER_COUNT - 1))); do
         PORT=$((BASE_PORT + i))
         echo "Starting Streamlit instance on port $PORT..."
-        streamlit run app.py --server.port "$PORT" --server.address 0.0.0.0 &
+        python -m src.streamlit_launcher run app.py --server.port "$PORT" --server.address 0.0.0.0 &
     done
 
     sleep 2
@@ -287,5 +287,5 @@ NGINX_EOF
     exec /usr/sbin/nginx $NGINX_EARLY_LOG -c "$NGINX_CONF_FILE" -g "daemon off;"
 else
     echo "Starting Streamlit app (cwd=$(pwd), uid=$(id -u))..."
-    exec streamlit run app.py --server.address 0.0.0.0
+    exec python -m src.streamlit_launcher run app.py --server.address 0.0.0.0
 fi
