@@ -139,7 +139,7 @@ watchdog==6.0.0
 xlsxwriter
 
 # Redis Queue dependencies (for online mode)
-redis>=5.0.0
+redis>=5.0.0,<8.2  # fakeredis 2.40 fails on redis 8.2.0 (closure lookup in _setup.py)
 rq>=1.16.0
 
 # Reads Bruker timsTOF .d folders (TDF) for the conversion to mzML
