@@ -136,6 +136,8 @@ def _status(entries: Iterable[dict]) -> str:
     for status in ("failed", "running", "pending"):
         if status in statuses:
             return {"failed": "failed", "running": "not finished", "pending": "not run"}[status]
+    if "retried" in statuses:
+        return "run again file by file"
     return "done"
 
 
