@@ -318,6 +318,9 @@ def consistency_errors(spec: dict, root: Path | str = ".") -> list[str]:
     script = desktop_app.get("stage_script")
     if script and not (root / script).is_file():
         errors.append(f"deploy.desktop_app.stage_script is {script}, which does not exist")
+    icon = desktop_app.get("icon")
+    if icon and not (root / icon).is_file():
+        errors.append(f"deploy.desktop_app.icon is {icon}, which does not exist")
     errors += openms_mismatches(spec, root)
 
     return errors

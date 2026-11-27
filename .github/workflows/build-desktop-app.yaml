@@ -67,6 +67,7 @@ jobs:
       synopsis: ${{ steps.app.outputs.synopsis }}
       e2e_scenarios: ${{ steps.app.outputs.e2e_scenarios }}
       stage_script: ${{ steps.app.outputs.stage_script }}
+      icon: ${{ steps.app.outputs.icon }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -129,6 +130,7 @@ jobs:
             echo "synopsis=$(get .deploy.desktop_app.synopsis)"
             echo "e2e_scenarios=$(get '(.deploy.desktop_app.e2e_scenarios // []) | join(" ")')"
             echo "stage_script=$(get .deploy.desktop_app.stage_script)"
+            echo "icon=$(get .deploy.desktop_app.icon)"
           } | tee -a "$GITHUB_OUTPUT"
 
   # Release or build? A released OpenMS ("3.5.0") is downloaded by the build
@@ -261,6 +263,28 @@ jobs:
           "$p/python-$PYTHON_VERSION/bin/python3" -m compileall -q --invalidation-mode unchecked-hash "$p/src" "$p/utils"
         fi
         du -sh "$p"
+
+    - name: Use the app's icon
+      # `deploy.desktop_app.icon`: a square PNG (at least 256 px) for the
+      # window, the dock or taskbar and the installer; without it the app
+      # shows the OpenMS icon of electron/build. The .ico is made from it.
+      if: needs.scope.outputs.icon != ''
+      env:
+        ICON: ${{ needs.scope.outputs.icon }}
+      run: |
+        if [[ $RUNNER_OS == Windows ]]; then
+          py="electron/payload/python-$PYTHON_VERSION/python.exe"
+        else
+          py="electron/payload/python-$PYTHON_VERSION/bin/python3"
+        fi
+        "$py" -I -c "
+        import sys
+        from PIL import Image
+        im = Image.open(sys.argv[1]).convert('RGBA')
+        assert im.width == im.height >= 256, f'{sys.argv[1]} is {im.size}, not a square of at least 256 px'
+        im.resize((512, 512), Image.LANCZOS).save('electron/build/icon.png')
+        im.save('electron/build/icon.ico', sizes=[(s, s) for s in (16, 24, 32, 48, 64, 128, 256)])
+        " "$ICON"
 
     - name: Set up Node.js
       uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0

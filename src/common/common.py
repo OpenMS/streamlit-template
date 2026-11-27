@@ -83,8 +83,15 @@ def get_legal_links() -> dict[str, str]:
     return {**DEFAULT_LEGAL_LINKS, **{k: v for k, v in overrides.items() if v}}
 
 
-# The OpenMS logo is used for every branding image a settings.json does not set.
-DEFAULT_LOGO = "assets/openms_transparent_bg_logo.svg"
+# The OpenMS logo is used for every branding image a settings.json does not set:
+# dark lettering on the light theme, white lettering on the dark theme
+# (OpenMS/Assets, logos/FinalLogo_Nov2024_Versions-01 and -02).
+DEFAULT_LOGOS = {
+    "light": "assets/openms-logo-light.svg",
+    "dark": "assets/openms-logo-dark.svg",
+}
+# The one image where the theme is not known (the browser tab icon).
+DEFAULT_LOGO = DEFAULT_LOGOS["light"]
 
 
 def get_branding(theme: str | None = None) -> dict[str, str]:
@@ -134,7 +141,7 @@ def get_branding(theme: str | None = None) -> dict[str, str]:
             value = value.get(theme) or value.get("light") or value.get("dark")
         return value or ""
 
-    logo = pick("logo") or DEFAULT_LOGO
+    logo = pick("logo") or DEFAULT_LOGOS[theme]
     app_icon = pick("app_icon") or logo
     return {
         "page_icon": pick("page_icon") or DEFAULT_LOGO,

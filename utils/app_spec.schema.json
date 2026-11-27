@@ -198,7 +198,8 @@
             "same_openms_as_images": {"type": "boolean", "description": "False when the desktop app deliberately bundles another OpenMS than the full Docker images build (a nightly commit, say), so the check that they match is skipped. Default true."},
             "synopsis": {"type": "string", "description": "One line describing the app on the Linux AppImage."},
             "e2e_scenarios": {"type": "array", "items": {"type": "string", "pattern": "^\\S+$"}, "uniqueItems": true, "description": "Scenario modules electron/scripts/e2e.js runs in the installed app, as paths in the repository."},
-            "stage_script": {"type": "string", "pattern": "^\\S+$", "description": "App-owned script run once the app's Python is staged, as `bash <script> <payload python> <payload dir>` on every platform."}
+            "stage_script": {"type": "string", "pattern": "^\\S+$", "description": "App-owned script run once the app's Python is staged, as `bash <script> <payload python> <payload dir>` on every platform."},
+            "icon": {"type": "string", "pattern": "^\\S+\\.png$", "description": "The app's icon as a square PNG of at least 256 px, a path in the repository: window, dock or taskbar and installer. Default: the OpenMS icon in electron/build."}
           }
         },
         "online_deployment": {
