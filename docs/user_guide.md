@@ -54,17 +54,29 @@ In the OpenMS web application, workspaces are designed to keep your analysis org
 ## Downloading Results
 
 You can download the results of your analyses, including data, figures and tables, directly from the application:
-- **Figures**: Click the camera icon button, appearing while hovering on the top right corner of the figure. Set the desired image format in the settings panel in the side bar.
-- **Tables**: Use the download button to save tables in *csv* format, appearing while hovering on the top right corner of the table.
-- **Data**: Use the download section in the sidebar to download the raw results of your analysis.
+- **Figures**: Click the camera icon button, appearing while hovering on the top right corner of the figure. Set the image format under **Settings** in the sidebar.
+- **Tables**: Hover over a table and use the download icon at its top right corner to save it as *csv*. Tables with a **Download Table** button below them save as *tsv*.
+- **Data**: The **Download** page of a workflow (**Export** in the desktop app) offers every result file, one at a time or all together as a ZIP. The desktop app copies the files to a folder you choose instead.
 
 ### Keeping several runs
 
 Workflows that keep their runs store every analysis you start as its own result set, so changing a parameter and running again does not overwrite the earlier results:
 - **Run page**: give the run a name before you start it (optional; runs are numbered otherwise).
 - **Results pages**: the *Run* picker at the top chooses which run is shown. The choice applies to all results pages.
-- **Download page**: lists every run with its start time and status. 👁️ shows it on the results pages, ✏️ renames it, 📦 packs its results, parameters and logs into a ZIP to download, 🗑️ deletes it.
+- **Download page**: lists every run with its start time and status. 👁️ shows it on the results pages, ✏️ renames it, 🕘 opens its **History**, 📦 packs its results, parameters and logs into a ZIP to download, 🗑️ deletes it.
+- **History** (🕘): when the run started and ended and which run it follows, the settings that differ from the defaults, its processing report (Markdown or PDF) and its **Methods**. **Start again with these settings** opens the configure page with the run's files and settings; the next start makes a new run beside the old one.
 - **Open a run from a ZIP** (Download page, or the Results page before the first run): adds a ZIP made with 📦 as a new run, with its results, parameters, logs and name, so a run can be passed to a colleague or moved to another installation. Unsafe ZIPs, such as ones with paths leading out of the run folder or symbolic links, are refused.
+
+## Running a workflow
+
+- **Start Workflow** on the Run page starts the analysis. While it runs, the page shows the tool that is running and its progress per file.
+- **🔔 Notify me when it ends**: while a run is going, this button asks the browser for permission to notify you. When the run ends while you are in another tab, the tab title shows the outcome (✓ finished, ✗ failed, ■ cancelled) and a browser notification tells you.
+- **Files a tool fails on**: some workflow steps go on without the files a tool cannot process, for example a cut-off mzML in a large study. The Run page then says how many files were left out, names each one with its error, and keeps the tool output in an expander.
+- **Methods**: the **Methods** expander on the Run page holds a methods section for a publication: the input files, the app and OpenMS version, each tool in order and the parameters that differ from the defaults, followed by the references. Copy it or download it as text; the configure page offers the same as **📑 Methods** once a run has finished a tool. The text is a draft that says what was run, not why.
+
+## Other OpenMS web apps
+
+The sidebar box **Other OpenMS web apps**, and the front page, link to the other OpenMS web apps with a line on what each does.
 
 ## Getting Started
 
