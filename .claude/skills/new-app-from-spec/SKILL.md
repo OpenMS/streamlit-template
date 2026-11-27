@@ -94,6 +94,19 @@ lists them, and remove the example workflow if no spec workflow reuses
 `src/Workflow.py`. Keep `content/documentation.py` and rewrite `docs/` intro
 text from `app.description`.
 
+Then the template's tests of the example app. They import `src.Workflow`'s
+`Workflow` or open the example pages, and fail once those are gone or replaced:
+`tests/test_workflow_import.py`, `tests/test_guide.py`,
+`tests/test_workflow_min_files.py`, `tests/test_workflow_recommend_preset.py`,
+the example-page cases of `tests/test_captcha_pages.py`, and the page tests of
+`test_gui.py`. Find the rest with `grep -rln "src.Workflow\|content/" tests/`.
+Rewrite a test for the app's own workflow when it checks something the app
+also does (a minimum of input files, a recommended preset); delete it
+otherwise. Add each deleted test to `sync.app_owned` in `app.yaml`, so a
+template sync that changes it keeps it deleted instead of bringing it back.
+A sync can still bring a new test of the example: delete it in that sync's PR
+and add it to `sync.app_owned` the same way (`sync-from-template`).
+
 ## 7. Deployment
 
 `deploy.k8s.enabled` → `configure-k8s-deployment`, answering its interview
@@ -122,4 +135,5 @@ PR against the new repository, not the template.
 - [ ] One workflow class per spec workflow, every executor call gated
 - [ ] Result views mapped by role; Insight in requirements if used
 - [ ] Unused template pages removed
+- [ ] Template tests of the example app rewritten for the app's workflow or deleted, deleted ones in `sync.app_owned`
 - [ ] Each workflow ran once on example data

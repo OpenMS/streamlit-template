@@ -69,6 +69,12 @@ Two things make this less mechanical than it sounds:
 The same trap three times, and one cause: the file lists what it tests instead
 of discovering it. No list updates itself and no failure names its reason.
 
+**The tests of the example workflow** in `tests/` are the fourth thing, if the
+app replaced `src/Workflow.py`: they import its `Workflow` and fail once it is
+gone. Rewrite or delete them as step 6 of `new-app-from-spec` says, deleted ones
+listed in `sync.app_owned`. An app that keeps `src/Workflow.py` beside its own
+workflow keeps them passing and needs nothing here.
+
 **Comment out; do not delete.** One line brings a page back, and `test_gui.py`
 lists every page **by hand** (`test_gui.py:22-36`) instead of globbing `content/`
 — delete a file without editing that list and CI fails at collection, before a
