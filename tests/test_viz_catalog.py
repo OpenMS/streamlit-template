@@ -36,3 +36,14 @@ def test_old_paths_still_import():
     assert go_panel._TERM_SCHEMA is not None
     assert volcano.short_label("sp|P1|A_HUMAN") == "A_HUMAN"
     assert heatmap.zscores and comparison_steps.show_pvalues
+
+
+def test_identification_steps_read_their_columns():
+    from src.viz.identification import identification_steps as steps
+
+    args = steps.settings(max_causes=2)
+    fields = [c["field"] for c in args["column_definitions"]]
+    assert fields == ["step", "spectra", "share", "cause"]
+    assert args["index_field"] == "row" and args["default_row"] == -1
+    assert "2 at most" in args["column_definitions"][-1]["headerTooltip"]
+    assert steps.settings(title="Steps")["title"] == "Steps"
