@@ -24,6 +24,7 @@ from src.common.common import (
     tk_directory_dialog,
     tk_file_dialog,
 )
+from src.common.developer import is_developer
 from src.workflow._log_status import classify_log_outcome
 from src.workflow import run_notice
 from src.workflow.report_ui import methods_section, report_buttons, run_methods
@@ -3597,7 +3598,10 @@ class StreamlitUI(DescribeMixin):
             detail = status.get("error") or status.get("current_step") or "Wait for confirmation before starting another analysis."
             st.warning(f"**Status: {label}** - {detail}")
 
-        # Expandable job details
+        # The queue's own bookkeeping (job ID, times) helps whoever runs the
+        # server, not the person analysing data: shown in developer mode only.
+        if not is_developer():
+            return
         with st.expander("Job Details", expanded=False):
             st.code(f"""Job ID: {status.get('job_id', 'N/A')}
 Submitted: {status.get('enqueued_at', 'N/A')}
