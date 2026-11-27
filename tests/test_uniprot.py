@@ -78,6 +78,8 @@ def server(monkeypatch):
                 n = FASTA[reviewed].count(">")
                 self._send(json.dumps({"results": []}), "application/json",
                            {"x-total-results": str(n)})
+            elif url.path == "/uniprotkb/P0A7V8.fasta":
+                self._send(FASTA[True].split(">sp|P0A7W1")[0], "text/plain")
             elif url.path == "/uniprotkb/stream":
                 self._send(FASTA[reviewed], "text/plain")
             elif url.path == "/busy" and sum(p == "/busy" for p, _ in seen) < 3:
@@ -167,6 +169,21 @@ def test_download(server, tmp_path):
     assert server.seen[-1][1]["includeIsoform"] == "true"
 
 
+def test_entry_fasta(server):
+    record = uniprot.entry_fasta("P0A7V8")
+    assert record.startswith(">sp|P0A7V8|RS4_ECOLI")
+    assert record.splitlines()[1] == "MARYLGPKLK"
+    # An unknown entry is UniProt's 400/404, not a record
+    with pytest.raises(uniprot.UniProtError):
+        uniprot.entry_fasta("Q99999")
+    # Not an accession: refused before any request
+    asked = len(server.seen)
+    for text in ("", "P0A7V", "sp|P0A7V8|RS4_ECOLI", "P0A7V8/../x"):
+        with pytest.raises(ValueError):
+            uniprot.entry_fasta(text)
+    assert len(server.seen) == asked
+
+
 def test_busy_server_is_retried(server, monkeypatch):
     assert uniprot._get("/busy", {}).status_code == 200
     assert sum(p == "/busy" for p, _ in server.seen) == 3
@@ -182,7 +199,9 @@ def test_requests_are_spaced(monkeypatch):
     monkeypatch.setattr(uniprot, "_sleep", waits.append)
     uniprot._last_request[0] = uniprot.time.monotonic()
     uniprot._wait_turn()
-    assert waits and 0 < waits[0] <= 0.2
+    # The wait is MIN_INTERVAL minus the time since the last request; on a
+    # coarse clock (Windows) that difference can be 0.2 plus rounding error
+    assert waits and 0 < waits[0] <= 0.2 + 1e-6
 
 
 def test_errors_leave_no_file(server, tmp_path, monkeypatch):
