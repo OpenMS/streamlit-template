@@ -60,6 +60,9 @@ class Workflow(WorkflowManager):
     run_page = Path("content", "topp_workflow_execution.py")
     results_page = Path("content", "topp_workflow_results.py")
     export_page = Path("content", "topp_workflow_download.py")
+    # A file FeatureFinderMetabo fails on is left out (allow_failed); History
+    # then offers to process it again
+    input_files_key = "mzML-files"
 
     def __init__(self) -> None:
         # Initialize the parent class with the workflow name.

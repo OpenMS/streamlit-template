@@ -27,6 +27,9 @@ from src.workflow.RunManager import (
     format_time,
 )
 
+# Files a run left out named in its History; the rest are counted
+LEFT_OUT_NAMES = 5
+
 STATUS_LABELS = {
     FINISHED: "✅ Finished",
     RUNNING: "⏳ Running",
@@ -148,14 +151,33 @@ def run_history_section(
     run_id: str,
     key: str,
     on_start_again: Optional[Callable[[str], None]] = None,
+    files_key: Optional[str] = None,
+    on_process_left_out: Optional[Callable[[str], None]] = None,
 ) -> None:
     """How ``run_id`` came about, its settings that differ from the defaults,
     its processing report and, with ``on_start_again``, **Start again with
-    these settings** (which calls it with the run's id)."""
+    these settings** (which calls it with the run's id).
+
+    With ``files_key`` (params.json key of the input files) it names the
+    files the run went on without, and with ``on_process_left_out`` offers
+    **Process the left-out files** (``WorkflowManager.process_left_out``).
+    """
     st.markdown("**How this run came about**")
     events = timeline(runs, run_id)
     st.markdown("\n".join(f"{i}. {e}" for i, e in enumerate(events, start=1)) if events
                 else "Nothing was recorded about this run.")
+
+    left_out = runs.left_out_files(run_id, files_key) if files_key else []
+    if left_out:
+        names = ", ".join(Path(str(f)).name for f in left_out[:LEFT_OUT_NAMES])
+        more = len(left_out) - LEFT_OUT_NAMES
+        st.markdown("**Files left out**")
+        st.warning(
+            f"This run went on without {len(left_out)} file{'s' if len(left_out) > 1 else ''} "
+            f"a tool failed on: {names}{f' and {more} more' if more > 0 else ''}. "
+            "The processing report names each error.",
+            icon=":material/warning:",
+        )
 
     running = (runs.get(run_id) or {}).get("status") == RUNNING
     report = {} if running else run_report(runs.workflow_dir, run_id)
@@ -183,13 +205,23 @@ def run_history_section(
                  "The new run is kept next to this one.",
         ):
             on_start_again(run_id)
+        if left_out and on_process_left_out is not None and st.button(
+            "Process the left-out files", icon=":material/library_add:",
+            key=f"{key}-left-out", disabled=running,
+            help="Open the configure page with this run's settings and the files it left out "
+                 "picked, to change what made them fail. The new run adds them to this "
+                 "run's experiment.",
+        ):
+            on_process_left_out(run_id)
 
 
 @st.dialog("History", width="large")
-def _history_dialog(runs: RunManager, run_id: str, on_start_again=None) -> None:
+def _history_dialog(runs: RunManager, run_id: str, on_start_again=None, files_key=None,
+                    on_process_left_out=None) -> None:
     st.markdown(f"#### {(runs.get(run_id) or {}).get('name', run_id)}")
     run_history_section(runs, run_id, key=f"runs-{_slug(runs)}-history-{run_id}",
-                        on_start_again=on_start_again)
+                        on_start_again=on_start_again, files_key=files_key,
+                        on_process_left_out=on_process_left_out)
 
 
 def run_manager_section(
@@ -197,6 +229,8 @@ def run_manager_section(
     workflow_running: bool = False,
     exclude: Optional[list[str]] = None,
     on_start_again: Optional[Callable[[str], None]] = None,
+    files_key: Optional[str] = None,
+    on_process_left_out: Optional[Callable[[str], None]] = None,
 ) -> None:
     """
     One row per run with its name, start time and status, and buttons to show
@@ -209,6 +243,9 @@ def run_manager_section(
         on_start_again: Called with a run's id by **Start again with these
             settings** in its history (``WorkflowManager.start_again``);
             without it the history has no such button.
+        files_key, on_process_left_out: The files a run left out, named in
+            its history, and **Process the left-out files** there
+            (``run_history_section``).
     """
     run_import(runs)
     all_runs = runs.list_runs()
@@ -258,7 +295,7 @@ def run_manager_section(
             help="History: how this run came about, its settings and its processing report"
                  + (", and starting again with its settings" if on_start_again else ""),
         ):
-            _history_dialog(runs, run_id, on_start_again)
+            _history_dialog(runs, run_id, on_start_again, files_key, on_process_left_out)
 
         prepared = f"_runs-{slug}-zip-{run_id}"
         zip_path = Path(runs.workflow_dir, "downloads", f"{run_id}.zip")

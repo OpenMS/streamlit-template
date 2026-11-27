@@ -215,7 +215,8 @@ class RunManager:
 
     def restore_settings(self, run_id: str, changes: Optional[dict] = None,
                          note: str = "", add_files: Optional[str] = None,
-                         same_files: Optional[str] = None, keep: Optional[list] = None) -> bool:
+                         same_files: Optional[str] = None, keep: Optional[list] = None,
+                         files: Optional[list] = None) -> bool:
         """Make a run's parameters (and experimental design) the workflow's again.
 
         The next run then starts from exactly the settings ``run_id`` used,
@@ -228,6 +229,7 @@ class RunManager:
         ``"mzML-files"``) starts a run that adds files to ``run_id``'s
         experiment: that key starts empty, so only the files picked now are
         processed, and the next run is recorded as adding to the experiment.
+        ``files`` picks those files at once (e.g. the files a run left out).
 
         ``same_files`` (that key) is for an analysis added to ``run_id`` itself:
         the next run takes exactly its files, which the configure page shows
@@ -245,7 +247,7 @@ class RunManager:
             root_run = self.get(root) or run
             info.update(run=root, name=root_run.get("name", root), adds_to=root,
                         files_key=add_files, files=self.experiment_files(root, add_files))
-            changes = {**(changes or {}), add_files: []}
+            changes = {**(changes or {}), add_files: list(files or [])}
         elif same_files:
             value = params.get(same_files) or []
             files = [value] if isinstance(value, str) else list(value)
@@ -258,12 +260,37 @@ class RunManager:
         return True
 
     def experiment_files(self, run_id: str, key: str) -> list[str]:
-        """The input files (params.json ``key``) of every run of ``run_id``'s experiment."""
+        """The input files (params.json ``key``) of every run of ``run_id``'s experiment.
+
+        A file a run went on without (``left_out_files``) is not part of it, so
+        a run adding files to the experiment can process it again.
+        """
         files = []
         for member in self.experiment(run_id):
             value = self.params(member).get(key) or []
-            files += [value] if isinstance(value, str) else list(value)
+            left_out = set(self.left_out_files(member, key))
+            files += [f for f in ([value] if isinstance(value, str) else list(value)) if f not in left_out]
         return list(dict.fromkeys(files))
+
+    def left_out_files(self, run_id: str, key: str) -> list[str]:
+        """The input files (params.json ``key``) that ``run_id`` went on without.
+
+        A step run with ``allow_failed`` records each file a tool failed on in
+        the run's ``logs/progress.json``, named by its file name. The input
+        file is the one of that name, or of that stem (a vendor file converted
+        to mzML first). Empty for a run without such files.
+        """
+        from .progress import failures, read_progress
+
+        if not _is_safe_id(run_id):
+            return []
+        names = {f["file"] for f in failures(read_progress(self.run_dir(run_id)), left_out=True)}
+        if not names:
+            return []
+        stems = {Path(n).stem for n in names}
+        value = (self.params(run_id) or {}).get(key) or []
+        files = [value] if isinstance(value, str) else list(value)
+        return [f for f in files if Path(str(f)).name in names or Path(str(f)).stem in stems]
 
     def finish(self, run_id: Optional[str], status: str) -> None:
         """Record how a run ended and keep a copy of its logs."""

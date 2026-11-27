@@ -61,6 +61,9 @@ class WorkflowManager:
     # run has finished; next_steps() links both.
     results_page = None
     export_page = None
+    # params.json key of the input files a step may go on without
+    # (run_topp(allow_failed=True)): History then offers to process them again
+    input_files_key: Optional[str] = None
 
     # Core workflow logic using the above classes
     def __init__(self, name: str, workspace: str):
@@ -242,6 +245,7 @@ class WorkflowManager:
         add_files: Optional[str] = None,
         same_files: Optional[str] = None,
         keep: Optional[list] = None,
+        files: Optional[list] = None,
     ) -> bool:
         """Set up the next run from the settings ``run_id`` was started with.
 
@@ -258,6 +262,7 @@ class WorkflowManager:
         files: that key starts empty, and the next run adds the files picked
         then to ``run_id``'s experiment, which the results pages show as one
         (``RunManager.experiment``), so the earlier files are not processed again.
+        ``files`` picks the files to add at once (``process_left_out``).
 
         ``same_files`` (that key) is for an analysis added to ``run_id`` itself
         (identification of a run deconvolved only): the next run takes exactly
@@ -267,7 +272,7 @@ class WorkflowManager:
         and takes those tools' results from it instead of running them.
         """
         if not self.multi_run or not self.runs.restore_settings(
-                run_id, changes, note, add_files, same_files=same_files, keep=keep):
+                run_id, changes, note, add_files, same_files=same_files, keep=keep, files=files):
             return False
         self._reload_settings(page)
         return True
@@ -924,7 +929,22 @@ class WorkflowManager:
             workflow_running=self.get_workflow_status()["running"],
             exclude=exclude,
             on_start_again=self.start_again if self.configure_page else None,
+            files_key=self.input_files_key,
+            on_process_left_out=(self.process_left_out
+                                 if self.configure_page and self.input_files_key else None),
         )
+
+    def process_left_out(self, run_id: str) -> bool:
+        """Open ``configure_page`` to process the files ``run_id`` went on
+        without (``RunManager.left_out_files``) with its settings; the next
+        start adds them to its experiment. False if there are none."""
+        key = self.input_files_key
+        left_out = self.runs.left_out_files(run_id, key) if key else []
+        if left_out and self.follow_up(run_id, page=self.configure_page, add_files=key, files=left_out,
+                                       note="to process the files it left out"):
+            return True
+        st.toast("This run left out no files.", icon=":material/error:")
+        return False
 
     def start_again(self, run_id: str) -> bool:
         """Open ``configure_page`` with the files and settings ``run_id`` was
