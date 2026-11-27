@@ -602,7 +602,10 @@ class WorkflowManager:
         """
         # A stopped run sends no "run ended" e-mail (run_email).
         from .run_email import forget as forget_email
-        forget_email(self.workflow_dir)
+        try:
+            forget_email(self.workflow_dir)
+        except OSError as error:
+            self.logger.log(f"Could not remove the e-mail request: {error}")
         acquired = False
         try:
             with file_lock(self.workflow_dir / ".locks" / "execution.lock", blocking=False):
