@@ -68,7 +68,7 @@ jobs:
       e2e_scenarios: ${{ steps.app.outputs.e2e_scenarios }}
       stage_script: ${{ steps.app.outputs.stage_script }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           sparse-checkout: app.yaml
           sparse-checkout-cone-mode: false
@@ -178,7 +178,7 @@ jobs:
 
     steps:
     - name: Checkout
-      uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         persist-credentials: false
 
@@ -205,7 +205,7 @@ jobs:
 
     - name: Download the OpenMS build
       if: needs.openms.outputs.source == 'build'
-      uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
       with:
         name: openms-${{ matrix.platform }}
         path: openms-package
@@ -263,7 +263,7 @@ jobs:
         du -sh "$p"
 
     - name: Set up Node.js
-      uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
       with:
         node-version: '22'
         # Release installers are built from a clean npm install, without a restored cache.
@@ -361,14 +361,14 @@ jobs:
 
     - name: Archive end-to-end screenshots
       if: always()
-      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       with:
         name: electron-e2e-screenshots-${{ matrix.platform }}
         path: e2e-output
         if-no-files-found: ignore
 
     - name: Archive installer
-      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       with:
         name: OpenMS-App-${{ matrix.platform }}
         path: ${{ steps.package.outputs.installer }}
@@ -387,27 +387,27 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7.0.1
       with:
         persist-credentials: false
 
     - name: Download the OpenMS build (Windows)
       if: needs.openms.outputs.source == 'build'
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v8
       with:
         name: openms-Windows-x86_64
         path: openms-packages/openms-Windows-x86_64
 
     - name: Download the OpenMS build (macOS)
       if: needs.openms.outputs.source == 'build'
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v8
       with:
         name: openms-macOS-arm64
         path: openms-packages/openms-macOS-arm64
 
     - name: Download the OpenMS build (Linux)
       if: needs.openms.outputs.source == 'build'
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v8
       with:
         name: openms-Linux-x86_64
         path: openms-packages/openms-Linux-x86_64
@@ -448,7 +448,7 @@ jobs:
         electron/scripts/package-tools.sh "${NAME:-$APP_NAME}" openms-packages dist-tools "${LABEL:0:60}"
 
     - name: Archive the command line tool installers
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: OpenMS-Tools
         path: dist-tools/*
@@ -479,7 +479,7 @@ jobs:
         shell: bash
     steps:
     - name: Download the command line tool installers
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v8
       with:
         name: OpenMS-Tools
         path: tools
@@ -540,7 +540,7 @@ jobs:
       contents: write
     steps:
     - name: Download installers
-      uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
       with:
         pattern: OpenMS-App-*
         merge-multiple: true
@@ -548,7 +548,7 @@ jobs:
 
     - name: Download the command line tool installers
       if: needs.tools.result == 'success' && needs.tools-test.result != 'failure'
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v8
       with:
         name: OpenMS-Tools
         path: dist
